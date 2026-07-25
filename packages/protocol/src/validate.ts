@@ -194,6 +194,7 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid system.hello params", { method });
     case "system.getStatus":
+    case "system.rehydrate":
     case "system.shutdown":
     case "workspace.getCurrent":
     case "session.list":

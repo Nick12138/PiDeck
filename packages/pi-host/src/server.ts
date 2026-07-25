@@ -11,6 +11,7 @@ import {
   type HostIdentity,
   type HostMethod,
   type HostPhase,
+  type RehydrateSnapshot,
   type HostStatusSnapshot,
   type ModelConfigHealth,
   type HostCapabilities,
@@ -28,6 +29,10 @@ export type HostRuntimeDeps = {
   capabilities: HostCapabilities;
   /** Method handlers registered by controllers */
   handlers: Partial<Record<HostMethod, MethodHandler>>;
+  getRehydrateState?: () => Pick<
+    RehydrateSnapshot,
+    "workspace" | "session" | "tools" | "packages"
+  >;
   /** Optional graceful cleanup before process exit */
   onShutdown?: () => Promise<void>;
 };
@@ -297,6 +302,49 @@ export class PiHostServer {
       this.writeResponse(
         createSuccessResponse(this.identity.snapshot(), id, method, this.buildStatus()),
       );
+      return;
+    }
+
+    if (method === "system.rehydrate") {
+      const expected = context.expectedHostInstanceId;
+      if (expected !== this.identity.hostInstanceId) {
+        this.writeResponse(
+          createFailureResponse(
+            this.identity.snapshot(),
+            id,
+            method,
+            createHostError("STALE_REVISION", "expectedHostInstanceId does not match"),
+          ),
+        );
+        return;
+      }
+
+      const identity = this.identity.snapshot();
+      const host = this.buildStatus();
+      const state = this.deps.getRehydrateState?.() ?? {
+        workspace: null,
+        session: null,
+        tools: null,
+        packages: null,
+      };
+      this.outbound.enqueueBarrierResponse((watermark) => {
+        const result: RehydrateSnapshot = { watermark, host, ...state };
+        const validation = validateSuccessResult(method, result);
+        if (!validation.ok) {
+          logger.error("Rejected invalid atomic rehydrate snapshot", {
+            validation: validation.error.message,
+          });
+          return createFailureResponse(
+            identity,
+            id,
+            method,
+            createHostError("INTERNAL_ERROR", "Host recovery snapshot is inconsistent", {
+              details: { validation: validation.error.message },
+            }),
+          );
+        }
+        return createSuccessResponse(identity, id, method, result);
+      });
       return;
     }
 

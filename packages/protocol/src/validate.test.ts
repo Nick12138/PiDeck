@@ -206,6 +206,65 @@ describe("deep result/event validation (C3)", () => {
     },
   };
 
+  const rehydrateSnapshot = {
+    watermark: 7,
+    host: hostStatus,
+    workspace: {
+      id: WORKSPACE_ID,
+      cwd: "C:/workspace",
+      canonicalCwd: "C:/workspace",
+      revision: 1,
+      servicesReady: true,
+    },
+    session,
+    tools: session.tools,
+    packages: {
+      revision: 0,
+      workspaceId: WORKSPACE_ID,
+      scope: "all",
+      configured: [],
+      resources: [],
+      updateCheck: { supported: false },
+      diagnostics: [],
+    },
+  } as const;
+
+  it("validates a consistent atomic rehydrate snapshot", () => {
+    expect(validateSuccessResult("system.rehydrate", rehydrateSnapshot).ok).toBe(true);
+  });
+
+  it("rejects inconsistent identities inside a rehydrate snapshot", () => {
+    expect(
+      validateSuccessResult("system.rehydrate", {
+        ...rehydrateSnapshot,
+        tools: {
+          ...rehydrateSnapshot.tools,
+          workspaceId: "00000000-0000-4000-8000-000000000099",
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("accepts an atomic no-workspace rehydrate snapshot", () => {
+    expect(
+      validateSuccessResult("system.rehydrate", {
+        watermark: 0,
+        host: {
+          ...hostStatus,
+          workspaceId: null,
+          workspaceRevision: 0,
+          sessionId: null,
+          sessionRevision: 0,
+          phase: "waitingForWorkspace",
+        },
+        workspace: null,
+        session: null,
+        tools: null,
+        packages: null,
+      }).ok,
+    ).toBe(true);
+  });
+
   it("validateSuccessResult accepts system.shutdown", () => {
     const r = validateSuccessResult("system.shutdown", { accepted: true });
     expect(r.ok).toBe(true);

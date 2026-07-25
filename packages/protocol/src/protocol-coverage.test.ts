@@ -79,6 +79,7 @@ function wsPkgCtx() {
 const VALID_PARAMS: Record<HostMethod, unknown> = {
   "system.hello": { clientName: "t", clientVersion: "0", protocolVersion: 1 },
   "system.getStatus": null,
+  "system.rehydrate": null,
   "system.shutdown": null,
   "workspace.setCurrent": { cwd: "C:/tmp" },
   "workspace.getCurrent": null,
@@ -203,6 +204,7 @@ function invalidParams(method: HostMethod): unknown {
     case "system.hello":
       return { clientName: "a" }; // missing version
     case "system.getStatus":
+    case "system.rehydrate":
     case "system.shutdown":
     case "workspace.getCurrent":
     case "session.list":

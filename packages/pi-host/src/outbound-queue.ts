@@ -6,8 +6,10 @@
  * wait for drain) instead of letting Node buffer unboundedly when the pipe
  * consumer stalls.
  *
- * Event sequence numbers are allocated at WRITE time, not enqueue time, so
- * the pressure policies below never create accidental sequence gaps:
+ * Event sequence numbers are normally allocated at WRITE time, not enqueue
+ * time, so the pressure policies below never create accidental sequence gaps.
+ * A recovery barrier is the exception: it seals all earlier live events with
+ * sequences and captures that exact watermark before queuing the response.
  *
  * - Above the soft watermark, coalescible events collapse in place:
  *   customFrame data for the same panel concatenates (ANSI streams compose),
@@ -34,6 +36,7 @@ type EventEntry = {
   payload: unknown;
   bytes: number;
   coalesceKey: string | null;
+  sequence?: number;
   dropped?: boolean;
 };
 
@@ -99,6 +102,7 @@ export class OutboundWriter {
   private pumping = false;
   private pressureLoggedAt = 0;
   private idleResolvers: Array<() => void> = [];
+  private lastAllocatedSequence = 0;
 
   constructor(options: {
     stream: WritableLike;
@@ -120,6 +124,21 @@ export class OutboundWriter {
   enqueueResponse(body: unknown): void {
     const line = JSON.stringify(body) + "\n";
     this.push({ kind: "response", line, bytes: line.length });
+  }
+
+  /**
+   * Enqueue a response that separates an authoritative snapshot from later events.
+   * Earlier queued events receive their final sequences now; clearing the coalesce
+   * index prevents a later event from replacing an entry on the snapshot side.
+   */
+  enqueueBarrierResponse(createBody: (watermark: number) => unknown): void {
+    for (const entry of this.queue) {
+      if (entry.kind === "event" && !entry.dropped && entry.sequence === undefined) {
+        entry.sequence = this.nextSequence();
+      }
+    }
+    this.coalesceIndex.clear();
+    this.enqueueResponse(createBody(this.lastAllocatedSequence));
   }
 
   enqueueEvent(identity: HostIdentity, event: HostEventName, payload: unknown): void {
@@ -218,7 +237,7 @@ export class OutboundWriter {
           this.pendingBytes -= entry.bytes;
         }
       }
-      this.allocateSequence();
+      this.nextSequence();
       logger.error("Outbound queue exceeded hard cap; events dropped, sequence gap forced", {
         shedBytes: shed,
         droppedEvents,
@@ -246,6 +265,12 @@ export class OutboundWriter {
     });
   }
 
+  private nextSequence(): number {
+    const sequence = this.allocateSequence();
+    this.lastAllocatedSequence = sequence;
+    return sequence;
+  }
+
   private async pump(): Promise<void> {
     try {
       while (this.queue.length > 0) {
@@ -265,7 +290,7 @@ export class OutboundWriter {
           const envelope = createEvent(
             entry.identity,
             entry.event,
-            this.allocateSequence(),
+            entry.sequence ?? this.nextSequence(),
             entry.payload as never,
           );
           line = JSON.stringify(envelope) + "\n";

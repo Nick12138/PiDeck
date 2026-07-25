@@ -12,7 +12,11 @@ vi.mock("./host-client", () => ({
   },
 }));
 
-import { fullRehydrate, resolveRehydrateHostInstanceId } from "./rehydrate";
+import {
+  RecoveryEventBuffer,
+  fullRehydrate,
+  resolveRehydrateHostInstanceId,
+} from "./rehydrate";
 
 beforeEach(() => {
   requestMock.mockReset();
@@ -36,7 +40,7 @@ describe("resolveRehydrateHostInstanceId", () => {
 });
 
 describe("fullRehydrate", () => {
-  it("reads Host, Workspace, Session, tools, and packages in generation order", async () => {
+  it("reads one atomic Host snapshot with its event watermark", async () => {
     const host = {
       hostInstanceId: "host-2",
       workspaceId: "workspace-2",
@@ -67,12 +71,10 @@ describe("fullRehydrate", () => {
       updateCheck: { supported: false },
       diagnostics: [],
     };
-    requestMock
-      .mockResolvedValueOnce({ ok: true, result: host })
-      .mockResolvedValueOnce({ ok: true, result: workspace })
-      .mockResolvedValueOnce({ ok: true, result: session })
-      .mockResolvedValueOnce({ ok: true, result: tools })
-      .mockResolvedValueOnce({ ok: true, result: packages });
+    requestMock.mockResolvedValueOnce({
+      ok: true,
+      result: { host, workspace, session, tools, packages, watermark: 17 },
+    });
 
     await expect(fullRehydrate("host-2")).resolves.toEqual({
       host,
@@ -80,27 +82,13 @@ describe("fullRehydrate", () => {
       session,
       tools,
       packages,
+      watermark: 17,
     });
-    expect(requestMock.mock.calls.map(([method]) => method)).toEqual([
-      "system.getStatus",
-      "workspace.getCurrent",
-      "session.getSnapshot",
-      "agent.getTools",
-      "package.list",
-    ]);
+    expect(requestMock.mock.calls.map(([method]) => method)).toEqual(["system.rehydrate"]);
     expect(requestMock.mock.calls[0]?.[1]).toEqual({ expectedHostInstanceId: "host-2" });
-    expect(requestMock.mock.calls[2]?.[1]).toMatchObject({
-      expectedHostInstanceId: "host-2",
-      expectedWorkspaceId: "workspace-2",
-      expectedWorkspaceRevision: 4,
-    });
-    expect(requestMock.mock.calls[3]?.[1]).toMatchObject({
-      expectedSessionId: "session-2",
-      expectedSessionRevision: 6,
-    });
   });
 
-  it("stops after Workspace lookup when no Workspace is selected", async () => {
+  it("returns the atomic no-Workspace snapshot", async () => {
     const host = {
       hostInstanceId: "host-3",
       workspaceId: null,
@@ -110,9 +98,17 @@ describe("fullRehydrate", () => {
       packageRevision: 0,
     };
     getHostInstanceIdMock.mockReturnValue("host-3");
-    requestMock
-      .mockResolvedValueOnce({ ok: true, result: host })
-      .mockResolvedValueOnce({ ok: true, result: null });
+    requestMock.mockResolvedValueOnce({
+      ok: true,
+      result: {
+        host,
+        workspace: null,
+        session: null,
+        packages: null,
+        tools: null,
+        watermark: 4,
+      },
+    });
 
     await expect(fullRehydrate()).resolves.toEqual({
       host,
@@ -120,10 +116,53 @@ describe("fullRehydrate", () => {
       session: null,
       packages: null,
       tools: null,
+      watermark: 4,
     });
-    expect(requestMock.mock.calls.map(([method]) => method)).toEqual([
-      "system.getStatus",
-      "workspace.getCurrent",
-    ]);
+    expect(requestMock.mock.calls.map(([method]) => method)).toEqual(["system.rehydrate"]);
+  });
+});
+
+describe("RecoveryEventBuffer", () => {
+  const event = (sequence: number, hostInstanceId = "host-2") =>
+    ({
+      protocolVersion: 1,
+      hostInstanceId,
+      workspaceId: "workspace-2",
+      workspaceRevision: 4,
+      sessionId: "session-2",
+      sessionRevision: 6,
+      packageRevision: 3,
+      sequence,
+      timestamp: sequence,
+      event: "agent.event",
+      payload: {
+        runId: "run-1",
+        event: { type: "message_update", delta: String(sequence) },
+      },
+    }) as const;
+
+  it("replays only same-Host events newer than the snapshot watermark", () => {
+    const buffer = new RecoveryEventBuffer();
+    buffer.begin("host-2");
+    expect(buffer.capture(event(10))).toBe(true);
+    expect(buffer.capture(event(11))).toBe(true);
+    expect(buffer.capture(event(12, "other-host"))).toBe(false);
+
+    expect(buffer.finish("host-2", 10)).toEqual({
+      events: [event(11)],
+      overflowed: false,
+    });
+  });
+
+  it("reports overflow instead of pretending dropped recovery events were applied", () => {
+    const buffer = new RecoveryEventBuffer(1);
+    buffer.begin("host-2");
+    expect(buffer.capture(event(10))).toBe(true);
+    expect(buffer.capture(event(11))).toBe(true);
+
+    expect(buffer.finish("host-2", 9)).toEqual({
+      events: [event(10)],
+      overflowed: true,
+    });
   });
 });

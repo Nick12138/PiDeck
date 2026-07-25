@@ -267,6 +267,40 @@ describe("Pi Host integration", () => {
         null,
       );
       expect(stillAlive.ok).toBe(true);
+
+      const rehydrated = await host.request(
+        "system.rehydrate",
+        { expectedHostInstanceId: res.hostInstanceId },
+        null,
+      );
+      expect(rehydrated.ok).toBe(true);
+      const snapshot = rehydrated.result as {
+        watermark: number;
+        host: { hostInstanceId: string; workspaceId: string; sessionId: string };
+        workspace: { id: string; revision: number };
+        session: { sessionId: string; revision: number; tools: { revision: number } };
+        tools: {
+          workspaceId: string;
+          sessionId: string;
+          sessionRevision: number;
+          revision: number;
+        };
+        packages: { workspaceId: string; revision: number };
+      };
+      expect(snapshot.watermark).toEqual(expect.any(Number));
+      expect(snapshot.host.hostInstanceId).toBe(rehydrated.hostInstanceId);
+      expect(snapshot.host.workspaceId).toBe(rehydrated.workspaceId);
+      expect(snapshot.host.sessionId).toBe(rehydrated.sessionId);
+      expect(snapshot.workspace.id).toBe(rehydrated.workspaceId);
+      expect(snapshot.workspace.revision).toBe(rehydrated.workspaceRevision);
+      expect(snapshot.session.sessionId).toBe(rehydrated.sessionId);
+      expect(snapshot.session.revision).toBe(rehydrated.sessionRevision);
+      expect(snapshot.tools.workspaceId).toBe(rehydrated.workspaceId);
+      expect(snapshot.tools.sessionId).toBe(rehydrated.sessionId);
+      expect(snapshot.tools.sessionRevision).toBe(rehydrated.sessionRevision);
+      expect(snapshot.tools.revision).toBe(snapshot.session.tools.revision);
+      expect(snapshot.packages.workspaceId).toBe(rehydrated.workspaceId);
+      expect(snapshot.packages.revision).toBe(rehydrated.packageRevision);
     }
   }, 90_000);
 

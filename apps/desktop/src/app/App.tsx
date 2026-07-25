@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "../lib/stores/app-store";
 import { hostClient } from "../lib/bridge/host-client";
 import { createTauriTransport } from "../lib/bridge/tauri-transport";
-import { fullRehydrate } from "../lib/bridge/rehydrate";
+import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
 import { WindowControls } from "../components/WindowControls";
@@ -67,17 +67,37 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
   );
 }
 
-async function runFullRehydrate(expectedHostInstanceId: string): Promise<void> {
+export async function runFullRehydrate(
+  expectedHostInstanceId: string,
+  recoveryEvents: RecoveryEventBuffer,
+  requestRecovery: (reason: string) => void,
+  agentEventBuffer: {
+    enqueue: (payload: AgentEventEnvelope) => void;
+    flush: () => void;
+  },
+): Promise<boolean> {
   const store = useAppStore.getState();
+  recoveryEvents.begin(expectedHostInstanceId);
   store.setRehydrating(true);
   try {
     const snap = await fullRehydrate(expectedHostInstanceId);
+    const recovered = recoveryEvents.finish(snap.host.hostInstanceId, snap.watermark);
     useAppStore.getState().completeRehydrate({
       ...snap,
-      lastSequence: hostClient.getLastSequence(),
+      lastSequence: snap.watermark,
     });
+    if (recovered.overflowed) {
+      requestRecovery("recovery event buffer overflowed");
+      return false;
+    }
+    for (const event of recovered.events) {
+      handleHostEvent(event, requestRecovery, agentEventBuffer);
+      if (useAppStore.getState().desynchronized) return false;
+    }
     useAppStore.getState().setHostFatal(null);
+    return true;
   } catch (err) {
+    recoveryEvents.cancel();
     const message = err instanceof Error ? err.message : String(err);
     useAppStore.getState().markDesynchronized(message);
     useAppStore.getState().setHostFatal(message);
@@ -518,6 +538,7 @@ export function App() {
           },
           flush: flushAgentEvents,
         };
+        const recoveryEvents = new RecoveryEventBuffer();
 
         let pendingRecoveryHostId: string | "bootstrap" | null = null;
         let recoveryLoop: Promise<void> | null = null;
@@ -572,7 +593,16 @@ export function App() {
                       packageRevision: selected.packageRevision,
                     });
                   }
-                  await runFullRehydrate(status.hostInstanceId);
+                  const recovered = await runFullRehydrate(
+                    status.hostInstanceId,
+                    recoveryEvents,
+                    requestRecovery,
+                    agentEventBuffer,
+                  );
+                  if (!recovered) {
+                    lastError = new Error("Host recovery was superseded by a newer recovery");
+                    break;
+                  }
                   const hydrated = useAppStore.getState();
                   if (
                     sessionPathToRestore &&
@@ -610,7 +640,18 @@ export function App() {
                         const nextHost = mergeHostIdentity(currentHost, restored);
                         if (nextHost) useAppStore.getState().setHost(nextHost);
                       }
-                      await runFullRehydrate(restored.hostInstanceId);
+                      const restoredRecovery = await runFullRehydrate(
+                        restored.hostInstanceId,
+                        recoveryEvents,
+                        requestRecovery,
+                        agentEventBuffer,
+                      );
+                      if (!restoredRecovery) {
+                        lastError = new Error(
+                          "Host recovery was superseded after session restore",
+                        );
+                        break;
+                      }
                     } else if (restored.error.code === "SESSION_NOT_FOUND") {
                       await persistDesktopSettings({ lastSessionPath: null });
                     } else {
@@ -685,12 +726,14 @@ export function App() {
         unsub = hostClient.onEvent((event) => {
           if (event.event === "host.ready") {
             cancelAgentEvents();
+            recoveryEvents.cancel();
             scheduleRecovery(event.hostInstanceId, "host ready");
             return;
           }
           if (event.event === "host.fatal") {
             hostClient.rejectAllPending(event.payload.error.message);
           }
+          if (recoveryEvents.capture(event)) return;
           handleHostEvent(event, requestRecovery, agentEventBuffer);
         });
         unsubTransportError = hostClient.onTransportError(repairTransport);

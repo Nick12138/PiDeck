@@ -2,6 +2,7 @@
 export const HOST_METHODS = [
   "system.hello",
   "system.getStatus",
+  "system.rehydrate",
   "system.shutdown",
   "workspace.setCurrent",
   "workspace.getCurrent",
@@ -102,6 +103,7 @@ export type SessionPackageContext = NullableSessionContext & {
 
 export type HostOnlyMethod =
   | "system.getStatus"
+  | "system.rehydrate"
   | "system.shutdown"
   | "provider.list"
   | "provider.setEnabled"
@@ -192,6 +194,7 @@ export type MethodContextScope =
 export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "system.hello": "empty",
   "system.getStatus": "host",
+  "system.rehydrate": "host",
   "system.shutdown": "host",
   "workspace.setCurrent": "workspace",
   "workspace.getCurrent": "workspace",

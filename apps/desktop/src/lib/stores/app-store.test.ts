@@ -194,7 +194,7 @@ describe("app-store epoch wiring", () => {
 
     useAppStore.getState().completeRehydrate({
       host: host("h1"),
-      lastSequence: 6, // from hostClient.getLastSequence() after rehydrate
+      lastSequence: 6, // from the atomic Host recovery snapshot
     });
     expect(useAppStore.getState().desynchronized).toBe(false);
     expect(useAppStore.getState().lastSequence).toBe(6);

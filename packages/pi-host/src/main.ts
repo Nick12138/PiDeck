@@ -178,6 +178,16 @@ async function main(): Promise<void> {
     getModelConfigHealth: () => modelConfigHealth,
     capabilities,
     handlers,
+    getRehydrateState: () => {
+      const graph = graphFactory.getGraph();
+      const session = graph?.sessionSnapshot ?? null;
+      return {
+        workspace: graph ? graphFactory.buildWorkspaceSnapshot(graph) : null,
+        session,
+        tools: session?.tools ?? null,
+        packages: graph?.packageSnapshot ?? null,
+      };
+    },
     onShutdown: async () => {
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");

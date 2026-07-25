@@ -208,7 +208,7 @@ export type AppState = EpochState & {
     session?: SessionSnapshot | null;
     packages?: PackageSnapshot | null;
     tools?: ToolSnapshot | null;
-    /** Authoritative sequence watermark after rehydrate (from HostClient). */
+    /** Authoritative event watermark captured with the Host recovery snapshot. */
     lastSequence?: number;
   }) => void;
   clearHostEpoch: (reason: string) => void;

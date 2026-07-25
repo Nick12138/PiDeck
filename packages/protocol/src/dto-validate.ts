@@ -1,7 +1,7 @@
 import { HOST_ERROR_CODES } from "./errors.js";
 import type { HostEventName } from "./events.js";
 import type { HostMethod } from "./methods.js";
-import type { ToolSnapshot } from "./types.js";
+import type { RehydrateSnapshot, ToolSnapshot } from "./types.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -749,6 +749,51 @@ export function isPackageSnapshot(value: unknown): boolean {
   );
 }
 
+export function isRehydrateSnapshot(value: unknown): value is RehydrateSnapshot {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["watermark", "host", "workspace", "session", "tools", "packages"]) ||
+    !isSafeRevision(value.watermark) ||
+    !isHostStatusSnapshot(value.host) ||
+    !(value.workspace === null || isWorkspaceSnapshot(value.workspace)) ||
+    !(value.session === null || isSessionSnapshot(value.session)) ||
+    !(value.tools === null || isToolSnapshot(value.tools)) ||
+    !(value.packages === null || isPackageSnapshot(value.packages))
+  ) {
+    return false;
+  }
+
+  const { host, workspace, session, tools, packages } = value as RehydrateSnapshot;
+  if (workspace === null) {
+    return (
+      host.workspaceId === null &&
+      host.sessionId === null &&
+      session === null &&
+      tools === null &&
+      packages === null
+    );
+  }
+  if (workspace.id !== host.workspaceId || workspace.revision !== host.workspaceRevision) {
+    return false;
+  }
+  if (session === null) {
+    if (host.sessionId !== null || tools !== null) return false;
+  } else if (
+    session.sessionId !== host.sessionId ||
+    session.revision !== host.sessionRevision ||
+    tools === null ||
+    tools.workspaceId !== workspace.id ||
+    tools.sessionId !== session.sessionId ||
+    tools.sessionRevision !== session.revision
+  ) {
+    return false;
+  }
+  return (
+    packages === null ||
+    (packages.workspaceId === workspace.id && packages.revision === host.packageRevision)
+  );
+}
+
 function isPackageMutationResult(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -825,6 +870,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "system.hello":
     case "system.getStatus":
       return isHostStatusSnapshot(result) ? null : "invalid HostStatusSnapshot";
+    case "system.rehydrate":
+      return isRehydrateSnapshot(result) ? null : "invalid RehydrateSnapshot";
     case "system.shutdown":
       return exactAccepted() ? null : "shutdown result must be { accepted: true }";
     case "workspace.setCurrent":

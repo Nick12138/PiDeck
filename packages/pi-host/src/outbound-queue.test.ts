@@ -74,6 +74,32 @@ describe("OutboundWriter", () => {
     expect(parsed[2]!.sequence).toBe(2);
   });
 
+  it("seals pre-snapshot events and returns their exact sequence watermark", async () => {
+    const fake = fakeStream({ stalled: true });
+    const { out } = writer(fake.stream, { softWatermark: 1 });
+
+    out.enqueueEvent(identity, "extensionUi.notification", { message: "hold", level: "info" });
+    await settle();
+    out.enqueueEvent(identity, "host.statusChanged", { phase: "agentBusy" });
+    out.enqueueBarrierResponse((watermark) => ({ ok: true, id: "rehydrate", watermark }));
+    // A same-key event after the barrier must not replace the pre-snapshot event in place.
+    out.enqueueEvent(identity, "host.statusChanged", { phase: "ready" });
+
+    fake.unstall();
+    await out.drain();
+
+    const parsed = fake.parsed();
+    expect(parsed.map((message) => message.sequence ?? message.id)).toEqual([
+      1,
+      2,
+      "rehydrate",
+      3,
+    ]);
+    expect(parsed[2]!.watermark).toBe(2);
+    expect((parsed[1]!.payload as { phase: string }).phase).toBe("agentBusy");
+    expect((parsed[3]!.payload as { phase: string }).phase).toBe("ready");
+  });
+
   it("waits for stream drain when the pipe stalls, then flushes in order", async () => {
     const fake = fakeStream({ stalled: true });
     const { out } = writer(fake.stream);

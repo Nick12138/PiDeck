@@ -84,6 +84,63 @@ describe("PiHostServer.emitForIdentity", () => {
   });
 });
 
+describe("PiHostServer rehydrate barrier", () => {
+  it("returns an atomic no-Workspace snapshot at the preceding event watermark", async () => {
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({
+        state: "ok",
+        source: "ModelRegistry.getError",
+      }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+    });
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(
+      ((chunk: string | Uint8Array) => {
+        lines.push(String(chunk));
+        return true;
+      }) as typeof process.stdout.write,
+    );
+
+    host.emit("host.statusChanged", host.buildStatus());
+    const response = host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "55555555-5555-4555-8555-555555555555",
+        method: "system.rehydrate",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    host.emit("host.statusChanged", host.buildStatus());
+    await response;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const parsed = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(parsed.map((message) => message.sequence ?? message.method)).toEqual([
+      1,
+      "system.rehydrate",
+      2,
+    ]);
+    expect(parsed[1]).toMatchObject({
+      ok: true,
+      result: {
+        watermark: 1,
+        workspace: null,
+        session: null,
+        tools: null,
+        packages: null,
+      },
+    });
+  });
+});
+
 describe("PiHostServer shutdown", () => {
   it("does not dispose the graph while a mutation owns the graph lock", async () => {
     const dispose = vi.fn(async () => {});

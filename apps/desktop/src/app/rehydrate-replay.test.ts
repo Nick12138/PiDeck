@@ -1,0 +1,208 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  HostEventEnvelope,
+  HostStatusSnapshot,
+  RehydrateSnapshot,
+  SessionSnapshot,
+  WorkspaceSnapshot,
+} from "@pideck/protocol";
+import { hostClient } from "../lib/bridge/host-client";
+import { RecoveryEventBuffer } from "../lib/bridge/rehydrate";
+import { useAppStore } from "../lib/stores/app-store";
+import { emptySessionCatalog } from "../lib/stores/session-catalog";
+import { runFullRehydrate } from "./App";
+
+const HOST_ID = "11111111-1111-4111-8111-111111111111";
+const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
+const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+
+function host(): HostStatusSnapshot {
+  return {
+    hostInstanceId: HOST_ID,
+    workspaceId: WORKSPACE_ID,
+    workspaceRevision: 4,
+    sessionId: SESSION_ID,
+    sessionRevision: 6,
+    packageRevision: 3,
+    protocolVersion: 1,
+    sdkVersion: "0.80.7",
+    nodeVersion: "v22",
+    agentDir: "/agent",
+    phase: "agentBusy",
+    capabilities: {
+      packageUpdateCheck: false,
+      extensionUi: true,
+      sessionExport: false,
+    },
+    modelConfigHealth: { state: "ok", source: "ModelRegistry.getError" },
+  };
+}
+
+function workspace(): WorkspaceSnapshot {
+  return {
+    id: WORKSPACE_ID,
+    cwd: "/workspace",
+    canonicalCwd: "/workspace",
+    revision: 4,
+    servicesReady: true,
+  };
+}
+
+function session(content: string): SessionSnapshot {
+  return {
+    sessionId: SESSION_ID,
+    cwd: "/workspace",
+    revision: 6,
+    isStreaming: true,
+    isIdle: false,
+    isCompacting: false,
+    isRetrying: false,
+    thinkingLevel: "off",
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { steering: [], followUp: [] },
+    messages: [{ role: "assistant", content }],
+    tools: {
+      revision: 2,
+      workspaceId: WORKSPACE_ID,
+      sessionId: SESSION_ID,
+      sessionRevision: 6,
+      tools: [],
+      active: [],
+    },
+  };
+}
+
+describe("atomic rehydrate replay", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      host: null,
+      workspace: null,
+      session: null,
+      packages: null,
+      tools: null,
+      desynchronized: false,
+      desyncReason: undefined,
+      lastSequence: 0,
+      rehydrating: false,
+      hostFatal: null,
+      sessionCatalog: emptySessionCatalog(),
+    });
+  });
+
+  it("replays a Session snapshot that arrives after the Host snapshot barrier", async () => {
+    let resolveResponse!: (response: unknown) => void;
+    const response = new Promise((resolve) => {
+      resolveResponse = resolve;
+    });
+    vi.spyOn(hostClient, "request").mockReturnValue(response as never);
+
+    const recoveryEvents = new RecoveryEventBuffer();
+    const requestRecovery = vi.fn();
+    const agentEventBuffer = { enqueue: vi.fn(), flush: vi.fn() };
+    const running = runFullRehydrate(
+      HOST_ID,
+      recoveryEvents,
+      requestRecovery,
+      agentEventBuffer,
+    );
+
+    const latestSession = session("complete transcript");
+    const inFlightEvent = {
+      protocolVersion: 1,
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 4,
+      sessionId: SESSION_ID,
+      sessionRevision: 6,
+      packageRevision: 3,
+      sequence: 11,
+      timestamp: 11,
+      event: "session.snapshot",
+      payload: latestSession,
+    } satisfies HostEventEnvelope<"session.snapshot">;
+    expect(recoveryEvents.capture(inFlightEvent)).toBe(true);
+
+    const snapshot: RehydrateSnapshot = {
+      watermark: 10,
+      host: host(),
+      workspace: workspace(),
+      session: session("partial transcript"),
+      tools: session("partial transcript").tools,
+      packages: {
+        revision: 3,
+        workspaceId: WORKSPACE_ID,
+        scope: "all",
+        configured: [],
+        resources: [],
+        updateCheck: { supported: false },
+        diagnostics: [],
+      },
+    };
+    resolveResponse({ ok: true, result: snapshot });
+    await expect(running).resolves.toBe(true);
+
+    expect(requestRecovery).not.toHaveBeenCalled();
+    expect(useAppStore.getState()).toMatchObject({
+      lastSequence: 11,
+      desynchronized: false,
+      rehydrating: false,
+    });
+    expect(useAppStore.getState().session?.messages).toEqual(latestSession.messages);
+  });
+
+  it("reports overflow as superseded so startup does not continue", async () => {
+    const recoveryEvents = new RecoveryEventBuffer(0);
+    const requestRecovery = vi.fn((reason: string) => {
+      useAppStore.getState().markDesynchronized(reason);
+    });
+    vi.spyOn(hostClient, "request").mockImplementation(async () => {
+      recoveryEvents.capture({
+        protocolVersion: 1,
+        hostInstanceId: HOST_ID,
+        workspaceId: WORKSPACE_ID,
+        workspaceRevision: 4,
+        sessionId: SESSION_ID,
+        sessionRevision: 6,
+        packageRevision: 3,
+        sequence: 11,
+        timestamp: 11,
+        event: "session.snapshot",
+        payload: session("complete transcript"),
+      });
+      return {
+        ok: true,
+        result: {
+          watermark: 10,
+          host: host(),
+          workspace: workspace(),
+          session: session("partial transcript"),
+          tools: session("partial transcript").tools,
+          packages: {
+            revision: 3,
+            workspaceId: WORKSPACE_ID,
+            scope: "all",
+            configured: [],
+            resources: [],
+            updateCheck: { supported: false },
+            diagnostics: [],
+          },
+        },
+      } as never;
+    });
+
+    const recovered = await runFullRehydrate(
+      HOST_ID,
+      recoveryEvents,
+      requestRecovery,
+      { enqueue: vi.fn(), flush: vi.fn() },
+    );
+
+    expect(recovered).toBe(false);
+    expect(requestRecovery).toHaveBeenCalledWith("recovery event buffer overflowed");
+    expect(useAppStore.getState().desynchronized).toBe(true);
+  });
+});

@@ -44,11 +44,13 @@ import type {
   DiscoveredProviderModel,
   ProviderConnectionResult,
   CommandSummary,
+  RehydrateSnapshot,
 } from "./types.js";
 
 export type HostContextMap = {
   "system.hello": EmptyContext;
   "system.getStatus": HostContext;
+  "system.rehydrate": HostContext;
   "system.shutdown": HostContext;
   "workspace.setCurrent": WorkspaceContext;
   "workspace.getCurrent": WorkspaceContext;
@@ -111,6 +113,7 @@ export type HostContextMap = {
 export type HostRequestParams = {
   "system.hello": { clientName: string; clientVersion: string; protocolVersion: 1 };
   "system.getStatus": null;
+  "system.rehydrate": null;
   "system.shutdown": null;
   "workspace.setCurrent": { cwd: string };
   "workspace.getCurrent": null;
@@ -189,6 +192,7 @@ export type HostRequestParams = {
 export type HostResultMap = {
   "system.hello": HostStatusSnapshot;
   "system.getStatus": HostStatusSnapshot;
+  "system.rehydrate": RehydrateSnapshot;
   "system.shutdown": { accepted: true };
   "workspace.setCurrent": {
     workspace: WorkspaceSnapshot;

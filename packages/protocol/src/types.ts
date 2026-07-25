@@ -379,6 +379,16 @@ export type PackageSnapshot = {
   };
 };
 
+export type RehydrateSnapshot = {
+  /** Highest Host event sequence reflected by this composite snapshot. */
+  watermark: number;
+  host: HostStatusSnapshot;
+  workspace: WorkspaceSnapshot | null;
+  session: SessionSnapshot | null;
+  tools: ToolSnapshot | null;
+  packages: PackageSnapshot | null;
+};
+
 export type PackageMutationResult = {
   operationId: string;
   status: "committed" | "partialFailure" | "failed";
