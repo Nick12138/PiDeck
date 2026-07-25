@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   bindExtensionUi,
   createExtensionUiContext,
+  createExtensionUiHandlers,
   respondExtensionUi,
   cancelPendingForIdentity,
   cancelAllPending,
@@ -21,6 +22,33 @@ const id: HostIdentity = {
 
 const COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000006";
 const NEXT_COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000007";
+
+function targetContext(identity: HostIdentity = id) {
+  return {
+    expectedHostInstanceId: identity.hostInstanceId,
+    expectedWorkspaceId: identity.workspaceId,
+    expectedWorkspaceRevision: identity.workspaceRevision,
+    expectedSessionId: identity.sessionId,
+    expectedSessionRevision: identity.sessionRevision,
+  };
+}
+
+function extensionUiHandlers() {
+  const checkIdentity = vi.fn(
+    (_context: unknown, requirements: { requireSession?: boolean }) =>
+      requirements.requireSession
+        ? {
+            code: "STALE_REVISION",
+            message: "Target Session is not active",
+            retryable: true,
+          }
+        : null,
+  );
+  return {
+    checkIdentity,
+    handlers: createExtensionUiHandlers({ checkIdentity } as never),
+  };
+}
 
 describe("extension-ui-bridge", () => {
   it("select uses positional title/options and returns option string", async () => {
@@ -94,6 +122,49 @@ describe("extension-ui-bridge", () => {
 
     cancelPendingForIdentity(nextId);
     await expect(secondPending).resolves.toBeUndefined();
+  });
+
+  it("accepts a background dialog only from its captured target identity", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingInput = ui.input("Background", "value");
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    const { checkIdentity, handlers } = extensionUiHandlers();
+    const wrongIdentity = {
+      ...targetContext(),
+      expectedSessionId: NEXT_COMMAND_RUN_ID,
+      expectedSessionRevision: 9,
+    };
+
+    const rejected = await handlers["extensionUi.respond"]!({
+      id: "wrong-dialog",
+      context: wrongIdentity,
+      params: { requestId: request.requestId, status: "resolved", value: "wrong" },
+    } as never);
+    expect("error" in rejected && rejected.error.code).toBe("STALE_REVISION");
+    let settled = false;
+    void pendingInput.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    const accepted = await handlers["extensionUi.respond"]!({
+      id: "correct-dialog",
+      context: targetContext(),
+      params: { requestId: request.requestId, status: "resolved", value: "done" },
+    } as never);
+    expect("error" in accepted).toBe(false);
+    await expect(pendingInput).resolves.toBe("done");
+    expect(checkIdentity).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ requireSession: true }),
+    );
   });
 
   it("notify is non-blocking", () => {
@@ -340,10 +411,74 @@ describe("extension-ui-bridge", () => {
     ui!.notify("promoted", "info");
 
     expect(events.at(-1)?.identity.sessionRevision).toBe(promoted.sessionRevision);
+    expect(respondExtensionUi(request.requestId, "resolved", "stale", id)).toBe(false);
     expect(
       respondExtensionUi(request.requestId, "resolved", "done", promoted),
     ).toBe(true);
     await expect(pendingInput).resolves.toBe("done");
+    binding.cleanup();
+  });
+
+  it("migrates custom panel ownership to a promoted Session identity", async () => {
+    const promoted = { ...id, sessionRevision: id.sessionRevision + 1 };
+    const events: Array<{ identity: HostIdentity; e: HostEventName; p: unknown }> = [];
+    const received: string[] = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => {},
+      emitForIdentity: (identity, e, p) => events.push({ identity, e, p }),
+      getIdentity: () => id,
+    });
+    const publish = await binding.activate();
+    publish();
+
+    const panel = ui!.custom<string>((_tui, _theme, _keybindings, done) => ({
+      render: () => ["waiting"],
+      invalidate: () => {},
+      handleInput: (data: string) => {
+        received.push(data);
+        done(data);
+      },
+    }));
+    await Promise.resolve();
+    const started = events.find((event) => event.e === "extensionUi.customStarted")?.p as {
+      requestId: string;
+    };
+    const { handlers } = extensionUiHandlers();
+
+    binding.updateIdentity(promoted);
+    const staleResize = await handlers["extensionUi.customResize"]!({
+      id: "stale-resize-after-promotion",
+      context: targetContext(id),
+      params: { requestId: started.requestId, cols: 100, rows: 30 },
+    } as never);
+    const staleInput = await handlers["extensionUi.customInput"]!({
+      id: "stale-input-after-promotion",
+      context: targetContext(id),
+      params: { requestId: started.requestId, data: "stale" },
+    } as never);
+    expect("error" in staleResize && staleResize.error.code).toBe("STALE_REVISION");
+    expect("error" in staleInput && staleInput.error.code).toBe("STALE_REVISION");
+    expect(received).toEqual([]);
+
+    const promotedResize = await handlers["extensionUi.customResize"]!({
+      id: "promoted-resize",
+      context: targetContext(promoted),
+      params: { requestId: started.requestId, cols: 120, rows: 40 },
+    } as never);
+    const promotedInput = await handlers["extensionUi.customInput"]!({
+      id: "promoted-input",
+      context: targetContext(promoted),
+      params: { requestId: started.requestId, data: "accepted" },
+    } as never);
+    expect("error" in promotedResize).toBe(false);
+    expect("error" in promotedInput).toBe(false);
+    await expect(panel).resolves.toBe("accepted");
     binding.cleanup();
   });
 
@@ -394,14 +529,64 @@ describe("extension-ui-bridge", () => {
     ).toBe(true);
 
     // Input injected through the handler path reaches the focused component.
-    const okInput = injectExtensionCustomInput(started.requestId, "\r");
+    const okInput = injectExtensionCustomInput(started.requestId, "\r", id);
     expect(okInput).toBe(true);
     expect(received).toEqual(["\r"]);
     await expect(panel).resolves.toBe("picked:\r");
     expect(events.some((x) => x.e === "extensionUi.customClosed")).toBe(true);
 
     // Panel is gone — further input is rejected.
-    expect(injectExtensionCustomInput(started.requestId, "x")).toBe(false);
+    expect(injectExtensionCustomInput(started.requestId, "x", id)).toBe(false);
+  });
+
+  it("rejects custom input and resize from a different target Session", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const received: string[] = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const panel = ui.custom((_tui, _theme, _keybindings, done) => ({
+      render: () => ["waiting"],
+      invalidate: () => {},
+      handleInput: (data: string) => {
+        received.push(data);
+        done(undefined);
+      },
+    }));
+    await Promise.resolve();
+    const started = events.find((event) => event.e === "extensionUi.customStarted")?.p as {
+      requestId: string;
+    };
+    const { handlers } = extensionUiHandlers();
+    const wrongIdentity = {
+      ...targetContext(),
+      expectedSessionId: NEXT_COMMAND_RUN_ID,
+      expectedSessionRevision: 9,
+    };
+
+    const inputRejected = await handlers["extensionUi.customInput"]!({
+      id: "wrong-input",
+      context: wrongIdentity,
+      params: { requestId: started.requestId, data: "wrong" },
+    } as never);
+    const resizeRejected = await handlers["extensionUi.customResize"]!({
+      id: "wrong-resize",
+      context: wrongIdentity,
+      params: { requestId: started.requestId, cols: 120, rows: 40 },
+    } as never);
+    expect("error" in inputRejected && inputRejected.error.code).toBe("STALE_REVISION");
+    expect("error" in resizeRejected && resizeRejected.error.code).toBe("STALE_REVISION");
+    expect(received).toEqual([]);
+
+    const inputAccepted = await handlers["extensionUi.customInput"]!({
+      id: "correct-input",
+      context: targetContext(),
+      params: { requestId: started.requestId, data: "correct" },
+    } as never);
+    expect("error" in inputAccepted).toBe(false);
+    expect(received).toEqual(["correct"]);
+    await expect(panel).resolves.toBeUndefined();
   });
 
   it("custom() cancels via identity cleanup and emits customClosed", async () => {
@@ -463,7 +648,7 @@ describe("extension-ui-bridge", () => {
       requestId: string;
     };
 
-    expect(injectExtensionCustomInput(started.requestId, "\u0003")).toBe(true);
+    expect(injectExtensionCustomInput(started.requestId, "\u0003", id)).toBe(true);
     await expect(extensionFlow).resolves.toBeUndefined();
     expect(events.some((x) => x.e === "extensionUi.customClosed")).toBe(true);
   });

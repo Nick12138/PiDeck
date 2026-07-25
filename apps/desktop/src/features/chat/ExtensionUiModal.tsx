@@ -2,6 +2,7 @@ import type { JsonValue } from "@pideck/protocol";
 import { useEffect, useId, useRef, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 
 export function ExtensionUiModal() {
   const request = useAppStore((s) => s.extensionUiRequest);
@@ -41,9 +42,15 @@ export function ExtensionUiModal() {
     if (!request || submitting) return;
     setSubmitting(true);
     try {
+      const state = useAppStore.getState();
       const res = await hostClient.request(
         "extensionUi.respond",
-        request.context,
+        latestSessionTargetContext(
+          request.context,
+          state.host,
+          state.workspace,
+          state.session,
+        ),
         { requestId: request.requestId, status, value },
       );
       if (!res.ok) {

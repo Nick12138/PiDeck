@@ -10,6 +10,7 @@ import type {
   NullableSessionContext,
   SessionPackageContext,
   SessionSnapshot,
+  SessionTargetContext,
   ToolMutationContext,
   WorkspaceContext,
   WorkspacePackageContext,
@@ -54,6 +55,28 @@ export function activeSessionContext(
     expectedSessionId: session.sessionId,
     expectedSessionRevision: session.revision,
   };
+}
+
+/** Follow Host-side identity migration when a captured Extension UI target is promoted. */
+export function latestSessionTargetContext(
+  captured: SessionTargetContext,
+  host: HostStatusSnapshot | null,
+  workspace: WorkspaceSnapshot | null,
+  session: SessionSnapshot | null,
+): SessionTargetContext {
+  if (
+    !host ||
+    !workspace ||
+    !session ||
+    host.hostInstanceId !== captured.expectedHostInstanceId ||
+    workspace.id !== captured.expectedWorkspaceId ||
+    workspace.revision !== captured.expectedWorkspaceRevision ||
+    session.sessionId !== captured.expectedSessionId ||
+    session.revision < captured.expectedSessionRevision
+  ) {
+    return captured;
+  }
+  return activeSessionContext(host, workspace, session);
 }
 
 export function toolMutationContext(

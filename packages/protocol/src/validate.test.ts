@@ -44,6 +44,12 @@ describe("METHOD_CONTEXT_SCOPE coverage", () => {
     const keys = Object.keys(METHOD_CONTEXT_SCOPE);
     expect(keys.sort()).toEqual([...HOST_METHODS].sort());
   });
+
+  it("classifies Extension UI interactions as target-Session methods", () => {
+    expect(METHOD_CONTEXT_SCOPE["extensionUi.respond"]).toBe("sessionTarget");
+    expect(METHOD_CONTEXT_SCOPE["extensionUi.customInput"]).toBe("sessionTarget");
+    expect(METHOD_CONTEXT_SCOPE["extensionUi.customResize"]).toBe("sessionTarget");
+  });
 });
 
 describe("parseHostRequest", () => {

@@ -26,6 +26,7 @@ import {
   createHostError,
   type HostEventName,
   type HostIdentity,
+  type SessionTargetContext,
 } from "@pideck/protocol";
 import type { MethodHandler as ServerMethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
@@ -40,20 +41,64 @@ import {
 type PendingUi = {
   requestId: string;
   kind: string;
-  hostInstanceId: string;
-  workspaceId: string | null;
-  workspaceRevision: number;
-  sessionId: string | null;
-  sessionRevision: number;
+  owner: ExtensionUiOwner;
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout> | undefined;
 };
 
+export type ExtensionUiOwner = Pick<
+  HostIdentity,
+  | "hostInstanceId"
+  | "workspaceId"
+  | "workspaceRevision"
+  | "sessionId"
+  | "sessionRevision"
+>;
+
+type ActiveCustom = {
+  terminal: VirtualTerminal;
+  owner: ExtensionUiOwner;
+};
+
 const pending = new Map<string, PendingUi>();
 
 /** Live ui.custom() panels — routes extensionUi.customInput/customResize to the virtual terminal. */
-const activeCustoms = new Map<string, VirtualTerminal>();
+const activeCustoms = new Map<string, ActiveCustom>();
+
+function ownerFromIdentity(identity: HostIdentity): ExtensionUiOwner {
+  return {
+    hostInstanceId: identity.hostInstanceId,
+    workspaceId: identity.workspaceId,
+    workspaceRevision: identity.workspaceRevision,
+    sessionId: identity.sessionId,
+    sessionRevision: identity.sessionRevision,
+  };
+}
+
+function ownerFromTargetContext(context: SessionTargetContext): ExtensionUiOwner {
+  return {
+    hostInstanceId: context.expectedHostInstanceId,
+    workspaceId: context.expectedWorkspaceId,
+    workspaceRevision: context.expectedWorkspaceRevision,
+    sessionId: context.expectedSessionId,
+    sessionRevision: context.expectedSessionRevision,
+  };
+}
+
+function ownerMatches(left: ExtensionUiOwner, right: ExtensionUiOwner): boolean {
+  return (
+    left.hostInstanceId === right.hostInstanceId &&
+    left.workspaceId === right.workspaceId &&
+    left.workspaceRevision === right.workspaceRevision &&
+    left.sessionId === right.sessionId &&
+    left.sessionRevision === right.sessionRevision
+  );
+}
+
+function replaceOwner(target: ExtensionUiOwner, identity: HostIdentity): void {
+  Object.assign(target, ownerFromIdentity(identity));
+}
 
 export type ExtensionUiBridgeOptions = {
   emit: (event: HostEventName, payload: unknown) => void;
@@ -308,11 +353,7 @@ export function createExtensionUiContext(
       pending.set(requestId, {
         requestId,
         kind,
-        hostInstanceId: id.hostInstanceId,
-        workspaceId: id.workspaceId,
-        workspaceRevision: id.workspaceRevision,
-        sessionId: id.sessionId,
-        sessionRevision: id.sessionRevision,
+        owner: ownerFromIdentity(id),
         resolve,
         reject,
         timer,
@@ -519,6 +560,7 @@ export function createExtensionUiContext(
       if (opts.isDisposed?.()) return undefined as T;
       const requestId = randomUUID();
       const id = identityAt();
+      const owner = ownerFromIdentity(id);
       return await new Promise<T>((resolveOuter, rejectOuter) => {
         let frameBuffer = "";
         let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -573,16 +615,12 @@ export function createExtensionUiContext(
         pending.set(requestId, {
           requestId,
           kind: "custom",
-          hostInstanceId: id.hostInstanceId,
-          workspaceId: id.workspaceId,
-          workspaceRevision: id.workspaceRevision,
-          sessionId: id.sessionId,
-          sessionRevision: id.sessionRevision,
+          owner,
           resolve: (value) => finish(value),
           reject: (err) => failure(err),
           timer: undefined,
         });
-        activeCustoms.set(requestId, vt);
+        activeCustoms.set(requestId, { terminal: vt, owner });
 
         opts.emit("extensionUi.customStarted", {
           requestId,
@@ -798,53 +836,31 @@ export async function bindExtensionUi(
     },
     updateIdentity: (identity) => {
       const next = { ...identity };
-      migratePendingIdentity(bindingIdentity, next);
+      migrateExtensionUiIdentity(bindingIdentity, next);
       bindingIdentity = next;
     },
   };
 }
 
-function migratePendingIdentity(from: HostIdentity, to: HostIdentity): void {
-  for (const pendingRequest of pending.values()) {
-    if (
-      pendingRequest.hostInstanceId !== from.hostInstanceId ||
-      pendingRequest.workspaceId !== from.workspaceId ||
-      pendingRequest.workspaceRevision !== from.workspaceRevision ||
-      pendingRequest.sessionId !== from.sessionId ||
-      pendingRequest.sessionRevision !== from.sessionRevision
-    ) {
-      continue;
-    }
-    pendingRequest.hostInstanceId = to.hostInstanceId;
-    pendingRequest.workspaceId = to.workspaceId;
-    pendingRequest.workspaceRevision = to.workspaceRevision;
-    pendingRequest.sessionId = to.sessionId;
-    pendingRequest.sessionRevision = to.sessionRevision;
+function migrateExtensionUiIdentity(from: HostIdentity, to: HostIdentity): void {
+  const fromOwner = ownerFromIdentity(from);
+  const owners = new Set<ExtensionUiOwner>();
+  for (const pendingRequest of pending.values()) owners.add(pendingRequest.owner);
+  for (const activeCustom of activeCustoms.values()) owners.add(activeCustom.owner);
+  for (const owner of owners) {
+    if (ownerMatches(owner, fromOwner)) replaceOwner(owner, to);
   }
 }
 
 export function respondExtensionUi(
   requestId: string,
   status: "resolved" | "cancelled",
-  value?: unknown,
-  expectedIdentity?: HostIdentity,
+  value: unknown | undefined,
+  expectedOwner: ExtensionUiOwner,
 ): boolean {
   const p = pending.get(requestId);
   if (!p) return false;
-  if (expectedIdentity) {
-    if (
-      p.hostInstanceId !== expectedIdentity.hostInstanceId ||
-      p.workspaceId !== expectedIdentity.workspaceId ||
-      p.workspaceRevision !== expectedIdentity.workspaceRevision ||
-      p.sessionId !== expectedIdentity.sessionId ||
-      p.sessionRevision !== expectedIdentity.sessionRevision
-    ) {
-      clearTimeout(p.timer);
-      pending.delete(requestId);
-      p.resolve(undefined);
-      return false;
-    }
-  }
+  if (!ownerMatches(p.owner, expectedOwner)) return false;
   clearTimeout(p.timer);
   pending.delete(requestId);
   if (status === "cancelled") {
@@ -856,16 +872,9 @@ export function respondExtensionUi(
 }
 
 export function cancelPendingForIdentity(identity: HostIdentity): void {
+  const owner = ownerFromIdentity(identity);
   for (const [requestId, p] of pending) {
-    if (
-      p.hostInstanceId !== identity.hostInstanceId ||
-      p.workspaceId !== identity.workspaceId ||
-      p.workspaceRevision !== identity.workspaceRevision ||
-      p.sessionId !== identity.sessionId ||
-      p.sessionRevision !== identity.sessionRevision
-    ) {
-      continue;
-    }
+    if (!ownerMatches(p.owner, owner)) continue;
     clearTimeout(p.timer);
     p.resolve(undefined);
     pending.delete(requestId);
@@ -881,10 +890,14 @@ export function cancelAllPending(_reason: string): void {
 }
 
 /** Route frontend keyboard/paste data into a live custom panel. False if unknown/closed. */
-export function injectExtensionCustomInput(requestId: string, data: string): boolean {
-  const vt = activeCustoms.get(requestId);
-  if (!vt) return false;
-  vt.input(data);
+export function injectExtensionCustomInput(
+  requestId: string,
+  data: string,
+  expectedOwner: ExtensionUiOwner,
+): boolean {
+  const active = activeCustoms.get(requestId);
+  if (!active || !ownerMatches(active.owner, expectedOwner)) return false;
+  active.terminal.input(data);
   return true;
 }
 
@@ -893,10 +906,11 @@ export function resizeExtensionCustom(
   requestId: string,
   cols: number,
   rows: number,
+  expectedOwner: ExtensionUiOwner,
 ): boolean {
-  const vt = activeCustoms.get(requestId);
-  if (!vt) return false;
-  vt.resize(cols, rows);
+  const active = activeCustoms.get(requestId);
+  if (!active || !ownerMatches(active.owner, expectedOwner)) return false;
+  active.terminal.resize(cols, rows);
   return true;
 }
 
@@ -919,6 +933,7 @@ export function createExtensionUiHandlers(
         params.requestId,
         params.status,
         params.value,
+        ownerFromTargetContext(ctx.context as SessionTargetContext),
       );
       if (!ok) {
         return {
@@ -937,7 +952,13 @@ export function createExtensionUiHandlers(
       if (stale) return { error: stale };
 
       const params = ctx.params as { requestId: string; data: string };
-      if (!injectExtensionCustomInput(params.requestId, params.data)) {
+      if (
+        !injectExtensionCustomInput(
+          params.requestId,
+          params.data,
+          ownerFromTargetContext(ctx.context as SessionTargetContext),
+        )
+      ) {
         return {
           error: createHostError(
             "STALE_REVISION",
@@ -954,7 +975,14 @@ export function createExtensionUiHandlers(
       if (stale) return { error: stale };
 
       const params = ctx.params as { requestId: string; cols: number; rows: number };
-      if (!resizeExtensionCustom(params.requestId, params.cols, params.rows)) {
+      if (
+        !resizeExtensionCustom(
+          params.requestId,
+          params.cols,
+          params.rows,
+          ownerFromTargetContext(ctx.context as SessionTargetContext),
+        )
+      ) {
         return {
           error: createHostError(
             "STALE_REVISION",

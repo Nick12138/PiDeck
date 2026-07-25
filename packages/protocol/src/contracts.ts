@@ -9,6 +9,7 @@ import type {
   HostContext,
   WorkspaceContext,
   ActiveSessionContext,
+  SessionTargetContext,
   NullableSessionContext,
   ToolMutationContext,
   WorkspacePackageContext,
@@ -107,9 +108,9 @@ export type HostContextMap = {
   "resource.setPreferences": SessionPackageContext;
   "piSettings.get": WorkspaceContext;
   "piSettings.patch": NullableSessionContext;
-  "extensionUi.respond": ActiveSessionContext;
-  "extensionUi.customInput": ActiveSessionContext;
-  "extensionUi.customResize": ActiveSessionContext;
+  "extensionUi.respond": SessionTargetContext;
+  "extensionUi.customInput": SessionTargetContext;
+  "extensionUi.customResize": SessionTargetContext;
 };
 
 export type HostRequestParams = {

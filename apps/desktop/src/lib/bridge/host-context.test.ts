@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { HostIdentity, HostStatusSnapshot } from "@pideck/protocol";
+import type {
+  HostIdentity,
+  HostStatusSnapshot,
+  SessionSnapshot,
+  WorkspaceSnapshot,
+} from "@pideck/protocol";
 import {
   captureRequestGeneration,
   isCurrentRequestGeneration,
+  latestSessionTargetContext,
   mergeHostIdentity,
 } from "./host-context";
 
@@ -111,5 +117,40 @@ describe("request generation guards", () => {
         { session: true, packages: true },
       ),
     ).toBe(false);
+  });
+});
+
+describe("latestSessionTargetContext", () => {
+  const workspace = {
+    id: current.workspaceId,
+    revision: current.workspaceRevision,
+  } as WorkspaceSnapshot;
+  const session = {
+    sessionId: current.sessionId,
+    revision: current.sessionRevision,
+  } as SessionSnapshot;
+  const captured = {
+    expectedHostInstanceId: current.hostInstanceId,
+    expectedWorkspaceId: current.workspaceId,
+    expectedWorkspaceRevision: current.workspaceRevision,
+    expectedSessionId: current.sessionId!,
+    expectedSessionRevision: current.sessionRevision - 1,
+  };
+
+  it("uses the promoted identity for the same Session target", () => {
+    expect(latestSessionTargetContext(captured, current, workspace, session)).toEqual({
+      ...captured,
+      expectedSessionRevision: current.sessionRevision,
+    });
+  });
+
+  it("preserves a background Session target instead of retargeting to the foreground", () => {
+    const otherSession = {
+      ...session,
+      sessionId: "44444444-4444-4444-8444-444444444444",
+    };
+    expect(latestSessionTargetContext(captured, current, workspace, otherSession)).toBe(
+      captured,
+    );
   });
 });

@@ -56,6 +56,15 @@ Blocking: select / confirm / input / editor via `extensionUi.request` + `extensi
 Non-blocking: status, widget, notify.  
 Cancel / timeout / session dispose → `undefined` (or confirm false).
 
+Blocking requests and custom panels retain the Session identity captured by their
+Host event, so a running background Session remains interactive without becoming
+the RPC's active Session. Response, input, and resize RPCs use the `sessionTarget`
+scope and must match the owner bound to their `requestId`; a foreign or stale call
+has no side effects. When a background Runtime is promoted, the Host migrates the
+dialog and custom-panel owners to the new Session revision. The desktop follows
+that revision only when the foreground snapshot is for the same Session id, and
+otherwise keeps the captured background target.
+
 ## Copy / keyboard
 
 - Explicit Copy button copies full message.

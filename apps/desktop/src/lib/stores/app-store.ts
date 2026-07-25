@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type {
   DesktopSettings,
-  ActiveSessionContext,
+  SessionTargetContext,
   ExtensionUiRequest,
   HostStatusSnapshot,
   PackageMutationResult,
@@ -47,7 +47,7 @@ export type PackageRetryState = {
 };
 
 export type ExtensionUiRequestState = ExtensionUiRequest & {
-  context: ActiveSessionContext;
+  context: SessionTargetContext;
   expiresAt?: number;
 };
 
@@ -100,7 +100,7 @@ export type ExtensionTerminalState = {
   title?: string;
   cols: number;
   rows: number;
-  context: ActiveSessionContext;
+  context: SessionTargetContext;
 };
 
 export type AppNotification = {

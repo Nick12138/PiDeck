@@ -17,6 +17,16 @@ Every Host process has a new `hostInstanceId`. Monotonic:
 
 Frontend **must drop** events/responses with mismatched `hostInstanceId`. Stale expected identity returns `STALE_REVISION`.
 
+Session-scoped method contexts distinguish the current foreground Session from a
+specific Session target. `activeSession` methods must address the current Session.
+`sessionTarget` is used by `extensionUi.respond`, `extensionUi.customInput`, and
+`extensionUi.customResize`; it can address a foreground or retained background
+Session. The Host first validates the current Host/Workspace generation, then
+requires the request context to exactly match the owner captured for that
+Extension UI `requestId`. A mismatch returns `STALE_REVISION` without resolving,
+closing, injecting input into, or resizing the legitimate request. Session
+promotion migrates the request owner to the promoted Session revision.
+
 Queue replacement and clearing additionally require `expectedRevision`. A mismatch
 returns `STALE_REVISION` before the SDK queue is mutated. Queue snapshots in Session
 snapshots, mutation responses, and `agent.queueChanged` all carry the same revision.

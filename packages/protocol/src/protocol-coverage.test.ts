@@ -187,6 +187,7 @@ function contextFor(method: HostMethod): Record<string, unknown> {
     case "nullableSession":
       return nullSessCtx();
     case "activeSession":
+    case "sessionTarget":
       return activeSessCtx();
     case "toolMutation":
       return toolCtx();

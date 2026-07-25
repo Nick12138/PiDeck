@@ -154,9 +154,9 @@ describe("extension UI real loader + bindExtensions path", () => {
           // Wait for the component to gain focus and the first frame to flush,
           // then pick the second option: down arrow + enter.
           await new Promise((r) => setTimeout(r, 100));
-          injectExtensionCustomInput(payload.requestId, "\x1b[B");
+          injectExtensionCustomInput(payload.requestId, "\x1b[B", identity);
           await new Promise((r) => setTimeout(r, 50));
-          injectExtensionCustomInput(payload.requestId, "\r");
+          injectExtensionCustomInput(payload.requestId, "\r", identity);
         }
       }
     })();

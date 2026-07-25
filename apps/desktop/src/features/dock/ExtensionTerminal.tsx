@@ -3,7 +3,7 @@ import {
   type ExtensionTerminalState,
 } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { activeSessionContext } from "../../lib/bridge/host-context";
+import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import {
   clearExtensionTerminal,
   subscribeExtensionTerminal,
@@ -13,19 +13,11 @@ import { XtermSurface } from "./XtermSurface";
 /**
  * Use the freshest identity for the panel's session — the host migrates
  * pending panels across revision bumps, so a stale captured context would
- * fail checkIdentity even though the panel is still alive.
+ * fail request-owner matching even though the panel is still alive.
  */
 function panelContext(panel: ExtensionTerminalState) {
   const s = useAppStore.getState();
-  if (
-    s.host &&
-    s.workspace &&
-    s.session &&
-    s.session.sessionId === panel.context.expectedSessionId
-  ) {
-    return activeSessionContext(s.host, s.workspace, s.session);
-  }
-  return panel.context;
+  return latestSessionTargetContext(panel.context, s.host, s.workspace, s.session);
 }
 
 /**

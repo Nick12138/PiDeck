@@ -85,6 +85,9 @@ export type ActiveSessionContext = WorkspaceContext & {
   expectedSessionRevision: number;
 };
 
+/** Identifies a concrete foreground or background Session generation. */
+export type SessionTargetContext = ActiveSessionContext;
+
 export type NullableSessionContext = WorkspaceContext & {
   expectedSessionId: string | null;
   expectedSessionRevision: number;
@@ -150,7 +153,8 @@ export type ActiveSessionMethod =
   | "agent.getTools"
   | "model.list"
   | "model.setCurrent"
-  | "model.setThinkingLevel"
+  | "model.setThinkingLevel";
+export type SessionTargetMethod =
   | "extensionUi.respond"
   | "extensionUi.customInput"
   | "extensionUi.customResize";
@@ -174,13 +178,15 @@ export type HostRequestContext<M extends HostMethod> = M extends "system.hello"
         ? NullableSessionContext
         : M extends ActiveSessionMethod
           ? ActiveSessionContext
-          : M extends ToolMutationMethod
-            ? ToolMutationContext
-            : M extends "package.getResources"
-              ? WorkspacePackageContext
-              : M extends SessionPackageMethod
-                ? SessionPackageContext
-                : never;
+          : M extends SessionTargetMethod
+            ? SessionTargetContext
+            : M extends ToolMutationMethod
+              ? ToolMutationContext
+              : M extends "package.getResources"
+                ? WorkspacePackageContext
+                : M extends SessionPackageMethod
+                  ? SessionPackageContext
+                  : never;
 
 /** Context scope for each method — used by runtime validators */
 export type MethodContextScope =
@@ -189,6 +195,7 @@ export type MethodContextScope =
   | "workspace"
   | "nullableSession"
   | "activeSession"
+  | "sessionTarget"
   | "toolMutation"
   | "workspacePackage"
   | "sessionPackage";
@@ -252,7 +259,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "resource.setPreferences": "sessionPackage",
   "piSettings.get": "workspace",
   "piSettings.patch": "nullableSession",
-  "extensionUi.respond": "activeSession",
-  "extensionUi.customInput": "activeSession",
-  "extensionUi.customResize": "activeSession",
+  "extensionUi.respond": "sessionTarget",
+  "extensionUi.customInput": "sessionTarget",
+  "extensionUi.customResize": "sessionTarget",
 };

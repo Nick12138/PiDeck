@@ -131,7 +131,9 @@ export function validateMethodContext<M extends HostMethod>(
       ? ["expectedHostInstanceId"]
       : scope === "workspace"
         ? [...workspaceFields]
-        : scope === "nullableSession" || scope === "activeSession"
+        : scope === "nullableSession" ||
+            scope === "activeSession" ||
+            scope === "sessionTarget"
           ? [...sessionFields]
           : scope === "toolMutation"
             ? [...sessionFields, "expectedToolRevision"]
@@ -160,7 +162,11 @@ export function validateMethodContext<M extends HostMethod>(
     return { ok: true, value: context as HostContextMap[M] };
   }
 
-  if (scope === "activeSession" || scope === "toolMutation") {
+  if (
+    scope === "activeSession" ||
+    scope === "sessionTarget" ||
+    scope === "toolMutation"
+  ) {
     if (!isUuid(context.expectedSessionId)) {
       return fail("expectedSessionId must be UUID", { method });
     }
