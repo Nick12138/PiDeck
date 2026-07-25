@@ -5,13 +5,17 @@
 - Node.js `>= 22.19.0`
 - pnpm `9.x`
 - Rust stable + [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (for desktop)
-- Windows 11 x64 for P0 acceptance
+- Windows 11 x64 or Apple Silicon macOS for source development
+
+Windows desktop development requires Microsoft C++ Build Tools with the
+**Desktop development with C++** workload and WebView2. macOS desktop
+development requires Xcode Command Line Tools (`xcode-select --install`).
+The repository does not currently claim Linux support.
 
 ## Install
 
 ```bash
-cd PiDesktop
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 Lockfile: `pnpm-lock.yaml` (committed). SDK pin: `@earendil-works/pi-coding-agent@0.80.7`.
@@ -36,15 +40,16 @@ proposing it upstream.
 | `pnpm build` | Build all JS packages |
 | `pnpm verify:quick` | Docs + typecheck + unit/Host integration tests for local iteration |
 | `pnpm verify:p0` | Pull-request P0 gate: quick + production frontend build + Rust tests |
-| `pnpm package:release` | Build a development installer candidate |
+| `pnpm package:release` | Build a Windows x64 NSIS development candidate (Windows only) |
 | `pnpm dev:host` | Run Pi Host (JSONL on stdio) |
 | `pnpm spike:sidecar` | M0 Extension load spike |
 | `pnpm dev:desktop` | Vite UI only |
 | `pnpm --filter @pideck/desktop tauri:dev` | Full desktop |
+| `pnpm dev:fast` | Reuse a compiled debug binary for faster Windows iteration (Windows only) |
 
 `verify:p0` is intentionally broader than the lightweight local gate, but it
-is still not installer evidence. Release-grade automation is deferred during
-initial development; see [P0 scope](./p0-scope.md).
+is still not installer evidence. It has run successfully on Apple Silicon
+macOS and is the tracked CI gate on Windows. See [P0 scope](./p0-scope.md).
 
 The Rust gate uses the isolated
 `apps/desktop/src-tauri/target/verify-rust` directory. This keeps P0
@@ -55,21 +60,30 @@ directory is open.
 
 All write tests **must** set:
 
-```bash
+```powershell
 # PowerShell
 $env:PI_CODING_AGENT_DIR = "$env:TEMP\pideck-test-agent"
 ```
 
 Or pass `--agent-dir=<path>` to the host. Never point tests at real `~/.pi/agent` for mutations.
 
-## Manual host smoke
+On macOS and other POSIX shells, use a temporary directory outside the real
+agent data, for example:
 
 ```bash
+export PI_CODING_AGENT_DIR="${TMPDIR:-/tmp}/pideck-test-agent"
+```
+
+## Manual host smoke
+
+```powershell
 $env:PI_CODING_AGENT_DIR = "$env:TEMP\pi-host-smoke"
 pnpm --filter @pideck/pi-host exec tsx src/main.ts
 # stdin:
 # {"protocolVersion":1,"id":"1","method":"system.hello","context":{},"params":{"clientName":"cli","clientVersion":"0","protocolVersion":1}}
 ```
+
+Use the equivalent `export PI_CODING_AGENT_DIR=...` syntax on macOS.
 
 ## Common issues
 
@@ -78,5 +92,6 @@ pnpm --filter @pideck/pi-host exec tsx src/main.ts
 | Spike fails on Extension load | Node ≥22.19, SDK 0.80.7, fixture path exists |
 | Host fatal on start | `agentDir` writable; inspect stderr JSON logs |
 | `flush stdin: 管道正在被关闭` / pipe closed | Fixed: Windows must not pass `\\?\` paths to Node. Rebuild Tauri (`tauri:dev` again) after pulling. Also run `pnpm build` first. |
+| Reveal/open path does nothing on macOS | Known limitation: the current non-Windows native path still invokes `xdg-open` instead of Finder's `open` command |
 | STALE_REVISION everywhere | UI must update identity from each response |
 | Tauri can't find host | Build `packages/pi-host` so `dist/main.js` exists |

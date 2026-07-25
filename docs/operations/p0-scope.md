@@ -8,11 +8,19 @@ they do not redefine the current release boundary.
 It distinguishes implementation readiness from an accepted release claim;
 ignored local artifacts cannot authorize documentation completion language.
 
-## Product objective
+## Product objective and platform boundary
 
-P0 proves that a Windows user can install PiDeck, choose a local
-workspace, complete a deterministic Pi Agent turn, recover the conversation
-after a Host restart, and uninstall without leaving runtime processes behind.
+PiDeck's desktop workflows are not Windows-specific. Source development and
+early testing cover Windows 11 x64 and Apple Silicon macOS. The first installer
+acceptance scope is narrower: it proves that a Windows user can install PiDeck,
+choose a local workspace, complete a deterministic Pi Agent turn, recover the
+conversation after a Host restart, and uninstall without leaving runtime
+processes behind.
+
+That Windows release scope is not PiDeck's product-platform identity. It
+reflects the only packaging pipeline currently implemented: a bundled Windows
+x64 runtime and NSIS development candidate. macOS app/DMG packaging, signing,
+notarization, and release acceptance are outside the current P0 release claim.
 
 Selecting a workspace authorizes its project resources. PiDeck immediately
 loads them with `projectTrusted: true`; existing `.pi/extensions` may execute
@@ -31,9 +39,10 @@ local code. There is no pending, deny, or per-workspace trust state.
 | Error visibility | Host, Session, Provider, Package, and Extension failures are visibly actionable and remain inspectable | Desktop notification/error-center component tests and E2E |
 | Package safety | Local Package install/remove, explicit Project Package executable-code confirmation, resource enable/disable, reconcile, and reload are safe | Host Package integration tests; full release regression for the complete UI matrix |
 
-During the initial development phase, P0 source readiness means every row has
-implementation evidence and `pnpm verify:p0` exits 0. Installer provenance and
-public-release acceptance are deferred until release automation is restored.
+P0 source readiness means every row has implementation evidence and
+`pnpm verify:p0` exits 0. This source gate can run on both development
+platforms, although the tracked GitHub Actions job currently runs on Windows.
+Installer provenance and public-release acceptance remain separate.
 
 ## P1
 
@@ -62,8 +71,8 @@ These paths remain covered by unit and integration tests where applicable.
 | `pnpm verify:quick` | Local development | Docs, typecheck, unit and Host integration tests |
 | `pnpm verify:p0` | Pull request and `main` | Quick gate, production frontend build, Rust tests |
 
-> 发布级验证（verify:release / verify:release:full）在开发初期暂不启用，
-> 打包直接使用 `pnpm package:release`。接近首次公开发布时恢复自动化验证。
+> Release-grade verification is not currently automated. Windows development
+> candidates use `pnpm package:release`; macOS packaging is not implemented.
 
 `verify:p0` is a source/core quality gate, not proof that an installer is
 releasable. `package:release` produces a development candidate without making

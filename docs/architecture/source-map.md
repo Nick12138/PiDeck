@@ -1,8 +1,9 @@
 # Source map
 
-Paths are relative to `PiDesktop/`. **Only paths that exist on disk** are listed.  
-Layers map to implementation paths. Current development verification follows
-`docs/operations/p0-scope.md`; release-grade automation is deferred.
+Paths are relative to the PiDeck repository root. **Only paths that exist on
+disk** are listed. Layers map to implementation paths. Source verification and
+the current Windows development-candidate boundary follow
+`docs/operations/p0-scope.md`.
 
 ## Packages
 
@@ -65,5 +66,5 @@ Layers map to implementation paths. Current development verification follows
 | Quick source gate | root `package.json` | `pnpm verify:quick` |
 | P0 pull-request gate | root `package.json` | `pnpm verify:p0` |
 | Tracked P0 implementation state | `docs/operations/p0-status.json` | `pnpm verify:docs` |
-| Release packaging + integrity | `scripts/package-release.mjs`, `scripts/windows-installer-integrity.mjs` | `pnpm package:release` |
+| Windows candidate packaging + integrity | `scripts/package-release.mjs`, `scripts/windows-installer-integrity.mjs` | `pnpm package:release` (Windows only) |
 | Pull-request CI | `.github/workflows/p0.yml` | `pnpm verify:p0` |

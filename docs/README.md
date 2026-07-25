@@ -1,10 +1,9 @@
 # PiDeck — Documentation
 
-> **Implementation status: P0 Not Complete.**
-> [P0 scope and verification](./operations/p0-scope.md) is authoritative.
-> Release-grade automation is deferred during initial development. The current
-> automated boundary is `pnpm verify:p0`; `pnpm package:release` produces a
-> development candidate. Authenticode remains required for public distribution.
+> **Status:** the tracked P0 implementation requirements are source-ready, but
+> no public-release claim has been accepted. Windows and Apple Silicon macOS
+> support source development; only Windows x64 has a development packaging
+> pipeline. [P0 scope and verification](./operations/p0-scope.md) is authoritative.
 
 ## Layout
 
@@ -42,7 +41,7 @@ Landed behavior updates these pages in the same change.
 | [operations/p0-scope.md](./operations/p0-scope.md) | Authoritative | Product P0/P1/P2 scope, acceptance evidence, verification layers |
 | [operations/p0-status.json](./operations/p0-status.json) | Machine-readable | Tracked implementation readiness and accepted-claim state |
 | [operations/development.md](./operations/development.md) | Current | Install, dev, test, env vars |
-| [operations/release.md](./operations/release.md) | Deferred | Future Windows NSIS release-verification design |
+| [operations/release.md](./operations/release.md) | Current | Current Windows packaging path and public-release limitations |
 | [operations/release-checklist.md](./operations/release-checklist.md) | Deferred | Checklist to restore near first public release |
 | [operations/remediation-report.md](./operations/remediation-report.md) | Historical | Prior release-hardening status and evidence gaps |
 | [history/2026-07-18-full-review.md](./history/2026-07-18-full-review.md) | Archived | Round-1 full project review |

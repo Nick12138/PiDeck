@@ -4,9 +4,9 @@
 
 PiDeck 是 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 的桌面端界面。它将 Pi SDK 转化为一个可视化工作空间，用于管理对话、工具调用、会话、模型和 Packages。
 
-> **P0 源码门禁：已通过。** `pnpm verify:p0` 目前已在 Apple Silicon Mac 上通过，覆盖文档检查、类型检查、单元测试与 Host 集成测试、前端生产构建和 Rust 测试。
+> **P0 源码门禁：已通过。** `pnpm verify:p0` 已在 Apple Silicon macOS 上通过，也是 Windows GitHub Actions 中配置的门禁。它覆盖文档检查、类型检查、单元测试与 Host 集成测试、前端生产构建和 Rust 测试。
 
-PiDeck 现已可以从源码开始早期试用。签名安装包和发布级分发属于下一阶段：Windows 仍是当前的打包目标，macOS `.app` / DMG 打包尚未实现。
+PiDeck 现已支持在 Windows 和 Apple Silicon macOS 上从源码开始早期试用。发行分发属于独立阶段：当前打包链路只能生成未签名的 Windows x64 开发候选安装包，macOS `.app` / DMG 打包尚未实现。
 
 ## 已实现功能
 
@@ -21,12 +21,12 @@ PiDeck 当前固定使用 Pi SDK `0.80.7`。
 
 ## 平台状态
 
-| 平台 | 从源码运行 | 安装包 |
+| 平台 | 源码开发 | 打包能力 |
 |---|---:|---:|
-| Windows 11 x64 | 支持 | 可生成开发用 NSIS；尚非签名的公开发行版 |
-| macOS Apple Silicon | 早期试用 | 尚未实现 |
+| Windows 11 x64 | 支持；已配置 CI 门禁 | 可生成未签名的 NSIS 开发候选包 |
+| macOS Apple Silicon | 支持早期试用 | 尚未实现 |
 
-macOS 可以通过 `tauri:dev` 运行完整应用。Windows 专用的 `dev:fast` 和 `package:release` 工作流不应在 macOS 上使用。
+两个平台都可以通过 `tauri:dev` 运行完整应用。优化过的 `dev:fast` 工作流和 `package:release` 仍仅支持 Windows。macOS 目前还有一项已知限制：在 Finder 中定位本地路径的原生命令仍错误地依赖 `xdg-open`。
 
 ## 快速开始
 
@@ -131,13 +131,13 @@ Provider 凭据、设置、Packages 和会话属于用户数据。不要将 `~/.
 
 P0 源码门禁通过，说明已经实现的核心功能能够完成构建并通过自动化检查；它本身并不代表某个可下载安装包已经通过发行认证。
 
-公开发布前，项目仍需补齐平台原生打包证据和代码签名。Windows 开发候选安装包可通过以下命令生成：
+公开发布前，项目仍需补齐通过验收的打包证据和代码签名。Windows 开发候选安装包可通过以下命令生成：
 
 ```bash
 pnpm package:release
 ```
 
-该命令仅支持 Windows。macOS 打包、签名和公证仍属于后续工作。源码与发布边界的精确定义请参阅 [P0 范围与验证](./docs/operations/p0-scope.md)。
+该命令仅支持 Windows，且不会直接产出已认证的公开发行版。macOS 打包、签名和公证仍属于后续工作。源码与发布边界的精确定义请参阅 [P0 范围与验证](./docs/operations/p0-scope.md)。
 
 ## 仓库结构
 

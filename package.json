@@ -2,7 +2,7 @@
   "name": "pideck",
   "private": true,
   "version": "0.1.0",
-  "description": "PiDeck — Windows-first desktop GUI for Pi Coding Agent",
+  "description": "A desktop interface for Pi Coding Agent",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=22.19.0"
