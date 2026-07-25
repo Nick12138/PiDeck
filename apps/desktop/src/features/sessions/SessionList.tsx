@@ -132,6 +132,13 @@ export function canDeleteSession(
   return item.runtimeState === "inactive" || item.runtimeState === "error";
 }
 
+export function shouldClearLastSessionPath(
+  lastSessionPath: string,
+  removedSessionPath: string,
+): boolean {
+  return lastSessionPath === removedSessionPath;
+}
+
 export function shouldRetrySessionList(error: {
   code?: string;
   retryable?: boolean;
@@ -570,7 +577,7 @@ export function SessionList({
         const lastSessionPath = useAppStore.getState().desktopSettings?.lastSessionPath;
         if (
           lastSessionPath &&
-          lastSessionPath.toLocaleLowerCase() === item.sessionPath.toLocaleLowerCase()
+          shouldClearLastSessionPath(lastSessionPath, item.sessionPath)
         ) {
           await persistDesktopSettings({ lastSessionPath: null });
         }
@@ -639,7 +646,7 @@ export function SessionList({
       const lastSessionPath = useAppStore.getState().desktopSettings?.lastSessionPath;
       if (
         lastSessionPath &&
-        lastSessionPath.toLocaleLowerCase() === item.sessionPath.toLocaleLowerCase()
+        shouldClearLastSessionPath(lastSessionPath, item.sessionPath)
       ) {
         await persistDesktopSettings({ lastSessionPath: null });
       }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addKnownWorkspace,
+  replaceKnownWorkspace,
   removeKnownWorkspace,
   workspaceDisplayName,
 } from "./WorkspacePicker";
@@ -11,17 +12,27 @@ describe("known workspace list", () => {
     expect(list).toEqual(["C:\\repos\\alpha", "C:\\repos\\beta"]);
   });
 
-  it("deduplicates case-insensitively, keeping first-seen casing", () => {
-    const list = addKnownWorkspace(["C:\\Repos\\Alpha"], "c:\\repos\\alpha");
-    expect(list).toEqual(["C:\\Repos\\Alpha"]);
+  it("preserves differently-cased canonical paths", () => {
+    const list = addKnownWorkspace(["/repos/Alpha"], "/repos/alpha");
+    expect(list).toEqual(["/repos/Alpha", "/repos/alpha"]);
   });
 
-  it("removes entries case-insensitively", () => {
+  it("removes only the exact canonical path", () => {
     const list = removeKnownWorkspace(
-      ["C:\\Repos\\Alpha", "C:\\repos\\beta"],
-      "c:\\repos\\ALPHA",
+      ["/repos/Alpha", "/repos/alpha"],
+      "/repos/Alpha",
     );
-    expect(list).toEqual(["C:\\repos\\beta"]);
+    expect(list).toEqual(["/repos/alpha"]);
+  });
+
+  it("replaces a requested path with the Host canonical path", () => {
+    expect(
+      replaceKnownWorkspace(
+        ["C:\\repos\\alpha", "C:\\repos\\beta"],
+        "C:\\repos\\alpha",
+        "C:\\Repos\\Alpha",
+      ),
+    ).toEqual(["C:\\Repos\\Alpha", "C:\\repos\\beta"]);
   });
 });
 

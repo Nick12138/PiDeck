@@ -535,6 +535,13 @@ describe("unified package resources", () => {
   it("exposes the non-configurable resource error", () => {
     expect(HOST_ERROR_CODES).toContain("RESOURCE_NOT_CONFIGURABLE");
   });
+
+});
+
+describe("Host error codes", () => {
+  it("exposes a typed non-directory Workspace error", () => {
+    expect(HOST_ERROR_CODES).toContain("WORKSPACE_NOT_DIRECTORY");
+  });
 });
 
 describe("protocol coverage — events", () => {

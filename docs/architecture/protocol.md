@@ -48,6 +48,10 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
 
 `parseHostRequest` in `packages/protocol/src/validate.ts` validates method, context scope (no extra keys), and params. Context scope map: `METHOD_CONTEXT_SCOPE`.
 
+`workspace.setCurrent` returns `WORKSPACE_NOT_DIRECTORY` when the resolved path
+exists but is not a directory. Missing, inaccessible, or otherwise unusable
+Workspace paths return `WORKSPACE_SWITCH_FAILED`.
+
 ## Atomic recovery
 
 `system.rehydrate` returns one composite `{ watermark, host, workspace, session, tools, packages }` snapshot. The Host captures the graph state and queues the outbound sequence-barrier response in the same JavaScript turn, so the watermark is the exact boundary represented by the snapshot.

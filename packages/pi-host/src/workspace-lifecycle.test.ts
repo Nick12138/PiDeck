@@ -1,12 +1,19 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { WorkspaceLifecycle } from "./workspace-lifecycle.js";
+import { WorkspaceLifecycle, workspaceIdentityKey } from "./workspace-lifecycle.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
 
-function lifecycle() {
+function lifecycle(platform?: NodeJS.Platform) {
   return new WorkspaceLifecycle(
     {
       deps: { agentDir: "C:/agent" } as GraphFactoryDeps,
@@ -14,12 +21,57 @@ function lifecycle() {
       setGraph: vi.fn(),
       getServer: () => null,
       onModelHealthChanged: vi.fn(),
+      platform,
     },
     {} as unknown as SessionRuntimeCache,
   );
 }
 
 describe("Workspace lifecycle", () => {
+  it("preserves case-sensitive workspace identities on Unix-like platforms", () => {
+    expect(workspaceIdentityKey("/repo/Foo", "linux")).not.toBe(
+      workspaceIdentityKey("/repo/foo", "linux"),
+    );
+    expect(workspaceIdentityKey("/repo/Foo", "darwin")).not.toBe(
+      workspaceIdentityKey("/repo/foo", "darwin"),
+    );
+  });
+
+  it("normalizes separators and casing for Windows workspace identities", () => {
+    expect(workspaceIdentityKey("C:\\Repos\\Alpha", "win32")).toBe(
+      workspaceIdentityKey("c:/repos/ALPHA", "win32"),
+    );
+  });
+
+  it("does not reactivate a retained graph with a different canonical identity", () => {
+    const subject = lifecycle("linux");
+    const retained = { canonicalCwd: "/repo/Foo" } as WorkspaceGraph;
+    const internal = subject as unknown as {
+      retainedGraphs: Map<string, WorkspaceGraph>;
+      takeRetainedGraph: (canonicalCwd: string) => WorkspaceGraph | null;
+    };
+    internal.retainedGraphs.set(workspaceIdentityKey("/repo/foo", "linux"), retained);
+
+    expect(internal.takeRetainedGraph("/repo/foo")).toBeNull();
+    expect(internal.takeRetainedGraph("/repo/Foo")).toBeNull();
+    expect(internal.retainedGraphs.get("/repo/foo")).toBe(retained);
+  });
+
+  it("retains differently-cased Unix Workspace graphs independently", () => {
+    const subject = lifecycle("linux");
+    const upper = { canonicalCwd: "/repo/Foo" } as WorkspaceGraph;
+    const lower = { canonicalCwd: "/repo/foo" } as WorkspaceGraph;
+    const internal = subject as unknown as {
+      retainedGraphs: Map<string, WorkspaceGraph>;
+      takeRetainedGraph: (canonicalCwd: string) => WorkspaceGraph | null;
+    };
+    internal.retainedGraphs.set(workspaceIdentityKey(upper.canonicalCwd, "linux"), upper);
+    internal.retainedGraphs.set(workspaceIdentityKey(lower.canonicalCwd, "linux"), lower);
+
+    expect(internal.takeRetainedGraph(upper.canonicalCwd)).toBe(upper);
+    expect(internal.takeRetainedGraph(lower.canonicalCwd)).toBe(lower);
+  });
+
   it("canonicalizes an existing Workspace path", () => {
     const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
     try {
@@ -42,6 +94,32 @@ describe("Workspace lifecycle", () => {
       expect(thrown).toMatchObject({
         code: "WORKSPACE_SWITCH_FAILED",
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an existing file as a Workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const file = join(root, "workspace.txt");
+    writeFileSync(file, "not a directory");
+    try {
+      expect(() => lifecycle().canonicalizeCwd(file)).toThrowError(
+        expect.objectContaining({ code: "WORKSPACE_NOT_DIRECTORY" }),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a symlink to a Workspace directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
+    const target = join(root, "target");
+    const link = join(root, "link");
+    try {
+      mkdirSync(target);
+      symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+      expect(lifecycle().canonicalizeCwd(link)).toBe(realpathSync(target));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

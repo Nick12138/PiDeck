@@ -13,9 +13,9 @@ export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
 }
 
-/** Case-insensitive path identity on Windows; keeps first-seen casing. */
+/** Renderer path identity uses only Host-canonical strings. */
 function samePath(a: string, b: string): boolean {
-  return a.toLocaleLowerCase() === b.toLocaleLowerCase();
+  return a === b;
 }
 
 export function addKnownWorkspace(list: string[], path: string): string[] {
@@ -24,6 +24,18 @@ export function addKnownWorkspace(list: string[], path: string): string[] {
 
 export function removeKnownWorkspace(list: string[], path: string): string[] {
   return list.filter((entry) => !samePath(entry, path));
+}
+
+export function replaceKnownWorkspace(
+  list: string[],
+  requestedPath: string,
+  canonicalPath: string,
+): string[] {
+  const next = list.map((entry) =>
+    samePath(entry, requestedPath) ? canonicalPath : entry,
+  );
+  if (!next.some((entry) => samePath(entry, canonicalPath))) next.push(canonicalPath);
+  return next.filter((entry, index) => next.indexOf(entry) === index);
 }
 
 // Stable fallback: a fresh [] per render makes the zustand selector loop.
@@ -52,16 +64,27 @@ export function WorkspacePicker() {
   }
 
   const currentCwd = workspace?.canonicalCwd ?? null;
+  const requestedCwd = workspace?.cwd ?? null;
 
   // Self-heal: whatever workspace is active (restored, picked, or set by the
   // host) always appears in the persistent list.
   useEffect(() => {
     if (!currentCwd) return;
-    if (knownWorkspaces.some((entry) => samePath(entry, currentCwd))) return;
+    const next = replaceKnownWorkspace(
+      knownWorkspaces,
+      requestedCwd ?? currentCwd,
+      currentCwd,
+    );
+    if (
+      next.length === knownWorkspaces.length &&
+      next.every((entry, index) => entry === knownWorkspaces[index])
+    ) {
+      return;
+    }
     void persistDesktopSettings({
-      knownWorkspaces: addKnownWorkspace(knownWorkspaces, currentCwd),
+      knownWorkspaces: next,
     });
-  }, [currentCwd, knownWorkspaces]);
+  }, [currentCwd, knownWorkspaces, requestedCwd]);
 
   async function switchTo(cwd: string) {
     if (!host || pending) return;
@@ -124,9 +147,6 @@ export function WorkspacePicker() {
       cwd = window.prompt("Enter workspace path") || null;
     }
     if (!cwd) return;
-    await persistDesktopSettings({
-      knownWorkspaces: addKnownWorkspace(knownWorkspaces, cwd),
-    });
     await switchTo(cwd);
   }
 
@@ -186,7 +206,7 @@ export function WorkspacePicker() {
             const active = Boolean(currentCwd && samePath(currentCwd, path));
             return (
               <li
-                key={path.toLocaleLowerCase()}
+                key={path}
                 className={`group flex h-9 items-center rounded-md text-[13px] ${
                   active
                     ? "bg-surface-overlay font-medium"

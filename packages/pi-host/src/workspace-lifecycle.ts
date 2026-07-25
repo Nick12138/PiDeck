@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
-import { join, resolve as pathResolve } from "node:path";
+import { join, resolve as pathResolve, win32 } from "node:path";
 import {
   createAgentSession,
   DefaultPackageManager,
@@ -34,7 +34,25 @@ export type WorkspaceLifecycleContext = {
   setGraph: (graph: WorkspaceGraph | null) => void;
   getServer: () => PiHostServer | null;
   onModelHealthChanged: () => void;
+  platform?: NodeJS.Platform;
 };
+
+export function workspaceIdentityKey(
+  canonicalCwd: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32"
+    ? win32.normalize(canonicalCwd).toLowerCase()
+    : canonicalCwd;
+}
+
+function workspaceCanonicalPathsEqual(
+  left: string,
+  right: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return workspaceIdentityKey(left, platform) === workspaceIdentityKey(right, platform);
+}
 
 export class WorkspaceLifecycle {
   private static readonly MAX_RETAINED_GRAPHS = 3;
@@ -54,11 +72,46 @@ export class WorkspaceLifecycle {
         { retryable: false, details: { cwd: resolved } },
       );
     }
+    let canonical: string;
     try {
-      return realpathSync(resolved);
-    } catch {
-      return resolved;
+      canonical = realpathSync(resolved);
+    } catch (err) {
+      throw createHostError(
+        "WORKSPACE_SWITCH_FAILED",
+        `Unable to resolve Workspace directory: ${resolved}`,
+        {
+          retryable: false,
+          details: {
+            cwd: resolved,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        },
+      );
     }
+    let isDirectory: boolean;
+    try {
+      isDirectory = lstatSync(canonical).isDirectory();
+    } catch (err) {
+      throw createHostError(
+        "WORKSPACE_SWITCH_FAILED",
+        `Unable to inspect Workspace directory: ${canonical}`,
+        {
+          retryable: false,
+          details: {
+            cwd: canonical,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        },
+      );
+    }
+    if (!isDirectory) {
+      throw createHostError(
+        "WORKSPACE_NOT_DIRECTORY",
+        `Workspace path is not a directory: ${canonical}`,
+        { retryable: false, details: { cwd: canonical } },
+      );
+    }
+    return canonical;
   }
 
   buildWorkspaceSnapshot(graph: WorkspaceGraph): WorkspaceSnapshot {
@@ -236,7 +289,7 @@ export class WorkspaceLifecycle {
   }
 
   private retainedGraphKey(canonicalCwd: string): string {
-    return canonicalCwd.toLocaleLowerCase();
+    return workspaceIdentityKey(canonicalCwd, this.context.platform);
   }
 
   private retainedGraphFingerprint(graph: WorkspaceGraph): string {
@@ -310,6 +363,20 @@ export class WorkspaceLifecycle {
   private takeRetainedGraph(canonicalCwd: string): WorkspaceGraph | null {
     const key = this.retainedGraphKey(canonicalCwd);
     const graph = this.retainedGraphs.get(key) ?? null;
+    if (
+      graph &&
+      !workspaceCanonicalPathsEqual(
+        graph.canonicalCwd,
+        canonicalCwd,
+        this.context.platform,
+      )
+    ) {
+      logger.warn("Retained Workspace identity mismatch", {
+        requestedCwd: canonicalCwd,
+        retainedCwd: graph.canonicalCwd,
+      });
+      return null;
+    }
     this.retainedGraphs.delete(key);
     return graph;
   }

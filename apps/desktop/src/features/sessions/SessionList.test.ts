@@ -11,6 +11,7 @@ import {
   sessionRuntimeLabel,
   sessionStatusDotClass,
   shouldRetrySessionList,
+  shouldClearLastSessionPath,
 } from "./SessionList";
 
 const active = {
@@ -112,6 +113,17 @@ describe("canReloadSession", () => {
     expect(canReloadSession({ ...item, archived: true }, active)).toBe(false);
     expect(canReloadSession({ ...item, sessionId: "other" }, active)).toBe(false);
     expect(canReloadSession(item, { ...active, sessionPath: undefined })).toBe(false);
+  });
+});
+
+describe("last Session path cleanup", () => {
+  it("matches only the exact Host canonical path", () => {
+    expect(
+      shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/Alpha.jsonl"),
+    ).toBe(true);
+    expect(
+      shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/alpha.jsonl"),
+    ).toBe(false);
   });
 });
 

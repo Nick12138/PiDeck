@@ -6,6 +6,16 @@
 2. Host canonicalizes the path and builds services with explicit `projectTrusted: true`.
 3. Project extensions, skills, prompts, and themes become available immediately.
 
+Workspace canonicalization follows symlinks and rejects existing non-directory
+paths with `WORKSPACE_NOT_DIRECTORY`. The canonical path is also the retained
+graph identity: Linux and macOS preserve case, while Windows normalizes path
+separators and compares without case. A retained graph is rechecked against the
+requested canonical identity before reactivation.
+
+The desktop persists the Host-returned `canonicalCwd` and uses exact string
+identity for recent Workspace entries. It does not infer platform path
+semantics or lowercase paths in React.
+
 The selected workspace is trusted by definition. Existing project extensions
 can execute local code as soon as the workspace opens. Project-scope Package
 mutations retain a separate executable-code confirmation in the desktop UI.
