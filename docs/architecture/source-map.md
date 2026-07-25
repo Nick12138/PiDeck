@@ -56,7 +56,7 @@ the current Windows development-candidate boundary follow
 |---|---|---|
 | Entry | `apps/desktop/src-tauri/src/main.rs`, `lib.rs` | via cargo |
 | Desktop settings | `apps/desktop/src-tauri/src/desktop_settings.rs` | versioning, migration, corruption recovery, atomic replace unit tests |
-| Host process | `apps/desktop/src-tauri/src/pi_host.rs` | `pi_host_tests.rs` (auto-restart, reap) |
+| Host process | `apps/desktop/src-tauri/src/pi_host.rs` | `pi_host_tests.rs` (auto-restart, direct reap, Windows Job Object, Unix session/group descendant cleanup) |
 | Commands | `apps/desktop/src-tauri/src/commands.rs` | open-path validation unit tests |
 
 ## Verification and packaging

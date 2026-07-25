@@ -15,6 +15,100 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    #[cfg(unix)]
+    struct UnixPidGuard(Vec<libc::pid_t>);
+
+    #[cfg(unix)]
+    impl Drop for UnixPidGuard {
+        fn drop(&mut self) {
+            for pid in self.0.drain(..) {
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn unix_descendant_fixture(crash_host: bool) -> String {
+        let parent_lifecycle = if crash_host {
+            "setTimeout(() => process.exit(17), 75);"
+        } else {
+            "setInterval(() => {}, 1000);"
+        };
+        r#"
+const { spawn } = require('child_process');
+const descendant = spawn(
+  process.execPath,
+  ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+  { stdio: 'ignore' }
+);
+process.stdout.write(String(process.pid) + ',' + String(descendant.pid) + '\n');
+__PARENT_LIFECYCLE__
+"#
+        .replace("__PARENT_LIFECYCLE__", parent_lifecycle)
+    }
+
+    #[cfg(unix)]
+    fn unix_graceful_descendant_fixture() -> String {
+        r#"
+const { spawn } = require('child_process');
+const readline = require('readline');
+const descendant = spawn(
+  process.execPath,
+  ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+  { stdio: 'ignore' }
+);
+process.stdout.write(String(process.pid) + ',' + String(descendant.pid) + '\n');
+readline.createInterface({ input: process.stdin }).once('line', () => process.exit(0));
+setInterval(() => {}, 1000);
+"#
+        .to_string()
+    }
+
+    #[cfg(unix)]
+    fn read_unix_fixture_pids(session: &mut HostChildSession) -> (libc::pid_t, libc::pid_t) {
+        let line = session
+            .read_line_timeout(Duration::from_secs(5))
+            .expect("fixture PIDs");
+        let mut fields = line.split(',');
+        let host_pid = fields
+            .next()
+            .expect("Host PID")
+            .parse::<libc::pid_t>()
+            .expect("numeric Host PID");
+        let descendant_pid = fields
+            .next()
+            .expect("descendant PID")
+            .parse::<libc::pid_t>()
+            .expect("numeric descendant PID");
+        assert!(
+            fields.next().is_none(),
+            "unexpected fixture PID payload: {line}"
+        );
+        (host_pid, descendant_pid)
+    }
+
+    #[cfg(unix)]
+    fn unix_process_exists(pid: libc::pid_t) -> bool {
+        if unsafe { libc::kill(pid, 0) } == 0 {
+            return true;
+        }
+        std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+
+    #[cfg(unix)]
+    fn wait_for_unix_process_exit(pid: libc::pid_t, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if !unix_process_exists(pid) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        !unix_process_exists(pid)
+    }
+
     fn fixture_script() -> String {
         r#"
 const rl = require('readline').createInterface({ input: process.stdin });
@@ -244,6 +338,83 @@ rl.on('line', (line) => {
         std::thread::sleep(Duration::from_millis(50));
         let status = session.kill_and_reap().expect("reap");
         assert!(!status.success() || status.code().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_host_uses_an_isolated_session_and_process_group() {
+        let mut session =
+            HostChildSession::spawn_node_script(&unix_descendant_fixture(false), false)
+                .expect("spawn");
+        let (host_pid, descendant_pid) = read_unix_fixture_pids(&mut session);
+        let _guard = UnixPidGuard(vec![host_pid, descendant_pid]);
+        let host_group = unsafe { libc::getpgid(host_pid) };
+        let host_session = unsafe { libc::getsid(host_pid) };
+        let descendant_group = unsafe { libc::getpgid(descendant_pid) };
+        session.kill_and_reap().expect("reap Host fixture");
+
+        assert_eq!(host_group, host_pid, "Host must lead its own process group");
+        assert_eq!(
+            host_session, host_pid,
+            "Host must lead its own Unix session"
+        );
+        assert_eq!(
+            descendant_group, host_pid,
+            "descendant must inherit Host group"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_host_force_cleanup_terminates_descendants() {
+        let mut session =
+            HostChildSession::spawn_node_script(&unix_descendant_fixture(false), false)
+                .expect("spawn");
+        let (host_pid, descendant_pid) = read_unix_fixture_pids(&mut session);
+        let _guard = UnixPidGuard(vec![host_pid, descendant_pid]);
+
+        session.kill_and_reap().expect("force cleanup");
+
+        assert!(
+            wait_for_unix_process_exit(descendant_pid, Duration::from_secs(2)),
+            "Host descendant {descendant_pid} survived force cleanup"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_host_graceful_shutdown_terminates_descendants() {
+        let mut session =
+            HostChildSession::spawn_node_script(&unix_graceful_descendant_fixture(), false)
+                .expect("spawn");
+        let (host_pid, descendant_pid) = read_unix_fixture_pids(&mut session);
+        let _guard = UnixPidGuard(vec![host_pid, descendant_pid]);
+
+        session.shutdown_exact().expect("graceful shutdown");
+
+        assert!(
+            wait_for_unix_process_exit(descendant_pid, Duration::from_secs(2)),
+            "Host descendant {descendant_pid} survived graceful shutdown"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_host_crash_cleanup_terminates_descendants_without_restart() {
+        let mut session =
+            HostChildSession::spawn_node_script(&unix_descendant_fixture(true), false)
+                .expect("spawn");
+        let (host_pid, descendant_pid) = read_unix_fixture_pids(&mut session);
+        let _guard = UnixPidGuard(vec![host_pid, descendant_pid]);
+        std::thread::sleep(Duration::from_millis(150));
+
+        assert!(!session.on_unexpected_exit(), "restart is disabled");
+        let _ = session.kill_and_reap();
+
+        assert!(
+            wait_for_unix_process_exit(descendant_pid, Duration::from_secs(2)),
+            "Host descendant {descendant_pid} survived Host crash cleanup"
+        );
     }
 
     #[test]

@@ -39,6 +39,13 @@ local code. There is no pending, deny, or per-workspace trust state.
 | Error visibility | Host, Session, Provider, Package, and Extension failures are visibly actionable and remain inspectable | Desktop notification/error-center component tests and E2E |
 | Package safety | Local Package install/remove, explicit Project Package executable-code confirmation, resource enable/disable, reconcile, and reload are safe | Host Package integration tests; full release regression for the complete UI matrix |
 
+Rust lifecycle evidence is platform-specific but shares one ownership goal:
+Windows tests exercise kill-on-close Job Object behavior, while macOS/Linux
+tests assert an isolated Host session/process group and verify that graceful
+shutdown, forced cleanup, and Host crash all terminate a spawned descendant.
+This broadens source evidence without changing the Windows-only first-installer
+acceptance boundary above.
+
 P0 source readiness means every row has implementation evidence and
 `pnpm verify:p0` exits 0. This source gate can run on both development
 platforms, although the tracked GitHub Actions job currently runs on Windows.

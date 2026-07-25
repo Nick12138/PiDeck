@@ -6,6 +6,7 @@
 
 - Window and desktop settings lifecycle.
 - Spawning, monitoring, restarting, and shutting down the Node Pi Host.
+- Platform process-tree containment for the Host and its ordinary descendants.
 - The JSONL stdin/stdout bridge and bounded stderr forwarding.
 - Native path opening and folder selection.
 
@@ -27,6 +28,29 @@
 
 - Mix logs into stdout.
 - Add a second workspace trust state machine outside the selected-workspace policy.
+
+## Host process-tree lifecycle
+
+Rust owns the complete Pi Host process tree, not only the direct Node process.
+On Windows, the Host is assigned to a kill-on-close Job Object. On macOS and
+Linux, Rust calls `setsid()` before exec so the Host leads an isolated Unix
+session and process group; subprocesses inherit that group by default.
+
+Normal app exit first sends the typed `system.shutdown` request and preserves
+the Host's bounded graph-disposal window. After the direct Host exits or that
+window expires, Rust sends `SIGTERM` to the group, waits 500 ms, and escalates
+to group `SIGKILL`. Startup rollback, forced cleanup, unexpected Host exit, and
+the manager's Drop fallback use immediate group `SIGKILL`. A shared one-owner
+cleanup claim prevents the stdout crash monitor and manager from both signaling
+a later-reused process-group id.
+
+Extensions, tools, and SDK helpers may spawn ordinary child processes, but they
+must not evade PiDeck ownership with detached mode, `setsid`, `setpgid`, or a
+double-fork daemon. A deliberately detached process has left the Host lifecycle
+contract and cannot be contained by either a Unix process group or ordinary
+parent-death handling. As with all userspace Unix supervisors, an unrecoverable
+`SIGKILL` of the Tauri process itself cannot run cleanup code; stdin EOF and the
+Host's own shutdown handling remain defense in depth for that external case.
 
 ## React
 
