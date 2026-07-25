@@ -42,6 +42,23 @@ describe("summarizeModel", () => {
         }),
       ).thinkingLevels,
     ).toEqual(["low", "medium", "high"]);
+    expect(
+      summarizeModel(
+        model({
+          id: "glm-5.2",
+          reasoning: true,
+          thinkingLevelMap: {
+            off: null,
+            minimal: null,
+            low: null,
+            medium: null,
+            high: "high",
+            xhigh: null,
+            max: "max",
+          },
+        }),
+      ).thinkingLevels,
+    ).toEqual(["high", "max"]);
     expect(summarizeModel(model({ id: "grok-composer-2.5-fast" })).thinkingLevels).toEqual([
       "off",
     ]);

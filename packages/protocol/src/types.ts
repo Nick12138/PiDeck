@@ -127,19 +127,58 @@ export type ProviderAuthStatus = {
   label?: string;
 };
 
+export type ProviderCompatibility = {
+  supportsDeveloperRole?: boolean;
+  supportsReasoningEffort?: boolean;
+};
+
+export type ProviderCompatibilityDraft = {
+  supportsDeveloperRole?: boolean | null;
+  supportsReasoningEffort?: boolean | null;
+};
+
 export type ProviderSnapshot = {
   id: string;
   enabled: boolean;
   name: string;
   baseUrl: string;
+  modelsUrl?: string;
   api: ProviderApi;
   authHeader: boolean;
   headers: Record<string, string>;
+  compat?: ProviderCompatibility;
   models: ProviderModelConfig[];
   auth: ProviderAuthStatus;
 };
 
-export type ProviderDraft = Omit<ProviderSnapshot, "auth" | "enabled">;
+export type ProviderDraft = Omit<ProviderSnapshot, "auth" | "enabled" | "compat" | "authHeader"> & {
+  /** Rolling-compatibility hint for Hosts that predate automatic auth selection. */
+  authHeader?: boolean;
+  compat?: ProviderCompatibilityDraft;
+};
+
+export type ProviderConnectionCategory =
+  | "ok"
+  | "configuration"
+  | "authentication"
+  | "blocked"
+  | "rate_limit"
+  | "not_found"
+  | "timeout"
+  | "network"
+  | "protocol"
+  | "provider";
+
+export type ProviderConnectionResult = {
+  providerId: string;
+  modelId: string;
+  api: ProviderApi;
+  ok: boolean;
+  latencyMs: number;
+  category: ProviderConnectionCategory;
+  message: string;
+  suggestion?: string;
+};
 
 export type SerializableAgentContent = {
   type: string;

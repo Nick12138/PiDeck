@@ -40,6 +40,7 @@ export const HOST_METHODS = [
   "provider.save",
   "provider.remove",
   "provider.fetchModels",
+  "provider.checkConnection",
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
@@ -106,7 +107,8 @@ export type HostOnlyMethod =
   | "provider.setEnabled"
   | "provider.save"
   | "provider.remove"
-  | "provider.fetchModels";
+  | "provider.fetchModels"
+  | "provider.checkConnection";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -228,6 +230,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.save": "host",
   "provider.remove": "host",
   "provider.fetchModels": "host",
+  "provider.checkConnection": "host",
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",

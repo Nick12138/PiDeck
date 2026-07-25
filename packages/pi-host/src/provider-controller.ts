@@ -9,12 +9,19 @@ import {
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { completeSimple, type Api, type Context, type Model } from "@earendil-works/pi-ai/compat";
 import {
   createHostError,
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
   detectModelThinking,
   type DiscoveredProviderModel,
   type HostError,
   type ProviderApi,
+  type ProviderConnectionCategory,
+  type ProviderConnectionResult,
+  type ProviderCompatibility,
+  type ProviderCompatibilityDraft,
   type ProviderDraft,
   type ProviderModelConfig,
   type ProviderSnapshot,
@@ -36,6 +43,10 @@ const PROVIDER_APIS = new Set<ProviderApi>([
   "anthropic-messages",
   "google-generative-ai",
 ]);
+
+function defaultAuthHeader(api: ProviderApi): boolean {
+  return api === "openai-completions" || api === "openai-responses";
+}
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -72,12 +83,36 @@ function normalizeModel(value: unknown): ProviderModelConfig | null {
     contextWindow:
       typeof value.contextWindow === "number" && Number.isSafeInteger(value.contextWindow) && value.contextWindow > 0
         ? value.contextWindow
-        : 128_000,
+        : DEFAULT_MODEL_CONTEXT_WINDOW,
     maxTokens:
       typeof value.maxTokens === "number" && Number.isSafeInteger(value.maxTokens) && value.maxTokens > 0
         ? value.maxTokens
-        : 16_384,
+        : DEFAULT_MODEL_MAX_TOKENS,
   };
+}
+
+const MANAGED_COMPAT_KEYS = [
+  "supportsDeveloperRole",
+  "supportsReasoningEffort",
+] as const;
+
+function normalizeCompatibilityDraft(value: unknown): ProviderCompatibilityDraft | undefined {
+  if (!isObject(value)) return undefined;
+  const compat: ProviderCompatibilityDraft = {};
+  for (const key of MANAGED_COMPAT_KEYS) {
+    const item = value[key];
+    if (typeof item === "boolean" || item === null) compat[key] = item;
+  }
+  return Object.keys(compat).length > 0 ? compat : undefined;
+}
+
+function compatibilitySnapshot(value: unknown): ProviderCompatibility | undefined {
+  if (!isObject(value)) return undefined;
+  const compat: ProviderCompatibility = {};
+  for (const key of MANAGED_COMPAT_KEYS) {
+    if (typeof value[key] === "boolean") compat[key] = value[key];
+  }
+  return Object.keys(compat).length > 0 ? compat : undefined;
 }
 
 function normalizeDraft(input: ProviderDraft): ProviderDraft {
@@ -86,17 +121,19 @@ function normalizeDraft(input: ProviderDraft): ProviderDraft {
     const model = normalizeModel(item);
     if (model) models.set(model.id, model);
   }
+  const compat = normalizeCompatibilityDraft(input.compat);
   return {
     id: input.id.trim(),
     name: input.name.trim(),
     baseUrl: input.baseUrl.trim().replace(/\/+$/, ""),
+    ...(input.modelsUrl?.trim() ? { modelsUrl: input.modelsUrl.trim() } : {}),
     api: input.api,
-    authHeader: input.authHeader,
     headers: Object.fromEntries(
       Object.entries(input.headers)
         .map(([key, value]) => [key.trim(), value.trim()] as const)
         .filter(([key]) => key.length > 0),
     ),
+    ...(compat ? { compat } : {}),
     models: [...models.values()],
   };
 }
@@ -120,6 +157,14 @@ function validateDraft(input: ProviderDraft): HostError | null {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return createHostError("INVALID_REQUEST", "Base URL must use HTTP or HTTPS");
+  }
+  if (input.modelsUrl) {
+    try {
+      const modelsUrl = new URL(input.modelsUrl);
+      if (modelsUrl.protocol !== "http:" && modelsUrl.protocol !== "https:") throw new Error();
+    } catch {
+      return createHostError("INVALID_REQUEST", "Models URL must be a valid HTTP or HTTPS URL");
+    }
   }
   return null;
 }
@@ -192,6 +237,7 @@ function providerSnapshot(
   const models = Array.isArray(raw.models)
     ? raw.models.map(normalizeModel).filter((model): model is ProviderModelConfig => model !== null)
     : [];
+  const compat = compatibilitySnapshot(raw.compat);
   return {
     id,
     enabled,
@@ -200,9 +246,13 @@ function providerSnapshot(
         ? raw.name.trim()
         : factory.deps.modelRegistry.getProviderDisplayName(id),
     baseUrl: typeof raw.baseUrl === "string" ? raw.baseUrl : "",
+    ...(typeof raw.modelsUrl === "string" && raw.modelsUrl.trim()
+      ? { modelsUrl: raw.modelsUrl.trim() }
+      : {}),
     api,
     authHeader: raw.authHeader === true,
     headers: stringRecord(raw.headers),
+    ...(compat ? { compat } : {}),
     models,
     auth: factory.deps.modelRegistry.getProviderAuthStatus(id),
   };
@@ -223,15 +273,31 @@ function mergeProvider(existing: JsonObject, draft: ProviderDraft): JsonObject {
     if (model.thinkingLevelMap === undefined) delete next.thinkingLevelMap;
     return next;
   });
-  return {
+  const merged: JsonObject = {
     ...existing,
     name: draft.name,
     baseUrl: draft.baseUrl,
+    ...(draft.modelsUrl ? { modelsUrl: draft.modelsUrl } : {}),
     api: draft.api,
-    authHeader: draft.authHeader,
+    authHeader:
+      existing.api === draft.api && typeof existing.authHeader === "boolean"
+        ? existing.authHeader
+        : defaultAuthHeader(draft.api),
     headers: draft.headers,
     models,
   };
+  if (!draft.modelsUrl) delete merged.modelsUrl;
+  if (draft.compat) {
+    const compat: JsonObject = isObject(existing.compat) ? { ...existing.compat } : {};
+    for (const key of MANAGED_COMPAT_KEYS) {
+      const value = draft.compat[key];
+      if (value === null) delete compat[key];
+      else if (typeof value === "boolean") compat[key] = value;
+    }
+    if (Object.keys(compat).length > 0) merged.compat = compat;
+    else delete merged.compat;
+  }
+  return merged;
 }
 
 async function commitModelsConfig(
@@ -331,37 +397,201 @@ async function alignCurrentSessionModel(
   if (model) await session.setModel(model);
 }
 
-async function discoverModels(
-  provider: ProviderSnapshot,
-  apiKey: string | undefined,
-): Promise<DiscoveredProviderModel[]> {
-  const url = new URL(`${provider.baseUrl.replace(/\/+$/, "")}/models`);
-  const headers = new Headers(provider.headers);
-  headers.set("Accept", "application/json");
-  if (apiKey) {
-    if (provider.api === "anthropic-messages") {
-      headers.set("x-api-key", apiKey);
-      if (!headers.has("anthropic-version")) headers.set("anthropic-version", "2023-06-01");
-    } else if (provider.api === "google-generative-ai") {
-      url.searchParams.set("key", apiKey);
-    } else {
-      headers.set("Authorization", `Bearer ${apiKey}`);
-    }
+const ANTHROPIC_COMPAT_PATH_SUFFIXES = [
+  "/api/claudecode",
+  "/api/anthropic",
+  "/apps/anthropic",
+  "/api/coding",
+  "/claudecode",
+  "/anthropic",
+  "/step_plan",
+  "/coding",
+  "/claude",
+] as const;
+
+function modelCatalogUrls(baseUrl: string, modelsUrl?: string): URL[] {
+  if (modelsUrl) return [new URL(modelsUrl)];
+  const base = new URL(baseUrl);
+  const pathname = base.pathname.replace(/\/+$/, "");
+  const paths: string[] = [];
+  const add = (path: string) => {
+    const normalized = path.replace(/\/{2,}/g, "/") || "/";
+    if (!paths.includes(normalized)) paths.push(normalized);
+  };
+  const versionMatch = pathname.match(/^(.*)\/v(\d+)$/i);
+  const compatSuffix = ANTHROPIC_COMPAT_PATH_SUFFIXES.find((suffix) =>
+    pathname.toLowerCase().endsWith(suffix),
+  );
+  if (!pathname) {
+    add("/v1/models");
+    add("/models");
+  } else if (versionMatch) {
+    const prefix = versionMatch[1];
+    add(`${pathname}/models`);
+    if (versionMatch[2] !== "1") add(`${prefix}/v1/models`);
+    add(`${prefix}/models`);
+  } else if (compatSuffix) {
+    const prefix = pathname.slice(0, -compatSuffix.length);
+    add(`${prefix}/v1/models`);
+    add(`${prefix}/models`);
+  } else {
+    add(`${pathname}/models`);
+    add(`${pathname}/v1/models`);
   }
+  return paths.map((path) => {
+    const url = new URL(base);
+    url.pathname = path;
+    url.search = "";
+    url.hash = "";
+    return url;
+  });
+}
+
+function catalogEndpointLabel(url: URL): string {
+  return `${url.origin}${url.pathname}`;
+}
+
+function redactedProviderMessage(
+  payload: unknown,
+  sensitiveValues: string[],
+): string | undefined {
+  if (!isObject(payload)) return undefined;
+  const nestedError = isObject(payload.error) ? payload.error.message : payload.error;
+  const raw = [nestedError, payload.message, payload.detail]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (!raw) return undefined;
+  let message = raw.replace(/\s+/g, " ").trim();
+  for (const value of sensitiveValues) {
+    if (value) message = message.replaceAll(value, "[redacted]");
+  }
+  return message.length > 240 ? `${message.slice(0, 237)}...` : message;
+}
+
+function redactedProviderText(raw: string, sensitiveValues: string[]): string {
+  let message = raw.replace(/\s+/g, " ").trim();
+  for (const value of sensitiveValues) {
+    if (value) message = message.replaceAll(value, "[redacted]");
+  }
+  return message.length > 320 ? `${message.slice(0, 317)}...` : message;
+}
+
+function providerSensitiveValues(
+  apiKey: string | undefined,
+  headers: Record<string, string>,
+): string[] {
+  const headerValues = Object.entries(headers)
+    .filter(([name, value]) =>
+      value.length >= 6 || /authorization|api.?key|token|secret|cookie/i.test(name),
+    )
+    .map(([, value]) => value);
+  return [...new Set([apiKey, ...headerValues].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  ))];
+}
+
+type CatalogResponse = {
+  items?: unknown[];
+  error?: string;
+  retryAlternatePath: boolean;
+};
+
+async function fetchModelCatalog(
+  url: URL,
+  headers: Headers,
+  sensitiveValues: string[],
+): Promise<CatalogResponse> {
   const response = await fetch(url, {
     headers,
     signal: AbortSignal.timeout(12_000),
   });
-  if (!response.ok) {
-    throw new Error(`Provider returned ${response.status} ${response.statusText}`);
+  const text = await response.text();
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text) as unknown;
+  } catch {
+    const kind = response.headers.get("content-type")?.includes("text/html") || /^\s*</.test(text)
+      ? "HTML instead of JSON"
+      : "invalid JSON";
+    return {
+      error: `Provider model endpoint ${catalogEndpointLabel(url)} returned ${kind}`,
+      retryAlternatePath: response.ok || response.status === 404 || response.status === 405,
+    };
   }
-  const payload = (await response.json()) as unknown;
-  if (!isObject(payload)) throw new Error("Provider returned an invalid model catalog");
-  const items = Array.isArray(payload.data)
-    ? payload.data
-    : Array.isArray(payload.models)
-      ? payload.models
-      : [];
+
+  const detail = redactedProviderMessage(payload, sensitiveValues);
+  if (!response.ok) {
+    return {
+      error: `Provider model endpoint ${catalogEndpointLabel(url)} returned ${response.status} ${response.statusText}${
+        detail ? `: ${detail}` : ""
+      }`,
+      retryAlternatePath: response.status === 404 || response.status === 405,
+    };
+  }
+
+  const items = Array.isArray(payload)
+    ? payload
+    : isObject(payload) && Array.isArray(payload.data)
+      ? payload.data
+      : isObject(payload) && Array.isArray(payload.models)
+        ? payload.models
+        : undefined;
+  if (!items) {
+    return {
+      error: `Provider model endpoint ${catalogEndpointLabel(url)} returned JSON without a model list${
+        detail ? `: ${detail}` : ""
+      }`,
+      retryAlternatePath: true,
+    };
+  }
+  return { items, retryAlternatePath: false };
+}
+
+async function discoverModels(
+  provider: ProviderSnapshot,
+  apiKey: string | undefined,
+): Promise<DiscoveredProviderModel[]> {
+  const headers = new Headers(provider.headers);
+  headers.set("Accept", "application/json");
+  if (apiKey) {
+    if (provider.authHeader) headers.set("Authorization", `Bearer ${apiKey}`);
+    if (provider.api === "anthropic-messages") {
+      headers.set("x-api-key", apiKey);
+      if (!headers.has("anthropic-version")) headers.set("anthropic-version", "2023-06-01");
+    } else if (provider.api !== "google-generative-ai" && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
+    }
+  }
+  const urls = modelCatalogUrls(provider.baseUrl, provider.modelsUrl);
+  const sensitiveValues = providerSensitiveValues(apiKey, provider.headers);
+  const attempted: string[] = [];
+  let lastError = "Provider returned an invalid model catalog";
+  let items: unknown[] | undefined;
+  for (const url of urls) {
+    if (apiKey && provider.api === "google-generative-ai") url.searchParams.set("key", apiKey);
+    attempted.push(catalogEndpointLabel(url));
+    let result: CatalogResponse;
+    try {
+      result = await fetchModelCatalog(url, headers, sensitiveValues);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const timeout = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      result = {
+        error: `Could not reach Provider model endpoint ${catalogEndpointLabel(url)}: ${
+          timeout ? "request timed out" : redactedProviderText(raw, sensitiveValues)
+        }`,
+        retryAlternatePath: true,
+      };
+    }
+    if (result.items) {
+      items = result.items;
+      break;
+    }
+    if (result.error) lastError = result.error;
+    if (!result.retryAlternatePath) break;
+  }
+  if (!items) {
+    throw new Error(`${lastError}. Check the Base URL; tried ${attempted.join(" or ")}`);
+  }
   const enabled = new Map(provider.models.map((model) => [model.id, model]));
   const discovered = new Map<string, DiscoveredProviderModel>();
   for (const item of items) {
@@ -387,8 +617,8 @@ async function discoverModels(
       reasoning,
       ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
       input: existing?.input ?? ["text"],
-      contextWindow: existing?.contextWindow ?? 128_000,
-      maxTokens: existing?.maxTokens ?? 16_384,
+      contextWindow: existing?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: existing?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
       enabled: enabled.has(id),
       thinkingSource,
     });
@@ -413,9 +643,203 @@ async function discoverModels(
   return [...discovered.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase());
+}
+
+function headersForAuthMode(
+  provider: ProviderSnapshot,
+  resolvedHeaders: Record<string, string> | undefined,
+  apiKey: string | undefined,
+  authHeader: boolean,
+): Record<string, string> {
+  const headers = Object.fromEntries(
+    Object.entries(resolvedHeaders ?? {}).filter(([key]) => key.toLowerCase() !== "authorization"),
+  );
+  const explicitAuthorization = Object.entries(provider.headers)
+    .find(([key]) => key.toLowerCase() === "authorization");
+  if (explicitAuthorization) headers[explicitAuthorization[0]] = explicitAuthorization[1];
+  else if (authHeader && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+function classifyConnectionFailure(
+  raw: string,
+  provider: ProviderSnapshot,
+  sensitiveValues: string[],
+): Pick<ProviderConnectionResult, "category" | "message" | "suggestion"> {
+  const message = redactedProviderText(raw || "Provider request failed", sensitiveValues);
+  const lower = message.toLowerCase();
+  let category: ProviderConnectionCategory = "provider";
+  let suggestion: string | undefined;
+
+  if (/\b401\b|unauthorized|(?:invalid|missing|no) api.?key|api.?key.*(?:not found|required)|authentication|authentication_error/.test(lower)) {
+    category = "authentication";
+    suggestion = "Check the API key and the Provider's authentication header settings.";
+  } else if (/\b403\b|forbidden|blocked|cloudflare|\bwaf\b|access denied/.test(lower)) {
+    category = "blocked";
+    suggestion = provider.api === "anthropic-messages" && !hasHeader(provider.headers, "user-agent")
+      ? "This relay may block the Anthropic SDK fingerprint. Set User-Agent to PiDeck/0.1 and retry."
+      : "The relay or its WAF rejected the request. Check IP policy, headers, and User-Agent rules.";
+  } else if (/\b429\b|rate.?limit|too many requests|quota/.test(lower)) {
+    category = "rate_limit";
+    suggestion = "The endpoint is reachable but rate-limited. Retry later or check the account quota.";
+  } else if (/\b404\b|not found|unknown endpoint|no route/.test(lower)) {
+    category = "not_found";
+    suggestion = `Check that the Base URL and ${provider.api} protocol point to the same API.`;
+  } else if (/timeout|timed out|aborted|deadline exceeded/.test(lower)) {
+    category = "timeout";
+    suggestion = "The generation request did not complete within 15 seconds. Check relay latency and routing.";
+  } else if (/fetch failed|enotfound|econnrefused|eai_again|socket|network|connection reset/.test(lower)) {
+    category = "network";
+    suggestion = "Check DNS, proxy settings, TLS, and whether the endpoint is reachable from this machine.";
+  } else if (/unexpected token|<!doctype|<html|invalid json|parse|stream ended|protocol/.test(lower)) {
+    category = "protocol";
+    suggestion = `The response did not match ${provider.api}. Check the protocol selection and Base URL.`;
+  } else if (/\b400\b|\b422\b|bad request|invalid_request|model.*required|unknown model/.test(lower)) {
+    category = "configuration";
+    suggestion = provider.api === "openai-completions"
+      ? "The relay rejected the Coding Agent request shape. Try System role and omit reasoning_effort in OpenAI compatibility."
+      : "Check the model ID, protocol selection, and provider-specific request requirements.";
+  }
+  return { category, message, ...(suggestion ? { suggestion } : {}) };
+}
+
+async function checkProviderConnection(
+  provider: ProviderSnapshot,
+  model: Model<Api>,
+  factory: WorkspaceGraphFactory,
+  authHeaderOverride?: boolean,
+): Promise<ProviderConnectionResult> {
+  const startedAt = Date.now();
+  const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) {
+    const failure = classifyConnectionFailure(auth.error, provider, []);
+    return {
+      providerId: provider.id,
+      modelId: model.id,
+      api: provider.api,
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      ...failure,
+    };
+  }
+  const headers = authHeaderOverride === undefined
+    ? auth.headers
+    : headersForAuthMode(provider, auth.headers, auth.apiKey, authHeaderOverride);
+  const sensitiveValues = providerSensitiveValues(auth.apiKey, headers ?? {});
+  const context: Context = {
+    systemPrompt: "You are validating a coding assistant Provider.",
+    messages: [{ role: "user", content: "Reply with OK.", timestamp: Date.now() }],
+    tools: [{
+      name: "pideck_connection_test",
+      description: "Return a diagnostic label for the Provider connection test.",
+      parameters: {
+        type: "object",
+        properties: { label: { type: "string" } },
+        required: ["label"],
+        additionalProperties: false,
+      } as never,
+    }],
+  };
+  try {
+    const response = await completeSimple(model, context, {
+      apiKey: auth.apiKey,
+      headers,
+      env: auth.env,
+      maxTokens: 4,
+      ...(model.reasoning ? { reasoning: "minimal" as const } : {}),
+      timeoutMs: 15_000,
+      maxRetries: 0,
+      maxRetryDelayMs: 0,
+    });
+    if (response.stopReason === "error" || response.stopReason === "aborted") {
+      const failure = classifyConnectionFailure(
+        response.errorMessage ?? `Generation ${response.stopReason}`,
+        provider,
+        sensitiveValues,
+      );
+      return {
+        providerId: provider.id,
+        modelId: model.id,
+        api: provider.api,
+        ok: false,
+        latencyMs: Date.now() - startedAt,
+        ...failure,
+      };
+    }
+    return {
+      providerId: provider.id,
+      modelId: model.id,
+      api: provider.api,
+      ok: true,
+      latencyMs: Date.now() - startedAt,
+      category: "ok",
+      message: `Generation succeeded with ${provider.api}.`,
+    };
+  } catch (error) {
+    const failure = classifyConnectionFailure(
+      error instanceof Error ? error.message : String(error),
+      provider,
+      sensitiveValues,
+    );
+    return {
+      providerId: provider.id,
+      modelId: model.id,
+      api: provider.api,
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      ...failure,
+    };
+  }
+}
+
+async function persistDetectedAuthHeader(
+  modelsPath: string,
+  providerId: string,
+  authHeader: boolean,
+  requestId: string,
+  factory: WorkspaceGraphFactory,
+): Promise<void> {
+  if (factory.hasBusySessions()) {
+    throw new Error("Stop running sessions before applying detected Provider authentication");
+  }
+  const server = factory.getServer();
+  if (!server) throw new Error("Server not bound");
+  if (!server.serviceGraphLock.tryAcquire({ operationKind: "provider.mutation", requestId })) {
+    throw new Error("Service graph is busy");
+  }
+  try {
+    const config = await readModelsConfig(modelsPath);
+    const raw = config.providers[providerId];
+    if (!isObject(raw)) throw new Error(`Provider not found: ${providerId}`);
+    if (raw.authHeader === authHeader) return;
+    await invalidateRetainedRuntimes(factory);
+    raw.authHeader = authHeader;
+    await commitModelsConfig(modelsPath, config.root, factory);
+    try {
+      await refreshRegistry(factory, true);
+    } catch (error) {
+      await restoreModelsConfig(modelsPath, config.original);
+      await refreshRegistry(factory, true);
+      throw error;
+    }
+  } finally {
+    server.serviceGraphLock.release(requestId);
+  }
+}
+
 export function createProviderHandlers(
   factory: WorkspaceGraphFactory,
-): Partial<Record<"provider.list" | "provider.setEnabled" | "provider.save" | "provider.remove" | "provider.fetchModels", MethodHandler>> {
+): Partial<Record<
+  | "provider.list"
+  | "provider.setEnabled"
+  | "provider.save"
+  | "provider.remove"
+  | "provider.fetchModels"
+  | "provider.checkConnection",
+  MethodHandler
+>> {
   const modelsPath = join(factory.deps.agentDir, "models.json");
 
   return {
@@ -680,6 +1104,70 @@ export function createProviderHandlers(
           error: createHostError(
             "INTERNAL_ERROR",
             error instanceof Error ? error.message : "Could not fetch Provider models",
+            { retryable: true },
+          ),
+        };
+      }
+    },
+
+    "provider.checkConnection": async (ctx) => {
+      const { providerId, modelId } = ctx.params as { providerId: string; modelId?: string };
+      try {
+        await refreshRegistry(factory);
+        const config = await readModelsConfig(modelsPath);
+        const raw = config.providers[providerId];
+        if (!isObject(raw)) {
+          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+        }
+        const provider = providerSnapshot(
+          providerId,
+          raw,
+          factory,
+          resolveEnabledProviders(
+            config,
+            factory.getGraph()?.agentSession?.model?.provider,
+          ).includes(providerId),
+        );
+        const targetModelId = modelId?.trim() || provider.models[0]?.id;
+        if (!targetModelId) {
+          return {
+            error: createHostError(
+              "INVALID_REQUEST",
+              "Add and enable at least one model before testing the Provider",
+            ),
+          };
+        }
+        const model = factory.deps.modelRegistry.find(providerId, targetModelId);
+        if (!model) {
+          return {
+            error: createHostError(
+              "MODEL_NOT_FOUND",
+              `Model not found in Provider ${providerId}: ${targetModelId}`,
+            ),
+          };
+        }
+        const result = await checkProviderConnection(provider, model, factory);
+        if (
+          result.category !== "authentication" ||
+          hasHeader(provider.headers, "authorization")
+        ) {
+          return { result };
+        }
+        const detectedAuthHeader = !provider.authHeader;
+        const retry = await checkProviderConnection(provider, model, factory, detectedAuthHeader);
+        if (!retry.ok) return { result };
+        await persistDetectedAuthHeader(modelsPath, providerId, detectedAuthHeader, ctx.id, factory);
+        return {
+          result: {
+            ...retry,
+            message: `${retry.message} Authentication mode was detected automatically.`,
+          },
+        };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            error instanceof Error ? error.message : "Could not test Provider connection",
             { retryable: true },
           ),
         };

@@ -29,6 +29,15 @@ describe("applyKnownThinkingProfiles", () => {
           contextWindow: 128000,
           maxTokens: 16384,
         },
+        {
+          id: "glm-5.2",
+          name: "GLM 5.2",
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 272000,
+          maxTokens: 65536,
+        },
       ],
     });
 
@@ -42,6 +51,15 @@ describe("applyKnownThinkingProfiles", () => {
     });
     expect(registry.find("test-profile", "grok-4.5-custom")?.thinkingLevelMap).toEqual({
       minimal: "tiny",
+    });
+    expect(registry.find("test-profile", "glm-5.2")?.thinkingLevelMap).toEqual({
+      off: null,
+      minimal: null,
+      low: null,
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: "max",
     });
   });
 

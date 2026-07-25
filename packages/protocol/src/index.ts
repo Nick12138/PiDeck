@@ -1,6 +1,7 @@
 export * from "./errors.js";
 export * from "./types.js";
 export * from "./provider-thinking.js";
+export * from "./model-thinking-profiles.js";
 export * from "./methods.js";
 export * from "./events.js";
 export * from "./contracts.js";

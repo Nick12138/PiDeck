@@ -1,4 +1,8 @@
 import type { ThinkingLevel, ThinkingLevelMap } from "./types.js";
+import { findModelThinkingProfile } from "./model-thinking-profiles.js";
+
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 272_000;
+export const DEFAULT_MODEL_MAX_TOKENS = 65_536;
 
 export const THINKING_LEVELS: readonly ThinkingLevel[] = [
   "off",
@@ -74,23 +78,19 @@ export function detectModelThinking(
     }
   }
 
-  const normalizedId = modelId.trim().toLowerCase();
-  if (/^grok[-_.]?4(?:[.-]?5)(?:$|[-_.])/.test(normalizedId)) {
+  const profile = findModelThinkingProfile(modelId);
+  if (profile) {
     return {
       reasoning: true,
-      thinkingLevelMap: {
-        off: null,
-        minimal: null,
-        low: "low",
-        medium: "medium",
-        high: "high",
-        xhigh: null,
-        max: null,
-      },
+      thinkingLevelMap: { ...profile.thinkingLevelMap },
       source: "profile",
     };
   }
 
+  const normalizedId = modelId.trim().toLowerCase();
+  if (/(?:^|[-_.])(?:non|no)[-_.]?(?:reasoning|thinking)(?:$|[-_.])/i.test(normalizedId)) {
+    return { reasoning: false, source: "default" };
+  }
   if (/reason|thinking|(^|[-_.])r1($|[-_.])/i.test(normalizedId)) {
     return { reasoning: true, source: "inferred" };
   }

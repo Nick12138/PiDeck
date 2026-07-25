@@ -1,5 +1,9 @@
 import {
+  Activity,
+  AlertTriangle,
   Check,
+  ChevronRight,
+  CircleCheck,
   Eye,
   EyeOff,
   Plus,
@@ -13,13 +17,20 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type {
   DiscoveredProviderModel,
+  ProviderConnectionResult,
+  ProviderCompatibilityDraft,
   ProviderDraft,
   ProviderModelConfig,
   ProviderSnapshot,
   ThinkingLevel,
   ThinkingLevelMap,
 } from "@pideck/protocol";
-import { detectModelThinking, THINKING_LEVELS } from "@pideck/protocol";
+import {
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
+  detectModelThinking,
+  THINKING_LEVELS,
+} from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -39,9 +50,13 @@ function snapshotToDraft(provider: ProviderSnapshot): DraftState {
     originalId: provider.id,
     name: provider.name,
     baseUrl: provider.baseUrl,
+    modelsUrl: provider.modelsUrl ?? "",
     api: provider.api,
-    authHeader: provider.authHeader,
     headers: { ...provider.headers },
+    compat: {
+      supportsDeveloperRole: provider.compat?.supportsDeveloperRole ?? null,
+      supportsReasoningEffort: provider.compat?.supportsReasoningEffort ?? null,
+    },
     models: provider.models.map((model) => {
       const detected = detectModelThinking(model.id);
       const useProfile =
@@ -64,9 +79,13 @@ function emptyDraft(): DraftState {
     id: "",
     name: "New Provider",
     baseUrl: "",
+    modelsUrl: "",
     api: "openai-completions",
-    authHeader: true,
-    headers: {},
+    headers: { "User-Agent": "PiDeck/0.1" },
+    compat: {
+      supportsDeveloperRole: null,
+      supportsReasoningEffort: null,
+    },
     models: [],
   };
 }
@@ -90,6 +109,12 @@ function stripEnabled(model: DiscoveredProviderModel): ProviderModelConfig {
   return config;
 }
 
+function compatibilityChoice(value: boolean | null | undefined): "auto" | "enabled" | "disabled" {
+  if (value === true) return "enabled";
+  if (value === false) return "disabled";
+  return "auto";
+}
+
 function customThinkingMap(model: DiscoveredProviderModel): ThinkingLevelMap {
   return Object.fromEntries(
     THINKING_LEVELS.map((level) => {
@@ -109,6 +134,44 @@ export function automaticThinkingConfig(
     thinkingLevelMap: detected.thinkingLevelMap,
     thinkingSource: detected.reasoning ? detected.source : "default",
   };
+}
+
+export function shouldOpenAdvancedEndpoint(modelsUrl: string | undefined): boolean {
+  return Boolean(modelsUrl?.trim());
+}
+
+export function providerDraftForSave(
+  draft: ProviderDraft,
+  hadStoredCompatibility = false,
+): ProviderDraft {
+  const compat = draft.compat;
+  const hasCompatibilityOverride = Object.values(compat ?? {}).some(
+    (value) => typeof value === "boolean",
+  );
+  return {
+    id: draft.id,
+    name: draft.name,
+    baseUrl: draft.baseUrl,
+    ...(draft.modelsUrl?.trim() ? { modelsUrl: draft.modelsUrl.trim() } : {}),
+    api: draft.api,
+    authHeader: draft.api === "openai-completions" || draft.api === "openai-responses",
+    headers: draft.headers,
+    ...((hadStoredCompatibility || hasCompatibilityOverride) && compat ? { compat } : {}),
+    models: draft.models,
+  };
+}
+
+export function providerSaveFailureMessage(
+  message: string,
+  provider: ProviderDraft,
+): string {
+  if (
+    message.includes("invalid provider.save params") &&
+    (provider.modelsUrl !== undefined || provider.compat !== undefined)
+  ) {
+    return "Pi Host must be restarted before saving Models URL or compatibility overrides. Restart Host in General settings, then save again.";
+  }
+  return message;
 }
 
 function thinkingMode(model: DiscoveredProviderModel): "auto" | "custom" | "disabled" {
@@ -159,8 +222,11 @@ export function ProvidersSettings() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<ProviderConnectionResult | null>(null);
   const [updatingProviderId, setUpdatingProviderId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [advancedEndpointOpen, setAdvancedEndpointOpen] = useState(false);
   const [manualId, setManualId] = useState("");
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
@@ -170,6 +236,7 @@ export function ProvidersSettings() {
     if (!host) {
       setProviders([]);
       setDraft(null);
+      setAdvancedEndpointOpen(false);
       return;
     }
     let cancelled = false;
@@ -191,10 +258,12 @@ export function ProvidersSettings() {
           setSelectedId(preferred.id);
           setDraft(nextDraft);
           setCatalog(enabledCatalog(nextDraft.models));
+          setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
         } else {
           setSelectedId(null);
           setDraft(null);
           setCatalog([]);
+          setAdvancedEndpointOpen(false);
         }
       })
       .catch((error) => {
@@ -233,6 +302,8 @@ export function ProvidersSettings() {
     setClearApiKey(false);
     setEditingModelId(null);
     setManualOpen(false);
+    setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
+    setConnectionResult(null);
   }
 
   function startNewProvider() {
@@ -243,9 +314,12 @@ export function ProvidersSettings() {
     setClearApiKey(false);
     setEditingModelId(null);
     setManualOpen(false);
+    setAdvancedEndpointOpen(false);
+    setConnectionResult(null);
   }
 
   function updateDraft(patch: Partial<ProviderDraft>) {
+    setConnectionResult(null);
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }
 
@@ -262,26 +336,25 @@ export function ProvidersSettings() {
     }
     setSaving(true);
     try {
+      const provider = providerDraftForSave(
+        draft,
+        providers.some((item) =>
+          item.id === draft.originalId && item.compat !== undefined
+        ),
+      );
       const response = await hostClient.request(
         "provider.save",
         hostContext(host),
         {
           ...(draft.originalId ? { originalId: draft.originalId } : {}),
-          provider: {
-            id: draft.id,
-            name: draft.name,
-            baseUrl: draft.baseUrl,
-            api: draft.api,
-            authHeader: draft.authHeader,
-            headers: draft.headers,
-            models: draft.models,
-          },
+          provider,
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
           ...(clearApiKey ? { clearApiKey: true } : {}),
         },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Could not save Provider", "error");
+        const message = response.error?.message ?? "Could not save Provider";
+        pushNotification(providerSaveFailureMessage(message, provider), "error");
         return null;
       }
       const saved = response.result.provider;
@@ -347,6 +420,49 @@ export function ProvidersSettings() {
     } finally {
       setFetching(false);
     }
+  }
+
+  async function testConnection() {
+    if (!host || !draft || testing) return;
+    const saved = await persistDraft(false);
+    if (!saved) return;
+    const modelId = saved.models[0]?.id;
+    if (!modelId) {
+      pushNotification("Add and enable at least one model before testing", "error");
+      return;
+    }
+    setTesting(true);
+    setConnectionResult(null);
+    try {
+      const response = await hostClient.request(
+        "provider.checkConnection",
+        hostContext(host),
+        { providerId: saved.id, modelId },
+        25_000,
+      );
+      if (!response.ok) {
+        pushNotification(response.error?.message ?? "Could not test Provider", "error");
+        return;
+      }
+      setConnectionResult(response.result);
+      if (response.result.ok) pushNotification(`Provider responded in ${response.result.latencyMs} ms`);
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : "Could not test Provider", "error");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  function updateCompatibility(
+    key: keyof ProviderCompatibilityDraft,
+    value: boolean | null,
+  ) {
+    updateDraft({
+      compat: {
+        ...draft?.compat,
+        [key]: value,
+      },
+    });
   }
 
   async function setProviderEnabled(provider: ProviderSnapshot, enabled: boolean) {
@@ -423,8 +539,8 @@ export function ProvidersSettings() {
       ...(detected.thinkingLevelMap ? { thinkingLevelMap: detected.thinkingLevelMap } : {}),
       thinkingSource: detected.source,
       input: ["text"],
-      contextWindow: 128_000,
-      maxTokens: 16_384,
+      contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: DEFAULT_MODEL_MAX_TOKENS,
       enabled: true,
     };
     const next = [...catalog.filter((item) => item.id !== id), { ...model, enabled: true }].sort(
@@ -536,6 +652,16 @@ export function ProvidersSettings() {
                 <p className="mt-1 text-xs text-muted">{draft.originalId ?? "Custom Provider"}</p>
               </div>
               <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
+                  disabled={saving || fetching || testing || draft.models.length === 0}
+                  title="Send a minimal request through the configured model API"
+                  onClick={() => void testConnection()}
+                >
+                  <Activity className={testing ? "animate-pulse" : ""} size={14} />
+                  {testing ? "Testing" : "Test"}
+                </button>
                 {draft.originalId && (
                   <button
                     type="button"
@@ -549,7 +675,7 @@ export function ProvidersSettings() {
                 <button
                   type="button"
                   className="flex h-8 items-center gap-1.5 rounded bg-accent px-3 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
-                  disabled={saving || fetching}
+                  disabled={saving || fetching || testing}
                   onClick={() => void persistDraft()}
                 >
                   {saving ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
@@ -557,6 +683,63 @@ export function ProvidersSettings() {
                 </button>
               </div>
             </header>
+
+            {connectionResult && (
+              <div
+                className={`border-l-2 px-3 py-2 text-xs ${
+                  connectionResult.ok
+                    ? "border-success bg-success/5"
+                    : "border-danger bg-danger/5"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {connectionResult.ok ? (
+                    <CircleCheck className="mt-0.5 shrink-0 text-success" size={15} />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 shrink-0 text-danger" size={15} />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-medium">
+                        {connectionResult.ok ? "Generation check passed" : connectionResult.category.replace("_", " ")}
+                      </span>
+                      <span className="font-mono text-[11px] text-muted">
+                        {connectionResult.modelId} · {connectionResult.latencyMs} ms
+                      </span>
+                    </div>
+                    <p className="mt-1 break-words text-muted">{connectionResult.message}</p>
+                    {connectionResult.suggestion && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span>{connectionResult.suggestion}</span>
+                        {connectionResult.category === "configuration" &&
+                          draft.api === "openai-completions" && (
+                            <>
+                              {draft.compat?.supportsDeveloperRole !== false && (
+                                <button
+                                  type="button"
+                                  className="font-medium text-accent hover:underline"
+                                  onClick={() => updateCompatibility("supportsDeveloperRole", false)}
+                                >
+                                  Use system role
+                                </button>
+                              )}
+                              {draft.compat?.supportsReasoningEffort !== false && (
+                                <button
+                                  type="button"
+                                  className="font-medium text-accent hover:underline"
+                                  onClick={() => updateCompatibility("supportsReasoningEffort", false)}
+                                >
+                                  Omit reasoning_effort
+                                </button>
+                              )}
+                            </>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <section className="grid grid-cols-2 gap-4">
               <label className="flex flex-col gap-1.5 text-xs text-muted">
@@ -579,12 +762,14 @@ export function ProvidersSettings() {
                 Base URL
                 <input
                   className="h-9 rounded border border-border bg-surface px-3 font-mono text-sm text-foreground outline-none focus:border-accent"
-                  placeholder="https://api.example.com/v1"
+                  placeholder={draft.api === "anthropic-messages"
+                    ? "https://api.example.com"
+                    : "https://api.example.com/v1"}
                   value={draft.baseUrl}
                   onChange={(event) => updateDraft({ baseUrl: event.target.value })}
                 />
               </label>
-              <label className="flex flex-col gap-1.5 text-xs text-muted">
+              <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                 API protocol
                 <select
                   className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
@@ -596,14 +781,60 @@ export function ProvidersSettings() {
                   ))}
                 </select>
               </label>
-              <label className="flex items-end gap-2 pb-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={draft.authHeader}
-                  onChange={(event) => updateDraft({ authHeader: event.target.checked })}
-                />
-                Authorization Bearer header
-              </label>
+              <details
+                className="group col-span-2"
+                open={advancedEndpointOpen}
+                onToggle={(event) => setAdvancedEndpointOpen(event.currentTarget.open)}
+              >
+                <summary className="flex h-8 cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <ChevronRight className="transition-transform group-open:rotate-90" size={14} />
+                  Advanced endpoint
+                </summary>
+                <label className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
+                  <span>Models URL <span className="font-normal text-muted">(optional)</span></span>
+                  <input
+                    className="h-9 rounded border border-border bg-surface px-3 font-mono text-sm text-foreground outline-none focus:border-accent"
+                    placeholder="Auto-detect from Base URL"
+                    value={draft.modelsUrl ?? ""}
+                    onChange={(event) => updateDraft({ modelsUrl: event.target.value })}
+                  />
+                </label>
+              </details>
+              {draft.api === "openai-completions" && (
+                <div className="col-span-2 grid grid-cols-2 gap-4">
+                  <h2 className="col-span-2 text-sm font-medium">OpenAI compatibility</h2>
+                  <label className="flex flex-col gap-1.5 text-xs text-muted">
+                    System instruction role
+                    <select
+                      className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                      value={compatibilityChoice(draft.compat?.supportsDeveloperRole)}
+                      onChange={(event) => updateCompatibility(
+                        "supportsDeveloperRole",
+                        event.target.value === "auto" ? null : event.target.value === "enabled",
+                      )}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="enabled">Developer</option>
+                      <option value="disabled">System</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs text-muted">
+                    Reasoning effort field
+                    <select
+                      className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                      value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
+                      onChange={(event) => updateCompatibility(
+                        "supportsReasoningEffort",
+                        event.target.value === "auto" ? null : event.target.value === "enabled",
+                      )}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="enabled">Send</option>
+                      <option value="disabled">Omit</option>
+                    </select>
+                  </label>
+                </div>
+              )}
             </section>
 
             <section>

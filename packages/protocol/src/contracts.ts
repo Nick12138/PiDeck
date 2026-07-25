@@ -42,6 +42,7 @@ import type {
   ProviderDraft,
   ProviderSnapshot,
   DiscoveredProviderModel,
+  ProviderConnectionResult,
   CommandSummary,
 } from "./types.js";
 
@@ -86,6 +87,7 @@ export type HostContextMap = {
   "provider.save": HostContext;
   "provider.remove": HostContext;
   "provider.fetchModels": HostContext;
+  "provider.checkConnection": HostContext;
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
@@ -159,6 +161,7 @@ export type HostRequestParams = {
   };
   "provider.remove": { providerId: string };
   "provider.fetchModels": { providerId: string };
+  "provider.checkConnection": { providerId: string; modelId?: string };
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
@@ -239,6 +242,7 @@ export type HostResultMap = {
     providerId: string;
     models: DiscoveredProviderModel[];
   };
+  "provider.checkConnection": ProviderConnectionResult;
   "model.list": {
     models: ModelSummary[];
     current?: ModelSummary;

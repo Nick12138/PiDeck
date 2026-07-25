@@ -324,6 +324,12 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["providerId"]) && isNonEmptyString(params.providerId)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "provider.checkConnection":
+      return exactObject(params, ["providerId"], ["modelId"]) &&
+        isNonEmptyString(params.providerId) &&
+        (params.modelId === undefined || isNonEmptyString(params.modelId))
+        ? ok(params)
+        : fail("invalid provider.checkConnection params", { method });
     case "model.setCurrent":
       return exactObject(params, ["provider", "modelId"]) &&
         isNonEmptyString(params.provider) &&

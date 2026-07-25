@@ -229,19 +229,33 @@ function isStringRecord(value: unknown): boolean {
   return isPlainObject(value) && Object.values(value).every(isString);
 }
 
+function isProviderCompatibility(value: unknown, allowNull: boolean): boolean {
+  return isPlainObject(value) &&
+    hasExactKeys(value, [], ["supportsDeveloperRole", "supportsReasoningEffort"]) &&
+    Object.values(value).every((item) =>
+      isBoolean(item) || (allowNull && item === null),
+    );
+}
+
 export function isProviderDraft(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["id", "name", "baseUrl", "api", "authHeader", "headers", "models"]) &&
+    hasExactKeys(
+      value,
+      ["id", "name", "baseUrl", "api", "headers", "models"],
+      ["modelsUrl", "authHeader", "compat"],
+    ) &&
     isString(value.id) &&
     value.id.trim().length > 0 &&
     isString(value.name) &&
     value.name.trim().length > 0 &&
     isString(value.baseUrl) &&
     value.baseUrl.trim().length > 0 &&
+    (value.modelsUrl === undefined || isString(value.modelsUrl)) &&
     (PROVIDER_APIS as readonly string[]).includes(String(value.api)) &&
-    isBoolean(value.authHeader) &&
+    (value.authHeader === undefined || isBoolean(value.authHeader)) &&
     isStringRecord(value.headers) &&
+    (value.compat === undefined || isProviderCompatibility(value.compat, true)) &&
     Array.isArray(value.models) &&
     value.models.every(isProviderModelConfig)
   );
@@ -268,16 +282,18 @@ function isProviderAuthStatus(value: unknown): boolean {
 function isProviderSnapshot(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["id", "enabled", "name", "baseUrl", "api", "authHeader", "headers", "models", "auth"]) &&
+    hasExactKeys(value, ["id", "enabled", "name", "baseUrl", "api", "authHeader", "headers", "models", "auth"], ["modelsUrl", "compat"]) &&
     isString(value.id) &&
     value.id.trim().length > 0 &&
     isBoolean(value.enabled) &&
     isString(value.name) &&
     value.name.trim().length > 0 &&
     isString(value.baseUrl) &&
+    (value.modelsUrl === undefined || isString(value.modelsUrl)) &&
     (PROVIDER_APIS as readonly string[]).includes(String(value.api)) &&
     isBoolean(value.authHeader) &&
     isStringRecord(value.headers) &&
+    (value.compat === undefined || isProviderCompatibility(value.compat, false)) &&
     Array.isArray(value.models) &&
     value.models.every(isProviderModelConfig) &&
     isProviderAuthStatus(value.auth)
@@ -1009,6 +1025,34 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.models.every(isDiscoveredProviderModel)
         ? null
         : "invalid provider.fetchModels result";
+    case "provider.checkConnection":
+      return isPlainObject(result) &&
+        hasExactKeys(
+          result,
+          ["providerId", "modelId", "api", "ok", "latencyMs", "category", "message"],
+          ["suggestion"],
+        ) &&
+        isString(result.providerId) &&
+        isString(result.modelId) &&
+        (PROVIDER_APIS as readonly string[]).includes(String(result.api)) &&
+        isBoolean(result.ok) &&
+        isSafeRevision(result.latencyMs) &&
+        [
+          "ok",
+          "configuration",
+          "authentication",
+          "blocked",
+          "rate_limit",
+          "not_found",
+          "timeout",
+          "network",
+          "protocol",
+          "provider",
+        ].includes(String(result.category)) &&
+        isString(result.message) &&
+        isOptionalString(result.suggestion)
+        ? null
+        : "invalid provider.checkConnection result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(result, ["models", "thinkingLevels", "configHealth"], ["current", "enabledProviders"]) &&

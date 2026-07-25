@@ -122,6 +122,10 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
       api: "openai-responses",
       authHeader: true,
       headers: {},
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: null,
+      },
       models: [
         {
           id: "model-1",
@@ -136,6 +140,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "provider.remove": { providerId: "local" },
   "provider.fetchModels": { providerId: "local" },
+  "provider.checkConnection": { providerId: "local", modelId: "model-1" },
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
@@ -254,6 +259,7 @@ function invalidParams(method: HostMethod): unknown {
       return { providerId: "local", enabled: "yes" };
     case "provider.remove":
     case "provider.fetchModels":
+    case "provider.checkConnection":
       return { providerId: "" };
     case "model.setCurrent":
       return { provider: "x" };
