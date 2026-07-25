@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@earendil-works/pi-coding-agent@0.80.7':
-    hash: ewffq2td7hcbxnmxol4yzvhgxe
+    hash: elb5w34vyhhutbv6l3655ep7ke
     path: patches/@earendil-works__pi-coding-agent@0.80.7.patch
 
 importers:
@@ -130,7 +130,7 @@ importers:
         version: 0.80.7(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
         specifier: 0.80.7
-        version: 0.80.7(patch_hash=ewffq2td7hcbxnmxol4yzvhgxe)(ws@8.21.1)(zod@4.4.3)
+        version: 0.80.7(patch_hash=elb5w34vyhhutbv6l3655ep7ke)(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-tui':
         specifier: 0.80.7
         version: 0.80.7
@@ -3411,7 +3411,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@0.80.7(patch_hash=ewffq2td7hcbxnmxol4yzvhgxe)(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-coding-agent@0.80.7(patch_hash=elb5w34vyhhutbv6l3655ep7ke)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@earendil-works/pi-agent-core': 0.80.7(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-ai': 0.80.7(ws@8.21.1)(zod@4.4.3)

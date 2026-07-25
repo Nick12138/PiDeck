@@ -63,3 +63,63 @@ diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
          beforeSessionStart?: () => void | Promise<void>;
 +        preserveExtensionCache?: boolean;
      }): Promise<void>;
+diff --git a/dist/core/package-manager.d.ts b/dist/core/package-manager.d.ts
+--- a/dist/core/package-manager.d.ts
++++ b/dist/core/package-manager.d.ts
+@@ -61,7 +61,8 @@ export interface PackageManager {
+     removeSourceFromSettings(source: string, options?: {
+         local?: boolean;
+     }): boolean;
+     setProgressCallback(callback: ProgressCallback | undefined): void;
++    setOperationSignal?(signal: AbortSignal | undefined): void;
+     getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
+ }
+ interface PackageManagerOptions {
+@@ -80,8 +81,10 @@ export declare class DefaultPackageManager implements PackageManager {
+     private globalNpmRoot;
+     private globalNpmRootCommandKey;
+     private progressCallback;
++    private operationSignal;
+     constructor(options: PackageManagerOptions);
+     setProgressCallback(callback: ProgressCallback | undefined): void;
++    setOperationSignal(signal: AbortSignal | undefined): void;
+     addSourceToSettings(source: string, options?: {
+         local?: boolean;
+     }): boolean;
+diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
+--- a/dist/core/package-manager.js
++++ b/dist/core/package-manager.js
+@@ -603,6 +603,7 @@ export class DefaultPackageManager {
+     globalNpmRoot;
+     globalNpmRootCommandKey;
+     progressCallback;
++    operationSignal;
+     constructor(options) {
+         this.cwd = resolvePath(options.cwd);
+         this.agentDir = resolvePath(options.agentDir);
+@@ -612,6 +613,9 @@ export class DefaultPackageManager {
+     setProgressCallback(callback) {
+         this.progressCallback = callback;
+     }
++    setOperationSignal(signal) {
++        this.operationSignal = signal;
++    }
+     addSourceToSettings(source, options) {
+         const scope = options?.local ? "project" : "user";
+         const currentSettings = scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
+@@ -2058,6 +2062,7 @@ export class DefaultPackageManager {
+             cwd: options?.cwd,
+             stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
+             env,
++            signal: this.operationSignal,
+         });
+     }
+     spawnCaptureCommand(command, args, options) {
+@@ -2067,6 +2072,7 @@ export class DefaultPackageManager {
+             cwd: options?.cwd,
+             stdio: ["ignore", "pipe", "pipe"],
+             env,
++            signal: this.operationSignal,
+         });
+     }
+     runCommandCapture(command, args, options) {

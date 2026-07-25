@@ -22,6 +22,19 @@ Mutations are rejected while the Agent is busy, serialized under
 `serviceGraphLock`, reconciled through settings flush/list/resolve/reload, and
 return `committed`, `partialFailure`, or `failed` status.
 
+Each mutation is registered as an owned Host operation. Its `AbortSignal`
+reaches the npm/git subprocesses used by `DefaultPackageManager`. At the
+10-minute Host deadline, Pi Host cancels the subprocess and allows up to 5
+seconds for the mutation's reconciliation and lock release. If cancellation
+does not complete, the Host enters quiescing and requests a process restart
+rather than allowing an unowned mutation to continue.
+
+Shutdown rejects new work, cancels the active graph operation, waits to own
+`serviceGraphLock`, and disposes the graph exactly once. The complete Host
+cleanup has an 8-second budget inside the Rust supervisor's 10-second
+force-kill boundary. `system.shutdown` reports acceptance only after cleanup
+completes successfully.
+
 ## UI
 
 The Packages page provides scope filters, install source entry, configured

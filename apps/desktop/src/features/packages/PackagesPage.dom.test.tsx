@@ -296,7 +296,7 @@ describe("PackagesPage DOM workflows", () => {
             { resourceId: "resource:skill:review", targetScope: "project", preference: "disabled" },
           ],
         },
-        60_000,
+        615_000,
       ]);
     });
     await user.click(screen.getByRole("button", { name: "Provided by Tools extension" }));
@@ -323,7 +323,7 @@ describe("PackagesPage DOM workflows", () => {
             { resourceId: "resource:skill:review", targetScope: "user", preference: "disabled" },
           ],
         },
-        60_000,
+        615_000,
       );
     });
   });
@@ -411,7 +411,7 @@ describe("PackagesPage DOM workflows", () => {
             preference: "enabled",
           }],
         },
-        60_000,
+        615_000,
       );
       expect(screen.getByRole("button", {
         name: "enabled all resources in Tools package",
@@ -539,7 +539,7 @@ describe("PackagesPage DOM workflows", () => {
         "package.install",
         expect.anything(),
         { source: "npm:trusted-tools", scope: "user" },
-        600_000,
+        615_000,
       );
     });
   });
@@ -620,7 +620,7 @@ describe("PackagesPage DOM workflows", () => {
             { resourceId: "resource:skill:review", targetScope: "user", preference: "disabled" },
           ],
         },
-        60_000,
+        615_000,
       ]);
     });
   });

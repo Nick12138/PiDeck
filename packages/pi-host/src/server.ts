@@ -19,8 +19,29 @@ import {
 import { IdentityState } from "./identity.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
 import { logger } from "./logger.js";
+import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { OutboundWriter } from "./outbound-queue.js";
 import { createLineReader } from "./transport.js";
+
+export const HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS = 8_000;
+
+async function completesWithin(operation: Promise<void>, timeoutMs: number): Promise<boolean> {
+  if (timeoutMs <= 0) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+    timer.unref?.();
+  });
+  const completed = operation.then(
+    () => ({ kind: "completed" as const }),
+    (error: unknown) => ({ kind: "failed" as const, error }),
+  );
+  const result = await Promise.race([completed, expired]);
+  if (timer) clearTimeout(timer);
+  if (result === false) return false;
+  if (result.kind === "failed") throw result.error;
+  return true;
+}
 
 export type HostRuntimeDeps = {
   agentDir: string;
@@ -62,6 +83,7 @@ export class PiHostServer {
   readonly identity = new IdentityState();
   readonly serviceGraphLock = new TryMutex();
   readonly agentOperationLock = new AgentOperationLock();
+  readonly graphOperations = new GraphOperationRegistry();
   private sequence = 0;
   private phase: HostPhase = "booting";
   private shuttingDown = false;
@@ -69,6 +91,9 @@ export class PiHostServer {
   private fatalError?: HostError;
   private readonly deps: HostRuntimeDeps;
   private stopReader: (() => void) | null = null;
+  private cleanupPromise: Promise<boolean> | null = null;
+  private shutdownRequestPromise: Promise<void> | null = null;
+  private transportShutdownPromise: Promise<void> | null = null;
   /** Bounded outbound queue (A3) — allocates event sequences at write time. */
   private readonly outbound = new OutboundWriter({
     stream: process.stdout,
@@ -176,32 +201,68 @@ export class PiHostServer {
 
   /** Graceful shutdown for transport loss / signals — mirrors system.shutdown cleanup. */
   async requestShutdown(reason: string): Promise<void> {
-    if (this.shuttingDown) return;
-    this.shuttingDown = true;
-    this.phase = "shuttingDown";
-    logger.warn("Shutting down Pi Host", { reason });
+    if (this.shutdownRequestPromise) return this.shutdownRequestPromise;
     const requestId = `shutdown:${reason}`;
-    const ownsGraphLock = this.serviceGraphLock.tryAcquire({
-      operationKind: "system.shutdown",
-      requestId,
-    });
-    try {
-      if (ownsGraphLock && this.deps.onShutdown) {
-        await this.deps.onShutdown();
-      } else if (!ownsGraphLock) {
-        logger.warn("Skipping graph disposal during an active graph mutation", {
-          operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
+    this.shutdownRequestPromise = (async () => {
+      let cleanupCompleted = false;
+      try {
+        cleanupCompleted = await this.quiesceAndCleanup(reason, requestId);
+        if (!cleanupCompleted) {
+          logger.error("Shutdown cleanup deadline expired", {
+            reason,
+            operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
+          });
+        }
+      } catch (err) {
+        logger.error("Cleanup during shutdown failed", {
+          reason,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
-    } catch (err) {
-      logger.error("Cleanup during shutdown failed", {
-        reason,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      if (ownsGraphLock) this.serviceGraphLock.release(requestId);
-    }
-    await this.shutdown();
+      await this.stopTransport(cleanupCompleted ? 0 : 1);
+    })();
+    return this.shutdownRequestPromise;
+  }
+
+  private quiesceAndCleanup(reason: string, requestId: string): Promise<boolean> {
+    if (this.cleanupPromise) return this.cleanupPromise;
+    this.shuttingDown = true;
+    this.phase = "shuttingDown";
+    logger.warn("Quiescing Pi Host", { reason });
+    this.cleanupPromise = (async () => {
+      const deadline = Date.now() + HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS;
+      const active = this.graphOperations.cancelActive(`Host shutdown: ${reason}`);
+      if (active) {
+        logger.warn("Cancelling active graph operation for shutdown", {
+          operationKind: active.operationKind,
+          operationId: active.operationId,
+        });
+        const operationCompleted = await completesWithin(
+          active.completion,
+          deadline - Date.now(),
+        );
+        if (!operationCompleted) return false;
+      }
+
+      const ownsGraphLock = await this.serviceGraphLock.acquire(
+        { operationKind: "system.shutdown", requestId },
+        Math.max(0, deadline - Date.now()),
+      );
+      if (!ownsGraphLock) return false;
+      let releaseGraphLock = true;
+      try {
+        if (!this.deps.onShutdown) return true;
+        const cleanupCompleted = await completesWithin(
+          this.deps.onShutdown(),
+          deadline - Date.now(),
+        );
+        if (!cleanupCompleted) releaseGraphLock = false;
+        return cleanupCompleted;
+      } finally {
+        if (releaseGraphLock) this.serviceGraphLock.release(requestId);
+      }
+    })();
+    return this.cleanupPromise;
   }
 
   async handleLine(line: string): Promise<void> {
@@ -361,24 +422,27 @@ export class PiHostServer {
         );
         return;
       }
-      // C2: cleanup graph/settings/UI BEFORE success response (B-SHUTDOWN-01)
-      this.shuttingDown = true;
-      this.phase = "shuttingDown";
-      const ownsGraphLock = this.serviceGraphLock.tryAcquire({
-        operationKind: "system.shutdown",
-        requestId: id,
-      });
+      let cleanupCompleted = false;
       try {
-        if (ownsGraphLock && this.deps.onShutdown) {
-          await this.deps.onShutdown();
-        } else if (!ownsGraphLock) {
-          logger.warn("Skipping graph disposal during an active graph mutation", {
-            operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
-          });
+        cleanupCompleted = await this.quiesceAndCleanup("system.shutdown", id);
+        if (cleanupCompleted) {
+          this.writeResponse(
+            createSuccessResponse(this.identity.snapshot(), id, method, { accepted: true }),
+          );
+        } else {
+          this.writeResponse(
+            createFailureResponse(
+              this.identity.snapshot(),
+              id,
+              method,
+              createHostError(
+                "HOST_RESTART_REQUIRED",
+                "Host cleanup did not complete before the shutdown deadline",
+                { details: { timeoutMs: HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS } },
+              ),
+            ),
+          );
         }
-        this.writeResponse(
-          createSuccessResponse(this.identity.snapshot(), id, method, { accepted: true }),
-        );
       } catch (err) {
         this.writeResponse(
           createFailureResponse(
@@ -391,10 +455,8 @@ export class PiHostServer {
             ),
           ),
         );
-      } finally {
-        if (ownsGraphLock) this.serviceGraphLock.release(id);
       }
-      await this.shutdown();
+      await this.stopTransport(cleanupCompleted ? 0 : 1);
       return;
     }
 
@@ -518,7 +580,7 @@ export class PiHostServer {
     }
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(exitCode = 0): Promise<void> {
     logger.info("Pi Host shutting down");
     this.phase = "shuttingDown";
     this.shuttingDown = true;
@@ -540,7 +602,14 @@ export class PiHostServer {
         setTimeout(done, 500);
       }
     });
-    process.exitCode = 0;
-    process.exit(0);
+    process.exitCode = exitCode;
+    process.exit(exitCode);
+  }
+
+  private stopTransport(exitCode: number): Promise<void> {
+    if (!this.transportShutdownPromise) {
+      this.transportShutdownPromise = this.shutdown(exitCode);
+    }
+    return this.transportShutdownPromise;
   }
 }

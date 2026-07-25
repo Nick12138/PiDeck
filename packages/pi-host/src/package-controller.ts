@@ -27,25 +27,51 @@ import {
 import { logger } from "./logger.js";
 
 export const PACKAGE_MUTATION_TIMEOUT_MS = 10 * 60 * 1000;
+export const PACKAGE_MUTATION_CANCELLATION_GRACE_MS = 5_000;
 
 export async function waitForPackageMutation<T>(
   operation: Promise<T>,
   timeoutMs: number,
-): Promise<{ timedOut: false; value: T } | { timedOut: true }> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
-    timer.unref?.();
-    operation.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve({ timedOut: false, value });
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
+  cancellation?: {
+    cancel: () => void;
+    cancellationGraceMs: number;
+  },
+): Promise<
+  | { timedOut: false; value: T }
+  | { timedOut: true; cancellationCompleted: true; value: T }
+  | { timedOut: true; cancellationCompleted: false }
+> {
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"timeout">((resolve) => {
+    timeoutTimer = setTimeout(() => resolve("timeout"), timeoutMs);
+    timeoutTimer.unref?.();
   });
+  const completed = operation.then(
+    (value) => ({ kind: "completed" as const, value }),
+    (error: unknown) => ({ kind: "failed" as const, error }),
+  );
+  const first = await Promise.race([completed, deadline]);
+  if (timeoutTimer) clearTimeout(timeoutTimer);
+  if (first !== "timeout") {
+    if (first.kind === "failed") throw first.error;
+    return { timedOut: false, value: first.value };
+  }
+
+  cancellation?.cancel();
+  if (!cancellation) return { timedOut: true, cancellationCompleted: false };
+
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  const grace = new Promise<"grace-expired">((resolve) => {
+    graceTimer = setTimeout(() => resolve("grace-expired"), cancellation.cancellationGraceMs);
+    graceTimer.unref?.();
+  });
+  const afterCancel = await Promise.race([completed, grace]);
+  if (graceTimer) clearTimeout(graceTimer);
+  if (afterCancel === "grace-expired") {
+    return { timedOut: true, cancellationCompleted: false };
+  }
+  if (afterCancel.kind === "failed") throw afterCancel.error;
+  return { timedOut: true, cancellationCompleted: true, value: afterCancel.value };
 }
 
 /**
@@ -290,6 +316,16 @@ export function packageMutationMayChangeDisk(kind: MutateKind): boolean {
   return kind === "install" || kind === "remove" || kind === "update" || kind === "updateAll";
 }
 
+function operationKindForPackageMutation(
+  kind: MutateKind,
+): "package.reload" | "resource.setPreferences" | "package.mutation" {
+  return kind === "reload"
+    ? "package.reload"
+    : kind === "setPreferences"
+      ? "resource.setPreferences"
+      : "package.mutation";
+}
+
 async function mutatePackage(
   factory: WorkspaceGraphFactory,
   ctx: {
@@ -299,32 +335,66 @@ async function mutatePackage(
   },
   kind: MutateKind,
 ): Promise<{ result: unknown } | { error: ReturnType<typeof createHostError> }> {
-  const operation = mutatePackageUnderLock(factory, ctx, kind);
-  const outcome = await waitForPackageMutation(operation, PACKAGE_MUTATION_TIMEOUT_MS);
+  const server = factory.getServer();
+  if (!server) {
+    return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+  }
+  const operationId = randomUUID();
+  const operationHandle = server.graphOperations.begin({
+    operationKind: operationKindForPackageMutation(kind),
+    requestId: ctx.id,
+    operationId,
+  });
+  if (!operationHandle) {
+    return {
+      error: createHostError("PACKAGE_MUTATION_BUSY", "Another package operation is running", {
+        retryable: true,
+      }),
+    };
+  }
+
+  const operation = mutatePackageUnderLock(
+    factory,
+    ctx,
+    kind,
+    operationId,
+    operationHandle.signal,
+  ).finally(() => operationHandle.finish());
+  const outcome = await waitForPackageMutation(operation, PACKAGE_MUTATION_TIMEOUT_MS, {
+    cancel: () => operationHandle.cancel(`Package ${kind} exceeded its deadline`),
+    cancellationGraceMs: PACKAGE_MUTATION_CANCELLATION_GRACE_MS,
+  });
   if (!outcome.timedOut) return outcome.value;
 
-  const server = factory.getServer();
-  const operationId = server?.serviceGraphLock.getOwner()?.operationId;
-  const message = `Package ${kind} timed out after ${PACKAGE_MUTATION_TIMEOUT_MS}ms; restart the Host before retrying`;
-  logger.error(message, { kind, operationId: operationId ?? null });
-  if (server && operationId) {
-    server.emit("package.progress", {
-      operationId,
-      type: "error",
-      action: kind,
-      source: "*",
-      message,
-    });
+  const cancellationCompleted = outcome.cancellationCompleted;
+  const message = cancellationCompleted
+    ? `Package ${kind} timed out and was cancelled; package state was reconciled`
+    : `Package ${kind} did not stop after cancellation; restarting the Host`;
+  logger.error(message, { kind, operationId, cancellationCompleted });
+  server.emit("package.progress", {
+    operationId,
+    type: "error",
+    action: kind,
+    source: "*",
+    message,
+  });
+  if (!cancellationCompleted) {
+    void server.requestShutdown(`unresponsive package ${kind} operation`);
   }
   return {
-    error: createHostError("HOST_RESTART_REQUIRED", message, {
-      retryable: true,
-      details: {
-        kind,
-        operationId: operationId ?? null,
-        timeoutMs: PACKAGE_MUTATION_TIMEOUT_MS,
+    error: createHostError(
+      cancellationCompleted ? "PACKAGE_PARTIAL_FAILURE" : "HOST_RESTART_REQUIRED",
+      message,
+      {
+        retryable: true,
+        details: {
+          kind,
+          operationId,
+          timeoutMs: PACKAGE_MUTATION_TIMEOUT_MS,
+          cancellationCompleted,
+        },
       },
-    }),
+    ),
   };
 }
 
@@ -336,6 +406,8 @@ async function mutatePackageUnderLock(
     context: Record<string, unknown>;
   },
   kind: MutateKind,
+  operationId: string,
+  signal: AbortSignal,
 ): Promise<{ result: unknown } | { error: ReturnType<typeof createHostError> }> {
   const stale = factory.checkIdentity(ctx.context, {
     requireWorkspace: true,
@@ -358,15 +430,9 @@ async function mutatePackageUnderLock(
     };
   }
 
-  const operationId = randomUUID();
   if (
     !server.serviceGraphLock.tryAcquire({
-      operationKind:
-        kind === "reload"
-          ? "package.reload"
-          : kind === "setPreferences"
-            ? "resource.setPreferences"
-            : "package.mutation",
+      operationKind: operationKindForPackageMutation(kind),
       requestId: ctx.id,
       operationId,
     })
@@ -424,7 +490,7 @@ async function mutatePackageUnderLock(
     await factory.invalidateRetainedRuntimeCaches?.();
 
     try {
-      await runMutation(factory, g, kind, ctx.params, operationId);
+      await runMutation(factory, g, kind, ctx.params, operationId, signal);
       changed = true;
     } catch (err) {
       mutationError = err instanceof Error ? err : new Error(String(err));
@@ -876,6 +942,7 @@ async function runMutation(
   kind: MutateKind,
   params: unknown,
   operationId: string,
+  signal: AbortSignal,
 ): Promise<void> {
   const server = factory.getServer()!;
   const pm = g.packageManager!;
@@ -902,7 +969,9 @@ async function runMutation(
     );
   });
 
+  pm.setOperationSignal?.(signal);
   try {
+    signal.throwIfAborted();
     switch (kind) {
       case "install": {
         const p = params as { source: string; scope: "user" | "project" };
@@ -953,7 +1022,9 @@ async function runMutation(
         break;
       }
     }
+    signal.throwIfAborted();
   } finally {
+    pm.setOperationSignal?.(undefined);
     pm.setProgressCallback(undefined);
   }
 }

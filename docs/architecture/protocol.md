@@ -62,5 +62,5 @@ Before requesting it, the desktop opens a bounded same-Host event buffer. It ins
 | rehydrate | 15s |
 | session create | 30s |
 | session open | 180s (includes blocking extension startup UI) |
-| package install/update | 10 min |
-| shutdown | 10s then Rust force-kill |
+| package mutation | Host: 10 min + 5s cancellation/reconcile; desktop: 10m15s |
+| shutdown | Host cleanup: 8s; Rust force-kill boundary: 10s |

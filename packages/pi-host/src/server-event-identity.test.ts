@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostIdentity } from "@pideck/protocol";
-import { PiHostServer } from "./server.js";
+import { HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS, PiHostServer } from "./server.js";
 
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const ACTIVE_SESSION_ID = "33333333-3333-4333-8333-333333333333";
@@ -30,6 +30,7 @@ function server(): PiHostServer {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("PiHostServer.emitForIdentity", () => {
@@ -142,7 +143,7 @@ describe("PiHostServer rehydrate barrier", () => {
 });
 
 describe("PiHostServer shutdown", () => {
-  it("does not dispose the graph while a mutation owns the graph lock", async () => {
+  it("cancels and waits for a package mutation before disposing the graph", async () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
       agentDir: "C:/agent",
@@ -169,8 +170,14 @@ describe("PiHostServer shutdown", () => {
         requestId: "package-request",
       }),
     ).toBe(true);
+    const operation = host.graphOperations.begin({
+      operationKind: "package.mutation",
+      requestId: "package-request",
+      operationId: "package-operation",
+    });
+    expect(operation).not.toBeNull();
 
-    await host.handleLine(
+    const handling = host.handleLine(
       JSON.stringify({
         protocolVersion: 1,
         id: "55555555-5555-4555-8555-555555555555",
@@ -180,11 +187,138 @@ describe("PiHostServer shutdown", () => {
       }),
     );
 
+    await vi.waitFor(() => expect(operation?.signal.aborted).toBe(true));
     expect(dispose).not.toHaveBeenCalled();
+
+    host.serviceGraphLock.release("package-request");
+    await Promise.resolve();
+    expect(dispose).not.toHaveBeenCalled();
+    operation?.finish();
+    await handling;
+
+    expect(dispose).toHaveBeenCalledOnce();
     expect(shutdown).toHaveBeenCalledOnce();
-    expect(host.serviceGraphLock.getOwner()).toMatchObject({
-      operationKind: "package.mutation",
-      requestId: "package-request",
+    expect(host.serviceGraphLock.getOwner()).toBeNull();
+  });
+
+  it("fails shutdown instead of accepting when graph-lock quiescing times out", async () => {
+    vi.useFakeTimers();
+    const host = server();
+    const shutdown = vi.spyOn(host, "shutdown").mockResolvedValue();
+    const writeResponse = vi.spyOn(host, "writeResponse").mockImplementation(() => {});
+    host.serviceGraphLock.tryAcquire({
+      operationKind: "workspace.setCurrent",
+      requestId: "workspace-request",
     });
+
+    const handling = host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "66666666-6666-4666-8666-666666666666",
+        method: "system.shutdown",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS);
+    await handling;
+
+    expect(writeResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ code: "HOST_RESTART_REQUIRED" }),
+      }),
+    );
+    expect(shutdown).toHaveBeenCalledWith(1);
+  });
+
+  it("applies the shutdown deadline to graph disposal", async () => {
+    vi.useFakeTimers();
+    const dispose = vi.fn(() => new Promise<void>(() => {}));
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      onShutdown: dispose,
+    });
+    const shutdown = vi.spyOn(host, "shutdown").mockResolvedValue();
+    const writeResponse = vi.spyOn(host, "writeResponse").mockImplementation(() => {});
+
+    const handling = host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "77777777-7777-4777-8777-777777777777",
+        method: "system.shutdown",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS);
+    await handling;
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(writeResponse).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    expect(shutdown).toHaveBeenCalledWith(1);
+  });
+
+  it("runs cleanup and transport shutdown exactly once for duplicate signals", async () => {
+    const dispose = vi.fn(async () => {});
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      onShutdown: dispose,
+    });
+    const shutdown = vi.spyOn(host, "shutdown").mockResolvedValue();
+
+    await Promise.all([host.requestShutdown("stdin end"), host.requestShutdown("stdin close")]);
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("shares cleanup and transport shutdown between RPC and signal entry points", async () => {
+    const dispose = vi.fn(async () => {});
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      onShutdown: dispose,
+    });
+    const shutdown = vi.spyOn(host, "shutdown").mockResolvedValue();
+    vi.spyOn(host, "writeResponse").mockImplementation(() => {});
+
+    const rpc = host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "88888888-8888-4888-8888-888888888888",
+        method: "system.shutdown",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    const signal = host.requestShutdown("SIGTERM");
+    await Promise.all([rpc, signal]);
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(shutdown).toHaveBeenCalledOnce();
   });
 });

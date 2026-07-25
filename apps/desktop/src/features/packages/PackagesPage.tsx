@@ -90,6 +90,9 @@ type MutationReview = {
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
+// Host deadline (10m) plus cancellation/reconcile grace and transport margin.
+const PACKAGE_MUTATION_REQUEST_TIMEOUT_MS = 615_000;
+
 const inputClass =
   "h-8 min-w-0 rounded border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-accent";
 const secondaryButton =
@@ -521,7 +524,7 @@ export function PackagesPage() {
         method,
         sessionPackageContext(host, workspace),
         params,
-        method.startsWith("package.update") || method === "package.install" ? 600_000 : 60_000,
+        PACKAGE_MUTATION_REQUEST_TIMEOUT_MS,
       );
       const current = useAppStore.getState();
       if (

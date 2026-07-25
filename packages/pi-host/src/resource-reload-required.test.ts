@@ -9,6 +9,7 @@ import { createPackageHandlers } from "./package-controller.js";
 import { createSettingsHandlers } from "./settings-controller.js";
 import { createSessionHandlers } from "./session-controller.js";
 import { logger } from "./logger.js";
+import { GraphOperationRegistry } from "./operation-lifecycle.js";
 
 function mockFactory(opts: {
   resourceReloadRequired: boolean;
@@ -127,6 +128,7 @@ function mockFactory(opts: {
   const releaseAgent = vi.fn();
   const server = {
     identity,
+    graphOperations: new GraphOperationRegistry(),
     serviceGraphLock: {
       isHeld: () => {
         graphHeldChecks += 1;
@@ -150,6 +152,7 @@ function mockFactory(opts: {
       phase = p;
     },
     getPhase: () => phase,
+    requestShutdown: vi.fn(async () => {}),
   };
 
   return {
@@ -504,6 +507,53 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
 
     expect("error" in out).toBe(true);
     expect(factory.getServer()!.identity.packageRevision).toBe(beforeRevision);
+  });
+
+  it("cancels a timed-out package operation, reconciles, and releases ownership", async () => {
+    vi.useFakeTimers();
+    try {
+      const factory = mockFactory({ resourceReloadRequired: false });
+      const graph = factory.getGraph()!;
+      const server = factory.getServer()!;
+      let operationSignal: AbortSignal | undefined;
+      let mutationSignal: AbortSignal | undefined;
+      graph.packageManager!.setOperationSignal = vi.fn((signal) => {
+        operationSignal = signal;
+        if (signal) mutationSignal = signal;
+      });
+      graph.packageManager!.installAndPersist = vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            if (operationSignal?.aborted) {
+              reject(operationSignal.reason);
+              return;
+            }
+            operationSignal?.addEventListener("abort", () => reject(operationSignal?.reason), {
+              once: true,
+            });
+          }),
+      );
+
+      const pending = createPackageHandlers(factory)["package.install"]!({
+        ...reloadCtx,
+        id: "req-timeout-install",
+        params: { source: "npm:never-finishes", scope: "user" },
+      } as never);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(operationSignal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(600_000);
+      const out = await pending;
+
+      expect("error" in out && out.error.code).toBe("PACKAGE_PARTIAL_FAILURE");
+      expect(mutationSignal?.aborted).toBe(true);
+      expect(operationSignal).toBeUndefined();
+      expect(server.serviceGraphLock.isHeld()).toBe(false);
+      expect(server.graphOperations.getActive()).toBeNull();
+      expect(server.requestShutdown).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("package.reloadResources failure keeps snapshot flag true and prompt blocked", async () => {
