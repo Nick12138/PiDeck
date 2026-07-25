@@ -53,6 +53,27 @@ describe("HostClient.shouldAcceptEvent", () => {
 });
 
 describe("HostClient lifecycle failures", () => {
+  it("normalizes native send failures and reports a transport error", async () => {
+    const client = new HostClient();
+    client.attach({
+      send: async () => Promise.reject("host not running"),
+      onMessage: () => () => undefined,
+    });
+    const errors: Error[] = [];
+    client.onTransportError((error) => errors.push(error));
+
+    await expect(
+      client.request(
+        "system.getStatus",
+        { expectedHostInstanceId: "h1" },
+        null,
+      ),
+    ).rejects.toThrow("host not running");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(Error);
+    expect(errors[0]?.message).toBe("host not running");
+  });
+
   it("delivers a Rust synthetic fatal before normal Host epoch filtering", () => {
     const client = new HostClient();
     const transportHandlers: Array<(line: string) => void> = [];

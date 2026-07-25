@@ -40,6 +40,10 @@ function fakeSession(isIdle: boolean, sessionId = "session"): AgentSession {
     getAvailableThinkingLevels: () => ["off"],
     subscribe: vi.fn(() => vi.fn()),
     bindExtensions: vi.fn(async () => {}),
+    extensionRunner: {
+      hasHandlers: vi.fn(() => true),
+      emit: vi.fn(async () => undefined),
+    },
     abort: vi.fn(async () => {}),
     dispose: vi.fn(),
   } as unknown as AgentSession;
@@ -116,6 +120,24 @@ function fakeWorkspaceGraph(
 }
 
 describe("WorkspaceGraphFactory multi-Session routing", () => {
+  it("shuts extensions down before disposing a Session exactly once", async () => {
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    const session = fakeSession(true);
+
+    await factory.disposeAgentSessionOnly(session);
+    await factory.disposeAgentSessionOnly(session);
+
+    expect(session.extensionRunner.emit).toHaveBeenCalledTimes(1);
+    expect(session.extensionRunner.emit).toHaveBeenCalledWith({
+      type: "session_shutdown",
+      reason: "quit",
+    });
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(session.extensionRunner.emit).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(session.dispose).mock.invocationCallOrder[0]!);
+  });
+
   it("uses independent operation locks for different AgentSession instances", () => {
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
     const first = fakeSession(false);

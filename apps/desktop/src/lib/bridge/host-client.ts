@@ -38,6 +38,7 @@ export class HostClient {
   private sequence = 0;
   private hostInstanceId: string | null = null;
   private eventHandlers = new Set<(event: HostEventEnvelope) => void>();
+  private transportErrorHandlers = new Set<(error: Error) => void>();
   private detached = false;
   private disposeTransport: (() => void) | null = null;
   private retiredHostInstanceIds = new Set<string>();
@@ -73,6 +74,11 @@ export class HostClient {
   onEvent(handler: (event: HostEventEnvelope) => void): () => void {
     this.eventHandlers.add(handler);
     return () => this.eventHandlers.delete(handler);
+  }
+
+  onTransportError(handler: (error: Error) => void): () => void {
+    this.transportErrorHandlers.add(handler);
+    return () => this.transportErrorHandlers.delete(handler);
   }
 
   getHostInstanceId(): string | null {
@@ -212,7 +218,12 @@ export class HostClient {
       void Promise.resolve(this.transport!.send(JSON.stringify(body) + "\n")).catch((err) => {
         if (timer) clearTimeout(timer);
         this.pending.delete(id);
-        reject(err);
+        const error =
+          err instanceof Error
+            ? err
+            : new Error(typeof err === "string" ? err : "Host transport send failed");
+        reject(error);
+        for (const handler of this.transportErrorHandlers) handler(error);
       });
     }) as Promise<HostResponseEnvelope<M>>;
   }

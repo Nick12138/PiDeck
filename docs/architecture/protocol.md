@@ -53,6 +53,7 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
 | Op | Timeout |
 |---|---:|
 | hello/status/list | 10s |
-| session open/create | 30s |
+| session create | 30s |
+| session open | 180s (includes blocking extension startup UI) |
 | package install/update | 10 min |
 | shutdown | 10s then Rust force-kill |

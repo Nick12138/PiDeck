@@ -31,7 +31,11 @@ import {
   workspaceContext,
 } from "../../lib/bridge/host-context";
 import type { SessionSnapshot, SessionSummary } from "@pideck/protocol";
-import { requestSessionOpenWithRetry } from "../../lib/bridge/session-open-request";
+import {
+  LatestSessionOpenQueue,
+  requestSessionOpenWithRetry,
+  SESSION_OPEN_TIMEOUT_MS,
+} from "../../lib/bridge/session-open-request";
 import {
   sessionCatalogItems,
   type SessionCatalogEntry,
@@ -168,6 +172,7 @@ export function SessionList({
   const connecting = useAppStore((s) => s.connecting);
   const rehydrating = useAppStore((s) => s.rehydrating);
   const desynchronized = useAppStore((s) => s.desynchronized);
+  const hostFatal = useAppStore((s) => s.hostFatal);
   const sessionCatalog = useAppStore((s) => s.sessionCatalog);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
   const replaceSessionCatalog = useAppStore((s) => s.replaceSessionCatalog);
@@ -176,6 +181,7 @@ export function SessionList({
   const updateSessionCatalogInfo = useAppStore((s) => s.updateSessionCatalogInfo);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
+  const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("active");
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -189,11 +195,28 @@ export function SessionList({
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
     readPinnedSessionIds(useAppStore.getState().workspace?.id),
   );
+  const sessionOpenBlocked = connecting || rehydrating || desynchronized || Boolean(hostFatal);
   const sessionMutationBlocked =
-    sessionMutationPending || connecting || rehydrating || desynchronized;
+    sessionMutationPending || sessionOpenPending || sessionOpenBlocked;
   const refreshRequest = useRef(0);
   const mutationRequest = useRef(0);
   const itemsWorkspaceId = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const performSessionOpenRef = useRef(performSessionOpen);
+  performSessionOpenRef.current = performSessionOpen;
+  const sessionOpenQueue = useRef<LatestSessionOpenQueue | null>(null);
+  if (!sessionOpenQueue.current) {
+    sessionOpenQueue.current = new LatestSessionOpenQueue(
+      (path, isSuperseded) => performSessionOpenRef.current(path, isSuperseded),
+      (running) => {
+        if (mounted.current) setSessionOpenPending(running);
+      },
+      (error) => {
+        const message = error instanceof Error ? error.message : "Open session failed";
+        useAppStore.getState().pushNotification(message, "error");
+      },
+    );
+  }
 
   const refresh = useCallback(async () => {
     const currentAtStart = useAppStore.getState();
@@ -263,6 +286,15 @@ export function SessionList({
   ]);
 
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      sessionOpenQueue.current?.clearPending();
+    };
+  }, []);
+
+  useEffect(() => {
+    sessionOpenQueue.current?.clearPending();
     setPinnedSessionIds(readPinnedSessionIds(workspace?.id));
     setEditingSessionId(null);
     setNameDraft("");
@@ -328,29 +360,60 @@ export function SessionList({
     }
   }
 
-  async function openSession(path: string) {
-    if (!host || !workspace || sessionMutationBlocked) return;
-    if (session?.sessionPath === path) return;
+  function openSession(path: string) {
+    const current = useAppStore.getState();
+    if (
+      !current.host ||
+      !current.workspace ||
+      sessionMutationPending ||
+      sessionOpenBlocked
+    ) {
+      return;
+    }
+    if (!sessionOpenQueue.current?.isRunning() && current.session?.sessionPath === path) {
+      return;
+    }
+    sessionOpenQueue.current?.enqueue(path);
+  }
+
+  async function performSessionOpen(
+    path: string,
+    isSuperseded: () => boolean,
+  ): Promise<void> {
+    const currentAtStart = useAppStore.getState();
+    const currentHost = currentAtStart.host;
+    const currentWorkspace = currentAtStart.workspace;
+    if (
+      !currentHost ||
+      !currentWorkspace ||
+      currentAtStart.connecting ||
+      currentAtStart.rehydrating ||
+      currentAtStart.desynchronized ||
+      currentAtStart.session?.sessionPath === path
+    ) {
+      return;
+    }
     const request = ++mutationRequest.current;
-    const generation = captureRequestGeneration(host);
-    const target = sessionCatalogItems(sessionCatalog).find(
+    const generation = captureRequestGeneration(currentHost);
+    const target = sessionCatalogItems(currentAtStart.sessionCatalog).find(
       (item) => item.sessionPath === path,
     );
     const startedAt = performance.now();
-    setSessionMutationPending(true);
     try {
-      const openContext = nullableSessionContext(host, workspace);
+      const openContext = nullableSessionContext(currentHost, currentWorkspace);
       const res = await requestSessionOpenWithRetry(
         () =>
           hostClient.request(
             "session.open",
             openContext,
             { sessionPath: path },
+            SESSION_OPEN_TIMEOUT_MS,
           ),
         undefined,
         () => {
           const current = useAppStore.getState();
           return (
+            !isSuperseded() &&
             current.host?.hostInstanceId === openContext.expectedHostInstanceId &&
             current.workspace?.id === openContext.expectedWorkspaceId &&
             current.workspace?.revision === openContext.expectedWorkspaceRevision
@@ -370,6 +433,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
+        if (isSuperseded()) return;
         if (target && res.error?.retryable !== true) {
           setSessionRuntimeState(
             target.sessionId,
@@ -384,17 +448,16 @@ export function SessionList({
         return;
       }
       setSession(res.result);
-      const currentHost = useAppStore.getState().host;
-      if (currentHost) {
-        const nextHost = mergeHostIdentity(currentHost, res);
+      const latestHost = useAppStore.getState().host;
+      if (latestHost) {
+        const nextHost = mergeHostIdentity(latestHost, res);
         if (nextHost) useAppStore.getState().setHost(nextHost);
       }
     } catch (error) {
+      if (isSuperseded()) return;
       const message = error instanceof Error ? error.message : "Open session failed";
       if (target) setSessionRuntimeState(target.sessionId, "error", message);
       pushNotification(message, "error");
-    } finally {
-      if (request === mutationRequest.current) setSessionMutationPending(false);
     }
   }
 
@@ -866,8 +929,13 @@ export function SessionList({
                 <>
                   <button
                     type="button"
-                    onClick={() => void openSession(item.sessionPath)}
-                    disabled={sessionMutationBlocked || !item.sessionPath || item.archived}
+                    onClick={() => openSession(item.sessionPath)}
+                    disabled={
+                      sessionMutationPending ||
+                      sessionOpenBlocked ||
+                      !item.sessionPath ||
+                      item.archived
+                    }
                     className="min-w-0 flex-1 px-2.5 py-2 text-left"
                     title={
                       item.runtimeState === "error" && item.lastError

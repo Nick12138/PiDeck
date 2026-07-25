@@ -95,6 +95,7 @@ export class SessionRuntimeCache {
   private readonly runtimeStates = new WeakMap<AgentSession, SessionRuntimeState>();
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
+  private readonly disposedSessions = new WeakSet<AgentSession>();
 
   constructor(private readonly context: SessionRuntimeCacheContext) {}
 
@@ -206,11 +207,18 @@ export class SessionRuntimeCache {
     await this.disposeRetainedSessionRuntimes(graph);
   }
 
-  async disposeAgentSessionOnly(session: {
-    isIdle: boolean;
-    abort: () => Promise<void> | void;
-    dispose: () => void;
-  }): Promise<void> {
+  async disposeAgentSessionOnly(session: AgentSession): Promise<void> {
+    if (this.disposedSessions.has(session)) return;
+    this.disposedSessions.add(session);
+    try {
+      if (session.extensionRunner?.hasHandlers("session_shutdown")) {
+        await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      }
+    } catch (err) {
+      logger.warn("Extension session_shutdown during dispose failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     try {
       if (!session.isIdle) await session.abort();
     } catch (err) {

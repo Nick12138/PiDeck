@@ -11,8 +11,9 @@
 - React owns a normalized, workspace-scoped Session Catalog. Page navigation does not clear it.
 - Active Pi snapshots project `running`, `queued`, `idle`, `error`, or `inactive` state into the Catalog.
 - Composer drafts are keyed by Session id, so switching pages or Sessions does not discard input.
-- Host exposes one foreground AgentSession plus retained background runtimes. Switching away from a running Session keeps it alive; switching away from an idle Session disposes it.
-- Background runtimes publish Session status but not Transcript deltas into the foreground projection. They are disposed after settling and can then be reopened from Pi's Session file.
+- Host exposes one foreground AgentSession plus retained background runtimes. Running Sessions remain live, while idle Sessions are kept in a bounded reuse cache (currently three entries).
+- Background runtimes publish Session status but not Transcript deltas into the foreground projection. Evicted runtimes can be reopened from Pi's Session file.
+- Final AgentSession disposal must emit `session_shutdown` before `AgentSession.dispose()`. Extensions use that event to release timers, watchers, and other work that captures the current extension context.
 - Opening a still-running background Session promotes the existing Runtime, assigns a new Session revision, rebuilds the foreground snapshot, and migrates Extension UI identity without restarting the turn.
 - Reconnect-time discovery of retained runtimes remains P0.2 work in the [pi-web comparison and P0 roadmap](../history/pi-web-p0-roadmap.md).
 

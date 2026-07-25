@@ -131,11 +131,7 @@ export class WorkspaceGraphFactory {
    * Dispose a session instance without mutating graph slots (candidate discard/commit).
    * @internal — session-lifecycle module
    */
-  async disposeAgentSessionOnly(session: {
-    isIdle: boolean;
-    abort: () => Promise<void> | void;
-    dispose: () => void;
-  }): Promise<void> {
+  async disposeAgentSessionOnly(session: AgentSession): Promise<void> {
     return this.sessionRuntimeCache.disposeAgentSessionOnly(session);
   }
 

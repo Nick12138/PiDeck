@@ -1,5 +1,81 @@
 import { describe, expect, it, vi } from "vitest";
-import { requestSessionOpenWithRetry, shouldRetrySessionOpen } from "./session-open-request";
+import {
+  LatestSessionOpenQueue,
+  requestSessionOpenWithRetry,
+  shouldRetrySessionOpen,
+} from "./session-open-request";
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe("LatestSessionOpenQueue", () => {
+  it("finishes the active switch and then opens only the latest queued conversation", async () => {
+    const firstStarted = deferred();
+    const releaseFirst = deferred();
+    const calls: string[] = [];
+    const running: boolean[] = [];
+    const superseded: boolean[] = [];
+    const queue = new LatestSessionOpenQueue(
+      async (path, isSuperseded) => {
+        calls.push(path);
+        if (path === "first") {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+          superseded.push(isSuperseded());
+        }
+      },
+      (value) => running.push(value),
+      (error) => {
+        throw error;
+      },
+    );
+
+    queue.enqueue("first");
+    await firstStarted.promise;
+    queue.enqueue("middle");
+    queue.enqueue("latest");
+    releaseFirst.resolve();
+    await queue.whenIdle();
+
+    expect(calls).toEqual(["first", "latest"]);
+    expect(superseded).toEqual([true]);
+    expect(running).toEqual([true, false]);
+    expect(queue.isRunning()).toBe(false);
+  });
+
+  it("continues with the latest choice after an unexpected runner failure", async () => {
+    const calls: string[] = [];
+    const errors: unknown[] = [];
+    const firstStarted = deferred();
+    const releaseFirst = deferred();
+    const queue = new LatestSessionOpenQueue(
+      async (path) => {
+        calls.push(path);
+        if (path === "broken") {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+          throw new Error("open failed");
+        }
+      },
+      () => {},
+      (error) => errors.push(error),
+    );
+
+    queue.enqueue("broken");
+    await firstStarted.promise;
+    queue.enqueue("recovery");
+    releaseFirst.resolve();
+    await queue.whenIdle();
+
+    expect(calls).toEqual(["broken", "recovery"]);
+    expect(errors).toHaveLength(1);
+  });
+});
 
 describe("requestSessionOpenWithRetry", () => {
   it("retries transient service graph contention", async () => {

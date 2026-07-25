@@ -20,6 +20,7 @@ import { classifyToolSnapshot } from "../lib/stores/tool-revision";
 import { expectedIdentityForEvent, isBackgroundExtensionUiRequest } from "./event-identity";
 import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
+import { summarizeHostFailure } from "../lib/host-failure-message";
 import {
   persistDesktopSettings,
   persistRecentDesktopLocation,
@@ -153,8 +154,10 @@ function handleHostEvent(
     }
     case "host.fatal": {
       const message = event.payload.error?.message ?? "Host fatal";
-      store.setHostFatal(message);
-      store.pushNotification(`Host unavailable: ${message}`, "error");
+      const summary = summarizeHostFailure(message);
+      console.error("[pi-host] fatal", message);
+      store.setHostFatal(summary);
+      store.pushNotification(`Host unavailable: ${summary}`, "error");
       store.setConnecting(false);
       break;
     }
@@ -435,6 +438,7 @@ export function App() {
 
   useEffect(() => {
     let unsub = () => {};
+    let unsubTransportError = () => {};
     let cancelPendingAgentEvents = () => {};
     let cancelled = false;
 
@@ -648,6 +652,36 @@ export function App() {
           scheduleRecovery(hostClient.getHostInstanceId(), reason);
         };
 
+        let transportRepair: Promise<void> | null = null;
+        const repairTransport = (transportError: Error) => {
+          if (transportRepair || cancelled) return;
+          cancelAgentEvents();
+          const failureReason = `Host transport failed: ${transportError.message}`;
+          const currentStore = useAppStore.getState();
+          currentStore.markDesynchronized(failureReason);
+          currentStore.setConnecting(true);
+          hostClient.rejectAllPending(failureReason);
+          transportRepair = (async () => {
+            try {
+              const { invoke } = await import("@tauri-apps/api/core");
+              const running = await invoke<boolean>("pi_host_status");
+              if (!running) await invoke("pi_host_restart");
+              scheduleRecovery(hostClient.getHostInstanceId(), failureReason);
+            } catch (repairError) {
+              const fullMessage =
+                repairError instanceof Error ? repairError.message : String(repairError);
+              const message = summarizeHostFailure(fullMessage);
+              console.error("[pi-host] transport recovery failed", fullMessage);
+              const latestStore = useAppStore.getState();
+              latestStore.setHostFatal(message);
+              latestStore.pushNotification(`Host recovery failed: ${message}`, "error");
+              latestStore.setConnecting(false);
+            } finally {
+              transportRepair = null;
+            }
+          })();
+        };
+
         unsub = hostClient.onEvent((event) => {
           if (event.event === "host.ready") {
             cancelAgentEvents();
@@ -659,6 +693,7 @@ export function App() {
           }
           handleHostEvent(event, requestRecovery, agentEventBuffer);
         });
+        unsubTransportError = hostClient.onTransportError(repairTransport);
         hostClient.attach(transport);
 
         window.setTimeout(() => {
@@ -680,6 +715,7 @@ export function App() {
       cancelled = true;
       cancelPendingAgentEvents();
       unsub();
+      unsubTransportError();
       hostClient.detach("application unmounted");
     };
   }, []);

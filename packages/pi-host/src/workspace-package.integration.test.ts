@@ -135,6 +135,27 @@ function projectWithResource(root: string, name: string): string {
   return dir;
 }
 
+function projectWithStaleContextTimer(root: string, name: string): string {
+  const dir = emptyProject(root, name);
+  mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
+  writeFileSync(
+    join(dir, ".pi", "extensions", "stale-context-timer.ts"),
+    `export default function (pi) {
+      let timer;
+      pi.on("session_start", (_event, ctx) => {
+        if (timer) clearInterval(timer);
+        timer = setInterval(() => { void ctx.hasUI; }, 25);
+        timer.unref?.();
+      });
+      pi.on("session_shutdown", () => {
+        if (timer) clearInterval(timer);
+        timer = undefined;
+      });
+    }\n`,
+  );
+  return dir;
+}
+
 function sessionDirFor(agentDir: string, cwd: string): string {
   const resolvedCwd = resolve(cwd);
   const safePath = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
@@ -953,6 +974,97 @@ describe("package + workspace integration", () => {
       Number(opened.sessionRevision),
     );
   }, 90_000);
+
+  it("keeps opening Sessions after forward and reverse cache churn", async () => {
+    const project = projectWithStaleContextTimer(root, "session-open-cache-churn");
+    const status = await host.request(
+      "system.getStatus",
+      { expectedHostInstanceId: hostId },
+      null,
+    );
+    const selected = await host.request(
+      "workspace.setCurrent",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: status.workspaceId,
+        expectedWorkspaceRevision: status.workspaceRevision,
+      },
+      { cwd: project },
+    );
+    expect(selected.ok).toBe(true);
+
+    const workspace = (selected.result as {
+      workspace: { id: string; revision: number };
+    }).workspace;
+    const sessionDir = sessionDirFor(agentDir, project);
+    mkdirSync(sessionDir, { recursive: true });
+    const sessionPaths = Array.from({ length: 6 }, (_, index) => {
+      const sessionId = randomUUID();
+      const sessionPath = join(sessionDir, `${sessionId}.jsonl`);
+      writeFileSync(
+        sessionPath,
+        [
+          JSON.stringify({
+            type: "session",
+            version: 3,
+            id: sessionId,
+            timestamp: `2026-01-01T00:00:0${index}.000Z`,
+            cwd: resolve(project),
+          }),
+          JSON.stringify({
+            type: "session_info",
+            id: `session-info-${index}`,
+            parentId: null,
+            timestamp: `2026-01-01T00:00:1${index}.000Z`,
+            name: `Cache churn ${index}`,
+          }),
+        ].join("\n") + "\n",
+      );
+      return sessionPath;
+    });
+
+    let identity = {
+      expectedHostInstanceId: hostId,
+      expectedWorkspaceId: workspace.id,
+      expectedWorkspaceRevision: workspace.revision,
+      expectedSessionId: selected.sessionId,
+      expectedSessionRevision: selected.sessionRevision,
+    };
+    const sequence = [...sessionPaths, ...[...sessionPaths].reverse()];
+    for (const [index, sessionPath] of sequence.entries()) {
+      const opened = await host.request(
+        "session.open",
+        identity,
+        { sessionPath },
+        60_000,
+      );
+      expect(opened, `session.open failed at switch ${index}`).toMatchObject({ ok: true });
+      identity = {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: workspace.id,
+        expectedWorkspaceRevision: workspace.revision,
+        expectedSessionId: opened.sessionId,
+        expectedSessionRevision: opened.sessionRevision,
+      };
+    }
+
+    const finalOpen = await host.request(
+      "session.open",
+      identity,
+      { sessionPath: sessionPaths[0] },
+      60_000,
+    );
+    expect(finalOpen.ok).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(host.proc.exitCode).toBeNull();
+    const stillResponsive = await host.request(
+      "system.getStatus",
+      { expectedHostInstanceId: hostId },
+      null,
+    );
+    expect(stillResponsive.ok).toBe(true);
+  }, 180_000);
 });
 
 // silence unused import if tree-shaken
