@@ -45,6 +45,7 @@ import type {
   ProviderConnectionResult,
   CommandSummary,
   RehydrateSnapshot,
+  QueueSnapshot,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -77,6 +78,7 @@ export type HostContextMap = {
   "agent.abort": ActiveSessionContext;
   "agent.clearQueue": ActiveSessionContext;
   "agent.setQueue": ActiveSessionContext;
+  "agent.runNow": ActiveSessionContext;
   "agent.compact": ActiveSessionContext;
   "agent.abortCompaction": ActiveSessionContext;
   "agent.setAutoCompaction": ActiveSessionContext;
@@ -145,8 +147,13 @@ export type HostRequestParams = {
   "agent.steer": { text: string; images?: SerializableImage[] };
   "agent.followUp": { text: string; images?: SerializableImage[] };
   "agent.abort": null;
-  "agent.clearQueue": null;
-  "agent.setQueue": { steering: string[]; followUp: string[] };
+  "agent.clearQueue": { expectedRevision: number };
+  "agent.setQueue": {
+    expectedRevision: number;
+    steering: string[];
+    followUp: string[];
+  };
+  "agent.runNow": { expectedRevision: number; followUpIndex: number };
   "agent.compact": { instructions?: string } | null;
   "agent.abortCompaction": null;
   "agent.setAutoCompaction": { enabled: boolean };
@@ -228,9 +235,26 @@ export type HostResultMap = {
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
   "agent.followUp": { accepted: true };
-  "agent.abort": { aborted: boolean; session: SessionSnapshot };
-  "agent.clearQueue": { steering: string[]; followUp: string[] };
-  "agent.setQueue": { steering: string[]; followUp: string[] };
+  "agent.abort": {
+    aborted: boolean;
+    settled: boolean;
+    queueRestored: boolean;
+    partialFailure: boolean;
+    queue: QueueSnapshot;
+    session: SessionSnapshot;
+    error?: HostError;
+  };
+  "agent.clearQueue": QueueSnapshot;
+  "agent.setQueue": QueueSnapshot;
+  "agent.runNow": {
+    started: boolean;
+    runId?: string;
+    settled: boolean;
+    queueRestored: boolean;
+    partialFailure: boolean;
+    queue: QueueSnapshot;
+    error?: HostError;
+  };
   "agent.compact": { result: SerializableCompactionResult; session: SessionSnapshot };
   "agent.abortCompaction": { accepted: true };
   "agent.setAutoCompaction": SessionSnapshot;
@@ -293,7 +317,7 @@ export type HostEventPayloadMap = {
   };
   "agent.event": { runId: string; event: SerializableAgentSessionEvent };
   "agent.toolsChanged": ToolSnapshot;
-  "agent.queueChanged": { steering: string[]; followUp: string[] };
+  "agent.queueChanged": QueueSnapshot;
   "agent.compactionChanged": {
     active: boolean;
     reason?: string;

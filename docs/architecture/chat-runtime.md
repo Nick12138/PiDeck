@@ -28,6 +28,20 @@
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
 
+## Queue transactions
+
+- Queue state is a per-AgentSession `QueueSnapshot` with a monotonic revision.
+- Edit, reorder, delete, and clear requests use compare-and-swap against the last
+  rendered revision. A stale request is rejected without clearing the live queue.
+- The Host suppresses the SDK's intermediate clear/re-add events and publishes one
+  final `agent.queueChanged` snapshot for each logical transaction.
+- Run Now is one `agent.runNow` RPC pinned to the originating Session. The Host parks
+  the queue, aborts and settles the active run when necessary, starts the selected
+  follow-up, then restores the remaining queue before responding.
+- Queue text and queued image attachments are restored together. If an SDK enqueue
+  fails, the response exposes the final queue and explicit restoration/partial-failure
+  flags; the desktop never assumes the pre-request queue still exists.
+
 ## Extension UI
 
 **Binding (SDK 0.80.7):** Host calls only public

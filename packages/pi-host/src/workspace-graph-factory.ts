@@ -86,6 +86,18 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.getSessionOperationLock(session);
   }
 
+  beginQueueTransaction(session: AgentSession) {
+    return this.sessionRuntimeCache.beginQueueTransaction(session);
+  }
+
+  finishQueueTransaction(session: AgentSession) {
+    return this.sessionRuntimeCache.finishQueueTransaction(session);
+  }
+
+  syncQueueState(session: AgentSession, force = false) {
+    return this.sessionRuntimeCache.syncQueueState(session, force);
+  }
+
   setSessionRunId(session: AgentSession, runId: string): void {
     this.sessionRuntimeCache.setSessionRunId(session, runId);
   }

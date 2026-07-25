@@ -25,7 +25,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     autoRetryEnabled: true,
     steeringMode: "all",
     followUpMode: "all",
-    pending: { steering: [], followUp: [] },
+    pending: { revision: 0, steering: [], followUp: [] },
     messages: [{ role: "user", content: "hi" }],
     tools: {
       revision: 1,
@@ -135,7 +135,7 @@ describe("session catalog", () => {
     );
     expect(
       runtimeStateFromSnapshot(
-        snapshot({ pending: { steering: ["adjust"], followUp: [] } }),
+        snapshot({ pending: { revision: 1, steering: ["adjust"], followUp: [] } }),
       ),
     ).toBe("queued");
   });

@@ -194,7 +194,7 @@ describe("deep result/event validation (C3)", () => {
     autoRetryEnabled: true,
     steeringMode: "all",
     followUpMode: "all",
-    pending: { steering: [], followUp: [] },
+    pending: { revision: 0, steering: [], followUp: [] },
     messages: [{ role: "assistant", content: [{ type: "text", text: "ok" }] }],
     tools: {
       revision: 1,
@@ -276,10 +276,18 @@ describe("deep result/event validation (C3)", () => {
   });
 
   it("validates nested agent content fields in SessionSnapshot results", () => {
-    expect(validateSuccessResult("agent.abort", { aborted: false, session }).ok).toBe(true);
+    const abortResult = {
+      aborted: false,
+      settled: true,
+      queueRestored: true,
+      partialFailure: false,
+      queue: session.pending,
+      session,
+    };
+    expect(validateSuccessResult("agent.abort", abortResult).ok).toBe(true);
     expect(
       validateSuccessResult("agent.abort", {
-        aborted: false,
+        ...abortResult,
         session: {
           ...session,
           messages: [{ role: "assistant", content: [{ type: "text", text: 123 }] }],

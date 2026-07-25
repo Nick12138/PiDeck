@@ -4,6 +4,7 @@ import {
   createHostError,
   type HostError,
   type HostIdentity,
+  type QueueSnapshot,
   type SessionRuntimeState,
   type SessionSnapshot,
 } from "@pideck/protocol";
@@ -11,6 +12,12 @@ import { bindForCandidate, activateOnce, clearSlots } from "./extension-ui-lifec
 import { normalizeAgentEvent } from "./event-normalize.js";
 import { AgentOperationLock } from "./locks.js";
 import { logger } from "./logger.js";
+import { pruneQueuedImages } from "./queue-attachments.js";
+import {
+  beginQueueTransaction,
+  finishQueueTransaction,
+  observeQueueUpdate,
+} from "./queue-state.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import type { PiHostServer } from "./server.js";
 import { toolResultNeedsToolsRefresh } from "./tools-refresh.js";
@@ -114,6 +121,29 @@ export class SessionRuntimeCache {
 
   clearSessionRunId(session: AgentSession): void {
     this.runIds.delete(session);
+  }
+
+  beginQueueTransaction(session: AgentSession): QueueSnapshot {
+    return beginQueueTransaction(session);
+  }
+
+  finishQueueTransaction(session: AgentSession): QueueSnapshot {
+    const result = finishQueueTransaction(session);
+    if (result.changed) this.publishQueueSnapshot(session, result.queue);
+    pruneQueuedImages(session, [...result.queue.steering, ...result.queue.followUp]);
+    return result.queue;
+  }
+
+  syncQueueState(session: AgentSession, force = false): QueueSnapshot {
+    const observed = observeQueueUpdate(session);
+    if (!observed.suppressed && (observed.changed || force)) {
+      this.publishQueueSnapshot(session, observed.queue);
+      pruneQueuedImages(session, [
+        ...observed.queue.steering,
+        ...observed.queue.followUp,
+      ]);
+    }
+    return observed.queue;
   }
 
   hasBusySessions(): boolean {
@@ -622,6 +652,28 @@ export class SessionRuntimeCache {
       typeof event === "object" && event !== null && "type" in event
         ? String((event as { type?: unknown }).type ?? "")
         : "";
+    if (eventType === "queue_update") {
+      const queueEvent = event as {
+        steering?: readonly string[];
+        followUp?: readonly string[];
+      };
+      const observed = observeQueueUpdate(sourceSession, {
+        steering: Array.isArray(queueEvent.steering)
+          ? [...queueEvent.steering]
+          : [...sourceSession.getSteeringMessages()],
+        followUp: Array.isArray(queueEvent.followUp)
+          ? [...queueEvent.followUp]
+          : [...sourceSession.getFollowUpMessages()],
+      });
+      if (!observed.suppressed && observed.changed) {
+        this.publishQueueSnapshot(sourceSession, observed.queue);
+        pruneQueuedImages(sourceSession, [
+          ...observed.queue.steering,
+          ...observed.queue.followUp,
+        ]);
+      }
+      return;
+    }
     if (eventType === "session_info_changed") {
       const nextSnapshot = buildSessionSnapshot({
         session: sourceSession,
@@ -709,6 +761,31 @@ export class SessionRuntimeCache {
       return "queued";
     }
     return "idle";
+  }
+
+  private publishQueueSnapshot(session: AgentSession, queue: QueueSnapshot): void {
+    const graph = this.context.getGraph();
+    const server = this.context.getServer();
+    if (!graph || !server) return;
+    const active = graph.agentSession === session;
+    const background = active
+      ? undefined
+      : [...graph.backgroundSessions.values()].find(
+          (runtime) => runtime.agentSession === session,
+        );
+    const sessionSnapshot = active ? graph.sessionSnapshot : background?.sessionSnapshot;
+    if (!sessionSnapshot) return;
+    sessionSnapshot.pending = queue;
+    if (!active) return;
+    server.emitForIdentity(
+      {
+        ...server.getIdentity(),
+        sessionId: sessionSnapshot.sessionId,
+        sessionRevision: sessionSnapshot.revision,
+      },
+      "agent.queueChanged",
+      queue,
+    );
   }
 
   private retainedSessionRuntimes(

@@ -450,6 +450,16 @@ export function isToolSnapshot(value: unknown): value is ToolSnapshot {
   );
 }
 
+function isQueueSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["revision", "steering", "followUp"]) &&
+    isSafeRevision(value.revision) &&
+    isStringArray(value.steering) &&
+    isStringArray(value.followUp)
+  );
+}
+
 export function isSessionSnapshot(value: unknown): boolean {
   if (
     !isPlainObject(value) ||
@@ -501,7 +511,8 @@ export function isSessionSnapshot(value: unknown): boolean {
     ["all", "one-at-a-time"].includes(String(value.steeringMode)) &&
     ["all", "one-at-a-time"].includes(String(value.followUpMode)) &&
     isPlainObject(pending) &&
-    hasExactKeys(pending, ["steering", "followUp"]) &&
+    hasExactKeys(pending, ["revision", "steering", "followUp"]) &&
+    isSafeRevision(pending.revision) &&
     isStringArray(pending.steering) &&
     isStringArray(pending.followUp) &&
     Array.isArray(value.messages) &&
@@ -988,14 +999,23 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "session.usageReport":
       return isSessionUsageReport(result) ? null : "invalid session usage report";
     case "agent.setQueue":
+      return isQueueSnapshot(result) ? null : "invalid agent.setQueue result";
+    case "agent.runNow":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["steering", "followUp"]) &&
-        Array.isArray(result.steering) &&
-        result.steering.every(isString) &&
-        Array.isArray(result.followUp) &&
-        result.followUp.every(isString)
+        hasExactKeys(
+          result,
+          ["started", "settled", "queueRestored", "partialFailure", "queue"],
+          ["runId", "error"],
+        ) &&
+        isBoolean(result.started) &&
+        (result.started ? isUuid(result.runId) : result.runId === undefined) &&
+        isBoolean(result.settled) &&
+        isBoolean(result.queueRestored) &&
+        isBoolean(result.partialFailure) &&
+        isQueueSnapshot(result.queue) &&
+        (result.error === undefined || isHostErrorRecord(result.error))
         ? null
-        : "invalid agent.setQueue result";
+        : "invalid agent.runNow result";
     case "agent.prompt":
       return isPlainObject(result) &&
         hasExactKeys(result, ["accepted", "runId"]) &&
@@ -1015,18 +1035,29 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return exactAccepted() ? null : `${method} result must be { accepted: true }`;
     case "agent.abort":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["aborted", "session"]) &&
+        hasExactKeys(
+          result,
+          [
+            "aborted",
+            "settled",
+            "queueRestored",
+            "partialFailure",
+            "queue",
+            "session",
+          ],
+          ["error"],
+        ) &&
         isBoolean(result.aborted) &&
+        isBoolean(result.settled) &&
+        isBoolean(result.queueRestored) &&
+        isBoolean(result.partialFailure) &&
+        isQueueSnapshot(result.queue) &&
+        (result.error === undefined || isHostErrorRecord(result.error)) &&
         isSessionSnapshot(result.session)
         ? null
         : "invalid agent.abort result";
     case "agent.clearQueue":
-      return isPlainObject(result) &&
-        hasExactKeys(result, ["steering", "followUp"]) &&
-        isStringArray(result.steering) &&
-        isStringArray(result.followUp)
-        ? null
-        : "invalid queue result";
+      return isQueueSnapshot(result) ? null : "invalid queue result";
     case "agent.compact":
       return isPlainObject(result) &&
         hasExactKeys(result, ["result", "session"]) &&
@@ -1215,12 +1246,7 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
     case "agent.toolsChanged":
       return isToolSnapshot(payload) ? null : "invalid agent.toolsChanged payload";
     case "agent.queueChanged":
-      return isPlainObject(payload) &&
-        hasExactKeys(payload, ["steering", "followUp"]) &&
-        isStringArray(payload.steering) &&
-        isStringArray(payload.followUp)
-        ? null
-        : "invalid agent.queueChanged payload";
+      return isQueueSnapshot(payload) ? null : "invalid agent.queueChanged payload";
     case "agent.compactionChanged":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["active"], ["reason", "result", "error"]) &&

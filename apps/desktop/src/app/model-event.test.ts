@@ -17,7 +17,7 @@ function session(): SessionSnapshot {
     autoRetryEnabled: false,
     steeringMode: "all",
     followUpMode: "all",
-    pending: { steering: [], followUp: [] },
+    pending: { revision: 0, steering: [], followUp: [] },
     messages: [],
     tools: {
       revision: 3,

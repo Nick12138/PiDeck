@@ -4,12 +4,16 @@ import {
   type ImageContent,
   type Model,
 } from "@earendil-works/pi-ai";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
+  type HostError,
   type ModelSummary,
+  type QueueSnapshot,
   type SerializableImage,
 } from "@pideck/protocol";
-import type { MethodHandler } from "./server.js";
+import type { AgentOperationLock } from "./locks.js";
+import type { MethodHandler, PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
@@ -20,6 +24,8 @@ import {
   carryImagesAcrossEdit,
   pruneQueuedImages,
   recordQueuedImages,
+  restoreQueuedImages,
+  snapshotQueuedImages,
   takeQueuedImages,
 } from "./queue-attachments.js";
 import {
@@ -48,6 +54,162 @@ export function summarizeModel(model: Model<any>): ModelSummary {
     name: model.name ?? model.id,
     thinkingLevels: getSupportedThinkingLevels(model).map(String),
   };
+}
+
+function startDetachedPrompt(args: {
+  requestId: string;
+  factory: WorkspaceGraphFactory;
+  server: PiHostServer;
+  session: AgentSession;
+  operationLock: AgentOperationLock;
+  text: string;
+  images?: ImageContent[];
+  streamingBehavior?: "steer" | "followUp";
+}): string {
+  const runId = randomUUID();
+  const runIdentity = args.server.getIdentity();
+  args.factory.currentRunId = runId;
+  args.factory.setSessionRunId(args.session, runId);
+  args.server.setPhase("agentBusy");
+  const provisionalTitle =
+    args.session.sessionName?.trim() || !args.text.trim()
+      ? null
+      : createProvisionalSessionTitle(args.text);
+  const titleSessionId = args.server.identity.sessionId;
+  const extensionCommandInvocation = resolveExtensionCommandInvocation(
+    args.session,
+    args.text,
+  );
+  if (provisionalTitle) args.factory.setActiveSessionName(provisionalTitle);
+
+  void (async () => {
+    let completed = false;
+    try {
+      const runPrompt = () =>
+        args.session.prompt(args.text, {
+          streamingBehavior: args.streamingBehavior,
+          ...(args.images ? { images: args.images } : {}),
+        });
+      if (extensionCommandInvocation) {
+        await withExtensionCommandOrigin(
+          args.session,
+          runId,
+          extensionCommandInvocation,
+          runPrompt,
+        );
+      } else {
+        await runPrompt();
+      }
+      completed = true;
+    } catch (err) {
+      args.server.emitForIdentity(runIdentity, "agent.event", {
+        runId,
+        event: {
+          type: "error",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      args.server.emitForIdentity(runIdentity, "session.runtimeChanged", {
+        sessionId: runIdentity.sessionId!,
+        sessionRevision: runIdentity.sessionRevision,
+        state: "error",
+        updatedAt: Date.now(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      args.operationLock.release(args.requestId);
+      args.factory.clearSessionRunId(args.session);
+      if (args.server.getPhase() === "agentBusy" && !args.factory.hasBusySessions()) {
+        args.server.setPhase("ready");
+      }
+      args.factory.currentRunId = null;
+    }
+    if (completed && provisionalTitle && titleSessionId) {
+      await args.factory.refineActiveSessionName({
+        session: args.session,
+        sessionId: titleSessionId,
+        provisionalTitle,
+        userPrompt: args.text,
+      });
+    }
+  })().catch((err: unknown) => {
+    logger.error("Detached agent prompt task failed", {
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+
+  return runId;
+}
+
+type QueueTexts = Pick<QueueSnapshot, "steering" | "followUp">;
+
+async function enqueueQueue(session: AgentSession, queue: QueueTexts): Promise<void> {
+  for (const text of queue.steering) {
+    const images = takeQueuedImages(session, text);
+    try {
+      await session.steer(text, images);
+    } catch (err) {
+      if (images) recordQueuedImages(session, text, images);
+      throw err;
+    }
+    if (images) {
+      recordQueuedImages(
+        session,
+        session.getSteeringMessages().at(-1) ?? text,
+        images,
+      );
+    }
+  }
+  for (const text of queue.followUp) {
+    const images = takeQueuedImages(session, text);
+    try {
+      await session.followUp(text, images);
+    } catch (err) {
+      if (images) recordQueuedImages(session, text, images);
+      throw err;
+    }
+    if (images) {
+      recordQueuedImages(
+        session,
+        session.getFollowUpMessages().at(-1) ?? text,
+        images,
+      );
+    }
+  }
+}
+
+async function replaceQueue(session: AgentSession, queue: QueueTexts): Promise<void> {
+  session.clearQueue();
+  await enqueueQueue(session, queue);
+}
+
+function queueConflictError(expectedRevision: number, queue: QueueSnapshot): HostError {
+  return createHostError("STALE_REVISION", "Queue changed before the operation committed", {
+    retryable: true,
+    details: { expectedRevision, queue },
+  });
+}
+
+async function abortAndWait(session: AgentSession): Promise<{
+  settled: boolean;
+  error?: unknown;
+}> {
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const settled = await Promise.race([
+      session.abort().then(() => true as const),
+      new Promise<false>((resolve) => {
+        settleTimer = setTimeout(() => resolve(false), ABORT_SETTLE_TIMEOUT_MS);
+        settleTimer.unref?.();
+      }),
+    ]);
+    return { settled };
+  } catch (error) {
+    return { settled: false, error };
+  } finally {
+    if (settleTimer) clearTimeout(settleTimer);
+  }
 }
 
 export function createAgentHandlers(
@@ -139,81 +301,15 @@ export function createAgentHandlers(
         (params.attachQueuedImages
           ? takeQueuedImages(g.agentSession, params.text)
           : undefined);
-      const runId = randomUUID();
-      const runIdentity = server.getIdentity();
-      factory.currentRunId = runId;
-      factory.setSessionRunId(g.agentSession, runId);
-      server.setPhase("agentBusy");
-      const provisionalTitle =
-        g.agentSession.sessionName?.trim() || !params.text.trim()
-          ? null
-          : createProvisionalSessionTitle(params.text);
-      const titleSession = g.agentSession;
-      const titleSessionId = server.identity.sessionId;
-      const extensionCommandInvocation = resolveExtensionCommandInvocation(
-        titleSession,
-        params.text,
-      );
-      if (provisionalTitle) {
-        factory.setActiveSessionName(provisionalTitle);
-      }
-
-      // Fire-and-forget prompt; response acknowledges acceptance
-      void (async () => {
-        let completed = false;
-        try {
-          const runPrompt = () =>
-            titleSession.prompt(params.text, {
-              streamingBehavior: params.streamingBehavior,
-              ...(promptImages ? { images: promptImages } : {}),
-            });
-          if (extensionCommandInvocation) {
-            await withExtensionCommandOrigin(
-              titleSession,
-              runId,
-              extensionCommandInvocation,
-              runPrompt,
-            );
-          } else {
-            await runPrompt();
-          }
-          completed = true;
-        } catch (err) {
-          server.emitForIdentity(runIdentity, "agent.event", {
-            runId,
-            event: {
-              type: "error",
-              message: err instanceof Error ? err.message : String(err),
-            },
-          });
-          server.emitForIdentity(runIdentity, "session.runtimeChanged", {
-            sessionId: runIdentity.sessionId!,
-            sessionRevision: runIdentity.sessionRevision,
-            state: "error",
-            updatedAt: Date.now(),
-            error: err instanceof Error ? err.message : String(err),
-          });
-        } finally {
-          operationLock.release(ctx.id);
-          factory.clearSessionRunId(titleSession);
-          if (server.getPhase() === "agentBusy" && !factory.hasBusySessions()) {
-            server.setPhase("ready");
-          }
-          factory.currentRunId = null;
-        }
-        if (completed && provisionalTitle && titleSessionId) {
-          await factory.refineActiveSessionName({
-            session: titleSession,
-            sessionId: titleSessionId,
-            provisionalTitle,
-            userPrompt: params.text,
-          });
-        }
-      })().catch((err: unknown) => {
-        logger.error("Detached agent prompt task failed", {
-          runId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      const runId = startDetachedPrompt({
+        requestId: ctx.id,
+        factory,
+        server,
+        session: g.agentSession,
+        operationLock,
+        text: params.text,
+        images: promptImages,
+        streamingBehavior: params.streamingBehavior,
       });
 
       return { result: { accepted: true, runId } };
@@ -237,6 +333,7 @@ export function createAgentHandlers(
         run: async () => {
           const session = factory.getGraph()?.agentSession;
           if (!session) throw new Error("No active session");
+          factory.syncQueueState(session);
           const images = toSdkImages(params.images);
           await session.steer(params.text, images);
           if (images?.length) {
@@ -248,10 +345,7 @@ export function createAgentHandlers(
               images,
             );
           }
-          server.emit("agent.queueChanged", {
-            steering: [...session.getSteeringMessages()],
-            followUp: [...session.getFollowUpMessages()],
-          });
+          factory.syncQueueState(session);
           return { accepted: true as const };
         },
       });
@@ -278,6 +372,7 @@ export function createAgentHandlers(
         run: async () => {
           const session = factory.getGraph()?.agentSession;
           if (!session) throw new Error("No active session");
+          factory.syncQueueState(session);
           const images = toSdkImages(params.images);
           await session.followUp(params.text, images);
           if (images?.length) {
@@ -287,10 +382,7 @@ export function createAgentHandlers(
               images,
             );
           }
-          server.emit("agent.queueChanged", {
-            steering: [...session.getSteeringMessages()],
-            followUp: [...session.getFollowUpMessages()],
-          });
+          factory.syncQueueState(session);
           return { accepted: true as const };
         },
       });
@@ -316,80 +408,49 @@ export function createAgentHandlers(
         run: async () => {
           const g = factory.getGraph();
           if (!g?.agentSession || !g.sessionManager) throw new Error("No active session");
+          const session = g.agentSession;
+          const originalQueue = factory.syncQueueState(session);
           let aborted = false;
-          if (!g.agentSession.isIdle) {
-            // Park the queue before aborting: the SDK auto-runs the next
-            // queued follow-up the moment a run ends, so aborting with a
-            // populated queue would chain straight into the next run and
-            // leave session.abort()'s waitForIdle() — and the service graph
-            // lock held here — blocked until the entire queue drained. The
-            // CLI interrupt clears queues before aborting for the same
-            // reason.
-            const parked = g.agentSession.clearQueue();
-            let settleTimer: ReturnType<typeof setTimeout> | undefined;
-            const settled = await Promise.race([
-              g.agentSession.abort().then(() => true as const),
-              new Promise<false>((resolve) => {
-                settleTimer = setTimeout(() => resolve(false), ABORT_SETTLE_TIMEOUT_MS);
-              }),
+          let settled = true;
+          let queueRestored = true;
+          let operationError: HostError | undefined;
+          let queue = originalQueue;
+          if (!session.isIdle) {
+            pruneQueuedImages(session, [
+              ...originalQueue.steering,
+              ...originalQueue.followUp,
             ]);
-            if (settleTimer) clearTimeout(settleTimer);
+            const originalAttachments = snapshotQueuedImages(session);
+            factory.beginQueueTransaction(session);
+            session.clearQueue();
+            const abort = await abortAndWait(session);
             aborted = true;
-            if (settled) {
-              // Session is idle now — re-adding only enqueues; nothing runs
-              // until the user prompts again. Attached images ride along via
-              // the side-table.
-              for (const text of parked.steering) {
-                const images = takeQueuedImages(g.agentSession, text);
-                try {
-                  await g.agentSession.steer(text, images);
-                  if (images) {
-                    recordQueuedImages(
-                      g.agentSession,
-                      g.agentSession.getSteeringMessages().at(-1) ?? text,
-                      images,
-                    );
-                  }
-                } catch (err) {
-                  logger.warn("agent.abort: steer re-add failed", {
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
-              for (const text of parked.followUp) {
-                const images = takeQueuedImages(g.agentSession, text);
-                try {
-                  await g.agentSession.followUp(text, images);
-                  if (images) {
-                    recordQueuedImages(
-                      g.agentSession,
-                      g.agentSession.getFollowUpMessages().at(-1) ?? text,
-                      images,
-                    );
-                  }
-                } catch (err) {
-                  logger.warn("agent.abort: followUp re-add failed", {
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
-            } else {
-              logger.warn(
-                "agent.abort: run did not settle in time; parked queue not restored",
-                {
-                  steering: parked.steering.length,
-                  followUp: parked.followUp.length,
-                },
+            settled = abort.settled;
+            restoreQueuedImages(session, originalAttachments);
+            try {
+              await enqueueQueue(session, originalQueue);
+            } catch (error) {
+              queueRestored = false;
+              operationError = createHostError(
+                "QUEUE_TRANSACTION_FAILED",
+                `The active run was interrupted, but its queue was only partially restored: ${error instanceof Error ? error.message : String(error)}`,
+                { retryable: false },
               );
             }
-            server.emit("agent.queueChanged", {
-              steering: [...g.agentSession.getSteeringMessages()],
-              followUp: [...g.agentSession.getFollowUpMessages()],
-            });
+            if (!settled && !operationError) {
+              operationError = createHostError(
+                abort.error ? "AGENT_ABORTED" : "AGENT_BUSY",
+                abort.error
+                  ? `Unable to abort the active run: ${abort.error instanceof Error ? abort.error.message : String(abort.error)}`
+                  : "The active run did not settle before the abort deadline",
+                { retryable: true },
+              );
+            }
+            queue = factory.finishQueueTransaction(session);
           }
           const identity = server.getIdentity();
           const snap = buildSessionSnapshot({
-            session: g.agentSession,
+            session,
             sessionManager: g.sessionManager,
             cwd: g.canonicalCwd,
             sessionId: identity.sessionId ?? "",
@@ -398,7 +459,15 @@ export function createAgentHandlers(
             toolRevision: g.toolRevision,
           });
           g.sessionSnapshot = snap;
-          return { aborted, session: snap };
+          return {
+            aborted,
+            settled,
+            queueRestored,
+            partialFailure: !queueRestored,
+            queue,
+            session: snap,
+            ...(operationError ? { error: operationError } : {}),
+          };
         },
       });
       return out.ok
@@ -407,37 +476,11 @@ export function createAgentHandlers(
     },
 
     "agent.clearQueue": async (ctx) => {
-      const stale = factory.checkIdentity(ctx.context, {
-        requireWorkspace: true,
-        requireSession: true,
-      });
-      if (stale) return { error: stale };
-      const g = factory.getGraph();
-      if (!g?.agentSession) {
-        return { error: createHostError("AGENT_NOT_READY", "No active session") };
-      }
-      const cleared = g.agentSession.clearQueue?.() ?? {
-        steering: [...g.agentSession.getSteeringMessages()],
-        followUp: [...g.agentSession.getFollowUpMessages()],
-      };
-      // If clearQueue doesn't exist, manually clear isn't possible; return current
-      if (typeof g.agentSession.clearQueue === "function") {
-        return { result: cleared };
-      }
-      return {
-        result: {
-          steering: [...g.agentSession.getSteeringMessages()],
-          followUp: [...g.agentSession.getFollowUpMessages()],
-        },
-      };
-    },
-
-    "agent.setQueue": async (ctx) => {
       const server = factory.getServer();
       if (!server) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
-      const params = ctx.params as { steering: string[]; followUp: string[] };
+      const params = ctx.params as { expectedRevision: number };
       const out = await withStableGraphRead({
         requestId: ctx.id,
         identity: server.identity,
@@ -450,65 +493,289 @@ export function createAgentHandlers(
         run: async () => {
           const session = factory.getGraph()?.agentSession;
           if (!session) throw new Error("No active session");
-          // Atomic rebuild: the SDK only supports enqueue + clear-all, so
-          // reorder/edit/delete are expressed as clear + re-add in order.
-          // Queued texts are already template-expanded; re-adding is safe.
-          // Images ride along via the attachment side-table.
-          const oldTexts = [
-            ...session.getSteeringMessages(),
-            ...session.getFollowUpMessages(),
-          ];
+          const current = factory.syncQueueState(session);
+          if (current.revision !== params.expectedRevision) {
+            factory.syncQueueState(session, true);
+            return { error: queueConflictError(params.expectedRevision, current) };
+          }
+          factory.beginQueueTransaction(session);
+          session.clearQueue();
+          return { queue: factory.finishQueueTransaction(session) };
+        },
+      });
+      if (!out.ok) return { error: out.error, identity: out.identity };
+      return "error" in out.result
+        ? { error: out.result.error!, identity: out.identity }
+        : { result: out.result.queue, identity: out.identity };
+    },
+
+    "agent.setQueue": async (ctx) => {
+      const server = factory.getServer();
+      if (!server) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
+      }
+      const params = ctx.params as {
+        expectedRevision: number;
+        steering: string[];
+        followUp: string[];
+      };
+      const out = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        precheck: () =>
+          factory.checkIdentity(ctx.context, {
+            requireWorkspace: true,
+            requireSession: true,
+          }),
+        run: async () => {
+          const session = factory.getGraph()?.agentSession;
+          if (!session) throw new Error("No active session");
+          const current = factory.syncQueueState(session);
+          if (current.revision !== params.expectedRevision) {
+            factory.syncQueueState(session, true);
+            return { error: queueConflictError(params.expectedRevision, current) };
+          }
+          const originalQueue: QueueTexts = {
+            steering: [...current.steering],
+            followUp: [...current.followUp],
+          };
+          const oldTexts = [...originalQueue.steering, ...originalQueue.followUp];
           pruneQueuedImages(session, oldTexts);
+          const originalAttachments = snapshotQueuedImages(session);
           carryImagesAcrossEdit(session, oldTexts, [
             ...params.steering,
             ...params.followUp,
           ]);
-          session.clearQueue();
-          for (const text of params.steering) {
-            const images = takeQueuedImages(session, text);
+          factory.beginQueueTransaction(session);
+          let mutationError: unknown;
+          let rollbackError: unknown;
+          try {
+            await replaceQueue(session, params);
+          } catch (err) {
+            mutationError = err;
+            restoreQueuedImages(session, originalAttachments);
             try {
-              await session.steer(text, images);
-              if (images) {
-                recordQueuedImages(
-                  session,
-                  session.getSteeringMessages().at(-1) ?? text,
-                  images,
-                );
-              }
-            } catch (err) {
-              logger.warn("setQueue: steer re-add failed", {
-                error: err instanceof Error ? err.message : String(err),
-              });
+              await replaceQueue(session, originalQueue);
+            } catch (restoreError) {
+              rollbackError = restoreError;
             }
           }
-          for (const text of params.followUp) {
-            const images = takeQueuedImages(session, text);
-            try {
-              await session.followUp(text, images);
-              if (images) {
-                recordQueuedImages(
-                  session,
-                  session.getFollowUpMessages().at(-1) ?? text,
-                  images,
-                );
-              }
-            } catch (err) {
-              logger.warn("setQueue: followUp re-add failed", {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
+          const queue = factory.finishQueueTransaction(session);
+          if (mutationError) {
+            return {
+              error: createHostError(
+                "QUEUE_TRANSACTION_FAILED",
+                rollbackError
+                  ? "Queue update failed and the original queue could not be fully restored"
+                  : "Queue update failed; the original queue was restored",
+                {
+                  retryable: false,
+                  details: {
+                    queueRestored: !rollbackError,
+                    partialFailure: Boolean(rollbackError),
+                    queue,
+                    error:
+                      mutationError instanceof Error
+                        ? mutationError.message
+                        : String(mutationError),
+                    ...(rollbackError
+                      ? {
+                          rollbackError:
+                            rollbackError instanceof Error
+                              ? rollbackError.message
+                              : String(rollbackError),
+                        }
+                      : {}),
+                  },
+                },
+              ),
+            };
           }
-          const state = {
-            steering: [...session.getSteeringMessages()],
-            followUp: [...session.getFollowUpMessages()],
-          };
-          server.emit("agent.queueChanged", state);
-          return state;
+          return { queue };
         },
       });
-      return out.ok
-        ? { result: out.result, identity: out.identity }
-        : { error: out.error, identity: out.identity };
+      if (!out.ok) return { error: out.error, identity: out.identity };
+      return "error" in out.result
+        ? { error: out.result.error!, identity: out.identity }
+        : { result: out.result.queue, identity: out.identity };
+    },
+
+    "agent.runNow": async (ctx) => {
+      const server = factory.getServer();
+      if (!server) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
+      }
+      const params = ctx.params as {
+        expectedRevision: number;
+        followUpIndex: number;
+      };
+      const out = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        precheck: () =>
+          factory.checkIdentity(ctx.context, {
+            requireWorkspace: true,
+            requireSession: true,
+          }),
+        run: async () => {
+          const session = factory.getGraph()?.agentSession;
+          if (!session) throw new Error("No active session");
+          const current = factory.syncQueueState(session);
+          if (current.revision !== params.expectedRevision) {
+            factory.syncQueueState(session, true);
+            return { error: queueConflictError(params.expectedRevision, current) };
+          }
+          const item = current.followUp[params.followUpIndex];
+          if (!item) {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                "Run Now item is no longer present in the follow-up queue",
+                { retryable: true, details: { queue: current } },
+              ),
+            };
+          }
+
+          const originalQueue: QueueTexts = {
+            steering: [...current.steering],
+            followUp: [...current.followUp],
+          };
+          pruneQueuedImages(session, [
+            ...originalQueue.steering,
+            ...originalQueue.followUp,
+          ]);
+          const originalAttachments = snapshotQueuedImages(session);
+          const remaining: QueueTexts = {
+            steering: [...originalQueue.steering],
+            followUp: originalQueue.followUp.filter(
+              (_, index) => index !== params.followUpIndex,
+            ),
+          };
+
+          factory.beginQueueTransaction(session);
+          session.clearQueue();
+          const promptImages = takeQueuedImages(session, item);
+
+          const restoreOriginal = async (): Promise<unknown | undefined> => {
+            restoreQueuedImages(session, originalAttachments);
+            try {
+              await replaceQueue(session, originalQueue);
+              return undefined;
+            } catch (error) {
+              return error;
+            }
+          };
+
+          if (!session.isIdle) {
+            const abort = await abortAndWait(session);
+            if (!abort.settled) {
+              const restoreError = await restoreOriginal();
+              const queue = factory.finishQueueTransaction(session);
+              return {
+                result: {
+                  started: false,
+                  settled: false,
+                  queueRestored: !restoreError,
+                  partialFailure: Boolean(restoreError),
+                  queue,
+                  error: createHostError(
+                    abort.error ? "AGENT_ABORTED" : "AGENT_BUSY",
+                    abort.error
+                      ? `Unable to abort the active run: ${abort.error instanceof Error ? abort.error.message : String(abort.error)}`
+                      : "The active run did not settle before the Run Now deadline",
+                    { retryable: true },
+                  ),
+                },
+              };
+            }
+          }
+
+          const operationLock = factory.getSessionOperationLock(session);
+          const acquired = await operationLock.acquire(ctx.id, 2_000);
+          if (!acquired) {
+            const restoreError = await restoreOriginal();
+            const queue = factory.finishQueueTransaction(session);
+            return {
+              result: {
+                started: false,
+                settled: true,
+                queueRestored: !restoreError,
+                partialFailure: Boolean(restoreError),
+                queue,
+                error: createHostError(
+                  "AGENT_BUSY",
+                  "The previous agent operation did not release in time",
+                  { retryable: true },
+                ),
+              },
+            };
+          }
+
+          let runId: string;
+          try {
+            runId = startDetachedPrompt({
+              requestId: ctx.id,
+              factory,
+              server,
+              session,
+              operationLock,
+              text: item,
+              images: promptImages,
+            });
+          } catch (error) {
+            operationLock.release(ctx.id);
+            const restoreError = await restoreOriginal();
+            const queue = factory.finishQueueTransaction(session);
+            return {
+              result: {
+                started: false,
+                settled: true,
+                queueRestored: !restoreError,
+                partialFailure: Boolean(restoreError),
+                queue,
+                error: createHostError(
+                  "QUEUE_TRANSACTION_FAILED",
+                  error instanceof Error ? error.message : String(error),
+                  { retryable: false },
+                ),
+              },
+            };
+          }
+
+          let restoreError: unknown;
+          try {
+            await enqueueQueue(session, remaining);
+          } catch (error) {
+            restoreError = error;
+          }
+          const queue = factory.finishQueueTransaction(session);
+          return {
+            result: {
+              started: true,
+              runId,
+              settled: true,
+              queueRestored: !restoreError,
+              partialFailure: Boolean(restoreError),
+              queue,
+              ...(restoreError
+                ? {
+                    error: createHostError(
+                      "QUEUE_TRANSACTION_FAILED",
+                      `The selected item started, but the remaining queue was only partially restored: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+                      { retryable: false },
+                    ),
+                  }
+                : {}),
+            },
+          };
+        },
+      });
+      if (!out.ok) return { error: out.error, identity: out.identity };
+      return "error" in out.result
+        ? { error: out.result.error!, identity: out.identity }
+        : { result: out.result.result, identity: out.identity };
     },
 
     "agent.compact": async (ctx) => {

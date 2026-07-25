@@ -9,6 +9,7 @@ import type {
 } from "@pideck/protocol";
 import { toJsonValue } from "@pideck/protocol";
 import { buildContextUsageBreakdown } from "./context-usage-breakdown.js";
+import { getQueueSnapshot } from "./queue-state.js";
 
 export function buildToolSnapshot(args: {
   session: AgentSession;
@@ -108,10 +109,7 @@ export function buildSessionSnapshot(args: {
     autoRetryEnabled: session.autoRetryEnabled,
     steeringMode: session.steeringMode,
     followUpMode: session.followUpMode,
-    pending: {
-      steering: [...session.getSteeringMessages()],
-      followUp: [...session.getFollowUpMessages()],
-    },
+    pending: getQueueSnapshot(session),
     ...(contextUsage
       ? {
           contextUsage: {

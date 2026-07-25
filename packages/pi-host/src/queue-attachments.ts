@@ -14,6 +14,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 
 type AttachmentEntry = { text: string; images: ImageContent[] };
+export type QueueAttachmentSnapshot = AttachmentEntry[];
 
 const tables = new WeakMap<AgentSession, AttachmentEntry[]>();
 
@@ -47,6 +48,23 @@ export function takeQueuedImages(
   if (index < 0) return undefined;
   const [entry] = entries.splice(index, 1);
   return entry!.images;
+}
+
+export function snapshotQueuedImages(session: AgentSession): QueueAttachmentSnapshot {
+  return (tables.get(session) ?? []).map((entry) => ({
+    text: entry.text,
+    images: [...entry.images],
+  }));
+}
+
+export function restoreQueuedImages(
+  session: AgentSession,
+  snapshot: QueueAttachmentSnapshot,
+): void {
+  tables.set(
+    session,
+    snapshot.map((entry) => ({ text: entry.text, images: [...entry.images] })),
+  );
 }
 
 /** Drop entries whose text no longer appears in the live queue (delivered

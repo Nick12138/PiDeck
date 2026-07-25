@@ -488,7 +488,14 @@ export function Composer({
     ) {
       return;
     }
-    if (res.ok) setSession(res.result.session);
+    if (!res.ok) {
+      pushNotification(res.error?.message ?? "Abort failed", "error");
+      return;
+    }
+    setSession(res.result.session);
+    if (res.result.error) {
+      pushNotification(res.result.error.message, "error");
+    }
   }
 
   const canSend =

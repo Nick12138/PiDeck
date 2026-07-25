@@ -68,7 +68,7 @@ function fakeSessionSnapshot(
     autoRetryEnabled: true,
     steeringMode: "all",
     followUpMode: "all",
-    pending: { steering: [], followUp: [] },
+    pending: { revision: 0, steering: [], followUp: [] },
     messages: [],
     tools: {
       revision: 1,
@@ -148,6 +148,73 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     expect(factory.getSessionOperationLock(first).tryAcquire("again")).toBe(false);
   });
 
+  it("publishes one revisioned queue event for a multi-step transaction", () => {
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 1,
+      packageRevision: 1,
+    };
+    const server = {
+      getIdentity: () => identity,
+      emitForIdentity: vi.fn(),
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    const session = fakeSession(true, ACTIVE_SESSION_ID);
+    const steering: string[] = [];
+    const followUp: string[] = [];
+    Reflect.set(session, "getSteeringMessages", () => steering);
+    Reflect.set(session, "getFollowUpMessages", () => followUp);
+    const graph = fakeWorkspaceGraph("C:/workspace", WORKSPACE_ID, session);
+    Reflect.set(factory, "graph", graph);
+    const internal = factory as unknown as {
+      handleAgentEvent: (
+        graph: WorkspaceGraph,
+        sourceSession: AgentSession,
+        event: unknown,
+      ) => void;
+    };
+
+    factory.beginQueueTransaction(session);
+    steering.push("steer first");
+    internal.handleAgentEvent(graph, session, {
+      type: "queue_update",
+      steering: [...steering],
+      followUp: [...followUp],
+    });
+    followUp.push("then this");
+    internal.handleAgentEvent(graph, session, {
+      type: "queue_update",
+      steering: [...steering],
+      followUp: [...followUp],
+    });
+
+    expect(server.emitForIdentity).not.toHaveBeenCalled();
+    expect(factory.finishQueueTransaction(session)).toEqual({
+      revision: 1,
+      steering: ["steer first"],
+      followUp: ["then this"],
+    });
+    expect(server.emitForIdentity).toHaveBeenCalledOnce();
+    expect(server.emitForIdentity).toHaveBeenCalledWith(
+      identity,
+      "agent.queueChanged",
+      {
+        revision: 1,
+        steering: ["steer first"],
+        followUp: ["then this"],
+      },
+    );
+    expect(graph.sessionSnapshot?.pending).toEqual({
+      revision: 1,
+      steering: ["steer first"],
+      followUp: ["then this"],
+    });
+  });
+
   it("projects a background Agent event only as Session runtime state", () => {
     const events: Array<{ event: HostEventName; identity: HostIdentity; payload: unknown }> = [];
     const identity: HostIdentity = {
@@ -191,7 +258,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         autoRetryEnabled: true,
         steeringMode: "all",
         followUpMode: "all",
-        pending: { steering: [], followUp: [] },
+        pending: { revision: 0, steering: [], followUp: [] },
         messages: [],
         tools: {
           revision: 1,

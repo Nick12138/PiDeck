@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TryMutex } from "./locks.js";
+import { AgentOperationLock, TryMutex } from "./locks.js";
 
 describe("TryMutex async acquisition", () => {
   it("transfers ownership to a waiter when the current owner releases", async () => {
@@ -56,5 +56,36 @@ describe("TryMutex async acquisition", () => {
     lock.release("package-request");
 
     await expect(waiting).resolves.toBe(true);
+  });
+});
+
+describe("AgentOperationLock async acquisition", () => {
+  it("transfers ownership after the active prompt releases", async () => {
+    const lock = new AgentOperationLock();
+    expect(lock.tryAcquire("prompt")).toBe(true);
+
+    const waiting = lock.acquire("run-now", 100);
+    lock.release("prompt");
+
+    await expect(waiting).resolves.toBe(true);
+    expect(lock.isHeld()).toBe(true);
+    lock.release("run-now");
+    expect(lock.isHeld()).toBe(false);
+  });
+
+  it("does not transfer ownership after a waiter times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const lock = new AgentOperationLock();
+      lock.tryAcquire("prompt");
+      const waiting = lock.acquire("run-now", 50);
+
+      await vi.advanceTimersByTimeAsync(50);
+      await expect(waiting).resolves.toBe(false);
+      lock.release("prompt");
+      expect(lock.isHeld()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

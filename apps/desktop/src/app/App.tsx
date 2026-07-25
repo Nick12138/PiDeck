@@ -405,10 +405,11 @@ function handleHostEvent(
     }
     case "agent.queueChanged": {
       const cur = useAppStore.getState().session;
-      if (cur) {
+      if (cur && event.payload.revision >= cur.pending.revision) {
         useAppStore.getState().applySessionSnapshot({
           ...cur,
           pending: {
+            revision: event.payload.revision,
             steering: event.payload.steering ?? cur.pending.steering,
             followUp: event.payload.followUp ?? cur.pending.followUp,
           },

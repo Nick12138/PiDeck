@@ -203,7 +203,7 @@ export function applyAgentEvent(
         : next.pending.followUp;
       next = {
         ...next,
-        pending: { steering, followUp },
+        pending: { ...next.pending, steering, followUp },
       };
       break;
     }

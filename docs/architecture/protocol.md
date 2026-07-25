@@ -12,8 +12,16 @@ Every Host process has a new `hostInstanceId`. Monotonic:
 - `sessionRevision` — session create/open/reload/dispose
 - `packageRevision` — package snapshot publish
 - `ToolSnapshot.revision` — within a session generation, starts at 1
+- `QueueSnapshot.revision` — within one concrete AgentSession runtime, increments
+  once per logical queue change
 
 Frontend **must drop** events/responses with mismatched `hostInstanceId`. Stale expected identity returns `STALE_REVISION`.
+
+Queue replacement and clearing additionally require `expectedRevision`. A mismatch
+returns `STALE_REVISION` before the SDK queue is mutated. Queue snapshots in Session
+snapshots, mutation responses, and `agent.queueChanged` all carry the same revision.
+Clear/rebuild operations suppress intermediate SDK queue events and publish one
+authoritative final snapshot.
 
 ## Methods (P0)
 
@@ -51,6 +59,14 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
 `workspace.setCurrent` returns `WORKSPACE_NOT_DIRECTORY` when the resolved path
 exists but is not a directory. Missing, inaccessible, or otherwise unusable
 Workspace paths return `WORKSPACE_SWITCH_FAILED`.
+
+`agent.runNow` is a Host-owned active-Session transaction. It validates the queue
+revision, parks the queue, settles the current run, starts the selected follow-up,
+and restores the remaining items while the service graph is pinned. Its result
+always includes the authoritative final queue plus `started`, `settled`,
+`queueRestored`, and `partialFailure`. A selected item can be running even when
+restoring later items fails, so callers must inspect these flags and the optional
+embedded error instead of treating transport success as full transactional success.
 
 ## Atomic recovery
 

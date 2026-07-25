@@ -249,6 +249,12 @@ export type SessionContextBreakdown = {
   other: number;
 };
 
+export type QueueSnapshot = {
+  revision: number;
+  steering: string[];
+  followUp: string[];
+};
+
 export type SessionSnapshot = {
   sessionId: string;
   sessionPath?: string;
@@ -265,7 +271,7 @@ export type SessionSnapshot = {
   autoRetryEnabled: boolean;
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  pending: { steering: string[]; followUp: string[] };
+  pending: QueueSnapshot;
   contextUsage?: SessionContextUsage;
   messages: SerializableAgentMessage[];
   /**

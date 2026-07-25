@@ -87,6 +87,11 @@ export class TryMutex {
 export class AgentOperationLock {
   private active = false;
   private requestId: string | null = null;
+  private waiters: Array<{
+    requestId: string;
+    resolve: (acquired: boolean) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
 
   tryAcquire(requestId: string): boolean {
     if (this.active) return false;
@@ -95,10 +100,34 @@ export class AgentOperationLock {
     return true;
   }
 
+  acquire(requestId: string, timeoutMs: number): Promise<boolean> {
+    if (this.tryAcquire(requestId)) return Promise.resolve(true);
+    if (timeoutMs <= 0) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const waiter = {
+        requestId,
+        resolve,
+        timer: setTimeout(() => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          resolve(false);
+        }, timeoutMs),
+      };
+      waiter.timer.unref?.();
+      this.waiters.push(waiter);
+    });
+  }
+
   release(requestId?: string): void {
     if (requestId && this.requestId && this.requestId !== requestId) return;
     this.active = false;
     this.requestId = null;
+    const waiter = this.waiters.shift();
+    if (!waiter) return;
+    clearTimeout(waiter.timer);
+    this.active = true;
+    this.requestId = waiter.requestId;
+    waiter.resolve(true);
   }
 
   isHeld(): boolean {

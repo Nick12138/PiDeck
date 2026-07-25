@@ -6,6 +6,11 @@ import { AgentOperationLock, TryMutex } from "./locks.js";
 import type { PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { getActiveExtensionCommandOrigin } from "./extension-command-context.js";
+import {
+  beginQueueTransaction,
+  finishQueueTransaction,
+  observeQueueUpdate,
+} from "./queue-state.js";
 
 function model(overrides: Partial<Model<any>>): Model<any> {
   return {
@@ -147,6 +152,29 @@ function stableHandlerFixture(wait: Promise<void>) {
     getGraph: () => graph,
     getServer: () => server,
     getSessionOperationLock: () => sessionOperationLock,
+    beginQueueTransaction,
+    finishQueueTransaction: (target: AgentSession) => {
+      const result = finishQueueTransaction(target);
+      if (result.changed) {
+        server.emitForIdentity(
+          server.getIdentity(),
+          "agent.queueChanged",
+          result.queue,
+        );
+      }
+      return result.queue;
+    },
+    syncQueueState: (target: AgentSession, force = false) => {
+      const observed = observeQueueUpdate(target);
+      if (!observed.suppressed && (observed.changed || force)) {
+        server.emitForIdentity(
+          server.getIdentity(),
+          "agent.queueChanged",
+          observed.queue,
+        );
+      }
+      return observed.queue;
+    },
     hasBusySessions: () => false,
     setSessionRunId: vi.fn(),
     clearSessionRunId: vi.fn(),
@@ -251,18 +279,27 @@ describe("agent.abort with queued messages", () => {
     const fixture = stableHandlerFixture(gate.promise);
     const session = fixture.session as unknown as Record<string, unknown>;
     const order: string[] = [];
+    const steering = ["s1"];
+    const followUp = ["f1", "f2"];
+    session.getSteeringMessages = () => steering;
+    session.getFollowUpMessages = () => followUp;
     session.clearQueue = vi.fn(() => {
       order.push("clearQueue");
-      return { steering: ["s1"], followUp: ["f1", "f2"] };
+      const cleared = { steering: [...steering], followUp: [...followUp] };
+      steering.length = 0;
+      followUp.length = 0;
+      return cleared;
     });
     session.abort = vi.fn(async () => {
       order.push("abort");
     });
     session.steer = vi.fn(async (text: string) => {
       order.push(`steer:${text}`);
+      steering.push(text);
     });
     session.followUp = vi.fn(async (text: string) => {
       order.push(`followUp:${text}`);
+      followUp.push(text);
     });
     const handler = createAgentHandlers(fixture.factory)["agent.abort"]!;
 
@@ -278,10 +315,7 @@ describe("agent.abort with queued messages", () => {
       "followUp:f1",
       "followUp:f2",
     ]);
-    expect(fixture.server.emit).toHaveBeenCalledWith("agent.queueChanged", {
-      steering: ["steer"],
-      followUp: ["follow-up"],
-    });
+    expect(fixture.server.emitForIdentity).not.toHaveBeenCalled();
     expect(fixture.serviceGraphLock.isHeld()).toBe(false);
   });
 
@@ -329,7 +363,7 @@ describe("queued image preservation", () => {
     });
     session.abort = vi.fn(async () => {});
     const handlers = createAgentHandlers(fixture.factory);
-    return { fixture, handlers, steering, followUp };
+    return { fixture, handlers, session, steering, followUp };
   }
 
   const png = [{ mediaType: "image/png", data: "Zm9v" }];
@@ -351,7 +385,11 @@ describe("queued image preservation", () => {
     const outcome = await handlers["agent.setQueue"]!({
       id: "q3",
       context: {},
-      params: { steering: [], followUp: ["plain", "with image"] },
+      params: {
+        expectedRevision: 2,
+        steering: [],
+        followUp: ["plain", "with image"],
+      },
     } as never);
 
     expect("error" in outcome).toBe(false);
@@ -371,11 +409,66 @@ describe("queued image preservation", () => {
     await handlers["agent.setQueue"]!({
       id: "e2",
       context: {},
-      params: { steering: [], followUp: ["edited"] },
+      params: { expectedRevision: 1, steering: [], followUp: ["edited"] },
     } as never);
 
     expect(followUp.map((entry) => entry.text)).toEqual(["edited"]);
     expect(followUp[0]!.images).toEqual(sdkPng);
+  });
+
+  it("setQueue rolls back the original queue when a re-add fails", async () => {
+    const { handlers, session, followUp } = queueFixture();
+    await handlers["agent.followUp"]!({
+      id: "rollback-1",
+      context: {},
+      params: { text: "first", images: png },
+    } as never);
+    await handlers["agent.followUp"]!({
+      id: "rollback-2",
+      context: {},
+      params: { text: "second" },
+    } as never);
+    session.followUp = vi.fn(async (text: string, images?: unknown) => {
+      if (text === "broken") throw new Error("cannot enqueue broken item");
+      followUp.push({ text, images });
+    });
+
+    const outcome = await handlers["agent.setQueue"]!({
+      id: "rollback-3",
+      context: {},
+      params: {
+        expectedRevision: 2,
+        steering: [],
+        followUp: ["second", "broken", "first"],
+      },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("QUEUE_TRANSACTION_FAILED");
+    expect(followUp.map((entry) => entry.text)).toEqual(["first", "second"]);
+    expect(followUp[0]!.images).toEqual(sdkPng);
+  });
+
+  it("setQueue rejects a stale queue revision before clearing anything", async () => {
+    const { handlers, session, followUp } = queueFixture();
+    await handlers["agent.followUp"]!({
+      id: "stale-1",
+      context: {},
+      params: { text: "current" },
+    } as never);
+
+    const outcome = await handlers["agent.setQueue"]!({
+      id: "stale-2",
+      context: {},
+      params: {
+        expectedRevision: 0,
+        steering: [],
+        followUp: ["replacement"],
+      },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("STALE_REVISION");
+    expect(session.clearQueue).not.toHaveBeenCalled();
+    expect(followUp.map((entry) => entry.text)).toEqual(["current"]);
   });
 
   it("abort park/restore keeps images on queued items", async () => {
@@ -395,6 +488,129 @@ describe("queued image preservation", () => {
     expect("error" in outcome).toBe(false);
     expect(followUp.map((entry) => entry.text)).toEqual(["queued while running"]);
     expect(followUp[0]!.images).toEqual(sdkPng);
+  });
+});
+
+describe("agent.runNow transaction", () => {
+  it("pins the original Session while aborting and restores the remaining queue", async () => {
+    const abortGate = deferred();
+    const runGate = deferred();
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const session = fixture.session as unknown as Record<string, unknown>;
+    const steering = ["steer-first"];
+    const followUp = ["later", "run this", "last"];
+    session.getSteeringMessages = () => steering;
+    session.getFollowUpMessages = () => followUp;
+    session.clearQueue = vi.fn(() => {
+      const cleared = { steering: [...steering], followUp: [...followUp] };
+      steering.length = 0;
+      followUp.length = 0;
+      return cleared;
+    });
+    session.steer = vi.fn(async (text: string) => {
+      steering.push(text);
+    });
+    session.followUp = vi.fn(async (text: string) => {
+      followUp.push(text);
+    });
+    session.prompt = vi.fn(() => runGate.promise);
+    expect(fixture.sessionOperationLock.tryAcquire("current-run")).toBe(true);
+    session.abort = vi.fn(async () => {
+      await abortGate.promise;
+      session.isIdle = true;
+      fixture.sessionOperationLock.release("current-run");
+    });
+
+    const handler = createAgentHandlers(fixture.factory)["agent.runNow"]!;
+    const pending = handler({
+      id: "run-now",
+      context: {},
+      params: { expectedRevision: 0, followUpIndex: 1 },
+    } as never);
+
+    await vi.waitFor(() => expect(session.abort).toHaveBeenCalledOnce());
+    expect(
+      fixture.serviceGraphLock.tryAcquire({
+        operationKind: "session.open",
+        requestId: "switch-session",
+      }),
+    ).toBe(false);
+
+    abortGate.resolve();
+    const outcome = await pending;
+
+    expect("error" in outcome).toBe(false);
+    if (!("result" in outcome)) return;
+    expect(session.prompt).toHaveBeenCalledWith(
+      "run this",
+      expect.objectContaining({ streamingBehavior: undefined }),
+    );
+    expect(steering).toEqual(["steer-first"]);
+    expect(followUp).toEqual(["later", "last"]);
+    expect(outcome.result).toEqual(
+      expect.objectContaining({
+        started: true,
+        settled: true,
+        queueRestored: true,
+        partialFailure: false,
+        queue: {
+          revision: 1,
+          steering: ["steer-first"],
+          followUp: ["later", "last"],
+        },
+      }),
+    );
+
+    runGate.resolve();
+    await vi.waitFor(() => expect(fixture.sessionOperationLock.isHeld()).toBe(false));
+  });
+
+  it("reports the authoritative partial queue when restoration fails after start", async () => {
+    const runGate = deferred();
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const session = fixture.session as unknown as Record<string, unknown>;
+    const followUp = ["run this", "kept", "cannot restore", "never reached"];
+    session.isIdle = true;
+    session.getSteeringMessages = () => [];
+    session.getFollowUpMessages = () => followUp;
+    session.clearQueue = vi.fn(() => {
+      const cleared = { steering: [], followUp: [...followUp] };
+      followUp.length = 0;
+      return cleared;
+    });
+    session.followUp = vi.fn(async (text: string) => {
+      if (text === "cannot restore") throw new Error("restore failed");
+      followUp.push(text);
+    });
+    session.prompt = vi.fn(() => runGate.promise);
+
+    const handler = createAgentHandlers(fixture.factory)["agent.runNow"]!;
+    const outcome = await handler({
+      id: "run-now-partial",
+      context: {},
+      params: { expectedRevision: 0, followUpIndex: 0 },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    if (!("result" in outcome)) return;
+    expect(outcome.result).toEqual(
+      expect.objectContaining({
+        started: true,
+        settled: true,
+        queueRestored: false,
+        partialFailure: true,
+        queue: {
+          revision: 1,
+          steering: [],
+          followUp: ["kept"],
+        },
+        error: expect.objectContaining({ code: "QUEUE_TRANSACTION_FAILED" }),
+      }),
+    );
+    expect(followUp).toEqual(["kept"]);
+
+    runGate.resolve();
+    await vi.waitFor(() => expect(fixture.sessionOperationLock.isHeld()).toBe(false));
   });
 });
 

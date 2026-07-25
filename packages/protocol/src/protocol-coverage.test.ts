@@ -104,8 +104,9 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "agent.steer": { text: "hi" },
   "agent.followUp": { text: "hi" },
   "agent.abort": null,
-  "agent.clearQueue": null,
-  "agent.setQueue": { steering: [], followUp: ["next task"] },
+  "agent.clearQueue": { expectedRevision: 0 },
+  "agent.setQueue": { expectedRevision: 0, steering: [], followUp: ["next task"] },
+  "agent.runNow": { expectedRevision: 0, followUpIndex: 0 },
   "agent.compact": null,
   "agent.abortCompaction": null,
   "agent.setAutoCompaction": { enabled: true },
@@ -215,7 +216,6 @@ function invalidParams(method: HostMethod): unknown {
     case "session.getStats":
     case "session.usageReport":
     case "agent.abort":
-    case "agent.clearQueue":
     case "agent.abortCompaction":
     case "agent.abortRetry":
     case "agent.getTools":
@@ -246,7 +246,9 @@ function invalidParams(method: HostMethod): unknown {
     case "agent.steer":
     case "agent.followUp":
       return {};
+    case "agent.clearQueue":
     case "agent.setQueue":
+    case "agent.runNow":
       return { steering: "x", followUp: [] };
     case "agent.compact":
       return "x";
@@ -605,7 +607,7 @@ describe("protocol coverage — events", () => {
       tools: [],
       active: [],
     },
-    "agent.queueChanged": { steering: [], followUp: [] },
+    "agent.queueChanged": { revision: 0, steering: [], followUp: [] },
     "agent.compactionChanged": { active: false },
     "agent.retryChanged": { active: false },
     "model.changed": { thinkingLevel: "off", availableThinkingLevels: ["off"] },
@@ -804,7 +806,7 @@ describe("context usage breakdown", () => {
     autoRetryEnabled: true,
     steeringMode: "all",
     followUpMode: "all",
-    pending: { steering: [], followUp: [] },
+    pending: { revision: 0, steering: [], followUp: [] },
     contextUsage: {
       tokens: 100,
       contextWindow: 1_000,

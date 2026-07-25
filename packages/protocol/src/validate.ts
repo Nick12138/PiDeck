@@ -206,7 +206,6 @@ export function validateRequestParams<M extends HostMethod>(
     case "session.usageReport":
     case "session.getCommands":
     case "agent.abort":
-    case "agent.clearQueue":
     case "agent.abortCompaction":
     case "agent.abortRetry":
     case "agent.getTools":
@@ -282,14 +281,26 @@ export function validateRequestParams<M extends HostMethod>(
         validateImages(params.images)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "agent.clearQueue":
+      return exactObject(params, ["expectedRevision"]) &&
+        isSafeRevision(params.expectedRevision)
+        ? ok(params)
+        : fail("invalid agent.clearQueue params", { method });
     case "agent.setQueue":
-      return exactObject(params, ["steering", "followUp"]) &&
+      return exactObject(params, ["expectedRevision", "steering", "followUp"]) &&
+        isSafeRevision(params.expectedRevision) &&
         Array.isArray(params.steering) &&
         params.steering.every(isNonEmptyString) &&
         Array.isArray(params.followUp) &&
         params.followUp.every(isNonEmptyString)
         ? ok(params)
         : fail("invalid agent.setQueue params", { method });
+    case "agent.runNow":
+      return exactObject(params, ["expectedRevision", "followUpIndex"]) &&
+        isSafeRevision(params.expectedRevision) &&
+        isSafeRevision(params.followUpIndex)
+        ? ok(params)
+        : fail("invalid agent.runNow params", { method });
     case "agent.compact":
       return params === null ||
         (exactObject(params, [], ["instructions"]) &&

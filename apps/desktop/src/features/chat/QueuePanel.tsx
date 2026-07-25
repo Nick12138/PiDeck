@@ -7,9 +7,8 @@ import type { ActiveSessionContext } from "@pideck/protocol";
 
 /**
  * Waiting queue above the composer. Backed by the SDK queue (visible to the
- * CLI too); reorder/edit/delete are expressed through agent.setQueue's atomic
- * clear-and-rebuild. "Run now" is a hard interrupt: park the queue, abort the
- * current run, prompt the chosen item, restore the rest.
+ * CLI too); reorder/edit/delete use revisioned agent.setQueue transactions.
+ * "Run now" is one Host-owned interrupt/start/restore transaction.
  */
 
 /** Transient conditions worth a short retry — e.g. the operation lock of an
@@ -18,7 +17,7 @@ const RETRYABLE_CODES = new Set(["AGENT_BUSY", "SERVICE_GRAPH_BUSY", "PACKAGE_MU
 
 async function setQueueWithRetry(
   context: ActiveSessionContext,
-  params: { steering: string[]; followUp: string[] },
+  params: { expectedRevision: number; steering: string[]; followUp: string[] },
 ) {
   for (let attempt = 0; ; attempt += 1) {
     const res = await hostClient.request("agent.setQueue", context, params);
@@ -50,7 +49,11 @@ export function QueuePanel() {
     try {
       const res = await setQueueWithRetry(
         activeSessionContext(host, workspace, session),
-        { steering: nextSteering, followUp: nextFollowUp },
+        {
+          expectedRevision: session.pending.revision,
+          steering: nextSteering,
+          followUp: nextFollowUp,
+        },
       );
       if (!res.ok) {
         pushNotification(res.error?.message ?? "Queue update failed", "error");
@@ -62,77 +65,37 @@ export function QueuePanel() {
 
   async function runNow(index: number) {
     if (!host || !workspace || !session || busyOp) return;
-    const item = followUp[index];
-    if (!item) return;
-    const steeringBefore = [...steering];
-    const remaining = followUp.filter((_, i) => i !== index);
+    if (!followUp[index]) return;
+    const targetSessionId = session.sessionId;
+    const targetSessionRevision = session.revision;
     setBusyOp(true);
     try {
       const context = activeSessionContext(host, workspace, session);
-      // 1. Park everything so nothing auto-runs when the current run aborts.
-      const parked = await setQueueWithRetry(context, {
-        steering: [],
-        followUp: [],
-      });
-      if (!parked.ok) {
-        pushNotification(parked.error?.message ?? "Queue update failed", "error");
+      const response = await hostClient.request(
+        "agent.runNow",
+        context,
+        {
+          expectedRevision: session.pending.revision,
+          followUpIndex: index,
+        },
+      );
+      if (!response.ok) {
+        pushNotification(response.error?.message ?? "Run Now failed", "error");
         return;
       }
-      // 2. Hard-interrupt the current run.
-      const aborted = await hostClient.request("agent.abort", context, null);
-      if (!aborted.ok) {
-        pushNotification(aborted.error?.message ?? "Abort failed", "error");
-        // Undo the park so nothing is lost.
-        await setQueueWithRetry(context, {
-          steering: steeringBefore,
-          followUp: [...followUp],
-        });
-        return;
-      }
-      setSession(aborted.result.session);
-      // 3. Run the chosen item. The aborted run's operation lock releases a
-      // moment after the abort response, so retry briefly on busy errors.
-      const current = useAppStore.getState();
-      if (!current.host || !current.workspace || !current.session) return;
-      const freshContext = activeSessionContext(
-        current.host,
-        current.workspace,
-        current.session,
-      );
-      let prompted = await hostClient.request(
-        "agent.prompt",
-        freshContext,
-        { text: item, attachQueuedImages: true },
-        null,
-      );
-      for (
-        let attempt = 0;
-        !prompted.ok && RETRYABLE_CODES.has(prompted.error?.code ?? "") && attempt < 8;
-        attempt += 1
+      const current = useAppStore.getState().session;
+      if (
+        current?.sessionId === targetSessionId &&
+        current.revision === targetSessionRevision &&
+        response.result.queue.revision >= current.pending.revision
       ) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        prompted = await hostClient.request(
-          "agent.prompt",
-          freshContext,
-          { text: item, attachQueuedImages: true },
-          null,
-        );
-      }
-      if (!prompted.ok) {
-        pushNotification(prompted.error?.message ?? "Run failed", "error");
-        // Put the chosen item back at the front so it is not lost.
-        await setQueueWithRetry(freshContext, {
-          steering: steeringBefore,
-          followUp: [item, ...remaining],
+        setSession({
+          ...current,
+          pending: response.result.queue,
         });
-        return;
       }
-      // 4. Restore the remaining items behind the new run.
-      if (remaining.length > 0 || steeringBefore.length > 0) {
-        await setQueueWithRetry(freshContext, {
-          steering: steeringBefore,
-          followUp: remaining,
-        });
+      if (response.result.error) {
+        pushNotification(response.result.error.message, "error");
       }
     } finally {
       setBusyOp(false);

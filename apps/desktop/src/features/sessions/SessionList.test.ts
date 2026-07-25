@@ -28,7 +28,7 @@ const active = {
   autoRetryEnabled: true,
   steeringMode: "all",
   followUpMode: "all",
-  pending: { steering: [], followUp: [] },
+  pending: { revision: 0, steering: [], followUp: [] },
   messages: [{ role: "user", content: "hello" }],
   tools: {
     revision: 1,
