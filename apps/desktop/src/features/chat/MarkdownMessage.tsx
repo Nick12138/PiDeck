@@ -286,6 +286,7 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
   const content = child ? codeText(child) : "";
   const lineCount = codeLineCount(content);
   const collapsible = lineCount > CODE_COLLAPSE_THRESHOLD;
+  const contentId = useId();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -318,7 +319,11 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
-      <div className={collapsible && !expanded ? "max-h-80 overflow-hidden" : ""}>
+      <div
+        id={contentId}
+        className="markdown-code-content whitespace-pre"
+        data-collapsed={collapsible ? !expanded : undefined}
+      >
         {codeBlock}
       </div>
       {collapsible && (
@@ -326,6 +331,8 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
           type="button"
           className="mx-auto mt-1 flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted hover:bg-surface-overlay hover:text-foreground"
           onClick={() => setExpanded((current) => !current)}
+          aria-controls={contentId}
+          aria-expanded={expanded}
         >
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           {expanded ? "Collapse code" : `Expand ${lineCount} lines`}

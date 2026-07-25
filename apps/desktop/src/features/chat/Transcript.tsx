@@ -13,6 +13,7 @@ import {
   FoldVertical,
   GitBranch,
   ListTree,
+  LoaderCircle,
   Puzzle,
   Terminal,
 } from "lucide-react";
@@ -269,27 +270,30 @@ function AssistantAvatar() {
   return <PiMark className="mt-0.5 size-7" />;
 }
 
-function DurationLabel({
+export function DurationLabel({
   startedAt,
   endedAt,
+  active = false,
   className = "",
 }: {
   startedAt?: number;
   endedAt?: number;
+  active?: boolean;
   className?: string;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const live = active || endedAt === undefined;
 
   useEffect(() => {
-    if (!startedAt || endedAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    if (!startedAt || !live) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 100);
     return () => window.clearInterval(timer);
-  }, [startedAt, endedAt]);
+  }, [startedAt, live]);
 
   if (!startedAt) return null;
   return (
     <span className={`tabular-nums text-[10px] text-muted ${className}`}>
-      {formatDuration(startedAt, endedAt ?? now)}
+      {formatDuration(startedAt, active ? now : endedAt ?? now)}
     </span>
   );
 }
@@ -412,6 +416,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
         <DurationLabel
           startedAt={row.startedAt}
           endedAt={row.endedAt}
+          active={working}
         />
         <div className="ml-auto flex items-center gap-1">
           <CopyMessageButton
@@ -549,6 +554,7 @@ export function ExecutionTrace({
         ? `Stopped after ${stepCount} ${stepCount === 1 ? "action" : "actions"}`
         : `${stepCount} ${stepCount === 1 ? "action" : "actions"} completed`;
   const traceLabelWithMedia = imageCount > 0 ? `${traceLabel} / ${imageCount} image${imageCount === 1 ? "" : "s"}` : traceLabel;
+  const TraceIcon = active ? LoaderCircle : ListTree;
   return (
     <div className="execution-trace">
       <button
@@ -557,7 +563,10 @@ export function ExecutionTrace({
         className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         aria-expanded={open}
       >
-        <ListTree size={14} className="shrink-0 text-muted" />
+        <TraceIcon
+          size={14}
+          className={`shrink-0 text-muted ${active ? "animate-spin" : ""}`}
+        />
         <span className="min-w-0 truncate" title={traceLabelWithMedia}>{traceLabelWithMedia}</span>
         <ChevronRight
           size={13}

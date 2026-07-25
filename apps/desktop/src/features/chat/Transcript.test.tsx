@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { AssistantOrderedContent, ExecutionTrace } from "./Transcript";
+import { describe, expect, it, vi } from "vitest";
+import { AssistantOrderedContent, DurationLabel, ExecutionTrace } from "./Transcript";
 import type { TranscriptBlock } from "./transcript-model";
 
 function toolBlock(id: string, status: "running" | "done"): TranscriptBlock {
@@ -10,8 +10,28 @@ function toolBlock(id: string, status: "running" | "done"): TranscriptBlock {
   };
 }
 
+describe("DurationLabel", () => {
+  it("keeps counting through an intermediate end time while the turn is active", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(11_700);
+
+    try {
+      const activeMarkup = renderToStaticMarkup(
+        <DurationLabel startedAt={1_000} endedAt={7_100} active />,
+      );
+      const settledMarkup = renderToStaticMarkup(
+        <DurationLabel startedAt={1_000} endedAt={7_100} />,
+      );
+
+      expect(activeMarkup).toContain("10.7s");
+      expect(settledMarkup).toContain("6.1s");
+    } finally {
+      now.mockRestore();
+    }
+  });
+});
+
 describe("ExecutionTrace", () => {
-  it("keeps an active turn running with a list icon and collapsed content", () => {
+  it("shows a spinner for an active turn and keeps its content collapsed", () => {
     const markup = renderToStaticMarkup(
       <ExecutionTrace
         blocks={[toolBlock("tool-1", "done")]}
@@ -23,7 +43,9 @@ describe("ExecutionTrace", () => {
     );
 
     expect(markup).toContain("Running 1 action");
-    expect(markup).toContain("lucide-list-tree");
+    expect(markup).toContain("lucide-loader-circle");
+    expect(markup).toContain("animate-spin");
+    expect(markup).not.toContain("lucide-list-tree");
     expect(markup).not.toContain("lucide-brain");
     expect(markup).toContain('aria-expanded="false"');
   });
@@ -40,6 +62,9 @@ describe("ExecutionTrace", () => {
     );
 
     expect(markup).toContain("1 action completed");
+    expect(markup).toContain("lucide-list-tree");
+    expect(markup).not.toContain("lucide-loader-circle");
+    expect(markup).not.toContain("animate-spin");
   });
 
   it("keeps a mixed completed-and-running trace active", () => {
@@ -54,6 +79,7 @@ describe("ExecutionTrace", () => {
     );
 
     expect(markup).toContain("Running 2 actions");
+    expect(markup).toContain("lucide-loader-circle");
     expect(markup).not.toContain("2 actions completed");
   });
 });

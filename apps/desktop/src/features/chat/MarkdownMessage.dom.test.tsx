@@ -109,6 +109,51 @@ Inline \(x+y\).
   });
 });
 
+describe("MarkdownMessage code block expansion", () => {
+  it.each(["python", "markdown"])(
+    "expands every line in a long %s fence and can collapse it again",
+    async (language) => {
+      const user = userEvent.setup();
+      const lines = Array.from(
+        { length: 22 },
+        (_, index) => `${language} line ${index + 1}`,
+      );
+      const { container } = render(
+        <MarkdownMessage
+          content={`\`\`\`${language}\n${lines.join("\n")}\n\`\`\``}
+          mode="static"
+        />,
+      );
+
+      const expand = await screen.findByRole("button", { name: "Expand 22 lines" });
+      const contentId = expand.getAttribute("aria-controls");
+      expect(contentId).toBeTruthy();
+      const codeContent = document.getElementById(contentId!);
+      expect(codeContent).toHaveClass("whitespace-pre");
+      expect(codeContent).toHaveAttribute("data-collapsed", "true");
+      expect(expand).toHaveAttribute("aria-expanded", "false");
+      await waitFor(() => {
+        const code = container.querySelector('[data-streamdown="code-block-body"] code');
+        expect(code?.querySelectorAll(":scope > span")).toHaveLength(22);
+        expect(code).toHaveTextContent(lines[0]);
+        expect(code).toHaveTextContent(lines.at(-1)!);
+      });
+
+      await user.click(expand);
+      const collapse = screen.getByRole("button", { name: "Collapse code" });
+      expect(collapse).toHaveAttribute("aria-expanded", "true");
+      expect(codeContent).toHaveAttribute("data-collapsed", "false");
+
+      await user.click(collapse);
+      expect(screen.getByRole("button", { name: "Expand 22 lines" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(codeContent).toHaveAttribute("data-collapsed", "true");
+    },
+  );
+});
+
 describe("MarkdownMessage Mermaid rendering", () => {
   const closed = "```mermaid\nflowchart TD\n  A --> B\n```";
   const open = "```mermaid\nflowchart TD\n  A --> B";

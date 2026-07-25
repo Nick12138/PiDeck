@@ -288,12 +288,24 @@ textarea:focus-visible {
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.65;
+  white-space: pre;
 }
 
 .chat-markdown pre code {
   display: block;
   min-width: 100%;
   width: max-content;
+}
+
+/* Streamdown 2.5 only marks highlighted lines as blocks when line numbers are
+   enabled. PiDeck hides line numbers, so restore the line layout explicitly. */
+.chat-markdown [data-streamdown="code-block-body"] pre > code > span {
+  display: block;
+}
+
+.markdown-code-content[data-collapsed="true"] {
+  max-height: 20rem;
+  overflow: hidden;
 }
 
 .chat-markdown .katex {
