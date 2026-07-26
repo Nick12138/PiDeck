@@ -8,8 +8,8 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-  AuthStorage,
   ModelRegistry,
+  ModelRuntime,
   VERSION as SDK_VERSION,
   DefaultPackageManager,
 } from "@earendil-works/pi-coding-agent";
@@ -33,6 +33,8 @@ import { createProviderHandlers } from "./provider-controller.js";
 import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
+import { FileCredentialStore } from "./credential-store.js";
+import { refreshModelsLocal } from "./model-runtime-refresh.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -131,12 +133,24 @@ async function main(): Promise<void> {
   });
 
   // Cwd-independent services (PROJECT_SPEC §8.1)
-  const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+  const credentialStore = FileCredentialStore.forAgentDir(agentDir);
+
+  // The single authoritative runtime. `allowModelNetwork: false` keeps startup
+  // offline; only an explicit user refresh may reach the network later.
+  const modelRuntime = await ModelRuntime.create({
+    credentials: credentialStore,
+    modelsPath: join(agentDir, "models.json"),
+    modelsStorePath: join(agentDir, "models-store.json"),
+    allowModelNetwork: false,
+  });
+  const modelRegistry = new ModelRegistry(modelRuntime);
+
   installTestFauxProvider(modelRegistry);
-  modelRegistry.refresh();
+  // Awaited: the previous fire-and-forget refresh could still be running when
+  // the first workspace graph read the registry.
+  await refreshModelsLocal(modelRuntime);
   applyKnownThinkingProfiles(modelRegistry);
-  let modelConfigHealth = buildModelConfigHealth(modelRegistry.getError());
+  let modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
 
   // Capability detection — check prototype without constructing full PackageManager
   const packageUpdateCheck =
@@ -151,13 +165,16 @@ async function main(): Promise<void> {
 
   const graphFactory = new WorkspaceGraphFactory({
     agentDir,
-    authStorage,
+    credentialStore,
+    modelRuntime,
     modelRegistry,
     getModelConfigHealth: () => modelConfigHealth,
-    refreshModelHealth: async () => {
-      await modelRegistry.refresh();
+    refreshModelHealth: async (signal) => {
+      // Reconciliation only. A network catalog fetch is a separate, explicitly
+      // authorised call; it must never be triggered by a health refresh.
+      await refreshModelsLocal(modelRuntime, { signal });
       applyKnownThinkingProfiles(modelRegistry);
-      modelConfigHealth = buildModelConfigHealth(modelRegistry.getError());
+      modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
       return modelConfigHealth;
     },
     packageUpdateCheck,

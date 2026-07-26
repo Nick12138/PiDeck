@@ -2,14 +2,13 @@ import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AuthStorage,
   DefaultPackageManager,
-  ModelRegistry,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
+import { createTestModelServices } from "./test-helpers/model-runtime.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const fixtureRoot = resolve(currentDir, "../../../test-fixtures/pi-agent/0.80.7");
@@ -38,19 +37,26 @@ function installFixture(): TempAgentLayout {
 describe("Pi SDK 0.80.7 compatibility fixtures", () => {
   it("loads sanitized auth, models, settings, and local package resources", async () => {
     const layout = installFixture();
-    const authStorage = AuthStorage.create(join(layout.agentDir, "auth.json"));
-    const modelRegistry = ModelRegistry.create(authStorage, join(layout.agentDir, "models.json"));
+    // 0.80.7 data read through the 0.82.1 runtime and the PiDeck-owned store.
+    const { credentialStore, modelRegistry } = await createTestModelServices(layout.agentDir);
     const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
       projectTrusted: true,
     });
 
-    expect(authStorage.drainErrors()).toEqual([]);
-    expect(authStorage.get("pideck-fixture")).toEqual({
+    // The store rejects on failure rather than accumulating drainable errors,
+    // so a resolving read is itself the assertion that the file parsed.
+    expect(await credentialStore.list()).toEqual(
+      expect.arrayContaining([
+        { providerId: "pideck-fixture", type: "api_key" },
+        { providerId: "pideck-fixture-oauth", type: "oauth" },
+      ]),
+    );
+    expect(await credentialStore.readRaw("pideck-fixture")).toEqual({
       type: "api_key",
       key: "pideck-fixture-api-key-never-real",
       env: { PIDECK_FIXTURE_ACCOUNT: "pideck-fixture-account-never-real" },
     });
-    expect(authStorage.get("pideck-fixture-oauth")).toMatchObject({
+    expect(await credentialStore.readRaw("pideck-fixture-oauth")).toMatchObject({
       type: "oauth",
       refresh: "pideck-fixture-refresh-never-real",
       access: "pideck-fixture-access-never-real",

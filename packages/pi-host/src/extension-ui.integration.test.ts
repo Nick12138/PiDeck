@@ -23,13 +23,12 @@ import { join, dirname } from "node:path";
 import { describe, it, expect, afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
-  ModelRegistry,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { createTestModelServices } from "./test-helpers/model-runtime.js";
 import {
   bindExtensionUi,
   respondExtensionUi,
@@ -98,11 +97,7 @@ describe("extension UI real loader + bindExtensions path", () => {
     const settingsManager = SettingsManager.create(cwd, agentDir, {
       projectTrusted: true,
     });
-    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const modelRegistry = ModelRegistry.create(
-      authStorage,
-      join(agentDir, "models.json"),
-    );
+    const { modelRuntime } = await createTestModelServices(agentDir);
 
     // Real loader discovers fixture under agentDir/extensions
     const resourceLoader = new DefaultResourceLoader({
@@ -117,8 +112,7 @@ describe("extension UI real loader + bindExtensions path", () => {
     const { session } = await createAgentSession({
       cwd,
       agentDir,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       settingsManager,
       resourceLoader,
       sessionManager,

@@ -8,7 +8,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, type ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { completeSimple, type Api, type Context, type Model } from "@earendil-works/pi-ai/compat";
 import {
   createHostError,
@@ -322,10 +323,34 @@ function mergeProvider(existing: JsonObject, draft: ProviderDraft): JsonObject {
   return merged;
 }
 
+/**
+ * Validate a candidate models.json in complete isolation.
+ *
+ * The runtime gets the candidate file, a throwaway models store, an empty
+ * in-memory credential store, and no network. It must not observe the real
+ * auth.json or models-store.json, and must not disturb the production runtime
+ * or the current session's model.
+ */
+async function validateCandidateModelsConfig(tempPath: string): Promise<void> {
+  const storePath = join(dirname(tempPath), `.models-store-${randomUUID()}.tmp`);
+  try {
+    const candidateRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: tempPath,
+      modelsStorePath: storePath,
+      allowModelNetwork: false,
+    });
+    const validationError = candidateRuntime.getError();
+    if (validationError) throw new Error(validationError);
+  } finally {
+    await unlink(storePath).catch(() => undefined);
+  }
+}
+
 async function commitModelsConfig(
   path: string,
   root: JsonObject,
-  factory: WorkspaceGraphFactory,
+  _factory: WorkspaceGraphFactory,
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const candidate = JSON.stringify(root, null, 2) + "\n";
@@ -333,9 +358,7 @@ async function commitModelsConfig(
   const backupPath = join(dirname(path), `models-${Date.now()}-${randomUUID().slice(0, 8)}.bak`);
   await writeFile(tempPath, candidate, { encoding: "utf8", mode: 0o600 });
   try {
-    const candidateRegistry = ModelRegistry.create(factory.deps.authStorage, tempPath);
-    const validationError = candidateRegistry.getError();
-    if (validationError) throw new Error(validationError);
+    await validateCandidateModelsConfig(tempPath);
     try {
       await copyFile(path, backupPath);
     } catch (error) {
@@ -1089,18 +1112,26 @@ export function createProviderHandlers(
             config.root[ENABLED_PROVIDERS_KEY] = [...new Set(enabledAfter)];
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
 
-            const oldSourceCredential = factory.deps.authStorage.get(originalId);
-            const oldTargetCredential = factory.deps.authStorage.get(draft.id);
+            const credentialStore = factory.deps.credentialStore;
+            // Raw, not resolved: a renamed provider must carry its stored form.
+            const oldSourceCredential = await credentialStore.readRaw(originalId);
+            // One snapshot of the whole file rolls every credential change back
+            // together, instead of replaying individual writes in reverse.
+            const credentialSnapshot = await credentialStore.snapshot();
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
+              const newApiKey = params.apiKey;
               if (params.clearApiKey) {
-                factory.deps.authStorage.remove(draft.id);
-              } else if (params.apiKey !== undefined) {
-                factory.deps.authStorage.set(draft.id, { type: "api_key", key: params.apiKey });
+                await credentialStore.delete(draft.id);
+              } else if (newApiKey !== undefined) {
+                await credentialStore.modify(draft.id, async () => ({
+                  type: "api_key",
+                  key: newApiKey,
+                }));
               } else if (draft.id !== originalId && oldSourceCredential) {
-                factory.deps.authStorage.set(draft.id, oldSourceCredential);
+                await credentialStore.modify(draft.id, async () => oldSourceCredential);
               }
-              if (draft.id !== originalId) factory.deps.authStorage.remove(originalId);
+              if (draft.id !== originalId) await credentialStore.delete(originalId);
               await refreshRegistry(factory, true);
               const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
               const targetProvider = currentProvider && enabledAfter.includes(currentProvider)
@@ -1111,11 +1142,7 @@ export function createProviderHandlers(
                 : []);
             } catch (error) {
               await restoreModelsConfig(modelsPath, config.original);
-              if (oldTargetCredential) factory.deps.authStorage.set(draft.id, oldTargetCredential);
-              else factory.deps.authStorage.remove(draft.id);
-              if (draft.id !== originalId && oldSourceCredential) {
-                factory.deps.authStorage.set(originalId, oldSourceCredential);
-              }
+              await credentialStore.restore(credentialSnapshot);
               await refreshRegistry(factory, true);
               throw error;
             }
@@ -1170,14 +1197,14 @@ export function createProviderHandlers(
             delete config.providers[providerId];
             config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-            const oldCredential = factory.deps.authStorage.get(providerId);
+            const credentialSnapshot = await factory.deps.credentialStore.snapshot();
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
-              factory.deps.authStorage.remove(providerId);
+              await factory.deps.credentialStore.delete(providerId);
               await refreshRegistry(factory, true);
             } catch (error) {
               await restoreModelsConfig(modelsPath, config.original);
-              if (oldCredential) factory.deps.authStorage.set(providerId, oldCredential);
+              await factory.deps.credentialStore.restore(credentialSnapshot);
               await refreshRegistry(factory, true);
               throw error;
             }

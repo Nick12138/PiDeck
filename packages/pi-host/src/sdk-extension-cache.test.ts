@@ -18,8 +18,14 @@ afterEach(() => {
   }
 });
 
+/**
+ * The 0.80.7 patch kept the SDK's extension module cache across reloads and
+ * added a preserveExtensionCache option. The 0.82.1 patch drops both, so this
+ * now pins the upstream contract PiDeck depends on: every reload re-imports the
+ * extension module and rebuilds its handlers.
+ */
 describe("SDK extension module cache", () => {
-  it("preserves imports for preference reloads but rebuilds extension handlers", async () => {
+  it("re-imports the extension module on every reload", async () => {
     const root = mkdtempSync(join(tmpdir(), "pideck-extension-cache-"));
     roots.push(root);
     const cwd = join(root, "project");
@@ -63,19 +69,19 @@ describe("SDK extension module cache", () => {
       expect(first.extensions[0]!.handlers.has("resources_discover")).toBe(true);
       expect(globalState[stateKey]).toEqual({ imports: 1, factories: 1 });
 
-      await loader.reload({ preserveExtensionCache: true });
-      const preserved = loader.getExtensions();
-      expect(preserved.errors).toEqual([]);
-      expect(preserved.extensions).toHaveLength(1);
-      expect(preserved.extensions[0]).not.toBe(first.extensions[0]);
-      expect(preserved.extensions[0]!.handlers.has("resources_discover")).toBe(true);
-      expect(globalState[stateKey]).toEqual({ imports: 1, factories: 2 });
+      await loader.reload();
+      const second = loader.getExtensions();
+      expect(second.errors).toEqual([]);
+      expect(second.extensions).toHaveLength(1);
+      expect(second.extensions[0]).not.toBe(first.extensions[0]);
+      expect(second.extensions[0]!.handlers.has("resources_discover")).toBe(true);
+      expect(globalState[stateKey]).toEqual({ imports: 2, factories: 2 });
 
       await loader.reload();
-      const refreshed = loader.getExtensions();
-      expect(refreshed.errors).toEqual([]);
-      expect(refreshed.extensions[0]!.handlers.has("resources_discover")).toBe(true);
-      expect(globalState[stateKey]).toEqual({ imports: 2, factories: 3 });
+      const third = loader.getExtensions();
+      expect(third.errors).toEqual([]);
+      expect(third.extensions[0]!.handlers.has("resources_discover")).toBe(true);
+      expect(globalState[stateKey]).toEqual({ imports: 3, factories: 3 });
     } finally {
       delete globalState[stateKey];
     }

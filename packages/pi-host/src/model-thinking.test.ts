@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentSession, AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { applyKnownThinkingProfiles, rebindCurrentSessionModel } from "./model-thinking.js";
 
 describe("applyKnownThinkingProfiles", () => {
-  it("applies Grok 4.5 levels without replacing an explicit map", () => {
-    const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+  it("applies Grok 4.5 levels without replacing an explicit map", async () => {
+    const registry = new ModelRegistry(
+      await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath: null,
+        allowModelNetwork: false,
+      }),
+    );
     registry.registerProvider("test-profile", {
       baseUrl: "http://localhost:8317/v1",
       apiKey: "test",

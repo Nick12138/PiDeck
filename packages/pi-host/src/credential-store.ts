@@ -194,10 +194,21 @@ export class FileCredentialStore implements CredentialStore {
   // to roll credentials back together with models.json, which the SDK-facing
   // read/modify/delete surface cannot express.
 
+  /**
+   * The credential exactly as stored, with no template resolution.
+   *
+   * Use this when moving a credential between provider ids: `read()` would
+   * hand back the resolved secret, and re-storing that would replace a
+   * `!command` / `$ENV` reference with a literal key on disk.
+   */
+  async readRaw(providerId: string): Promise<Credential | undefined> {
+    return this.selectCredential(await this.readRoot(), providerId);
+  }
+
   async snapshot(): Promise<CredentialSnapshot> {
     return this.withLock(async () => ({
       path: this.authPath,
-      content: await this.readRaw(),
+      content: await this.readFileText(),
     }));
   }
 
@@ -227,7 +238,7 @@ export class FileCredentialStore implements CredentialStore {
     return isCredential(value) ? value : undefined;
   }
 
-  private async readRaw(): Promise<string | null> {
+  private async readFileText(): Promise<string | null> {
     try {
       return await readFile(this.authPath, "utf8");
     } catch (error) {
@@ -238,7 +249,7 @@ export class FileCredentialStore implements CredentialStore {
 
   /** Unknown providers and unknown credential fields survive round-trips. */
   private async readRoot(): Promise<CredentialRoot> {
-    const raw = await this.readRaw();
+    const raw = await this.readFileText();
     if (raw === null || raw.trim() === "") return {};
     let parsed: unknown;
     try {

@@ -623,9 +623,9 @@ async function mutatePackageUnderLock(
     if (status === "committed") {
       try {
         if (g.agentSession) {
-          await g.agentSession.reload(
-            kind === "setPreferences" ? { preserveExtensionCache: true } : undefined,
-          );
+          // The 0.82.1 patch drops preserveExtensionCache; every reconcile now
+          // goes through the official full reload.
+          await g.agentSession.reload();
           const sessionRevision = server.identity.bumpSessionRevision();
           g.toolRevision = 1;
           sessionSnap = buildSessionSnapshot({

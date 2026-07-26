@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { VERSION as SDK_VERSION } from "@earendil-works/pi-coding-agent";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
@@ -192,7 +193,7 @@ describe("Pi Host integration", () => {
     }
   });
 
-  it("system.hello returns HostStatusSnapshot with sdk 0.80.7", async () => {
+  it("system.hello returns HostStatusSnapshot with the SDK version the Host was built against", async () => {
     const res = await host.request("system.hello", {}, {
       clientName: "test",
       clientVersion: "0.0.0",
@@ -205,7 +206,8 @@ describe("Pi Host integration", () => {
       phase: string;
       agentDir: string;
     };
-    expect(result.sdkVersion).toBe("0.80.7");
+    // Derived, not pinned: the assertion must not need editing on every upgrade.
+    expect(result.sdkVersion).toBe(SDK_VERSION);
     expect(result.hostInstanceId).toBeTruthy();
     expect(result.phase).toBe("waitingForWorkspace");
     expect(result.agentDir).toBe(agentDir);

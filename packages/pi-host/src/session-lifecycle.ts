@@ -467,8 +467,7 @@ export async function createSession(
     const created = await createAgentSession({
       cwd: g.canonicalCwd,
       agentDir: factory.deps.agentDir,
-      authStorage: factory.deps.authStorage,
-      modelRegistry: factory.deps.modelRegistry,
+      modelRuntime: factory.deps.modelRuntime,
       settingsManager: g.settingsManager,
       resourceLoader: candidateResourceLoader,
       sessionManager,
@@ -757,8 +756,7 @@ export async function openSession(
       const created = await createAgentSession({
         cwd: g.canonicalCwd,
         agentDir: factory.deps.agentDir,
-        authStorage: factory.deps.authStorage,
-        modelRegistry: factory.deps.modelRegistry,
+        modelRuntime: factory.deps.modelRuntime,
         settingsManager: g.settingsManager,
         resourceLoader: candidateResourceLoader,
         sessionManager,

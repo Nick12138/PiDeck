@@ -1,13 +1,14 @@
 import type {
   AgentSession,
-  AuthStorage,
   DefaultPackageManager,
   DefaultResourceLoader,
   ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import type { FileCredentialStore } from "./credential-store.js";
 import type {
   HostIdentity,
   ModelConfigHealth,
@@ -65,9 +66,18 @@ export type ManagedSessionInfo = SessionInfo & { archived: boolean };
 
 export type GraphFactoryDeps = {
   agentDir: string;
-  authStorage: AuthStorage;
+  /** Persistent auth.json store injected into the Host-owned runtime. */
+  credentialStore: FileCredentialStore;
+  /**
+   * The single authoritative runtime. Every createAgentSession call must
+   * receive this instance; omitting it makes the SDK build a second runtime
+   * with its own provider and auth state.
+   */
+  modelRuntime: ModelRuntime;
+  /** Synchronous compatibility facade over `modelRuntime`. Owns no state. */
   modelRegistry: ModelRegistry;
   getModelConfigHealth: () => ModelConfigHealth;
-  refreshModelHealth: () => Promise<ModelConfigHealth> | ModelConfigHealth;
+  /** Local reconcile only — never reaches the network. */
+  refreshModelHealth: (signal?: AbortSignal) => Promise<ModelConfigHealth> | ModelConfigHealth;
   packageUpdateCheck: boolean;
 };

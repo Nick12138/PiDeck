@@ -2,14 +2,12 @@ import { createServer, type Server } from "node:http";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  AuthStorage,
-  ModelRegistry,
-} from "@earendil-works/pi-coding-agent";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
 import { createProviderHandlers } from "./provider-controller.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
+import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
+import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 
 const layouts: TempAgentLayout[] = [];
@@ -22,29 +20,28 @@ afterEach(async () => {
   for (const layout of layouts.splice(0)) layout.cleanup();
 });
 
-function setup(initialModels: unknown) {
+async function setup(initialModels: unknown) {
   const layout = createTempAgentLayout("pi-provider-test-");
   layouts.push(layout);
   writeFileSync(join(layout.agentDir, "models.json"), JSON.stringify(initialModels, null, 2));
-  const authStorage = AuthStorage.create(join(layout.agentDir, "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage, join(layout.agentDir, "models.json"));
-  let health: ModelConfigHealth = {
-    state: modelRegistry.getError() ? "error" : "ok",
+  const { credentialStore, modelRuntime, modelRegistry } = await createTestModelServices(
+    layout.agentDir,
+  );
+  const buildHealth = (): ModelConfigHealth => ({
+    state: modelRuntime.getError() ? "error" : "ok",
     source: "ModelRegistry.getError",
-    ...(modelRegistry.getError() ? { message: modelRegistry.getError() } : {}),
-  };
+    ...(modelRuntime.getError() ? { message: modelRuntime.getError() } : {}),
+  });
+  let health: ModelConfigHealth = buildHealth();
   const factory = new WorkspaceGraphFactory({
     agentDir: layout.agentDir,
-    authStorage,
+    credentialStore,
+    modelRuntime,
     modelRegistry,
     getModelConfigHealth: () => health,
-    refreshModelHealth: () => {
-      modelRegistry.refresh();
-      health = {
-        state: modelRegistry.getError() ? "error" : "ok",
-        source: "ModelRegistry.getError",
-        ...(modelRegistry.getError() ? { message: modelRegistry.getError() } : {}),
-      };
+    refreshModelHealth: async (signal) => {
+      await refreshModelsLocal(modelRuntime, { signal });
+      health = buildHealth();
       return health;
     },
     packageUpdateCheck: false,
@@ -63,7 +60,7 @@ function setup(initialModels: unknown) {
   factory.bindServer(server);
   return {
     layout,
-    authStorage,
+    credentialStore,
     server,
     handlers: createProviderHandlers(factory),
   };
@@ -112,7 +109,7 @@ function writeAnthropicSuccess(response: import("node:http").ServerResponse): vo
 
 describe("Provider controller", () => {
   it("migrates the active Provider and enables multiple Providers without clearing models", async () => {
-    const { layout, handlers } = setup({
+    const { layout, handlers } = await setup({
       pideckActiveProvider: "other",
       providers: {
         other: {
@@ -171,7 +168,7 @@ describe("Provider controller", () => {
   });
 
   it("preserves unrelated configuration and keeps API keys out of models.json", async () => {
-    const { layout, authStorage, handlers } = setup({
+    const { layout, credentialStore, handlers } = await setup({
       version: 1,
       providers: {
         other: {
@@ -225,14 +222,14 @@ describe("Provider controller", () => {
     expect(persisted.providers.custom.models).toHaveLength(1);
     expect(persisted.providers.custom.models[0].compat.supportsReasoningEffort).toBe(false);
     expect(persisted.providers.custom.apiKey).toBeUndefined();
-    expect(authStorage.get("custom")).toEqual({ type: "api_key", key: "secret-key" });
+    expect(await credentialStore.readRaw("custom")).toEqual({ type: "api_key", key: "secret-key" });
     if (!("error" in outcome)) {
       expect((outcome.result as { provider: { auth: { configured: boolean } } }).provider.auth.configured).toBe(true);
     }
   });
 
   it("chooses the native authentication default for a new Anthropic Provider", async () => {
-    const { layout, handlers } = setup({ providers: {} });
+    const { layout, handlers } = await setup({ providers: {} });
     const provider = {
       ...draft([]),
       api: "anthropic-messages" as const,
@@ -269,7 +266,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -398,7 +395,7 @@ describe("Provider controller", () => {
       const address = catalogServer.address();
       if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-      const fixture = setup({
+      const fixture = await setup({
         providers: {
           custom: {
             name: "Custom",
@@ -446,7 +443,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const fixture = setup({
+    const fixture = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -498,7 +495,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { authStorage, handlers } = setup({
+    const { credentialStore, handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -509,7 +506,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    authStorage.set("custom", { type: "api_key", key: "stored-secret" });
+    await putApiKey(credentialStore, "custom", "stored-secret");
     const outcome = await handlers["provider.fetchModels"]!({
       id: "fetch-root",
       params: { providerId: "custom" },
@@ -543,7 +540,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -576,7 +573,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -608,7 +605,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { authStorage, handlers } = setup({
+    const { credentialStore, handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -618,7 +615,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(credentialStore, "custom", "do-not-expose");
     const outcome = await handlers["provider.fetchModels"]!({
       id: "fetch-unauthorized",
       params: { providerId: "custom" },
@@ -646,7 +643,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -677,7 +674,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -708,7 +705,7 @@ describe("Provider controller", () => {
     const address = catalogServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { handlers } = setup({
+    const { handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -774,7 +771,7 @@ describe("Provider controller", () => {
     const address = apiServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { authStorage, handlers } = setup({
+    const { credentialStore, handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -785,7 +782,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(credentialStore, "custom", "do-not-expose");
     const outcome = await handlers["provider.checkConnection"]!({
       id: "check-blocked",
       params: { providerId: "custom", modelId: "relay-model" },
@@ -809,7 +806,7 @@ describe("Provider controller", () => {
       expect(JSON.stringify(outcome.result)).not.toContain("do-not-expose");
     }
 
-    const compatible = setup({
+    const compatible = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -821,7 +818,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    compatible.authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(compatible.credentialStore, "custom", "do-not-expose");
     const compatibleOutcome = await compatible.handlers["provider.checkConnection"]!({
       id: "check-compatible",
       params: { providerId: "custom", modelId: "relay-model" },
@@ -859,7 +856,7 @@ describe("Provider controller", () => {
     const address = apiServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const { layout, authStorage, handlers } = setup({
+    const { layout, credentialStore, handlers } = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -871,7 +868,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(credentialStore, "custom", "do-not-expose");
 
     const outcome = await handlers["provider.checkConnection"]!({
       id: "detect-bearer",
@@ -919,7 +916,7 @@ describe("Provider controller", () => {
     const address = apiServer.address();
     if (!address || typeof address === "string") throw new Error("No HTTP address");
 
-    const fixture = setup({
+    const fixture = await setup({
       providers: {
         custom: {
           name: "Custom",
@@ -931,7 +928,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    fixture.authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(fixture.credentialStore, "custom", "do-not-expose");
     vi.spyOn(fixture.server, "shutdown").mockResolvedValue();
     const pending = fixture.handlers["provider.checkConnection"]!({
       id: "detect-cancelled",
@@ -1002,8 +999,8 @@ describe("Provider controller", () => {
       headers: { "User-Agent": "PiDeck/0.1" },
       models: [{ id: "relay-model", reasoning: true }],
     };
-    const automatic = setup({ providers: { custom: providerConfig } });
-    automatic.authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    const automatic = await setup({ providers: { custom: providerConfig } });
+    await putApiKey(automatic.credentialStore, "custom", "do-not-expose");
     const automaticOutcome = await automatic.handlers["provider.checkConnection"]!({
       id: "check-developer-role",
       params: { providerId: "custom", modelId: "relay-model" },
@@ -1019,7 +1016,7 @@ describe("Provider controller", () => {
       }));
     }
 
-    const compatible = setup({
+    const compatible = await setup({
       providers: {
         custom: {
           ...providerConfig,
@@ -1027,7 +1024,7 @@ describe("Provider controller", () => {
         },
       },
     });
-    compatible.authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    await putApiKey(compatible.credentialStore, "custom", "do-not-expose");
     const compatibleOutcome = await compatible.handlers["provider.checkConnection"]!({
       id: "check-system-role",
       params: { providerId: "custom", modelId: "relay-model" },

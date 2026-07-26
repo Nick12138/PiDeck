@@ -463,7 +463,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     expect(order).toEqual(["flush", "reload", "snapshot", "emit"]);
   });
 
-  it("preserves the extension module cache only for resource preference changes", async () => {
+  it("uses the official full reload for both preference and resource reload paths", async () => {
     const preferenceFactory = mockFactory({ resourceReloadRequired: false });
     const preferenceGraph = preferenceFactory.getGraph()!;
     preferenceGraph.resourceIdMap.set("resource-extension", {
@@ -481,9 +481,9 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     ]!(preferenceCtx as never);
 
     expect("error" in preferenceOut).toBe(false);
-    expect(preferenceGraph.agentSession!.reload).toHaveBeenCalledWith({
-      preserveExtensionCache: true,
-    });
+    // 0.82.1 removed preserveExtensionCache: preference reconcile now takes the
+    // same official full reload as every other path.
+    expect(preferenceGraph.agentSession!.reload).toHaveBeenCalledWith();
 
     const reloadFactory = mockFactory({ resourceReloadRequired: false });
     const reloadGraph = reloadFactory.getGraph()!;
@@ -492,7 +492,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     );
 
     expect("error" in reloadOut).toBe(false);
-    expect(reloadGraph.agentSession!.reload).toHaveBeenCalledWith(undefined);
+    expect(reloadGraph.agentSession!.reload).toHaveBeenCalledWith();
   });
 
   it("clean package failure does not advance the authoritative package revision", async () => {

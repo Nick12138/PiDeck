@@ -623,7 +623,7 @@ export class WorkspaceLifecycle {
     packageRevision: number;
   }): Promise<{ graph: WorkspaceGraph } | { error: HostError }> {
     const server = this.context.getServer()!;
-    const { agentDir, authStorage, modelRegistry } = this.context.deps;
+    const { agentDir, modelRuntime } = this.context.deps;
     let candidateSession: AgentSession | null = null;
     let candidateExtensionUiCleanup: (() => void) | null = null;
     let candidateUnsubscribeAgent: (() => void) | null = null;
@@ -660,8 +660,7 @@ export class WorkspaceLifecycle {
       const { session, extensionsResult } = await createAgentSession({
         cwd: args.canonicalCwd,
         agentDir,
-        authStorage,
-        modelRegistry,
+        modelRuntime,
         settingsManager,
         resourceLoader,
         sessionManager,
