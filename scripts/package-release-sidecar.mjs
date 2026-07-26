@@ -95,7 +95,14 @@ if (process.argv.includes("--prepare-runtime") || process.argv.includes("--copy-
       env: process.env,
     }),
   );
-  if (prep.status !== 0) die("prepare-release-runtime failed");
+  if (prep.status !== 0) {
+    const cause = prep.error
+      ? `spawn error: ${prep.error.message}`
+      : prep.signal
+        ? `signal: ${prep.signal}`
+        : `exit status: ${String(prep.status)}`;
+    die(`prepare-release-runtime failed (${cause})`);
+  }
 }
 
 if (!existsSync(join(nodeDir, "node.exe"))) {
