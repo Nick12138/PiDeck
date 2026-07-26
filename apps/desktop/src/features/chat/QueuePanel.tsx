@@ -129,17 +129,19 @@ export function QueuePanel() {
               <span className="min-w-0 flex-1 truncate text-xs" title={text}>
                 {text}
               </span>
-              <button
-                type="button"
-                title="Remove"
-                className={`${itemButton} opacity-0 group-hover:opacity-100`}
-                disabled={busyOp}
-                onClick={() =>
-                  void applyQueue(steering.filter((_, i) => i !== index), [...followUp])
-                }
-              >
-                <Trash2 size={12} />
-              </button>
+              <span className="shrink-0 opacity-0 group-hover:opacity-100">
+                <button
+                  type="button"
+                  title="Remove"
+                  className={itemButton}
+                  disabled={busyOp}
+                  onClick={() =>
+                    void applyQueue(steering.filter((_, i) => i !== index), [...followUp])
+                  }
+                >
+                  <Trash2 size={12} />
+                </button>
+              </span>
             </li>
           ))}
           {followUp.map((text, index) =>

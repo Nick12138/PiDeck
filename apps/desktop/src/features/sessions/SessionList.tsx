@@ -1029,10 +1029,10 @@ export function SessionList({
                         setMenuSessionId(item.sessionId);
                       }}
                       disabled={sessionMutationBlocked}
-                      className={`rounded p-1 text-muted transition-opacity hover:bg-surface hover:text-foreground disabled:opacity-30 ${
+                      className={`rounded p-1 text-muted transition-opacity hover:bg-surface hover:text-foreground ${
                         menuOpen
-                          ? "opacity-100"
-                          : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+                          ? "opacity-100 disabled:opacity-30"
+                          : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
                       }`}
                     >
                       <MoreHorizontal size={14} />
