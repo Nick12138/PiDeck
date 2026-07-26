@@ -9,6 +9,7 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { requestCompact, setAutoCompaction } from "./compaction-actions";
 
 const MODEL_MENU_MIN_WIDTH = 120;
 const MODEL_MENU_MAX_WIDTH = 280;
@@ -87,8 +88,12 @@ export function canRequestModelList(args: {
 }
 
 export function ContextUsageRing() {
-  const contextUsage = useAppStore((s) => s.session?.contextUsage);
+  const session = useAppStore((s) => s.session);
+  const contextUsage = session?.contextUsage;
   const breakdown = contextUsage?.breakdown;
+  const [open, setOpen] = useState(false);
+  const [compactPending, setCompactPending] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
   const percent =
     contextUsage?.tokens === null || !contextUsage
       ? null
@@ -99,52 +104,116 @@ export function ContextUsageRing() {
       ? `Context usage unknown / ${formatTokenCount(contextUsage.contextWindow)} tokens`
       : `${formatTokenCount(contextUsage.tokens)} / ${formatTokenCount(contextUsage.contextWindow)} context tokens`
     : "No model context available";
+  const autoCompactionEnabled = session?.autoCompactionEnabled ?? false;
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  async function compactNow() {
+    setCompactPending(true);
+    try {
+      await requestCompact();
+    } finally {
+      setCompactPending(false);
+    }
+  }
 
   return (
-    <span
-      className="group/context relative flex size-6 shrink-0 items-center justify-center rounded-full"
-      style={{
-        background: `conic-gradient(var(--color-accent) ${
-          percent === null ? 0 : percent * 3.6
-        }deg, var(--color-border) 0deg)`,
-      }}
-      aria-label={title}
-      role="img"
-      tabIndex={0}
-    >
-      <span className="absolute inset-[2px] rounded-full bg-surface-raised" />
-      <span className="relative text-[7px] tabular-nums text-muted">
-        {roundedPercent === null ? "--" : `${roundedPercent}%`}
-      </span>
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-64 -translate-x-1/2 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg group-hover/context:flex group-focus/context:flex">
-        <span className="font-medium">Context usage</span>
-        <span className="mt-0.5 tabular-nums text-muted">{title}</span>
-        {breakdown && (
-          <>
-            <span className="my-2 h-px bg-border" />
-            <span className="mb-1 text-[10px] font-medium uppercase text-muted">
-              Estimated composition
-            </span>
-            <span className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
-              <span className="text-muted">System prompt</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.systemPrompt)}</span>
-              <span className="text-muted">Tool definitions</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.toolDefinitions)}</span>
-              <span className="text-muted">User prompts</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.userPrompts)}</span>
-              <span className="text-muted">Assistant</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.assistantMessages)}</span>
-              <span className="text-muted">Tool results</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.toolResults)}</span>
-              <span className="text-muted">Summaries</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.summaries)}</span>
-              <span className="text-muted">Other / framing</span>
-              <span className="tabular-nums">~{formatTokenCount(breakdown.other)}</span>
-            </span>
-            <span className="mt-2 text-[10px] text-muted">Estimated; total from provider.</span>
-          </>
-        )}
-      </span>
+    <span ref={containerRef} className="relative flex shrink-0 items-center">
+      <button
+        type="button"
+        className="relative flex size-6 shrink-0 items-center justify-center rounded-full"
+        style={{
+          background: `conic-gradient(var(--color-accent) ${
+            percent === null ? 0 : percent * 3.6
+          }deg, var(--color-border) 0deg)`,
+        }}
+        aria-label={title}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={title}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="absolute inset-[2px] rounded-full bg-surface-raised" />
+        <span className="relative text-[7px] tabular-nums text-muted">
+          {roundedPercent === null ? "--" : `${roundedPercent}%`}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg">
+          <span className="font-medium">Context usage</span>
+          <span className="mt-0.5 tabular-nums text-muted">{title}</span>
+          {breakdown && (
+            <>
+              <span className="my-2 h-px bg-border" />
+              <span className="mb-1 text-[10px] font-medium uppercase text-muted">
+                Estimated composition
+              </span>
+              <span className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                <span className="text-muted">System prompt</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.systemPrompt)}</span>
+                <span className="text-muted">Tool definitions</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.toolDefinitions)}</span>
+                <span className="text-muted">User prompts</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.userPrompts)}</span>
+                <span className="text-muted">Assistant</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.assistantMessages)}</span>
+                <span className="text-muted">Tool results</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.toolResults)}</span>
+                <span className="text-muted">Summaries</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.summaries)}</span>
+                <span className="text-muted">Other / framing</span>
+                <span className="tabular-nums">~{formatTokenCount(breakdown.other)}</span>
+              </span>
+              <span className="mt-2 text-[10px] text-muted">Estimated; total from provider.</span>
+            </>
+          )}
+          <span className="my-2 h-px bg-border" />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted">Auto-compaction</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoCompactionEnabled}
+              aria-label="Toggle auto-compaction"
+              disabled={!session}
+              className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                autoCompactionEnabled ? "bg-accent" : "bg-border"
+              }`}
+              onClick={() =>
+                session && void setAutoCompaction(!session.autoCompactionEnabled)
+              }
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 size-3 rounded-full bg-surface-raised transition-transform ${
+                  autoCompactionEnabled ? "translate-x-3" : ""
+                }`}
+              />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="mt-2 flex h-7 items-center justify-center rounded-md border border-border bg-surface px-2 font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={compactPending || !session?.isIdle}
+            onClick={() => void compactNow()}
+          >
+            {session?.isCompacting ? "Compacting…" : "Compact now"}
+          </button>
+        </div>
+      )}
     </span>
   );
 }

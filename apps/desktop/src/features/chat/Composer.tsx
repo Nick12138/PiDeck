@@ -28,6 +28,8 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { subscribeComposerInsert } from "../../lib/composer-insert";
+import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
+import { abortCompaction, requestCompact } from "./compaction-actions";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -109,6 +111,14 @@ function looksBinary(text: string): boolean {
 }
 
 type CompletionItem = { insert: string; label: string; detail?: string };
+
+const BUILTIN_COMPLETION_ITEMS: CompletionItem[] = BUILTIN_COMMANDS.map((command) => ({
+  insert: `/${command.name} `,
+  label: `/${command.name}`,
+  detail: [command.argumentHint, command.description, "(built-in)"]
+    .filter(Boolean)
+    .join(" — "),
+}));
 type CompletionState = {
   kind: "command" | "file";
   /** Index in the draft where the trigger token (incl. `/` or `@`) starts. */
@@ -247,15 +257,18 @@ export function Composer({
       activeSessionContext(host, workspace, session),
       null,
     );
-    if (!res.ok) return [];
+    if (!res.ok) return BUILTIN_COMPLETION_ITEMS;
     const kindLabel = { template: "prompt", command: "extension", skill: "skill" } as const;
-    const items = res.result.commands.map((command) => ({
-      insert: `/${command.invocation} `,
-      label: `/${command.invocation}`,
-      detail: [command.argumentHint, command.description, `(${kindLabel[command.kind]})`]
-        .filter(Boolean)
-        .join(" — "),
-    }));
+    const items = [
+      ...res.result.commands.map((command) => ({
+        insert: `/${command.invocation} `,
+        label: `/${command.invocation}`,
+        detail: [command.argumentHint, command.description, `(${kindLabel[command.kind]})`]
+          .filter(Boolean)
+          .join(" — "),
+      })),
+      ...BUILTIN_COMPLETION_ITEMS,
+    ];
     templatesRef.current = { key, items };
     return items;
   }
@@ -447,6 +460,24 @@ export function Composer({
   async function send() {
     if (!host || !workspace || !session || disabled) return;
     if (!text.trim() && images.length === 0 && files.length === 0) return;
+
+    const builtin = matchBuiltinCommand(text);
+    if (builtin?.name === "compact") {
+      if (busy) {
+        // requestCompact surfaces the busy notification; keep the draft.
+        void requestCompact(builtin.args);
+        return;
+      }
+      const targetSessionId = session.sessionId;
+      const draftText = text;
+      setSessionDraft(targetSessionId, "");
+      setCompletion(null);
+      if (!(await requestCompact(builtin.args))) {
+        setSessionDraft(targetSessionId, draftText);
+      }
+      return;
+    }
+
     const value = text;
     const sentImages = images;
     const sentFiles = files;
@@ -764,10 +795,12 @@ export function Composer({
               ) : (
                 <button
                   type="button"
-                  title="Stop"
-                  aria-label="Stop"
+                  title={session?.isCompacting ? "Stop compaction" : "Stop"}
+                  aria-label={session?.isCompacting ? "Stop compaction" : "Stop"}
                   className="flex size-8 items-center justify-center rounded-md bg-danger/15 text-danger hover:bg-danger/20"
-                  onClick={() => void abort()}
+                  onClick={() =>
+                    void (session?.isCompacting ? abortCompaction() : abort())
+                  }
                 >
                   <Square size={14} fill="currentColor" />
                 </button>

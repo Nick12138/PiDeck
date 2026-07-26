@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented:** Session list/create/open, prompt/steer/follow-up/abort, model/thinking selectors, transcript rendering, tool cards, Extension UI modal, and AUTH_REQUIRED banner.
+**Implemented:** Session list/create/open, prompt/steer/follow-up/abort, manual/auto compaction controls, model/thinking selectors, transcript rendering, tool cards, Extension UI modal, and AUTH_REQUIRED banner.
 
 ## Session
 
@@ -24,9 +24,21 @@
 | Send (idle) | `agent.prompt` |
 | Send (busy) | `agent.steer` or `agent.followUp` |
 | Stop | `agent.abort` |
+| Stop (compacting) | `agent.abortCompaction` |
+| `/compact [instructions]` or Compact now | `agent.compact` |
+| Auto-compaction switch | `agent.setAutoCompaction` |
 | Tools panel | `agent.getTools` / `agent.setActiveTools` |
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
+
+The Composer's `/` completion merges `session.getCommands` (prompt templates,
+extension commands, skills) with PiDeck's built-in commands
+(`features/chat/builtin-commands.ts`, currently `/compact`). A draft matching a
+built-in command runs locally instead of being sent to the model; unknown
+`/name` text still goes to the model unchanged. Manual compaction requires an
+idle agent and shares the per-session operation lock with `agent.prompt`. The
+context-usage ring in the Composer opens a panel with the usage breakdown, a
+Compact now action, and the auto-compaction switch.
 
 ## Queue transactions
 
