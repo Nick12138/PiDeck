@@ -1,0 +1,35 @@
+{
+  "providers": {
+    "pideck-fixture": {
+      "name": "PiDeck Fixture Provider",
+      "baseUrl": "https://pideck-fixture.invalid/v1",
+      "apiKey": "pideck-fixture-model-key-never-real",
+      "api": "openai-completions",
+      "headers": {
+        "X-Fixture-Token": "pideck-fixture-header-never-real"
+      },
+      "authHeader": true,
+      "models": [
+        {
+          "id": "fixture-model",
+          "name": "Fixture Model",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "medium": "medium",
+            "high": "high"
+          },
+          "input": ["text", "image"],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 32768,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  }
+}

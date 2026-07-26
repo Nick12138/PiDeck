@@ -109,7 +109,13 @@ if (!existsSync(join(extractedRoot, "node.exe"))) {
   stageFrom(extractedRoot);
 }
 
-await preparePortableGit();
+try {
+  await preparePortableGit();
+} catch (error) {
+  die(
+    `Portable Git preparation threw: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+  );
+}
 
 function findFile(dir, name) {
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -134,30 +140,33 @@ async function preparePortableGit() {
   if (archiveHash !== portable.sha256) {
     die(`Portable Git SHA-256 mismatch: expected ${portable.sha256} got ${archiveHash}`);
   }
+  console.log("[prepare-runtime] Portable Git archive sha256 OK", archiveHash);
 
-  const extractDir = join(cacheRoot, `portable-git-${portable.version}`);
-  if (!existsSync(join(extractDir, "cmd", "git.exe"))) {
-    if (existsSync(extractDir)) rmSync(extractDir, { recursive: true, force: true });
-    mkdirSync(extractDir, { recursive: true });
-    const extracted = spawnSync(archivePath, ["-y", `-o${extractDir}`], {
-      cwd: cacheRoot,
-      encoding: "utf8",
-      shell: false,
-      timeout: 300_000,
-    });
-    if (extracted.status !== 0) {
-      console.error(extracted.stdout, extracted.stderr);
-      die(`Portable Git extraction failed exit=${extracted.status}`);
-    }
-  }
-
-  for (const expected of portable.expectedFiles ?? []) {
-    if (!existsSync(join(extractDir, expected))) {
-      die(`Portable Git missing expected file after extraction: ${expected}`);
-    }
-  }
+  console.log("[prepare-runtime] extracting Portable Git archive to", stageGit);
   if (existsSync(stageGit)) rmSync(stageGit, { recursive: true, force: true });
-  cpSync(extractDir, stageGit, { recursive: true });
+  mkdirSync(stageGit, { recursive: true });
+  const extracted = spawnSync(archivePath, ["-y", `-o${stageGit}`], {
+    cwd: cacheRoot,
+    encoding: "utf8",
+    shell: false,
+    timeout: 300_000,
+  });
+  if (extracted.status !== 0) {
+    const extractionState = [
+      `status=${String(extracted.status)}`,
+      `signal=${String(extracted.signal)}`,
+      `error=${extracted.error?.message ?? "none"}`,
+    ].join(", ");
+    die(
+      `Portable Git extraction failed (${extractionState}): ${extracted.stderr || extracted.stdout}`,
+    );
+  }
+  for (const expected of portable.expectedFiles ?? []) {
+    if (!existsSync(join(stageGit, expected))) {
+      die(`Portable Git missing expected staged file after extraction: ${expected}`);
+    }
+  }
+  console.log("[prepare-runtime] probing staged Portable Git", join(stageGit, "cmd", "git.exe"));
   const gitExe = join(stageGit, "cmd", "git.exe");
   const version = spawnSync(gitExe, ["--version"], {
     encoding: "utf8",
@@ -165,7 +174,14 @@ async function preparePortableGit() {
     timeout: 30_000,
   });
   if (version.status !== 0 || !String(version.stdout).includes("git version")) {
-    die(`staged Portable Git is not runnable: ${version.stderr || version.stdout}`);
+    const probeState = [
+      `status=${String(version.status)}`,
+      `signal=${String(version.signal)}`,
+      `error=${version.error?.message ?? "none"}`,
+    ].join(", ");
+    die(
+      `staged Portable Git is not runnable (${probeState}): ${version.stderr || version.stdout}`,
+    );
   }
   const meta = {
     gitVersion: portable.version,
