@@ -35,6 +35,7 @@ import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
+import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup } from "./migration-backup.js";
 
@@ -158,12 +159,17 @@ async function main(): Promise<void> {
   await migrationBackup?.recordMilestone("runtimeCreate");
   const modelRegistry = new ModelRegistry(modelRuntime);
 
+  // Wraps the runtime's provider registration before anything registers:
+  // startup registrations (faux provider) become host-owned; workspace
+  // extension registrations become suspendable per graph.
+  const providerOwnership = new ExtensionProviderOwnership(modelRuntime);
+
   installTestFauxProvider(modelRegistry);
   // Awaited: the previous fire-and-forget refresh could still be running when
   // the first workspace graph read the registry.
   await refreshModelsLocal(modelRuntime);
   await migrationBackup?.recordMilestone("localRefresh");
-  applyKnownThinkingProfiles(modelRegistry);
+  providerOwnership.runNeutral(() => applyKnownThinkingProfiles(modelRegistry));
   // Degraded outranks a parse check and is sticky: the Host cannot re-derive
   // whether the configuration became coherent, so it stops claiming health
   // until a restart finds no journal.
@@ -189,12 +195,15 @@ async function main(): Promise<void> {
     credentialStore,
     modelRuntime,
     modelRegistry,
+    providerOwnership,
     getModelConfigHealth: () => modelConfigHealth,
     refreshModelHealth: async (signal) => {
       // Reconciliation only. A network catalog fetch is a separate, explicitly
       // authorised call; it must never be triggered by a health refresh.
       await refreshModelsLocal(modelRuntime, { signal });
-      applyKnownThinkingProfiles(modelRegistry);
+      // Neutral: the profile pass re-registers existing providers and must
+      // not become a co-owner that pins another workspace's provider alive.
+      providerOwnership.runNeutral(() => applyKnownThinkingProfiles(modelRegistry));
       modelConfigHealth = resolveModelConfigHealth();
       return modelConfigHealth;
     },
@@ -206,6 +215,11 @@ async function main(): Promise<void> {
       : {}),
     packageUpdateCheck,
   });
+  // Late Path-B registrations (an extension calling pi.registerProvider in
+  // the middle of an agent turn) are attributed to the active workspace.
+  providerOwnership.setFallbackOwnerSource(
+    () => graphFactory.getGraph()?.providerOwner ?? null,
+  );
   const workspaceFiles = new WorkspaceFileService();
 
   const handlers = {

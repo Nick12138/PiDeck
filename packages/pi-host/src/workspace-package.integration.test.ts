@@ -135,6 +135,31 @@ function projectWithResource(root: string, name: string): string {
   return dir;
 }
 
+function projectWithProviderExtension(root: string, name: string, providerId: string): string {
+  const dir = emptyProject(root, name);
+  mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
+  writeFileSync(
+    join(dir, ".pi", "extensions", "provider-ext.ts"),
+    `export default function (pi) {
+      pi.registerProvider(${JSON.stringify(providerId)}, {
+        baseUrl: "http://localhost:8317/v1",
+        apiKey: "pideck-isolation-test-key",
+        api: "openai-completions",
+        models: [{
+          id: "iso-model",
+          name: "Isolation Model",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 16384,
+        }],
+      });
+    }\n`,
+  );
+  return dir;
+}
+
 function projectWithStaleContextTimer(root: string, name: string): string {
   const dir = emptyProject(root, name);
   mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
@@ -641,6 +666,77 @@ describe("package + workspace integration", () => {
       { scope: "all" },
     );
     expect(freshList.ok).toBe(true);
+  }, 180_000);
+
+  it("keeps an extension-registered provider isolated to its workspace across A → B → A", async () => {
+    const providerId = "pideck-iso-provider";
+    const a = projectWithProviderExtension(root, "ws-provider-a", providerId);
+    const b = emptyProject(root, "ws-provider-b");
+    const st = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);
+    const status = st.result as { workspaceId: string | null; workspaceRevision: number };
+
+    const listProviders = async (set: Record<string, unknown>): Promise<string[]> => {
+      const ws = (set.result as { workspace: { id: string; revision: number } }).workspace;
+      const res = await host.request(
+        "model.list",
+        {
+          expectedHostInstanceId: hostId,
+          expectedWorkspaceId: ws.id,
+          expectedWorkspaceRevision: ws.revision,
+          expectedSessionId: set.sessionId,
+          expectedSessionRevision: set.sessionRevision,
+        },
+        null,
+      );
+      expect(res.ok).toBe(true);
+      const models = (res.result as { models: Array<{ provider: string }> }).models;
+      return [...new Set(models.map((model) => model.provider))];
+    };
+
+    // Workspace A: the .pi extension registers its provider during the build.
+    const setA = await host.request(
+      "workspace.setCurrent",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: status.workspaceId,
+        expectedWorkspaceRevision: status.workspaceRevision,
+      },
+      { cwd: a },
+      60_000,
+    );
+    expect(setA.ok).toBe(true);
+    expect(await listProviders(setA)).toContain(providerId);
+    const wsA = (setA.result as { workspace: { id: string; revision: number } }).workspace;
+
+    // Workspace B must not see it — this is the §11 stop condition
+    // "Extension provider 跨 Workspace 泄漏".
+    const setB = await host.request(
+      "workspace.setCurrent",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: wsA.id,
+        expectedWorkspaceRevision: wsA.revision,
+      },
+      { cwd: b },
+      60_000,
+    );
+    expect(setB.ok).toBe(true);
+    expect(await listProviders(setB)).not.toContain(providerId);
+    const wsB = (setB.result as { workspace: { id: string; revision: number } }).workspace;
+
+    // Back to A (retained-graph reactivation): the provider must return.
+    const setA2 = await host.request(
+      "workspace.setCurrent",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: wsB.id,
+        expectedWorkspaceRevision: wsB.revision,
+      },
+      { cwd: a },
+      60_000,
+    );
+    expect(setA2.ok).toBe(true);
+    expect(await listProviders(setA2)).toContain(providerId);
   }, 180_000);
 
   it("session.create + agent.prompt + agent.abort on real Host entry", async () => {

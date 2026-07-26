@@ -19,6 +19,7 @@ import {
   toJsonValue,
 } from "@pideck/protocol";
 import { activateOnce, bindForCandidate } from "./extension-ui-lifecycle.js";
+import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
 import { logger } from "./logger.js";
 import { buildPackageSnapshot } from "./package-snapshot.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
@@ -128,6 +129,11 @@ export class WorkspaceLifecycle {
 
   async disposeGraph(graph: WorkspaceGraph): Promise<void> {
     await this.sessionRuntimeCache.disposeGraphSessionRuntimes(graph);
+    if (graph.providerOwner) {
+      this.context.deps.providerOwnership.releaseOwner(graph.providerOwner);
+      graph.providerOwner = null;
+    }
+    graph.suspendedProviders = undefined;
     graph.settingsManager = null;
     graph.packageManager = null;
     graph.resourceLoader = null;
@@ -384,6 +390,13 @@ export class WorkspaceLifecycle {
     }
     graph.extensionUiCleanup = null;
     graph.extensionUiUpdateIdentity = null;
+    // Park this workspace's extension providers: without this the next
+    // workspace would see (and could use) them through the shared runtime.
+    if (graph.providerOwner) {
+      graph.suspendedProviders = this.context.deps.providerOwnership.suspendOwner(
+        graph.providerOwner,
+      );
+    }
     graph.retainedFingerprint = await this.retainedGraphFingerprint(graph);
 
     const key = this.retainedGraphKey(graph.canonicalCwd);
@@ -463,6 +476,18 @@ export class WorkspaceLifecycle {
       return null;
     }
 
+    // The fingerprint matched, so the parked extension providers are still
+    // the ones this workspace's configuration would produce; restore them
+    // before extensions re-bind. A later failure path disposes the graph,
+    // which releases the owner and unregisters them again.
+    if (graph.providerOwner && graph.suspendedProviders) {
+      this.context.deps.providerOwnership.resumeOwner(
+        graph.providerOwner,
+        graph.suspendedProviders,
+      );
+      graph.suspendedProviders = undefined;
+    }
+
     const session = graph.agentSession;
     const sessionManager = graph.sessionManager;
     const sessionId =
@@ -481,12 +506,13 @@ export class WorkspaceLifecycle {
     };
 
     try {
-      const binding = await bindForCandidate(
-        session,
-        graph.extensionsResult,
-        server,
-        candidateIdentity,
-      );
+      // The graph is not active yet, so a session_start handler registering a
+      // provider would otherwise be attributed to the outgoing workspace.
+      const binding = graph.providerOwner
+        ? await this.context.deps.providerOwnership.runAsOwner(graph.providerOwner, () =>
+            bindForCandidate(session, graph.extensionsResult, server, candidateIdentity),
+          )
+        : await bindForCandidate(session, graph.extensionsResult, server, candidateIdentity);
       graph.extensionUiActivate = binding.activate;
       graph.extensionUiCleanup = binding.cleanup;
       graph.extensionUiUpdateIdentity = binding.updateIdentity;
@@ -601,6 +627,7 @@ export class WorkspaceLifecycle {
       resourceReloadRequired: false,
       backgroundSessions: new Map(),
       retainedSessions: new Map(),
+      providerOwner: null,
     };
     this.context.setGraph(failedGraph);
     server.identity.workspaceId = args.workspaceId;
@@ -628,6 +655,7 @@ export class WorkspaceLifecycle {
     let candidateSession: AgentSession | null = null;
     let candidateExtensionUiCleanup: (() => void) | null = null;
     let candidateUnsubscribeAgent: (() => void) | null = null;
+    let candidateProviderOwner: ProviderOwnerToken | null = null;
     const buildStartedAt = Date.now();
     const stepTimings: Record<string, number> = {};
     let lastStepAt = buildStartedAt;
@@ -660,14 +688,26 @@ export class WorkspaceLifecycle {
       this.context.onModelHealthChanged();
       markStep("refreshModelHealth");
 
-      const { session, extensionsResult } = await createAgentSession({
-        cwd: args.canonicalCwd,
-        agentDir,
-        modelRuntime,
-        settingsManager,
-        resourceLoader,
-        sessionManager,
-      });
+      // createAgentSession flushes the extension loader's queued
+      // pi.registerProvider calls into the shared runtime; the owner scope
+      // attributes them to this workspace even if another graph's agent turn
+      // interleaves on the event loop.
+      const providerOwner = this.context.deps.providerOwnership.createOwner(
+        `workspace:${args.canonicalCwd}`,
+      );
+      candidateProviderOwner = providerOwner;
+      const { session, extensionsResult } = await this.context.deps.providerOwnership.runAsOwner(
+        providerOwner,
+        () =>
+          createAgentSession({
+            cwd: args.canonicalCwd,
+            agentDir,
+            modelRuntime,
+            settingsManager,
+            resourceLoader,
+            sessionManager,
+          }),
+      );
       candidateSession = session;
       markStep("createAgentSession");
       const sessionId = sessionManager.getSessionId() || session.sessionId || randomUUID();
@@ -694,6 +734,7 @@ export class WorkspaceLifecycle {
         resourceReloadRequired: false,
         backgroundSessions: new Map(),
         retainedSessions: new Map(),
+        providerOwner,
       };
       const candidateIdentity: HostIdentity = {
         hostInstanceId: server.identity.hostInstanceId,
@@ -703,11 +744,11 @@ export class WorkspaceLifecycle {
         sessionRevision: args.sessionRevision,
         packageRevision: args.packageRevision,
       };
-      const extensionUiBinding = await bindForCandidate(
-        session,
-        extensionsResult,
-        server,
-        candidateIdentity,
+      // Still pre-activation: a session_start handler registering a provider
+      // must land on this candidate workspace, not the outgoing one.
+      const extensionUiBinding = await this.context.deps.providerOwnership.runAsOwner(
+        providerOwner,
+        () => bindForCandidate(session, extensionsResult, server, candidateIdentity),
       );
       graph.extensionUiActivate = extensionUiBinding.activate;
       graph.extensionUiCleanup = extensionUiBinding.cleanup;
@@ -762,6 +803,9 @@ export class WorkspaceLifecycle {
       }
       if (candidateSession) {
         await this.sessionRuntimeCache.disposeAgentSessionOnly(candidateSession);
+      }
+      if (candidateProviderOwner) {
+        this.context.deps.providerOwnership.releaseOwner(candidateProviderOwner);
       }
       logger.error("buildServices failed", {
         error: err instanceof Error ? err.message : String(err),

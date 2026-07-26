@@ -24,9 +24,8 @@ async function setup(initialModels: unknown) {
   const layout = createTempAgentLayout("pi-provider-test-");
   layouts.push(layout);
   writeFileSync(join(layout.agentDir, "models.json"), JSON.stringify(initialModels, null, 2));
-  const { credentialStore, modelRuntime, modelRegistry } = await createTestModelServices(
-    layout.agentDir,
-  );
+  const { credentialStore, modelRuntime, modelRegistry, providerOwnership } =
+    await createTestModelServices(layout.agentDir);
   const buildHealth = (): ModelConfigHealth => ({
     state: modelRuntime.getError() ? "error" : "ok",
     source: "ModelRegistry.getError",
@@ -38,6 +37,7 @@ async function setup(initialModels: unknown) {
     credentialStore,
     modelRuntime,
     modelRegistry,
+    providerOwnership,
     getModelConfigHealth: () => health,
     refreshModelHealth: async (signal) => {
       await refreshModelsLocal(modelRuntime, { signal });

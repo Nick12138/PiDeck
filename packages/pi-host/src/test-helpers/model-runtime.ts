@@ -10,11 +10,13 @@ import { join } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Credential } from "@earendil-works/pi-ai";
 import { FileCredentialStore } from "../credential-store.js";
+import { ExtensionProviderOwnership } from "../extension-provider-ownership.js";
 
 export type TestModelServices = {
   credentialStore: FileCredentialStore;
   modelRuntime: ModelRuntime;
   modelRegistry: ModelRegistry;
+  providerOwnership: ExtensionProviderOwnership;
 };
 
 export async function createTestModelServices(agentDir: string): Promise<TestModelServices> {
@@ -25,7 +27,12 @@ export async function createTestModelServices(agentDir: string): Promise<TestMod
     modelsStorePath: join(agentDir, "models-store.json"),
     allowModelNetwork: false,
   });
-  return { credentialStore, modelRuntime, modelRegistry: new ModelRegistry(modelRuntime) };
+  return {
+    credentialStore,
+    modelRuntime,
+    modelRegistry: new ModelRegistry(modelRuntime),
+    providerOwnership: new ExtensionProviderOwnership(modelRuntime),
+  };
 }
 
 /** Store an api-key credential the way a provider save does. */

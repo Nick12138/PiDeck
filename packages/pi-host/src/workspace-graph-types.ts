@@ -9,6 +9,11 @@ import type {
   SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { FileCredentialStore } from "./credential-store.js";
+import type {
+  ExtensionProviderOwnership,
+  ProviderOwnerToken,
+  SuspendedProviders,
+} from "./extension-provider-ownership.js";
 import type { MigrationMilestone } from "./migration-backup.js";
 import type {
   HostIdentity,
@@ -46,6 +51,10 @@ export type WorkspaceGraph = {
   retainedSessions: Map<string, BackgroundSessionRuntime>;
   /** Disk/config fingerprint captured when this graph was parked. */
   retainedFingerprint?: string;
+  /** Ownership token for providers registered by this workspace's extensions. */
+  providerOwner?: ProviderOwnerToken | null;
+  /** Extension providers unregistered while this graph is parked. */
+  suspendedProviders?: SuspendedProviders;
 };
 
 export type BackgroundSessionRuntime = {
@@ -77,6 +86,12 @@ export type GraphFactoryDeps = {
   modelRuntime: ModelRuntime;
   /** Synchronous compatibility facade over `modelRuntime`. Owns no state. */
   modelRegistry: ModelRegistry;
+  /**
+   * Workspace-scoped ownership for extension-registered providers. The shared
+   * runtime never unregisters them; this layer suspends a workspace's
+   * providers when its graph is parked and drops them when it is disposed.
+   */
+  providerOwnership: ExtensionProviderOwnership;
   getModelConfigHealth: () => ModelConfigHealth;
   /** Local reconcile only — never reaches the network. */
   refreshModelHealth: (signal?: AbortSignal) => Promise<ModelConfigHealth> | ModelConfigHealth;
