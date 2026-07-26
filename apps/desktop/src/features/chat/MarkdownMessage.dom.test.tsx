@@ -166,7 +166,16 @@ describe("MarkdownMessage Mermaid rendering", () => {
 
     view.rerender(<MarkdownMessage content={closed} mode="streaming" />);
     await waitFor(() => expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument());
-    expect(mermaidRender).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("flowchart TD"));
+    // The streaming-mode debounce can delay the render call past the element
+    // appearing when the test host is under parallel load.
+    await waitFor(
+      () =>
+        expect(mermaidRender).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.stringContaining("flowchart TD"),
+        ),
+      { timeout: 5_000 },
+    );
   });
 
   it("shows a recoverable error for invalid Mermaid and retries", async () => {
