@@ -511,6 +511,18 @@ describe("toJsonValue", () => {
     const v = toJsonValue(obj);
     expect(isJsonValue(v)).toBe(true);
   });
+
+  it("omits undefined-valued keys like JSON.stringify", () => {
+    const v = toJsonValue({
+      role: "toolResult",
+      usage: undefined,
+      details: undefined,
+      isError: false,
+    });
+    expect(v).toEqual({ role: "toolResult", isError: false });
+    expect(toJsonValue(undefined)).toBeNull();
+    expect(toJsonValue([1, undefined, 2])).toEqual([1, null, 2]);
+  });
 });
 
 describe("ModelConfigHealth degraded state", () => {

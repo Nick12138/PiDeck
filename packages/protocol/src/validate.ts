@@ -679,6 +679,10 @@ export function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonV
     seen.add(value as object);
     const output: Record<string, JsonValue> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      // Omit undefined-valued keys like JSON.stringify does, so live objects
+      // serialize identically to their persisted round-trip. Mapping them to
+      // null instead breaks strict payload validators (e.g. message usage).
+      if (item === undefined) continue;
       output[key] = toJsonValue(item, seen);
     }
     return output;
