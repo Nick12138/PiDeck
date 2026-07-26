@@ -71,7 +71,7 @@ evidence 必须同时验证 Host manifest、pnpm lock、部署树和 staged tree
 | PR-2 | 完成 | `4c912b1` | graph mutation 生命周期、shutdown cancellation、stale fetch、`models-store.json` fingerprint |
 | PR-2B | 完成 | `e3faa58` | 以 Host manifest 派生 release SDK evidence |
 | PR-3 | 完成 | `9ebf492` … `c081315` | SDK 0.82.1 原子迁移，见下 |
-| PR-4 | 本地完成，待提交 | - | 新事件接入、auth 兼容测试、Extension provider 隔离（泄漏已证明并修复），见 §9 |
+| PR-4 | 完成 | `9980c99` … `c64ccf4` | 新事件接入、auth 兼容测试、Extension provider 隔离（泄漏已证明并修复），见 §9 |
 | PR-5/6 | 待执行 | - | 最终 Node 安全版本、RC/canary/rollback gates |
 
 ### PR-3 当前状态
@@ -388,7 +388,7 @@ staged evidence 必须报告四个 Pi 包均为 `0.82.1`、新的 patch SHA 和�
 
 ## 9. PR-4 后续工作
 
-PR-3 稳定后再做以下兼容扩展。全部六项已实现（本地验证通过，pi-host 400 / desktop 326 用例全绿，两包 `tsc --noEmit` 干净）：
+PR-3 稳定后再做以下兼容扩展。全部六项已完成：本地 pi-host 400 / desktop 326 用例全绿，两包 `tsc --noEmit` 干净，Windows gate run `30197892965`（`c64ccf4`）verify-p0 与 verify-node-minimum 一次通过——跨进程 oauth 竞争与真实 Host A→B→A 集成用例均在两条 lane 上验证。
 
 - ~~评估桌面端是否需要展示 `summarization_retry_*` 三事件~~ —— 已接入。白名单放行审阅字段，`transcript-reducer.ts` 映射到既有 `isRetrying`；branch-summary 退避期间桌面端从此有真实状态信号，compaction 期间表头仍优先显示 "Compacting"。详见 api-notes §9。
 - ~~`bash_execution_update` 仅在实际使用 direct RPC bash 时接入~~ —— 决定不接入：唯一发射点 `AgentSession.executeBash()` 在 PiDeck 无调用方；`event-normalize.test.ts` 以显式回归测试把它钉在 `{ type: "unknown" }`。
@@ -400,7 +400,7 @@ PR-3 稳定后再做以下兼容扩展。全部六项已实现（本地验证通
 - ~~覆盖 retained/background Session 和 Workspace A/B Extension provider 隔离~~ —— `extension-provider-isolation.test.ts` 先以未包装 runtime **证明泄漏**（session dispose 后 provider 仍在共享注册表），`workspace-package.integration.test.ts` 增加真实 Host A→B→A 用例：A 的 `.pi` 扩展 provider 在 B 不可见、回 A（retained 图重激活）恢复。已做破坏验证——禁用 suspend 后 B 立即看到 A 的 provider。
 - ~~只有隔离测试证明 provider 泄漏时，才增加 owner/ref-count 基础设施~~ —— 泄漏已证明，`extension-provider-ownership.ts` 落地：workspace 粒度 owner；`retainGraph` suspend（独占 provider 注销并存 effective config）、`tryReactivateRetainedGraph` resume、`disposeGraph` release；共有 provider 以 owner 集合引用计数，最后一个 owner 离开才注销；`applyKnownThinkingProfiles` 走 neutral 上下文不占有；faux provider 等启动注册归永久 host owner。归属用 `AsyncLocalStorage` 绑定构建/绑定窗口，运行期回退到激活图。同 Workspace 内的 Session 共享 workspace 扩展，隔离粒度刻意停在 workspace（per-session 注销会破坏同工作区并行 Session）。
 
-PR-4 验收前置：推送后需通过与 PR-3 相同的 Windows CI gate（新增测试含跨进程 oauth 竞争与真实 Host A/B 集成用例，须在两条 lane 上绿）。
+PR-4 验收：与 PR-3 相同的 Windows CI gate 已通过（run `30197892965`，两 job 均 success）。下一阶段是 §10 的 PR-5/6——等待 2026-07-27 之后的 Node 24 安全版本并固定 URL+SHA。
 
 ## 10. PR-5/6 后续工作
 
