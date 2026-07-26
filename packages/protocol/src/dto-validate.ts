@@ -335,6 +335,111 @@ function isDiscoveredProviderModel(value: unknown): boolean {
   );
 }
 
+function isBuiltinProviderModelChoice(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["id", "name", "enabled"]) &&
+    isString(value.id) &&
+    value.id.trim().length > 0 &&
+    isString(value.name) &&
+    isBoolean(value.enabled)
+  );
+}
+
+function isBuiltinProviderAuthStatus(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [
+        "providerId",
+        "name",
+        "supportsOauth",
+        "supportsApiKeyLogin",
+        "configured",
+        "hasStoredCredential",
+        "enabled",
+      ],
+      ["oauthLabel", "authLabel"],
+    ) &&
+    isString(value.providerId) &&
+    value.providerId.trim().length > 0 &&
+    isString(value.name) &&
+    isBoolean(value.supportsOauth) &&
+    isOptionalString(value.oauthLabel) &&
+    isBoolean(value.supportsApiKeyLogin) &&
+    isBoolean(value.configured) &&
+    isOptionalString(value.authLabel) &&
+    isBoolean(value.hasStoredCredential) &&
+    isBoolean(value.enabled)
+  );
+}
+
+function isProviderLoginPrompt(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["promptId", "kind", "message"], ["placeholder", "options"]) &&
+    isString(value.promptId) &&
+    value.promptId.trim().length > 0 &&
+    ["text", "secret", "select", "manual_code"].includes(String(value.kind)) &&
+    isString(value.message) &&
+    isOptionalString(value.placeholder) &&
+    (value.options === undefined ||
+      (Array.isArray(value.options) &&
+        value.options.every(
+          (option) =>
+            isPlainObject(option) &&
+            hasExactKeys(option, ["id", "label"], ["description"]) &&
+            isString(option.id) &&
+            isString(option.label) &&
+            isOptionalString(option.description),
+        )))
+  );
+}
+
+function isProviderLoginFlowEvent(value: unknown): boolean {
+  if (!isPlainObject(value) || !isString(value.kind)) return false;
+  switch (value.kind) {
+    case "info":
+      return hasExactKeys(value, ["kind", "message"], ["links"]) &&
+        isString(value.message) &&
+        (value.links === undefined ||
+          (Array.isArray(value.links) &&
+            value.links.every(
+              (link) =>
+                isPlainObject(link) &&
+                hasExactKeys(link, ["url"], ["label"]) &&
+                isString(link.url) &&
+                isOptionalString(link.label),
+            )));
+    case "auth_url":
+      return hasExactKeys(value, ["kind", "url"], ["instructions"]) &&
+        isString(value.url) &&
+        isOptionalString(value.instructions);
+    case "device_code":
+      return hasExactKeys(
+        value,
+        ["kind", "userCode", "verificationUri"],
+        ["expiresInSeconds"],
+      ) &&
+        isString(value.userCode) &&
+        isString(value.verificationUri) &&
+        (value.expiresInSeconds === undefined || isSafeRevision(value.expiresInSeconds));
+    case "progress":
+      return hasExactKeys(value, ["kind", "message"]) && isString(value.message);
+    case "prompt":
+      return hasExactKeys(value, ["kind", "prompt"]) && isProviderLoginPrompt(value.prompt);
+    case "prompt_cancel":
+      return hasExactKeys(value, ["kind", "promptId"]) && isString(value.promptId);
+    case "done":
+      return hasExactKeys(value, ["kind", "ok"], ["message"]) &&
+        isBoolean(value.ok) &&
+        isOptionalString(value.message);
+    default:
+      return false;
+  }
+}
+
 export function isSerializableAgentContent(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -1202,6 +1307,39 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.removed === true
         ? null
         : "invalid provider.remove result";
+    case "provider.authStatus":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["providers"]) &&
+        Array.isArray(result.providers) &&
+        result.providers.every(isBuiltinProviderAuthStatus)
+        ? null
+        : "invalid provider.authStatus result";
+    case "provider.loginStart":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["loginId", "providerId"]) &&
+        isString(result.loginId) &&
+        isString(result.providerId)
+        ? null
+        : "invalid provider.loginStart result";
+    case "provider.loginRespond":
+    case "provider.loginCancel":
+      return exactAccepted() ? null : `${method} result must be { accepted: true }`;
+    case "provider.logout":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["providerId", "loggedOut"]) &&
+        isString(result.providerId) &&
+        result.loggedOut === true
+        ? null
+        : "invalid provider.logout result";
+    case "provider.builtinModels":
+    case "provider.setBuiltinModels":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["providerId", "models"]) &&
+        isString(result.providerId) &&
+        Array.isArray(result.models) &&
+        result.models.every(isBuiltinProviderModelChoice)
+        ? null
+        : `invalid ${method} result`;
     case "provider.fetchModels":
       return isPlainObject(result) &&
         hasExactKeys(result, ["providerId", "models"]) &&
@@ -1388,6 +1526,16 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         (payload.model === undefined || isModelSummary(payload.model))
         ? null
         : "invalid model.changed payload";
+    case "provider.loginEvent":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["loginId", "providerId", "event"]) &&
+        isString(payload.loginId) &&
+        payload.loginId.trim().length > 0 &&
+        isString(payload.providerId) &&
+        payload.providerId.trim().length > 0 &&
+        isProviderLoginFlowEvent(payload.event)
+        ? null
+        : "invalid provider.loginEvent payload";
     case "package.progress":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["operationId", "type", "action", "source"], ["message"]) &&

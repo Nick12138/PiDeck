@@ -217,6 +217,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "agent.abortRetry":
     case "agent.getTools":
     case "provider.list":
+    case "provider.authStatus":
     case "model.list":
     case "package.updateAll":
     case "package.reloadResources":
@@ -373,9 +374,35 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid provider.setEnabled params", { method });
     case "provider.remove":
     case "provider.fetchModels":
+    case "provider.logout":
+    case "provider.builtinModels":
       return exactObject(params, ["providerId"]) && isNonEmptyString(params.providerId)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
+    case "provider.setBuiltinModels":
+      return exactObject(params, ["providerId", "modelIds"]) &&
+        isNonEmptyString(params.providerId) &&
+        Array.isArray(params.modelIds) &&
+        params.modelIds.every(isNonEmptyString)
+        ? ok(params)
+        : fail("invalid provider.setBuiltinModels params", { method });
+    case "provider.loginStart":
+      return exactObject(params, ["providerId", "authType"]) &&
+        isNonEmptyString(params.providerId) &&
+        (params.authType === "oauth" || params.authType === "api_key")
+        ? ok(params)
+        : fail("invalid provider.loginStart params", { method });
+    case "provider.loginRespond":
+      return exactObject(params, ["loginId", "promptId", "value"]) &&
+        isNonEmptyString(params.loginId) &&
+        isNonEmptyString(params.promptId) &&
+        isString(params.value)
+        ? ok(params)
+        : fail("invalid provider.loginRespond params", { method });
+    case "provider.loginCancel":
+      return exactObject(params, ["loginId"]) && isNonEmptyString(params.loginId)
+        ? ok(params)
+        : fail("invalid provider.loginCancel params", { method });
     case "provider.checkConnection":
       return exactObject(params, ["providerId"], ["modelId"]) &&
         isNonEmptyString(params.providerId) &&

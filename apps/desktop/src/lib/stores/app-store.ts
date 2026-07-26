@@ -11,6 +11,7 @@ import type {
   WorkspaceSnapshot,
   HostEventPayloadMap,
   JsonValue,
+  ProviderLoginPrompt,
   SessionSummary,
 } from "@pideck/protocol";
 import {
@@ -36,6 +37,22 @@ import {
 import { sidebarPref } from "../sidebar-prefs";
 
 export type NavPage = "chat" | "packages" | "settings";
+
+/** Live view of the single in-flight builtin Provider login flow. */
+export type ProviderLoginUiState = {
+  loginId: string;
+  providerId: string;
+  authUrl?: { url: string; instructions?: string };
+  deviceCode?: {
+    userCode: string;
+    verificationUri: string;
+    expiresInSeconds?: number;
+  };
+  infos: Array<{ message: string; links?: Array<{ url: string; label?: string }> }>;
+  progress?: string;
+  prompt: ProviderLoginPrompt | null;
+  done?: { ok: boolean; message?: string };
+};
 
 export type PackageProgressState = HostEventPayloadMap["package.progress"] & {
   lastEventAt: number;
@@ -159,6 +176,10 @@ export type AppState = EpochState & {
   rehydrating: boolean;
   /** True while the Providers settings form holds unsaved edits (guards Settings close/nav). */
   providersDirty: boolean;
+  providerLogin: ProviderLoginUiState | null;
+  beginProviderLogin: (loginId: string, providerId: string) => void;
+  applyProviderLoginEvent: (payload: HostEventPayloadMap["provider.loginEvent"]) => void;
+  clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
   setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
@@ -255,6 +276,84 @@ export const useAppStore = create<AppState>((set, get) => ({
   connecting: true,
   rehydrating: false,
   providersDirty: false,
+  providerLogin: null,
+  beginProviderLogin: (loginId, providerId) =>
+    set((state) =>
+      // API-key flows prompt synchronously, so the loginEvent can outrun the
+      // loginStart response; never reset a flow the event stream already began.
+      state.providerLogin?.loginId === loginId
+        ? {}
+        : { providerLogin: { loginId, providerId, infos: [], prompt: null } },
+    ),
+  applyProviderLoginEvent: (payload) =>
+    set((state) => {
+      // The host is authoritative: adopt events for flows this client did not
+      // start (or whose loginStart response has not resolved yet).
+      const current: ProviderLoginUiState =
+        state.providerLogin && state.providerLogin.loginId === payload.loginId
+          ? state.providerLogin
+          : {
+              loginId: payload.loginId,
+              providerId: payload.providerId,
+              infos: [],
+              prompt: null,
+            };
+      const event = payload.event;
+      switch (event.kind) {
+        case "info":
+          return {
+            providerLogin: {
+              ...current,
+              infos: [
+                ...current.infos,
+                { message: event.message, ...(event.links ? { links: event.links } : {}) },
+              ],
+            },
+          };
+        case "auth_url":
+          return {
+            providerLogin: {
+              ...current,
+              authUrl: {
+                url: event.url,
+                ...(event.instructions ? { instructions: event.instructions } : {}),
+              },
+            },
+          };
+        case "device_code":
+          return {
+            providerLogin: {
+              ...current,
+              deviceCode: {
+                userCode: event.userCode,
+                verificationUri: event.verificationUri,
+                ...(event.expiresInSeconds !== undefined
+                  ? { expiresInSeconds: event.expiresInSeconds }
+                  : {}),
+              },
+            },
+          };
+        case "progress":
+          return { providerLogin: { ...current, progress: event.message } };
+        case "prompt":
+          return { providerLogin: { ...current, prompt: event.prompt } };
+        case "prompt_cancel":
+          return current.prompt?.promptId === event.promptId
+            ? { providerLogin: { ...current, prompt: null } }
+            : { providerLogin: current };
+        case "done":
+          return {
+            providerLogin: {
+              ...current,
+              prompt: null,
+              done: { ok: event.ok, ...(event.message ? { message: event.message } : {}) },
+            },
+          };
+        default:
+          return { providerLogin: current };
+      }
+    }),
+  clearProviderLogin: () => set({ providerLogin: null }),
   setPage: (page) =>
     set((state) => ({
       page,
@@ -283,6 +382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desynchronized: false,
       desyncReason: undefined,
       rehydrating: false,
+      providerLogin: null,
     });
   },
 

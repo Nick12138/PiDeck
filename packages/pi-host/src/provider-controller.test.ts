@@ -3,7 +3,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
-import { createProviderHandlers } from "./provider-controller.js";
+import {
+  createProviderHandlers,
+  getEnabledProviderIds,
+  getProviderModelAllowLists,
+} from "./provider-controller.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
@@ -61,6 +65,7 @@ async function setup(initialModels: unknown) {
   return {
     layout,
     credentialStore,
+    modelRuntime,
     server,
     handlers: createProviderHandlers(factory),
   };
@@ -1039,5 +1044,279 @@ describe("Provider controller", () => {
         category: "ok",
       }));
     }
+  });
+});
+
+describe("Provider login", () => {
+  type LoginEvent = { loginId: string; providerId: string; event: Record<string, unknown> };
+
+  function captureLoginEvents(server: PiHostServer): LoginEvent[] {
+    const events: LoginEvent[] = [];
+    const originalEmit = server.emit.bind(server);
+    vi.spyOn(server, "emit").mockImplementation((name, payload) => {
+      if (name === "provider.loginEvent") events.push(payload as LoginEvent);
+      return originalEmit(name, payload);
+    });
+    return events;
+  }
+
+  it("lists builtin login-capable Providers and hides custom ones", async () => {
+    const { handlers } = await setup({
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-completions",
+          models: [{ id: "m" }],
+        },
+      },
+    });
+    const outcome = await handlers["provider.authStatus"]!({
+      id: "auth-status",
+      params: null,
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    if ("error" in outcome) return;
+    const providers = (outcome.result as {
+      providers: Array<{
+        providerId: string;
+        supportsOauth: boolean;
+        hasStoredCredential: boolean;
+        enabled: boolean;
+      }>;
+    }).providers;
+    const ids = providers.map((provider) => provider.providerId);
+    expect(ids).toContain("anthropic");
+    expect(ids).toContain("github-copilot");
+    expect(ids).not.toContain("custom");
+    const anthropic = providers.find((provider) => provider.providerId === "anthropic")!;
+    expect(anthropic.supportsOauth).toBe(true);
+    expect(anthropic.hasStoredCredential).toBe(false);
+    expect(anthropic.enabled).toBe(false);
+  });
+
+  it("bridges login prompts over events and enables the Provider on success", async () => {
+    const { layout, server, handlers, modelRuntime } = await setup({ providers: {} });
+    const events = captureLoginEvents(server);
+    vi.spyOn(modelRuntime, "login").mockImplementation(async (_providerId, _type, interaction) => {
+      interaction.notify({ type: "auth_url", url: "https://example.com/oauth" });
+      const code = await interaction.prompt({ type: "manual_code", message: "Paste the code" });
+      expect(code).toBe("the-code");
+      return { type: "api_key", key: "sk-from-login" };
+    });
+
+    const start = await handlers["provider.loginStart"]!({
+      id: "login-start",
+      params: { providerId: "anthropic", authType: "oauth" },
+    } as never);
+    expect("error" in start ? start.error.message : null).toBeNull();
+    if ("error" in start) return;
+    const loginId = (start.result as { loginId: string }).loginId;
+
+    await vi.waitFor(() => {
+      expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
+    });
+    expect(events.some((entry) => entry.event.kind === "auth_url")).toBe(true);
+    const prompt = events.find((entry) => entry.event.kind === "prompt")!.event.prompt as {
+      promptId: string;
+      kind: string;
+    };
+    expect(prompt.kind).toBe("manual_code");
+
+    const respond = await handlers["provider.loginRespond"]!({
+      id: "login-respond",
+      params: { loginId, promptId: prompt.promptId, value: "the-code" },
+    } as never);
+    expect("error" in respond ? respond.error.message : null).toBeNull();
+
+    await vi.waitFor(() => {
+      expect(
+        events.some((entry) => entry.event.kind === "done" && entry.event.ok === true),
+      ).toBe(true);
+    });
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).toContain("anthropic");
+  });
+
+  it("cancels an active login flow and reports a failed done event", async () => {
+    const { server, handlers, modelRuntime } = await setup({ providers: {} });
+    const events = captureLoginEvents(server);
+    vi.spyOn(modelRuntime, "login").mockImplementation(async (_providerId, _type, interaction) => {
+      await interaction.prompt({ type: "text", message: "Waiting forever" });
+      return { type: "api_key", key: "unused" };
+    });
+
+    const start = await handlers["provider.loginStart"]!({
+      id: "login-start-cancel",
+      params: { providerId: "openai", authType: "api_key" },
+    } as never);
+    expect("error" in start ? start.error.message : null).toBeNull();
+    if ("error" in start) return;
+    const loginId = (start.result as { loginId: string }).loginId;
+    await vi.waitFor(() => {
+      expect(events.some((entry) => entry.event.kind === "prompt")).toBe(true);
+    });
+
+    const cancel = await handlers["provider.loginCancel"]!({
+      id: "login-cancel",
+      params: { loginId },
+    } as never);
+    expect("error" in cancel).toBe(false);
+    await vi.waitFor(() => {
+      expect(
+        events.some((entry) => entry.event.kind === "done" && entry.event.ok === false),
+      ).toBe(true);
+    });
+
+    const followUp = await handlers["provider.loginStart"]!({
+      id: "login-start-after-cancel",
+      params: { providerId: "openai", authType: "api_key" },
+    } as never);
+    expect("error" in followUp ? followUp.error.message : null).toBeNull();
+  });
+
+  it("rejects a second concurrent login flow", async () => {
+    const { handlers, modelRuntime } = await setup({ providers: {} });
+    vi.spyOn(modelRuntime, "login").mockImplementation(async (_providerId, _type, interaction) => {
+      await interaction.prompt({ type: "text", message: "hold" });
+      return { type: "api_key", key: "unused" };
+    });
+    const first = await handlers["provider.loginStart"]!({
+      id: "login-a",
+      params: { providerId: "openai", authType: "api_key" },
+    } as never);
+    expect("error" in first).toBe(false);
+    const second = await handlers["provider.loginStart"]!({
+      id: "login-b",
+      params: { providerId: "anthropic", authType: "oauth" },
+    } as never);
+    expect("error" in second && second.error.code).toBe("AGENT_BUSY");
+    if (!("error" in first)) {
+      await handlers["provider.loginCancel"]!({
+        id: "login-a-cancel",
+        params: { loginId: (first.result as { loginId: string }).loginId },
+      } as never);
+    }
+  });
+
+  it("toggles a builtin Provider in the enabled list by id", async () => {
+    const { layout, handlers } = await setup({ providers: {} });
+    const enable = await handlers["provider.setEnabled"]!({
+      id: "enable-builtin",
+      params: { providerId: "openai", enabled: true },
+    } as never);
+    expect("error" in enable ? enable.error.message : null).toBeNull();
+    let persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).toContain("openai");
+
+    const disable = await handlers["provider.setEnabled"]!({
+      id: "disable-builtin",
+      params: { providerId: "openai", enabled: false },
+    } as never);
+    expect("error" in disable ? disable.error.message : null).toBeNull();
+    persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).not.toContain("openai");
+  });
+
+  it("logs out a stored credential and removes the Provider from the enabled list", async () => {
+    const { layout, credentialStore, handlers } = await setup({
+      pideckEnabledProviders: ["anthropic"],
+      providers: {},
+    });
+    await putApiKey(credentialStore, "anthropic", "sk-test");
+    const outcome = await handlers["provider.logout"]!({
+      id: "logout-anthropic",
+      params: { providerId: "anthropic" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(await credentialStore.readRaw("anthropic")).toBeUndefined();
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders ?? []).not.toContain("anthropic");
+  });
+
+  it("keeps builtin ids in the enabled filter once the list exists", async () => {
+    const { layout } = await setup({ pideckEnabledProviders: ["anthropic"], providers: {} });
+    expect(await getEnabledProviderIds(layout.agentDir, undefined, ["anthropic", "openai"]))
+      .toEqual(["anthropic"]);
+    expect(await getEnabledProviderIds(layout.agentDir, undefined, [])).toEqual([]);
+  });
+});
+
+describe("Builtin provider models", () => {
+  it("lists a builtin Provider's catalog with every model enabled by default", async () => {
+    const { handlers } = await setup({ providers: {} });
+    const outcome = await handlers["provider.builtinModels"]!({
+      id: "builtin-models",
+      params: { providerId: "anthropic" },
+    } as never);
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    if ("error" in outcome) return;
+    const { providerId, models } = outcome.result as {
+      providerId: string;
+      models: Array<{ id: string; name: string; enabled: boolean }>;
+    };
+    expect(providerId).toBe("anthropic");
+    expect(models.length).toBeGreaterThan(1);
+    expect(models.every((model) => model.enabled)).toBe(true);
+  });
+
+  it("stores an allow-list, filters the listing, and drops it on full re-selection", async () => {
+    const { layout, handlers } = await setup({ providers: {} });
+    const listed = await handlers["provider.builtinModels"]!({
+      id: "builtin-models-before",
+      params: { providerId: "anthropic" },
+    } as never);
+    if ("error" in listed) throw new Error(listed.error.message);
+    const all = (listed.result as { models: Array<{ id: string }> }).models.map(
+      (model) => model.id,
+    );
+    const keep = all.slice(0, 2);
+
+    const set = await handlers["provider.setBuiltinModels"]!({
+      id: "builtin-models-set",
+      params: { providerId: "anthropic", modelIds: [...keep, "not-a-real-model"] },
+    } as never);
+    expect("error" in set ? set.error.message : null).toBeNull();
+    if ("error" in set) return;
+    const filtered = (set.result as { models: Array<{ id: string; enabled: boolean }> }).models;
+    expect(filtered.filter((model) => model.enabled).map((model) => model.id).sort())
+      .toEqual([...keep].sort());
+    let persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect([...persisted.pideckProviderModels.anthropic].sort()).toEqual([...keep].sort());
+    expect(await getProviderModelAllowLists(layout.agentDir)).toEqual({
+      anthropic: expect.arrayContaining(keep),
+    });
+
+    const restore = await handlers["provider.setBuiltinModels"]!({
+      id: "builtin-models-restore",
+      params: { providerId: "anthropic", modelIds: all },
+    } as never);
+    expect("error" in restore ? restore.error.message : null).toBeNull();
+    persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckProviderModels).toBeUndefined();
+    expect(await getProviderModelAllowLists(layout.agentDir)).toBeUndefined();
+  });
+
+  it("rejects custom Providers and unknown ids", async () => {
+    const { handlers } = await setup({
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://relay.example/v1",
+          api: "openai-completions",
+          models: [{ id: "m" }],
+        },
+      },
+    });
+    const custom = await handlers["provider.builtinModels"]!({
+      id: "builtin-models-custom",
+      params: { providerId: "custom" },
+    } as never);
+    expect("error" in custom && custom.error.code).toBe("INVALID_REQUEST");
+    const unknown = await handlers["provider.setBuiltinModels"]!({
+      id: "builtin-models-unknown",
+      params: { providerId: "does-not-exist", modelIds: [] },
+    } as never);
+    expect("error" in unknown && unknown.error.code).toBe("MODEL_NOT_FOUND");
   });
 });

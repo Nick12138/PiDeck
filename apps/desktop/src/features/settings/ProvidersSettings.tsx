@@ -6,10 +6,12 @@ import {
   CircleCheck,
   Eye,
   EyeOff,
+  LogIn,
   Plus,
   RefreshCw,
   Save,
   Search,
+  Server,
   SlidersHorizontal,
   Trash2,
   X,
@@ -39,6 +41,8 @@ import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
 import type { MessageKey } from "../../lib/i18n";
 import { useT, type Translate } from "../../lib/i18n/use-t";
+import { useImeComposition } from "../../lib/use-ime-composition";
+import { ProviderLoginPage } from "./ProviderLoginSection";
 
 type DraftState = ProviderDraft & { originalId?: string };
 
@@ -342,9 +346,12 @@ export function ProvidersSettings() {
   const [manualOpen, setManualOpen] = useState(false);
   const [advancedEndpointOpen, setAdvancedEndpointOpen] = useState(false);
   const [manualId, setManualId] = useState("");
+  const ime = useImeComposition();
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const [oauthOpen, setOauthOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<
-    { kind: "select"; id: string } | { kind: "new" } | null
+    { kind: "select"; id: string } | { kind: "new" } | { kind: "oauth" } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -445,6 +452,7 @@ export function ProvidersSettings() {
 
   function selectProvider(provider: ProviderSnapshot) {
     const nextDraft = snapshotToDraft(provider);
+    setOauthOpen(false);
     setSelectedId(provider.id);
     setDraft(nextDraft);
     baselineRef.current = draftFingerprint(nextDraft);
@@ -461,6 +469,7 @@ export function ProvidersSettings() {
 
   function startNewProvider() {
     const nextDraft = emptyDraft();
+    setOauthOpen(false);
     setSelectedId(null);
     setDraft(nextDraft);
     baselineRef.current = draftFingerprint(nextDraft);
@@ -473,6 +482,24 @@ export function ProvidersSettings() {
     setFieldErrors({});
     setAdvancedEndpointOpen(false);
     setConnectionResult(null);
+  }
+
+  function openOauthLogin() {
+    // The OAuth page replaces the draft editor; drop any (non-dirty) draft so
+    // closing the page lands back on the neutral hint or a clean selection.
+    setSelectedId(null);
+    setDraft(null);
+    baselineRef.current = null;
+    draftEpochRef.current += 1;
+    setCatalog([]);
+    setApiKey("");
+    setClearApiKey(false);
+    setEditingModelId(null);
+    setManualOpen(false);
+    setFieldErrors({});
+    setAdvancedEndpointOpen(false);
+    setConnectionResult(null);
+    setOauthOpen(true);
   }
 
   function updateDraft(patch: Partial<ProviderDraft>) {
@@ -779,14 +806,60 @@ export function ProvidersSettings() {
               onChange={(event) => setProviderSearch(event.target.value)}
             />
           </div>
-          <button
-            type="button"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
-            title={t("providersAdd")}
-            onClick={() => (dirty ? setPendingSwitch({ kind: "new" }) : startNewProvider())}
-          >
-            <Plus size={15} />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
+              title={t("providersAdd")}
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={() => setAddMenuOpen((current) => !current)}
+            >
+              <Plus size={15} />
+            </button>
+            {addMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setAddMenuOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                >
+                  <button
+                    role="menuitem"
+                    type="button"
+                    className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-surface-overlay"
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      if (dirty) setPendingSwitch({ kind: "oauth" });
+                      else openOauthLogin();
+                    }}
+                  >
+                    <LogIn className="mt-0.5 shrink-0 text-muted" size={14} />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-medium">{t("providersAddChoiceOauth")}</span>
+                      <span className="block text-[10px] text-muted">{t("providersAddChoiceOauthHint")}</span>
+                    </span>
+                  </button>
+                  <button
+                    role="menuitem"
+                    type="button"
+                    className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-surface-overlay"
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      if (dirty) setPendingSwitch({ kind: "new" });
+                      else startNewProvider();
+                    }}
+                  >
+                    <Server className="mt-0.5 shrink-0 text-muted" size={14} />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-medium">{t("providersAddChoiceCustom")}</span>
+                      <span className="block text-[10px] text-muted">{t("providersAddChoiceCustomHint")}</span>
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
           {loading ? (
@@ -843,20 +916,49 @@ export function ProvidersSettings() {
             ))
           )}
         </div>
+        <div className="border-t border-border p-2">
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium ${
+              oauthOpen
+                ? "bg-surface-overlay text-foreground"
+                : "text-muted hover:bg-surface-overlay hover:text-foreground"
+            }`}
+            aria-current={oauthOpen ? "true" : undefined}
+            onClick={() => {
+              if (oauthOpen) return;
+              if (dirty) setPendingSwitch({ kind: "oauth" });
+              else openOauthLogin();
+            }}
+          >
+            <LogIn size={14} /> {t("providersLoginSection")}
+          </button>
+        </div>
       </aside>
 
-      {!draft ? (
+      {oauthOpen ? (
+        <ProviderLoginPage onClose={() => setOauthOpen(false)} />
+      ) : !draft ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted">
           {providers.length === 0 && !loading ? (
             <>
               <p>{t("providersEmptyTitle")}</p>
-              <button
-                type="button"
-                className={secondaryButton}
-                onClick={startNewProvider}
-              >
-                <Plus size={14} /> {t("providersAdd")}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={openOauthLogin}
+                >
+                  <LogIn size={14} /> {t("providersAddChoiceOauth")}
+                </button>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={startNewProvider}
+                >
+                  <Plus size={14} /> {t("providersAddChoiceCustom")}
+                </button>
+              </div>
             </>
           ) : (
             t("providersSelectHint")
@@ -1184,8 +1286,10 @@ export function ProvidersSettings() {
                     placeholder={t("providersModelId")}
                     value={manualId}
                     onChange={(event) => setManualId(event.target.value)}
+                    onCompositionStart={ime.onCompositionStart}
+                    onCompositionEnd={ime.onCompositionEnd}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") addManualModel();
+                      if (event.key === "Enter" && !ime.isImeKey(event)) addManualModel();
                     }}
                   />
                   <button
@@ -1425,6 +1529,10 @@ export function ProvidersSettings() {
             setPendingSwitch(null);
             if (target.kind === "new") {
               startNewProvider();
+              return;
+            }
+            if (target.kind === "oauth") {
+              openOauthLogin();
               return;
             }
             // Resolve against the live list; the provider may have vanished

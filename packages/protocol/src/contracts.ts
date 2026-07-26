@@ -45,6 +45,9 @@ import type {
   ProviderSnapshot,
   DiscoveredProviderModel,
   ProviderConnectionResult,
+  BuiltinProviderAuthStatus,
+  BuiltinProviderModelsResult,
+  ProviderLoginFlowEvent,
   CommandSummary,
   RehydrateSnapshot,
   QueueSnapshot,
@@ -100,6 +103,13 @@ export type HostContextMap = {
   "provider.remove": HostContext;
   "provider.fetchModels": HostContext;
   "provider.checkConnection": HostContext;
+  "provider.authStatus": HostContext;
+  "provider.loginStart": HostContext;
+  "provider.loginRespond": HostContext;
+  "provider.loginCancel": HostContext;
+  "provider.logout": HostContext;
+  "provider.builtinModels": HostContext;
+  "provider.setBuiltinModels": HostContext;
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
@@ -186,6 +196,13 @@ export type HostRequestParams = {
   "provider.remove": { providerId: string };
   "provider.fetchModels": { providerId: string };
   "provider.checkConnection": { providerId: string; modelId?: string };
+  "provider.authStatus": null;
+  "provider.loginStart": { providerId: string; authType: "oauth" | "api_key" };
+  "provider.loginRespond": { loginId: string; promptId: string; value: string };
+  "provider.loginCancel": { loginId: string };
+  "provider.logout": { providerId: string };
+  "provider.builtinModels": { providerId: string };
+  "provider.setBuiltinModels": { providerId: string; modelIds: string[] };
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
@@ -298,6 +315,13 @@ export type HostResultMap = {
     models: DiscoveredProviderModel[];
   };
   "provider.checkConnection": ProviderConnectionResult;
+  "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
+  "provider.loginStart": { loginId: string; providerId: string };
+  "provider.loginRespond": { accepted: true };
+  "provider.loginCancel": { accepted: true };
+  "provider.logout": { providerId: string; loggedOut: true };
+  "provider.builtinModels": BuiltinProviderModelsResult;
+  "provider.setBuiltinModels": BuiltinProviderModelsResult;
   "model.list": {
     models: ModelSummary[];
     current?: ModelSummary;
@@ -363,6 +387,11 @@ export type HostEventPayloadMap = {
     model?: ModelSummary;
     thinkingLevel: string;
     availableThinkingLevels: string[];
+  };
+  "provider.loginEvent": {
+    loginId: string;
+    providerId: string;
+    event: ProviderLoginFlowEvent;
   };
   "package.progress": {
     operationId: string;

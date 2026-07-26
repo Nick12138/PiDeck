@@ -521,3 +521,40 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().notifications).toEqual([]);
   });
 });
+
+describe("provider login flow state", () => {
+  beforeEach(() => {
+    useAppStore.setState({ providerLogin: null });
+  });
+
+  it("keeps a prompt adopted from an event that outran the loginStart response", () => {
+    // API-key flows prompt synchronously on the host, so the loginEvent can
+    // arrive before the loginStart RPC resolves and beginProviderLogin runs.
+    useAppStore.getState().applyProviderLoginEvent({
+      loginId: "login-1",
+      providerId: "groq",
+      event: {
+        kind: "prompt",
+        prompt: { promptId: "p1", kind: "secret", message: "Enter GROQ_API_KEY" },
+      },
+    });
+    useAppStore.getState().beginProviderLogin("login-1", "groq");
+    expect(useAppStore.getState().providerLogin?.prompt?.promptId).toBe("p1");
+  });
+
+  it("replaces state from a different login flow", () => {
+    useAppStore.getState().beginProviderLogin("login-1", "groq");
+    useAppStore.getState().applyProviderLoginEvent({
+      loginId: "login-1",
+      providerId: "groq",
+      event: {
+        kind: "prompt",
+        prompt: { promptId: "p1", kind: "secret", message: "Enter GROQ_API_KEY" },
+      },
+    });
+    useAppStore.getState().beginProviderLogin("login-2", "anthropic");
+    const state = useAppStore.getState().providerLogin;
+    expect(state?.loginId).toBe("login-2");
+    expect(state?.prompt).toBeNull();
+  });
+});

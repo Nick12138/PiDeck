@@ -49,6 +49,13 @@ export const HOST_METHODS = [
   "provider.remove",
   "provider.fetchModels",
   "provider.checkConnection",
+  "provider.authStatus",
+  "provider.loginStart",
+  "provider.loginRespond",
+  "provider.loginCancel",
+  "provider.logout",
+  "provider.builtinModels",
+  "provider.setBuiltinModels",
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
@@ -120,7 +127,14 @@ export type HostOnlyMethod =
   | "provider.save"
   | "provider.remove"
   | "provider.fetchModels"
-  | "provider.checkConnection";
+  | "provider.checkConnection"
+  | "provider.authStatus"
+  | "provider.loginStart"
+  | "provider.loginRespond"
+  | "provider.loginCancel"
+  | "provider.logout"
+  | "provider.builtinModels"
+  | "provider.setBuiltinModels";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -262,6 +276,13 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "provider.remove": "host",
   "provider.fetchModels": "host",
   "provider.checkConnection": "host",
+  "provider.authStatus": "host",
+  "provider.loginStart": "host",
+  "provider.loginRespond": "host",
+  "provider.loginCancel": "host",
+  "provider.logout": "host",
+  "provider.builtinModels": "host",
+  "provider.setBuiltinModels": "host",
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",

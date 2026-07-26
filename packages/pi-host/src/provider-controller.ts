@@ -9,13 +9,19 @@ import {
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ModelRuntime, type ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import {
+  InMemoryCredentialStore,
+  type AuthEvent,
+  type AuthInteraction,
+  type AuthPrompt,
+} from "@earendil-works/pi-ai";
 import { completeSimple, type Api, type Context, type Model } from "@earendil-works/pi-ai/compat";
 import {
   createHostError,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   detectModelThinking,
+  type BuiltinProviderAuthStatus,
   type DiscoveredProviderModel,
   type HostError,
   type HostIdentity,
@@ -25,11 +31,13 @@ import {
   type ProviderCompatibility,
   type ProviderCompatibilityDraft,
   type ProviderDraft,
+  type ProviderLoginFlowEvent,
   type ProviderModelConfig,
   type ProviderSnapshot,
   type ThinkingLevel,
   type ThinkingLevelMap,
 } from "@pideck/protocol";
+import { logger } from "./logger.js";
 import type { MethodHandler, PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
@@ -60,6 +68,9 @@ type ProviderConnectionCapture =
   | { error: HostError };
 const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
 const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
+// Per-builtin-provider model allow-lists: { providerId: modelId[] }. A missing
+// entry means every model of that provider is offered.
+const PROVIDER_MODELS_KEY = "pideckProviderModels";
 
 const PROVIDER_APIS = new Set<ProviderApi>([
   "openai-completions",
@@ -216,36 +227,75 @@ async function readModelsConfig(path: string): Promise<ModelsConfig> {
   return { root: parsed, providers, original };
 }
 
-function resolveEnabledProviders(config: ModelsConfig, preferredProvider?: string): string[] {
-  const providerIds = Object.entries(config.providers)
+function resolveEnabledProviders(
+  config: ModelsConfig,
+  preferredProvider?: string,
+  extraProviderIds: readonly string[] = [],
+): string[] {
+  const customIds = Object.entries(config.providers)
     .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
     .map(([id]) => id);
-  if (providerIds.length === 0) return [];
+  // Builtin (SDK) providers become enableable after a login, so the id
+  // universe is custom providers plus whatever the runtime composes.
+  const knownIds = new Set([...customIds, ...extraProviderIds]);
+  if (knownIds.size === 0) return [];
   const configured = config.root[ENABLED_PROVIDERS_KEY];
   if (Array.isArray(configured)) {
-    return [...new Set(configured.filter((id): id is string => typeof id === "string" && providerIds.includes(id)))];
+    return [...new Set(configured.filter((id): id is string => typeof id === "string" && knownIds.has(id)))];
   }
   const legacyActive = config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-  if (typeof legacyActive === "string" && providerIds.includes(legacyActive)) return [legacyActive];
-  if (preferredProvider && providerIds.includes(preferredProvider)) return [preferredProvider];
-  const fallback = providerIds.find((id) => {
+  if (typeof legacyActive === "string" && customIds.includes(legacyActive)) return [legacyActive];
+  if (preferredProvider && knownIds.has(preferredProvider)) return [preferredProvider];
+  const fallback = customIds.find((id) => {
     const provider = config.providers[id];
     return isObject(provider) && Array.isArray(provider.models) && provider.models.length > 0;
-  }) ?? providerIds[0];
+  }) ?? customIds[0];
   return fallback ? [fallback] : [];
 }
 
 export async function getEnabledProviderIds(
   agentDir: string,
   preferredProvider?: string,
+  knownProviderIds: readonly string[] = [],
 ): Promise<string[] | undefined> {
   try {
     const config = await readModelsConfig(join(agentDir, "models.json"));
-    if (!Object.values(config.providers).some(isObject)) return undefined;
-    return resolveEnabledProviders(config, preferredProvider);
+    const hasCustomProviders = Object.values(config.providers).some(isObject);
+    const hasConfiguredList = Array.isArray(config.root[ENABLED_PROVIDERS_KEY]);
+    if (!hasCustomProviders && !hasConfiguredList) return undefined;
+    return resolveEnabledProviders(config, preferredProvider, knownProviderIds);
   } catch {
     return undefined;
   }
+}
+
+function readProviderModelAllowLists(config: ModelsConfig): Record<string, string[]> {
+  const raw = config.root[PROVIDER_MODELS_KEY];
+  if (!isObject(raw)) return {};
+  const lists: Record<string, string[]> = {};
+  for (const [providerId, value] of Object.entries(raw)) {
+    if (!Array.isArray(value)) continue;
+    lists[providerId] = [
+      ...new Set(value.filter((id): id is string => typeof id === "string")),
+    ];
+  }
+  return lists;
+}
+
+export async function getProviderModelAllowLists(
+  agentDir: string,
+): Promise<Record<string, string[]> | undefined> {
+  try {
+    const config = await readModelsConfig(join(agentDir, "models.json"));
+    const lists = readProviderModelAllowLists(config);
+    return Object.keys(lists).length > 0 ? lists : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function runtimeProviderIds(factory: WorkspaceGraphFactory): string[] {
+  return factory.deps.modelRuntime.getProviders().map((provider) => provider.id);
 }
 
 function providerSnapshot(
@@ -943,6 +993,110 @@ function providerReadStaleError(args: {
   return createHostError("STALE_REVISION", args.message, { retryable: true });
 }
 
+/** Toggle a custom or builtin provider in the enabled list; shared by the
+ * setEnabled RPC and the login/logout flows. */
+async function applyProviderEnabledMutation(
+  factory: WorkspaceGraphFactory,
+  modelsPath: string,
+  requestId: string,
+  providerId: string,
+  enabled: boolean,
+): Promise<
+  | { result: { providerId: string; enabled: boolean }; identity?: HostIdentity }
+  | { error: HostError; identity?: HostIdentity }
+> {
+  if (factory.hasBusySessions()) {
+    return {
+      error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
+        retryable: true,
+      }),
+    };
+  }
+  const server = factory.getServer();
+  if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+  return withRegisteredGraphMutation({
+    server,
+    operationKind: "provider.mutation",
+    requestId,
+    run: async ({ signal }) => {
+      try {
+        if (factory.hasBusySessions()) {
+          return {
+            error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
+              retryable: true,
+            }),
+          };
+        }
+        const config = await readModelsConfig(modelsPath);
+        const raw = config.providers[providerId];
+        if (!isObject(raw) && !runtimeProviderIds(factory).includes(providerId)) {
+          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+        }
+        await invalidateRetainedRuntimes(factory);
+        signal.throwIfAborted();
+        const nextEnabled = new Set(resolveEnabledProviders(
+          config,
+          factory.getGraph()?.agentSession?.model?.provider,
+          runtimeProviderIds(factory),
+        ));
+        if (enabled) nextEnabled.add(providerId);
+        else nextEnabled.delete(providerId);
+        config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
+        delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
+        await commitModelsConfig(modelsPath, config.root, factory);
+        try {
+          await refreshRegistry(factory, true);
+          const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
+          if (!currentProvider || !nextEnabled.has(currentProvider)) {
+            const targetProvider = enabled ? providerId : [...nextEnabled][0];
+            const targetRaw = targetProvider ? config.providers[targetProvider] : undefined;
+            const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
+              ? targetRaw.models
+                  .filter((model): model is JsonObject => isObject(model))
+                  .map((model) => model.id)
+                  .filter((id): id is string => typeof id === "string")
+              : [];
+            await alignCurrentSessionModel(factory, targetProvider, modelIds);
+          }
+        } catch (error) {
+          await restoreModelsConfig(modelsPath, config.original);
+          await refreshRegistry(factory, true);
+          throw error;
+        }
+        return { result: { providerId, enabled } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "SETTINGS_WRITE_FAILED",
+            error instanceof Error ? error.message : "Could not update enabled Providers",
+          ),
+        };
+      }
+    },
+  });
+}
+
+const LOGIN_FLOW_TIMEOUT_MS = 10 * 60_000;
+
+type PendingLoginPrompt = {
+  resolve: (value: string) => void;
+  reject: (error: Error) => void;
+};
+
+type ActiveLoginFlow = {
+  loginId: string;
+  providerId: string;
+  controller: AbortController;
+  pending: Map<string, PendingLoginPrompt>;
+  timeout: NodeJS.Timeout;
+  settled: boolean;
+};
+
+function asText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  return value === undefined || value === null ? fallback : String(value);
+}
+
 export function createProviderHandlers(
   factory: WorkspaceGraphFactory,
 ): Partial<Record<
@@ -951,10 +1105,179 @@ export function createProviderHandlers(
   | "provider.save"
   | "provider.remove"
   | "provider.fetchModels"
-  | "provider.checkConnection",
+  | "provider.checkConnection"
+  | "provider.authStatus"
+  | "provider.loginStart"
+  | "provider.loginRespond"
+  | "provider.loginCancel"
+  | "provider.logout"
+  | "provider.builtinModels"
+  | "provider.setBuiltinModels",
   MethodHandler
 >> {
   const modelsPath = join(factory.deps.agentDir, "models.json");
+
+  let activeLogin: ActiveLoginFlow | null = null;
+
+  const emitLoginEvent = (flow: ActiveLoginFlow, event: ProviderLoginFlowEvent): void => {
+    const server = factory.getServer();
+    if (!server) return;
+    try {
+      server.emit("provider.loginEvent", {
+        loginId: flow.loginId,
+        providerId: flow.providerId,
+        event,
+      });
+    } catch (error) {
+      logger.warn("Could not publish Provider login event", {
+        providerId: flow.providerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const notifyLoginEvent = (flow: ActiveLoginFlow, event: AuthEvent): void => {
+    switch (event.type) {
+      case "info": {
+        const links = Array.isArray(event.links)
+          ? event.links
+              .filter((link) => typeof link?.url === "string")
+              .map((link) => ({
+                url: link.url,
+                ...(typeof link.label === "string" ? { label: link.label } : {}),
+              }))
+          : [];
+        emitLoginEvent(flow, {
+          kind: "info",
+          message: asText(event.message),
+          ...(links.length > 0 ? { links } : {}),
+        });
+        return;
+      }
+      case "auth_url":
+        emitLoginEvent(flow, {
+          kind: "auth_url",
+          url: asText(event.url),
+          ...(typeof event.instructions === "string"
+            ? { instructions: event.instructions }
+            : {}),
+        });
+        return;
+      case "device_code":
+        emitLoginEvent(flow, {
+          kind: "device_code",
+          userCode: asText(event.userCode),
+          verificationUri: asText(event.verificationUri),
+          ...(typeof event.expiresInSeconds === "number" &&
+          Number.isSafeInteger(event.expiresInSeconds) &&
+          event.expiresInSeconds >= 0
+            ? { expiresInSeconds: event.expiresInSeconds }
+            : {}),
+        });
+        return;
+      case "progress":
+        emitLoginEvent(flow, { kind: "progress", message: asText(event.message) });
+        return;
+      default:
+        return;
+    }
+  };
+
+  const bridgeLoginPrompt = (flow: ActiveLoginFlow, prompt: AuthPrompt): Promise<string> => {
+    const promptId = randomUUID();
+    return new Promise<string>((resolve, reject) => {
+      flow.pending.set(promptId, { resolve, reject });
+      prompt.signal?.addEventListener("abort", () => {
+        if (flow.pending.delete(promptId)) {
+          emitLoginEvent(flow, { kind: "prompt_cancel", promptId });
+          reject(new Error("Login prompt superseded"));
+        }
+      });
+      const options = prompt.type === "select"
+        ? prompt.options.map((option) => ({
+            id: asText(option.id),
+            label: asText(option.label, asText(option.id)),
+            ...(typeof option.description === "string"
+              ? { description: option.description }
+              : {}),
+          }))
+        : undefined;
+      emitLoginEvent(flow, {
+        kind: "prompt",
+        prompt: {
+          promptId,
+          kind: prompt.type,
+          message: asText(prompt.message),
+          ...("placeholder" in prompt && typeof prompt.placeholder === "string"
+            ? { placeholder: prompt.placeholder }
+            : {}),
+          ...(options ? { options } : {}),
+        },
+      });
+    });
+  };
+
+  const cancelLoginFlow = (flow: ActiveLoginFlow, reason: string): void => {
+    if (flow.settled) return;
+    flow.controller.abort(new Error(reason));
+    for (const [promptId, pending] of [...flow.pending]) {
+      flow.pending.delete(promptId);
+      pending.reject(new Error(reason));
+    }
+  };
+
+  const finishLoginFlow = (flow: ActiveLoginFlow): void => {
+    flow.settled = true;
+    clearTimeout(flow.timeout);
+    for (const [promptId, pending] of [...flow.pending]) {
+      flow.pending.delete(promptId);
+      pending.reject(new Error("Login finished"));
+    }
+    if (activeLogin === flow) activeLogin = null;
+  };
+
+  const runLoginFlow = async (
+    flow: ActiveLoginFlow,
+    authType: "oauth" | "api_key",
+  ): Promise<void> => {
+    const interaction: AuthInteraction = {
+      signal: flow.controller.signal,
+      prompt: (prompt) => bridgeLoginPrompt(flow, prompt),
+      notify: (event) => notifyLoginEvent(flow, event),
+    };
+    try {
+      await factory.deps.modelRuntime.login(flow.providerId, authType, interaction);
+      let note: string | undefined;
+      const enabled = await applyProviderEnabledMutation(
+        factory,
+        modelsPath,
+        flow.loginId,
+        flow.providerId,
+        true,
+      );
+      if ("error" in enabled) {
+        note = `Signed in, but the Provider could not be enabled automatically: ${enabled.error.message}`;
+        logger.warn("Provider auto-enable after login failed", {
+          providerId: flow.providerId,
+          error: enabled.error.message,
+        });
+      }
+      emitLoginEvent(flow, { kind: "done", ok: true, ...(note ? { message: note } : {}) });
+    } catch (error) {
+      const cancelled = flow.controller.signal.aborted;
+      emitLoginEvent(flow, {
+        kind: "done",
+        ok: false,
+        message: cancelled
+          ? "Login cancelled"
+          : error instanceof Error && error.message
+            ? error.message
+            : "Login failed",
+      });
+    } finally {
+      finishLoginFlow(flow);
+    }
+  };
 
   return {
     "provider.list": async () => {
@@ -964,6 +1287,7 @@ export function createProviderHandlers(
         const enabledProviders = new Set(resolveEnabledProviders(
           config,
           factory.getGraph()?.agentSession?.model?.provider,
+          runtimeProviderIds(factory),
         ));
         const providers = Object.entries(config.providers)
           .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
@@ -984,74 +1308,7 @@ export function createProviderHandlers(
 
     "provider.setEnabled": async (ctx) => {
       const { providerId, enabled } = ctx.params as { providerId: string; enabled: boolean };
-      if (factory.hasBusySessions()) {
-        return {
-          error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
-            retryable: true,
-          }),
-        };
-      }
-      const server = factory.getServer();
-      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
-      return withRegisteredGraphMutation({
-        server,
-        operationKind: "provider.mutation",
-        requestId: ctx.id,
-        run: async ({ signal }) => {
-          try {
-            if (factory.hasBusySessions()) {
-              return {
-                error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
-                  retryable: true,
-                }),
-              };
-            }
-            const config = await readModelsConfig(modelsPath);
-            const raw = config.providers[providerId];
-            if (!isObject(raw)) {
-              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
-            }
-            await invalidateRetainedRuntimes(factory);
-            signal.throwIfAborted();
-            const nextEnabled = new Set(resolveEnabledProviders(
-              config,
-              factory.getGraph()?.agentSession?.model?.provider,
-            ));
-            if (enabled) nextEnabled.add(providerId);
-            else nextEnabled.delete(providerId);
-            config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
-            delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-            await commitModelsConfig(modelsPath, config.root, factory);
-            try {
-              await refreshRegistry(factory, true);
-              const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
-              if (!currentProvider || !nextEnabled.has(currentProvider)) {
-                const targetProvider = enabled ? providerId : [...nextEnabled][0];
-                const targetRaw = targetProvider ? config.providers[targetProvider] : undefined;
-                const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
-                  ? targetRaw.models
-                      .filter((model): model is JsonObject => isObject(model))
-                      .map((model) => model.id)
-                      .filter((id): id is string => typeof id === "string")
-                  : [];
-                await alignCurrentSessionModel(factory, targetProvider, modelIds);
-              }
-            } catch (error) {
-              await restoreModelsConfig(modelsPath, config.original);
-              await refreshRegistry(factory, true);
-              throw error;
-            }
-            return { result: { providerId, enabled } };
-          } catch (error) {
-            return {
-              error: createHostError(
-                "SETTINGS_WRITE_FAILED",
-                error instanceof Error ? error.message : "Could not update enabled Providers",
-              ),
-            };
-          }
-        },
-      });
+      return applyProviderEnabledMutation(factory, modelsPath, ctx.id, providerId, enabled);
     },
 
     "provider.save": async (ctx) => {
@@ -1091,6 +1348,7 @@ export function createProviderHandlers(
             const enabledBefore = resolveEnabledProviders(
               config,
               factory.getGraph()?.agentSession?.model?.provider,
+              runtimeProviderIds(factory),
             );
             const wasFirstProvider = Object.keys(config.providers).length === 0;
             if (draft.id !== originalId && config.providers[draft.id] !== undefined) {
@@ -1162,7 +1420,7 @@ export function createProviderHandlers(
               throw error;
             }
             await journal.finish();
-            const enabledProviders = new Set(resolveEnabledProviders(config));
+            const enabledProviders = new Set(resolveEnabledProviders(config, undefined, runtimeProviderIds(factory)));
             return {
               result: {
                 provider: providerSnapshot(draft.id, merged, factory, enabledProviders.has(draft.id)),
@@ -1209,6 +1467,7 @@ export function createProviderHandlers(
             const enabledBefore = resolveEnabledProviders(
               config,
               factory.getGraph()?.agentSession?.model?.provider,
+              runtimeProviderIds(factory),
             );
             delete config.providers[providerId];
             config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
@@ -1269,6 +1528,7 @@ export function createProviderHandlers(
               resolveEnabledProviders(
                 config,
                 factory.getGraph()?.agentSession?.model?.provider,
+                runtimeProviderIds(factory),
               ).includes(providerId),
             );
             if (!provider.baseUrl) {
@@ -1338,6 +1598,7 @@ export function createProviderHandlers(
               resolveEnabledProviders(
                 config,
                 factory.getGraph()?.agentSession?.model?.provider,
+                runtimeProviderIds(factory),
               ).includes(providerId),
             );
             const targetModelId = modelId?.trim() || provider.models[0]?.id;
@@ -1449,6 +1710,309 @@ export function createProviderHandlers(
           ),
         };
       }
+    },
+
+    "provider.authStatus": async () => {
+      try {
+        const config = await readModelsConfig(modelsPath);
+        const customIds = new Set(
+          Object.entries(config.providers)
+            .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
+            .map(([id]) => id),
+        );
+        const runtime = factory.deps.modelRuntime;
+        const stored = new Set(
+          (await runtime.listCredentials()).map((credential) => credential.providerId),
+        );
+        const enabled = new Set(resolveEnabledProviders(
+          config,
+          factory.getGraph()?.agentSession?.model?.provider,
+          runtimeProviderIds(factory),
+        ));
+        const providers: BuiltinProviderAuthStatus[] = runtime
+          .getProviders()
+          .filter((provider) => !customIds.has(provider.id))
+          .filter(
+            (provider) =>
+              provider.auth?.oauth !== undefined ||
+              typeof provider.auth?.apiKey?.login === "function",
+          )
+          .map((provider) => {
+            const status = factory.deps.modelRegistry.getProviderAuthStatus(provider.id);
+            const oauth = provider.auth?.oauth;
+            return {
+              providerId: provider.id,
+              name: asText(provider.name, provider.id),
+              supportsOauth: oauth !== undefined,
+              ...(typeof oauth?.name === "string" ? { oauthLabel: oauth.name } : {}),
+              supportsApiKeyLogin: typeof provider.auth?.apiKey?.login === "function",
+              configured: status.configured,
+              ...(typeof status.label === "string" ? { authLabel: status.label } : {}),
+              hasStoredCredential: stored.has(provider.id),
+              enabled: enabled.has(provider.id),
+            };
+          })
+          .sort((left, right) => left.name.localeCompare(right.name));
+        return { result: { providers } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "SETTINGS_READ_FAILED",
+            error instanceof Error ? error.message : "Could not read Provider login status",
+          ),
+        };
+      }
+    },
+
+    "provider.loginStart": async (ctx) => {
+      const { providerId, authType } = ctx.params as {
+        providerId: string;
+        authType: "oauth" | "api_key";
+      };
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      if (activeLogin) {
+        return {
+          error: createHostError("AGENT_BUSY", "Another Provider login is already in progress", {
+            retryable: true,
+          }),
+        };
+      }
+      const provider = factory.deps.modelRuntime
+        .getProviders()
+        .find((candidate) => candidate.id === providerId);
+      if (!provider) {
+        return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+      }
+      const supported = authType === "oauth"
+        ? provider.auth?.oauth !== undefined
+        : typeof provider.auth?.apiKey?.login === "function";
+      if (!supported) {
+        return {
+          error: createHostError(
+            "INVALID_REQUEST",
+            `Provider ${providerId} does not support ${authType === "oauth" ? "OAuth" : "API key"} login`,
+          ),
+        };
+      }
+      const flow: ActiveLoginFlow = {
+        loginId: randomUUID(),
+        providerId,
+        controller: new AbortController(),
+        pending: new Map(),
+        timeout: setTimeout(() => {
+          if (activeLogin) cancelLoginFlow(activeLogin, "Login timed out");
+        }, LOGIN_FLOW_TIMEOUT_MS),
+        settled: false,
+      };
+      flow.timeout.unref?.();
+      activeLogin = flow;
+      void runLoginFlow(flow, authType);
+      return { result: { loginId: flow.loginId, providerId } };
+    },
+
+    "provider.loginRespond": async (ctx) => {
+      const { loginId, promptId, value } = ctx.params as {
+        loginId: string;
+        promptId: string;
+        value: string;
+      };
+      const flow = activeLogin;
+      if (!flow || flow.loginId !== loginId) {
+        return { error: createHostError("INVALID_REQUEST", "Login flow is no longer active") };
+      }
+      const pending = flow.pending.get(promptId);
+      if (!pending) {
+        return {
+          error: createHostError("INVALID_REQUEST", "Login prompt is no longer waiting for input"),
+        };
+      }
+      flow.pending.delete(promptId);
+      pending.resolve(value);
+      return { result: { accepted: true as const } };
+    },
+
+    "provider.loginCancel": async (ctx) => {
+      const { loginId } = ctx.params as { loginId: string };
+      const flow = activeLogin;
+      if (flow && flow.loginId === loginId) cancelLoginFlow(flow, "Login cancelled");
+      return { result: { accepted: true as const } };
+    },
+
+    "provider.logout": async (ctx) => {
+      const { providerId } = ctx.params as { providerId: string };
+      const conflict = currentModelConflict(factory, providerId);
+      if (conflict) return { error: conflict };
+      if (factory.hasBusySessions()) {
+        return {
+          error: createHostError("AGENT_BUSY", "Stop running sessions before logging out of a Provider", {
+            retryable: true,
+          }),
+        };
+      }
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "provider.mutation",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          try {
+            const conflictUnderLock = currentModelConflict(factory, providerId);
+            if (conflictUnderLock) return { error: conflictUnderLock };
+            if (factory.hasBusySessions()) {
+              return {
+                error: createHostError("AGENT_BUSY", "Stop running sessions before logging out of a Provider", {
+                  retryable: true,
+                }),
+              };
+            }
+            const stored = await factory.deps.credentialStore.readRaw(providerId);
+            if (!stored) {
+              return {
+                error: createHostError("INVALID_REQUEST", `No stored credential to log out for Provider: ${providerId}`),
+              };
+            }
+            const config = await readModelsConfig(modelsPath);
+            await invalidateRetainedRuntimes(factory);
+            signal.throwIfAborted();
+            const nextEnabled = new Set(resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+              runtimeProviderIds(factory),
+            ));
+            nextEnabled.delete(providerId);
+            config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
+            delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
+            const journal = await ProviderMutationJournal.begin({
+              agentDir: factory.deps.agentDir,
+              operation: "provider.logout",
+              providerId,
+              modelsPath,
+              modelsBytes: config.original,
+              credentialStore: factory.deps.credentialStore,
+            });
+            await commitModelsConfig(modelsPath, config.root, factory);
+            try {
+              await factory.deps.modelRuntime.logout(providerId);
+              await journal.markCommitted();
+              await refreshRegistry(factory, true);
+            } catch (error) {
+              await journal.rollback();
+              await refreshRegistry(factory, true);
+              throw error;
+            }
+            await journal.finish();
+            return { result: { providerId, loggedOut: true as const } };
+          } catch (error) {
+            return {
+              error: createHostError(
+                "SETTINGS_WRITE_FAILED",
+                error instanceof Error ? error.message : "Could not log out of the Provider",
+              ),
+            };
+          }
+        },
+      });
+    },
+
+    "provider.builtinModels": async (ctx) => {
+      const { providerId } = ctx.params as { providerId: string };
+      try {
+        const runtime = factory.deps.modelRuntime;
+        if (!runtime.getProviders().some((candidate) => candidate.id === providerId)) {
+          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+        }
+        const config = await readModelsConfig(modelsPath);
+        if (isObject(config.providers[providerId])) {
+          return {
+            error: createHostError(
+              "INVALID_REQUEST",
+              `Provider ${providerId} is a custom Provider; edit its model list instead`,
+            ),
+          };
+        }
+        const allow = readProviderModelAllowLists(config)[providerId];
+        const allowSet = allow ? new Set(allow) : undefined;
+        const models = runtime
+          .getModels(providerId)
+          .map((model) => ({
+            id: model.id,
+            name: asText(model.name, model.id),
+            enabled: !allowSet || allowSet.has(model.id),
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id));
+        return { result: { providerId, models } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "SETTINGS_READ_FAILED",
+            error instanceof Error ? error.message : "Could not read the Provider model list",
+          ),
+        };
+      }
+    },
+
+    "provider.setBuiltinModels": async (ctx) => {
+      const { providerId, modelIds } = ctx.params as { providerId: string; modelIds: string[] };
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "provider.mutation",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          try {
+            if (factory.hasBusySessions()) {
+              return {
+                error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider models", {
+                  retryable: true,
+                }),
+              };
+            }
+            const runtime = factory.deps.modelRuntime;
+            if (!runtime.getProviders().some((candidate) => candidate.id === providerId)) {
+              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+            }
+            const config = await readModelsConfig(modelsPath);
+            if (isObject(config.providers[providerId])) {
+              return {
+                error: createHostError(
+                  "INVALID_REQUEST",
+                  `Provider ${providerId} is a custom Provider; edit its model list instead`,
+                ),
+              };
+            }
+            signal.throwIfAborted();
+            const catalog = runtime.getModels(providerId);
+            const catalogIds = new Set(catalog.map((model) => model.id));
+            const selected = new Set(modelIds.filter((id) => catalogIds.has(id)));
+            const lists = readProviderModelAllowLists(config);
+            // A full selection means "no filter": drop the entry so models the
+            // provider adds later stay visible without another save.
+            if (selected.size === catalogIds.size) delete lists[providerId];
+            else lists[providerId] = [...selected];
+            if (Object.keys(lists).length === 0) delete config.root[PROVIDER_MODELS_KEY];
+            else config.root[PROVIDER_MODELS_KEY] = lists;
+            await commitModelsConfig(modelsPath, config.root, factory);
+            const models = catalog
+              .map((model) => ({
+                id: model.id,
+                name: asText(model.name, model.id),
+                enabled: selected.size === catalogIds.size || selected.has(model.id),
+              }))
+              .sort((left, right) => left.id.localeCompare(right.id));
+            return { result: { providerId, models } };
+          } catch (error) {
+            return {
+              error: createHostError(
+                "SETTINGS_WRITE_FAILED",
+                error instanceof Error ? error.message : "Could not update the Provider model list",
+              ),
+            };
+          }
+        },
+      });
     },
   };
 }

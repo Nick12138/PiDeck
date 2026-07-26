@@ -149,6 +149,13 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "provider.remove": { providerId: "local" },
   "provider.fetchModels": { providerId: "local" },
   "provider.checkConnection": { providerId: "local", modelId: "model-1" },
+  "provider.authStatus": null,
+  "provider.loginStart": { providerId: "anthropic", authType: "oauth" },
+  "provider.loginRespond": { loginId: "login-1", promptId: "prompt-1", value: "code" },
+  "provider.loginCancel": { loginId: "login-1" },
+  "provider.logout": { providerId: "anthropic" },
+  "provider.builtinModels": { providerId: "anthropic" },
+  "provider.setBuiltinModels": { providerId: "anthropic", modelIds: ["claude-1"] },
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
@@ -228,6 +235,7 @@ function invalidParams(method: HostMethod): unknown {
     case "agent.abortRetry":
     case "agent.getTools":
     case "provider.list":
+    case "provider.authStatus":
     case "model.list":
     case "package.reloadResources":
     case "piSettings.get":
@@ -282,7 +290,17 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.remove":
     case "provider.fetchModels":
     case "provider.checkConnection":
+    case "provider.logout":
+    case "provider.builtinModels":
       return { providerId: "" };
+    case "provider.setBuiltinModels":
+      return { providerId: "anthropic", modelIds: "all" };
+    case "provider.loginStart":
+      return { providerId: "anthropic", authType: "device" };
+    case "provider.loginRespond":
+      return { loginId: "", promptId: "prompt-1", value: "code" };
+    case "provider.loginCancel":
+      return {};
     case "model.setCurrent":
       return { provider: "x" };
     case "model.setThinkingLevel":
@@ -630,6 +648,11 @@ describe("protocol coverage — events", () => {
     "agent.compactionChanged": { active: false },
     "agent.retryChanged": { active: false },
     "model.changed": { thinkingLevel: "off", availableThinkingLevels: ["off"] },
+    "provider.loginEvent": {
+      loginId: "login-1",
+      providerId: "anthropic",
+      event: { kind: "auth_url", url: "https://example.com/authorize" },
+    },
     "package.progress": {
       operationId: OPERATION_ID,
       type: "start",

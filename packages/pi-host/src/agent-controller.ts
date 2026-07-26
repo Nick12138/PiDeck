@@ -17,7 +17,7 @@ import type { MethodHandler, PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
-import { getEnabledProviderIds } from "./provider-controller.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-controller.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { createProvisionalSessionTitle } from "./session-title.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
@@ -1100,10 +1100,21 @@ export function createAgentHandlers(
           const enabledProviders = await getEnabledProviderIds(
             factory.deps.agentDir,
             current?.provider,
+            factory.deps.modelRuntime.getProviders().map((provider) => provider.id),
           );
           const enabledProviderSet = enabledProviders ? new Set(enabledProviders) : undefined;
+          const modelAllowLists = await getProviderModelAllowLists(factory.deps.agentDir);
           const models: ModelSummary[] = all
             .filter((model: Model<any>) => !enabledProviderSet || enabledProviderSet.has(model.provider))
+            .filter((model: Model<any>) => {
+              const allow = modelAllowLists?.[model.provider];
+              if (!allow) return true;
+              // The session's current model stays listed even when unchecked.
+              if (current && model.provider === current.provider && model.id === current.id) {
+                return true;
+              }
+              return allow.includes(model.id);
+            })
             .map((model: Model<any>) => summarizeModel(model));
           return {
             models,
@@ -1152,12 +1163,27 @@ export function createAgentHandlers(
           const enabledProviders = await getEnabledProviderIds(
             factory.deps.agentDir,
             g.agentSession.model?.provider,
+            factory.deps.modelRuntime.getProviders().map((provider) => provider.id),
           );
           if (enabledProviders && !enabledProviders.includes(params.provider)) {
             return {
               error: createHostError(
                 "INVALID_REQUEST",
                 `Provider ${params.provider} is disabled; enable it before selecting one of its models`,
+              ),
+            };
+          }
+          const isCurrentModel =
+            g.agentSession.model?.provider === params.provider &&
+            g.agentSession.model?.id === params.modelId;
+          const modelAllow = (await getProviderModelAllowLists(factory.deps.agentDir))?.[
+            params.provider
+          ];
+          if (!isCurrentModel && modelAllow && !modelAllow.includes(params.modelId)) {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                `Model ${params.modelId} is hidden for Provider ${params.provider}; enable it in Provider settings first`,
               ),
             };
           }

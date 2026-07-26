@@ -179,6 +179,56 @@ export type ProviderDraft = Omit<ProviderSnapshot, "auth" | "enabled" | "compat"
   compat?: ProviderCompatibilityDraft;
 };
 
+/** Login-capable builtin (SDK) provider and its credential state. */
+export type BuiltinProviderAuthStatus = {
+  providerId: string;
+  name: string;
+  supportsOauth: boolean;
+  /** Subscription label from the SDK, e.g. "Anthropic (Claude Pro/Max)". */
+  oauthLabel?: string;
+  supportsApiKeyLogin: boolean;
+  configured: boolean;
+  /** Human-readable auth source, e.g. "OAuth" or "ANTHROPIC_API_KEY". */
+  authLabel?: string;
+  /** True when auth.json holds a credential PiDeck can log out of. */
+  hasStoredCredential: boolean;
+  enabled: boolean;
+};
+
+export type BuiltinProviderModelChoice = {
+  id: string;
+  name: string;
+  /** Whether the model is offered in the chat model picker. */
+  enabled: boolean;
+};
+
+export type BuiltinProviderModelsResult = {
+  providerId: string;
+  models: BuiltinProviderModelChoice[];
+};
+
+export type ProviderLoginPrompt = {
+  promptId: string;
+  kind: "text" | "secret" | "select" | "manual_code";
+  message: string;
+  placeholder?: string;
+  options?: Array<{ id: string; label: string; description?: string }>;
+};
+
+export type ProviderLoginFlowEvent =
+  | { kind: "info"; message: string; links?: Array<{ url: string; label?: string }> }
+  | { kind: "auth_url"; url: string; instructions?: string }
+  | {
+      kind: "device_code";
+      userCode: string;
+      verificationUri: string;
+      expiresInSeconds?: number;
+    }
+  | { kind: "progress"; message: string }
+  | { kind: "prompt"; prompt: ProviderLoginPrompt }
+  | { kind: "prompt_cancel"; promptId: string }
+  | { kind: "done"; ok: boolean; message?: string };
+
 export type ProviderConnectionCategory =
   | "ok"
   | "configuration"

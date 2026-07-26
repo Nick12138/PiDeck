@@ -389,6 +389,9 @@ function handleHostEvent(
     case "model.changed":
       applyModelChanged(event.payload);
       break;
+    case "provider.loginEvent":
+      store.applyProviderLoginEvent(event.payload);
+      break;
     case "session.infoChanged": {
       store.updateSessionCatalogInfo(event.payload.sessionId, event.payload.name);
       const currentSession = store.session;
