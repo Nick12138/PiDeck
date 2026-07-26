@@ -994,6 +994,10 @@ export function prepareForkFile(args: {
     }
     targetLeafId = entry.parentId;
   }
+  // Read the display name before branching: createBranchedSession switches
+  // the manager to the forked file, and a name set after the branch point
+  // would not be part of the copied history.
+  const sourceName = source.getSessionName();
   let forkedPath: string | undefined;
   try {
     forkedPath = source.createBranchedSession(targetLeafId);
@@ -1009,6 +1013,17 @@ export function prepareForkFile(args: {
     return {
       error: createHostError("SESSION_SWITCH_FAILED", "Failed to create the forked session"),
     };
+  }
+  if (sourceName) {
+    // Mark the lineage in the forked session's display name. Unnamed sources
+    // stay unnamed so the automatic title flow can still name the fork.
+    try {
+      source.appendSessionInfo(`Fork · ${sourceName}`);
+    } catch (err) {
+      logger.warn("could not name the forked session", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   const selectedText =
     position === "before" ? forkedUserText(entry.message?.content) : undefined;

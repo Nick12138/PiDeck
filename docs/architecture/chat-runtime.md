@@ -67,7 +67,10 @@ the new snapshot plus the message text for the Composer draft.
 `session.fork` also accepts `position: "at"`, which keeps history through the
 given entry: each settled assistant turn in the transcript shows a fork
 button (left of Copy) targeting the turn's last persisted entry
-(`TranscriptRow.sourceEndId`). The tree panel groups a linear run of
+(`TranscriptRow.sourceEndId`). A fork of a named session is displayed as
+`Fork · <source name>` (written into the forked file via
+`appendSessionInfo`); unnamed sources stay unnamed so automatic titling
+still runs. The tree panel groups a linear run of
 assistant entries (tool-call segments) into one turn row whose navigation
 target is the run's last entry; branch points break the run. Unlike the CLI,
 PiDeck does not emit `session_before_fork` to extensions, and the forked

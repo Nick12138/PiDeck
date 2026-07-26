@@ -10,7 +10,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function createSessionFile() {
+function createSessionFile(options: { name?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "pideck-fork-"));
   roots.push(root);
   const cwd = resolve(join(root, "workspace"));
@@ -30,6 +30,17 @@ function createSessionFile() {
         timestamp: stamp(0),
         cwd,
       }),
+      ...(options.name
+        ? [
+            JSON.stringify({
+              type: "session_info",
+              id: "info-1",
+              parentId: null,
+              timestamp: stamp(0),
+              name: options.name,
+            }),
+          ]
+        : []),
       JSON.stringify({
         type: "message",
         id: "u1",
@@ -75,6 +86,25 @@ describe("prepareForkFile", () => {
     expect(forked).toContain("first ask");
     expect(forked).toContain("the answer");
     expect(forked).not.toContain("second ask");
+    // Unnamed sources stay unnamed so auto-titling can still run.
+    expect(forked).not.toContain("Fork ·");
+  });
+
+  it("marks the fork lineage in the display name of a named source", () => {
+    const { cwd, sessionPath } = createSessionFile({ name: "Investigation" });
+
+    const prepared = prepareForkFile({
+      sessionFile: sessionPath,
+      canonicalCwd: cwd,
+      entryId: "u2",
+    });
+
+    expect("error" in prepared).toBe(false);
+    if ("error" in prepared) return;
+    const forked = readFileSync(prepared.forkedPath, "utf8");
+    expect(forked).toContain("Fork · Investigation");
+    // The source file keeps its own name untouched.
+    expect(readFileSync(sessionPath, "utf8")).not.toContain("Fork ·");
   });
 
   it("forks at an assistant entry keeping history through it", () => {
