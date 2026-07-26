@@ -24,6 +24,7 @@ import { buildModelConfigHealth } from "./model-health.js";
 import { logger } from "./logger.js";
 import { PiHostServer } from "./server.js";
 import { createWorkspaceHandlers } from "./workspace-controller.js";
+import { WorkspaceFileService } from "./workspace-files.js";
 import { createSessionHandlers } from "./session-controller.js";
 import { createAgentHandlers } from "./agent-controller.js";
 import { createPackageHandlers } from "./package-controller.js";
@@ -161,9 +162,10 @@ async function main(): Promise<void> {
     },
     packageUpdateCheck,
   });
+  const workspaceFiles = new WorkspaceFileService();
 
   const handlers = {
-    ...createWorkspaceHandlers(graphFactory),
+    ...createWorkspaceHandlers(graphFactory, workspaceFiles),
     ...createSessionHandlers(graphFactory),
     ...createAgentHandlers(graphFactory),
     ...createProviderHandlers(graphFactory),
@@ -189,6 +191,7 @@ async function main(): Promise<void> {
       };
     },
     onShutdown: async () => {
+      workspaceFiles.dispose();
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");
       const g = graphFactory.getGraph();

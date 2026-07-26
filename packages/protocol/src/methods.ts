@@ -7,6 +7,8 @@ export const HOST_METHODS = [
   "workspace.setCurrent",
   "workspace.getCurrent",
   "workspace.searchFiles",
+  "workspace.listDirectory",
+  "workspace.setDirectoryWatches",
   "session.list",
   "session.create",
   "session.open",
@@ -119,6 +121,8 @@ export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
   | "workspace.searchFiles"
+  | "workspace.listDirectory"
+  | "workspace.setDirectoryWatches"
   | "session.list"
   | "session.archive"
   | "session.restore"
@@ -208,6 +212,8 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "workspace.setCurrent": "workspace",
   "workspace.getCurrent": "workspace",
   "workspace.searchFiles": "workspace",
+  "workspace.listDirectory": "workspace",
+  "workspace.setDirectoryWatches": "workspace",
   "session.list": "workspace",
   "session.create": "nullableSession",
   "session.open": "nullableSession",

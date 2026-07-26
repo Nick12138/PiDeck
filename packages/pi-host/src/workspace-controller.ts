@@ -1,9 +1,11 @@
 import { createHostError } from "@pideck/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import { WorkspaceFileService } from "./workspace-files.js";
 
 export function createWorkspaceHandlers(
   factory: WorkspaceGraphFactory,
+  fileService = new WorkspaceFileService(),
 ): Partial<Record<string, MethodHandler>> {
   return {
     "workspace.setCurrent": async (ctx) => {
@@ -32,6 +34,7 @@ export function createWorkspaceHandlers(
         return { error: stale };
       }
 
+      fileService.dispose();
       const result = await factory.setCurrent(params.cwd, ctx.id);
       if ("error" in result) return { error: result.error };
       return { result };
@@ -64,6 +67,64 @@ export function createWorkspaceHandlers(
       return {
         result: await searchWorkspaceFiles(g.canonicalCwd, params.query, limit),
       };
+    },
+
+    "workspace.listDirectory": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      if (!g) {
+        return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      }
+      const params = ctx.params as { path: string };
+      try {
+        return { result: await fileService.listDirectory(g.canonicalCwd, params.path) };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INVALID_REQUEST",
+            error instanceof Error ? error.message : "Unable to list directory",
+          ),
+        };
+      }
+    },
+
+    "workspace.setDirectoryWatches": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      const server = factory.getServer();
+      if (!g || !server) {
+        return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      }
+      const params = ctx.params as { paths: string[] };
+      const root = g.canonicalCwd;
+      const workspaceId = g.workspaceId;
+      const workspaceRevision = g.revision;
+      try {
+        const paths = await fileService.setDirectoryWatches(root, params.paths, (directories) => {
+          const current = factory.getGraph();
+          const currentServer = factory.getServer();
+          if (
+            !current ||
+            !currentServer ||
+            current.canonicalCwd !== root ||
+            current.workspaceId !== workspaceId ||
+            current.revision !== workspaceRevision
+          ) {
+            return;
+          }
+          currentServer.emit("workspace.filesChanged", { directories });
+        });
+        return { result: { paths } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "INVALID_REQUEST",
+            error instanceof Error ? error.message : "Unable to watch directories",
+          ),
+        };
+      }
     },
   };
 }

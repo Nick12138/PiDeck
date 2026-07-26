@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
+import type { TerminalProfileId } from "@pideck/protocol";
 import { XtermSurface } from "./XtermSurface";
 
 const INPUT_FLUSH_MS = 8;
@@ -30,6 +31,8 @@ type ShellTerminalCreateResult = {
   terminalId: string;
   title: string;
   cwd: string;
+  resolvedProfileId: TerminalProfileId;
+  warning?: string;
 };
 
 export type ShellTerminalStatus = {
@@ -44,7 +47,9 @@ export type ShellTerminalProps = {
   cwd: string;
   generation: number;
   visible: boolean;
+  profileId: TerminalProfileId;
   onStatus: (status: ShellTerminalStatus) => void;
+  onWarning?: (message: string) => void;
 };
 
 function cwdName(cwd: string): string {
@@ -55,7 +60,9 @@ function cwdName(cwd: string): string {
 async function attachShell(
   terminal: Terminal,
   cwd: string,
+  profileId: TerminalProfileId,
   onStatus: (status: ShellTerminalStatus) => void,
+  onWarning?: (message: string) => void,
 ): Promise<() => Promise<void>> {
   let terminalId: string | undefined;
   let shellTitle = "Shell";
@@ -124,10 +131,12 @@ async function attachShell(
       cwd,
       cols: terminal.cols,
       rows: terminal.rows,
+      profileId,
       onEvent: channel,
     });
     terminalId = result.terminalId;
     shellTitle = result.title;
+    if (result.warning) onWarning?.(result.warning);
     flushInput();
     if (disposed) {
       await invoke("shell_terminal_close", { terminalId }).catch(() => false);
@@ -160,12 +169,19 @@ async function attachShell(
   };
 }
 
-export function ShellTerminal({ cwd, generation, visible, onStatus }: ShellTerminalProps) {
+export function ShellTerminal({
+  cwd,
+  generation,
+  visible,
+  profileId,
+  onStatus,
+  onWarning,
+}: ShellTerminalProps) {
   return (
     <XtermSurface
       sessionKey={`shell:${generation}`}
       visible={visible}
-      connect={(terminal) => attachShell(terminal, cwd, onStatus)}
+      connect={(terminal) => attachShell(terminal, cwd, profileId, onStatus, onWarning)}
     />
   );
 }

@@ -3,6 +3,7 @@ export const HOST_EVENT_NAMES = [
   "host.statusChanged",
   "host.fatal",
   "workspace.changed",
+  "workspace.filesChanged",
   "session.snapshot",
   "session.infoChanged",
   "session.runtimeChanged",

@@ -487,6 +487,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
+            terminalProfile: "auto",
           });
           applyTheme("dark");
           store.pushNotification(

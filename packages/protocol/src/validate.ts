@@ -231,6 +231,17 @@ export function validateRequestParams<M extends HostMethod>(
             params.limit <= 5000))
         ? ok(params)
         : fail("invalid workspace.searchFiles params", { method });
+    case "workspace.listDirectory":
+      return exactObject(params, ["path"]) && isString(params.path)
+        ? ok(params)
+        : fail("invalid workspace.listDirectory params", { method });
+    case "workspace.setDirectoryWatches":
+      return exactObject(params, ["paths"]) &&
+        Array.isArray(params.paths) &&
+        params.paths.length <= 128 &&
+        params.paths.every(isString)
+        ? ok(params)
+        : fail("invalid workspace.setDirectoryWatches params", { method });
     case "workspace.setCurrent":
       return exactObject(params, ["cwd"]) && isNonEmptyString(params.cwd)
         ? ok(params)

@@ -84,6 +84,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "workspace.setCurrent": { cwd: "C:/tmp" },
   "workspace.getCurrent": null,
   "workspace.searchFiles": { query: "src" },
+  "workspace.listDirectory": { path: "src" },
+  "workspace.setDirectoryWatches": { paths: ["", "src"] },
   "session.list": null,
   "session.create": {},
   "session.open": { sessionPath: "/s.jsonl" },
@@ -229,6 +231,10 @@ function invalidParams(method: HostMethod): unknown {
       return { path: "x" }; // missing cwd
     case "workspace.searchFiles":
       return { query: 1 };
+    case "workspace.listDirectory":
+      return { path: 1 };
+    case "workspace.setDirectoryWatches":
+      return { paths: ["src", 1] };
     case "session.create":
       return "nope";
     case "session.open":
@@ -591,6 +597,7 @@ describe("protocol coverage — events", () => {
       canonicalCwd: "/p",
       servicesReady: true,
     },
+    "workspace.filesChanged": { directories: ["", "src"] },
     "session.snapshot": null,
     "session.infoChanged": { sessionId: SESSION_ID, name: "n" },
     "session.runtimeChanged": {

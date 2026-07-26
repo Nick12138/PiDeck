@@ -27,6 +27,7 @@ import {
   captureRequestGeneration,
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
+import { subscribeComposerInsert } from "../../lib/composer-insert";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -192,6 +193,33 @@ export function Composer({
   const fileSearchSeq = useRef(0);
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
+
+  useEffect(
+    () =>
+      subscribeComposerInsert((insert) => {
+        const current = useAppStore.getState();
+        const target = current.session;
+        if (!target) return false;
+        const draft = current.sessionDrafts[target.sessionId] ?? "";
+        const textarea = textareaRef.current;
+        const start = textarea?.selectionStart ?? draft.length;
+        const end = textarea?.selectionEnd ?? start;
+        const before = draft.slice(0, start);
+        const after = draft.slice(end);
+        const prefix = before && !/\s$/.test(before) ? " " : "";
+        const suffix = after && !/^\s/.test(after) ? " " : "";
+        const inserted = `${prefix}${insert}${suffix}`;
+        const next = before + inserted + after;
+        current.setSessionDraft(target.sessionId, next);
+        const caret = before.length + inserted.length;
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+          textareaRef.current?.setSelectionRange(caret, caret);
+        });
+        return true;
+      }),
+    [],
+  );
 
   // Attachments are per-conversation; drop them when the session changes.
   useEffect(() => {

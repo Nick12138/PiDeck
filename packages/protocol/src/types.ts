@@ -56,6 +56,13 @@ export type WorkspaceSnapshot = {
   servicesReady: boolean;
 };
 
+export type WorkspaceDirectoryEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "dir";
+  symlink: boolean;
+};
+
 export type SessionSummary = {
   sessionId: string;
   sessionPath: string;
@@ -517,8 +524,21 @@ export type DesktopSettings = {
   lastSessionPath?: string;
   agentDir?: string;
   autoRestartHostOnce: boolean;
+  terminalProfile: TerminalProfileId;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
 };
+
+export type TerminalProfileId =
+  | "auto"
+  | "pwsh"
+  | "windows-powershell"
+  | "cmd"
+  | "git-bash"
+  | "wsl-default"
+  | "zsh"
+  | "bash"
+  | "fish"
+  | "sh";
 
 export type DesktopSettingsPatch = Partial<DesktopSettings>;

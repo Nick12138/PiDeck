@@ -18,6 +18,7 @@ import type {
 import type {
   HostStatusSnapshot,
   WorkspaceSnapshot,
+  WorkspaceDirectoryEntry,
   SessionSnapshot,
   SessionSummary,
   SessionStatsSnapshot,
@@ -57,6 +58,8 @@ export type HostContextMap = {
   "workspace.setCurrent": WorkspaceContext;
   "workspace.getCurrent": WorkspaceContext;
   "workspace.searchFiles": WorkspaceContext;
+  "workspace.listDirectory": WorkspaceContext;
+  "workspace.setDirectoryWatches": WorkspaceContext;
   "session.list": WorkspaceContext;
   "session.create": NullableSessionContext;
   "session.open": NullableSessionContext;
@@ -121,6 +124,8 @@ export type HostRequestParams = {
   "workspace.setCurrent": { cwd: string };
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
+  "workspace.listDirectory": { path: string };
+  "workspace.setDirectoryWatches": { paths: string[] };
   "session.list": null;
   "session.create": { name?: string };
   "session.open": { sessionPath: string };
@@ -211,6 +216,11 @@ export type HostResultMap = {
     files: { path: string; kind: "file" | "dir" }[];
     truncated: boolean;
   };
+  "workspace.listDirectory": {
+    path: string;
+    entries: WorkspaceDirectoryEntry[];
+  };
+  "workspace.setDirectoryWatches": { paths: string[] };
   "session.list": { workspaceId: string; items: SessionSummary[] };
   "session.create": SessionSnapshot;
   "session.open": SessionSnapshot;
@@ -307,6 +317,7 @@ export type HostEventPayloadMap = {
   "host.statusChanged": HostStatusSnapshot;
   "host.fatal": { error: HostError };
   "workspace.changed": WorkspaceSnapshot;
+  "workspace.filesChanged": { directories: string[] };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };
   "session.runtimeChanged": {

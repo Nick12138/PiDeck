@@ -30,9 +30,35 @@ pub struct ShellTerminalCreateResult {
     pub terminal_id: String,
     pub title: String,
     pub cwd: String,
+    pub resolved_profile_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProfileSummary {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProfileCatalog {
+    pub profiles: Vec<ShellProfileSummary>,
+    pub automatic_profile: ShellProfileSummary,
+}
+
+#[derive(Clone)]
+struct DetectedShellProfile {
+    id: &'static str,
+    executable: PathBuf,
+    label: &'static str,
 }
 
 struct ResolvedShell {
+    profile_id: String,
     executable: PathBuf,
     args: Vec<String>,
     label: String,
@@ -55,9 +81,10 @@ impl ShellTerminalSession {
         cwd: &Path,
         cols: u16,
         rows: u16,
+        profile_id: &str,
         on_event: Channel<ShellTerminalEvent>,
-    ) -> Result<(Self, String), String> {
-        let shell = resolve_default_shell()?;
+    ) -> Result<(Self, ResolvedShell, Option<String>), String> {
+        let (shell, warning) = resolve_shell(profile_id, cwd)?;
         let pair = native_pty_system()
             .openpty(pty_size(cols, rows))
             .map_err(|error| format!("open PTY: {error}"))?;
@@ -160,7 +187,8 @@ impl ShellTerminalSession {
                 #[cfg(unix)]
                 process_group_id,
             },
-            shell.label,
+            shell,
+            warning,
         ))
     }
 
@@ -223,21 +251,25 @@ impl ShellTerminalManager {
         raw_cwd: &str,
         cols: u16,
         rows: u16,
+        profile_id: &str,
         on_event: Channel<ShellTerminalEvent>,
     ) -> Result<ShellTerminalCreateResult, String> {
         let cwd = validate_terminal_cwd(raw_cwd)?;
-        let (session, shell_title) = ShellTerminalSession::spawn(
+        let (session, shell_title, warning) = ShellTerminalSession::spawn(
             &cwd,
             clamp(cols, MIN_COLS, MAX_COLS),
             clamp(rows, MIN_ROWS, MAX_ROWS),
+            profile_id,
             on_event,
         )?;
         let terminal_id = Uuid::new_v4().to_string();
         self.sessions.insert(terminal_id.clone(), session);
         Ok(ShellTerminalCreateResult {
             terminal_id,
-            title: shell_title,
+            title: shell_title.label,
             cwd: cwd.to_string_lossy().into_owned(),
+            resolved_profile_id: shell_title.profile_id,
+            warning,
         })
     }
 
@@ -319,65 +351,207 @@ pub(crate) fn validate_terminal_cwd(raw: &str) -> Result<PathBuf, String> {
     Ok(cwd)
 }
 
+const SUPPORTED_PROFILE_IDS: &[&str] = &[
+    "auto",
+    "pwsh",
+    "windows-powershell",
+    "cmd",
+    "git-bash",
+    "wsl-default",
+    "zsh",
+    "bash",
+    "fish",
+    "sh",
+];
+
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .map(|dir| dir.join(name))
+        .find(|path| path.is_file())
+}
+
+fn push_profile(
+    profiles: &mut Vec<DetectedShellProfile>,
+    id: &'static str,
+    label: &'static str,
+    candidates: impl IntoIterator<Item = PathBuf>,
+) {
+    if profiles.iter().any(|profile| profile.id == id) {
+        return;
+    }
+    if let Some(executable) = candidates.into_iter().find(|path| path.is_file()) {
+        profiles.push(DetectedShellProfile {
+            id,
+            executable,
+            label,
+        });
+    }
+}
+
 #[cfg(windows)]
-fn resolve_default_shell() -> Result<ResolvedShell, String> {
-    let mut candidates: Vec<(PathBuf, Vec<String>, &str)> = Vec::new();
+fn detect_platform_shells() -> Vec<DetectedShellProfile> {
+    let mut profiles = Vec::new();
+    let mut pwsh = Vec::new();
     for var in ["ProgramW6432", "ProgramFiles"] {
         if let Some(root) = std::env::var_os(var) {
-            candidates.push((
-                PathBuf::from(root).join("PowerShell/7/pwsh.exe"),
-                vec!["-NoLogo".into()],
-                "PowerShell",
-            ));
+            pwsh.push(PathBuf::from(root).join("PowerShell/7/pwsh.exe"));
         }
     }
+    if let Some(path) = find_on_path("pwsh.exe") {
+        pwsh.push(path);
+    }
+    push_profile(&mut profiles, "pwsh", "PowerShell 7", pwsh);
+
     if let Some(root) = std::env::var_os("SystemRoot") {
-        candidates.push((
-            PathBuf::from(&root).join("System32/WindowsPowerShell/v1.0/powershell.exe"),
-            vec!["-NoLogo".into()],
+        let root = PathBuf::from(root);
+        push_profile(
+            &mut profiles,
+            "windows-powershell",
             "Windows PowerShell",
-        ));
-        candidates.push((
-            PathBuf::from(root).join("System32/cmd.exe"),
-            Vec::new(),
+            [root.join("System32/WindowsPowerShell/v1.0/powershell.exe")],
+        );
+        push_profile(
+            &mut profiles,
+            "cmd",
             "Command Prompt",
-        ));
+            [root.join("System32/cmd.exe")],
+        );
+        push_profile(
+            &mut profiles,
+            "wsl-default",
+            "WSL (default distribution)",
+            [root.join("System32/wsl.exe")],
+        );
     }
-    if let Some(comspec) = std::env::var_os("ComSpec") {
-        candidates.push((PathBuf::from(comspec), Vec::new(), "Command Prompt"));
+    let mut git_bash = Vec::new();
+    for var in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(var) {
+            git_bash.push(PathBuf::from(root).join("Git/bin/bash.exe"));
+        }
     }
-    candidates
-        .into_iter()
-        .find(|(path, _, _)| path.is_file())
-        .map(|(executable, args, label)| ResolvedShell {
-            executable,
-            args,
-            label: label.into(),
-        })
-        .ok_or_else(|| "No supported Windows shell was found".into())
+    push_profile(&mut profiles, "git-bash", "Git Bash", git_bash);
+    profiles
 }
 
 #[cfg(unix)]
-fn resolve_default_shell() -> Result<ResolvedShell, String> {
-    let configured = std::env::var_os("SHELL").map(PathBuf::from);
-    let executable = configured
+fn detect_platform_shells() -> Vec<DetectedShellProfile> {
+    let mut profiles = Vec::new();
+    for (id, label, paths) in [
+        ("zsh", "Zsh", vec![PathBuf::from("/bin/zsh")]),
+        ("bash", "Bash", vec![PathBuf::from("/bin/bash")]),
+        ("fish", "Fish", find_on_path("fish").into_iter().collect()),
+        ("sh", "POSIX Shell", vec![PathBuf::from("/bin/sh")]),
+        (
+            "pwsh",
+            "PowerShell 7",
+            find_on_path("pwsh").into_iter().collect(),
+        ),
+    ] {
+        push_profile(&mut profiles, id, label, paths);
+    }
+    profiles
+}
+
+fn shell_args(profile_id: &str, cwd: &Path) -> Vec<String> {
+    match profile_id {
+        "pwsh" | "windows-powershell" => vec!["-NoLogo".into()],
+        "git-bash" => vec!["--login".into(), "-i".into()],
+        "wsl-default" => vec!["--cd".into(), cwd.to_string_lossy().into_owned()],
+        "zsh" | "bash" | "fish" | "sh" => vec!["-l".into()],
+        _ => Vec::new(),
+    }
+}
+
+fn from_detected(profile: DetectedShellProfile, cwd: &Path) -> ResolvedShell {
+    ResolvedShell {
+        profile_id: profile.id.into(),
+        executable: profile.executable,
+        args: shell_args(profile.id, cwd),
+        label: profile.label.into(),
+    }
+}
+
+fn resolve_default_shell(cwd: &Path) -> Result<ResolvedShell, String> {
+    #[cfg(unix)]
+    if let Some(executable) = std::env::var_os("SHELL")
+        .map(PathBuf::from)
         .filter(|path| path.is_absolute() && path.is_file())
-        .or_else(|| {
-            ["/bin/zsh", "/bin/bash", "/bin/sh"]
-                .into_iter()
-                .map(PathBuf::from)
-                .find(|path| path.is_file())
-        })
-        .ok_or_else(|| "No supported login shell was found".to_string())?;
-    let label = executable
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("Shell")
-        .to_string();
-    Ok(ResolvedShell {
-        executable,
-        args: vec!["-l".into()],
-        label,
+    {
+        let label = executable
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Shell")
+            .to_string();
+        let profile_id = match label.as_str() {
+            "zsh" | "bash" | "fish" | "sh" | "pwsh" => label.clone(),
+            _ => "auto".into(),
+        };
+        return Ok(ResolvedShell {
+            args: shell_args(&profile_id, cwd),
+            executable,
+            label,
+            profile_id,
+        });
+    }
+
+    let profiles = detect_platform_shells();
+    #[cfg(windows)]
+    let preferred = ["pwsh", "windows-powershell", "cmd"];
+    #[cfg(unix)]
+    let preferred = ["zsh", "bash", "sh"];
+    preferred
+        .into_iter()
+        .find_map(|id| profiles.iter().find(|profile| profile.id == id).cloned())
+        .map(|profile| from_detected(profile, cwd))
+        .ok_or_else(|| "No supported shell was found".into())
+}
+
+fn resolve_shell(
+    requested_profile_id: &str,
+    cwd: &Path,
+) -> Result<(ResolvedShell, Option<String>), String> {
+    if !SUPPORTED_PROFILE_IDS.contains(&requested_profile_id) {
+        return Err(format!(
+            "Unsupported terminal profile: {requested_profile_id}"
+        ));
+    }
+    if requested_profile_id == "auto" {
+        return Ok((resolve_default_shell(cwd)?, None));
+    }
+    if let Some(profile) = detect_platform_shells()
+        .into_iter()
+        .find(|profile| profile.id == requested_profile_id)
+    {
+        return Ok((from_detected(profile, cwd), None));
+    }
+    let fallback = resolve_default_shell(cwd)?;
+    Ok((
+        fallback,
+        Some(format!(
+            "The selected shell '{requested_profile_id}' is unavailable; opened Automatic instead"
+        )),
+    ))
+}
+
+pub fn shell_profile_catalog() -> Result<ShellProfileCatalog, String> {
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    let automatic = resolve_default_shell(&cwd)?;
+    Ok(ShellProfileCatalog {
+        profiles: detect_platform_shells()
+            .into_iter()
+            .map(|profile| ShellProfileSummary {
+                id: profile.id.into(),
+                label: profile.label.into(),
+                path: profile.executable.to_string_lossy().into_owned(),
+            })
+            .collect(),
+        automatic_profile: ShellProfileSummary {
+            id: "auto".into(),
+            label: automatic.label,
+            path: automatic.executable.to_string_lossy().into_owned(),
+        },
     })
 }
 

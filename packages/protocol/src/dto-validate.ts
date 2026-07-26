@@ -973,6 +973,29 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         )
         ? null
         : "invalid workspace.searchFiles result";
+    case "workspace.listDirectory":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["path", "entries"]) &&
+        isString(result.path) &&
+        Array.isArray(result.entries) &&
+        result.entries.every(
+          (entry) =>
+            isPlainObject(entry) &&
+            hasExactKeys(entry, ["name", "path", "kind", "symlink"]) &&
+            isString(entry.name) &&
+            isString(entry.path) &&
+            (entry.kind === "file" || entry.kind === "dir") &&
+            isBoolean(entry.symlink),
+        )
+        ? null
+        : "invalid workspace.listDirectory result";
+    case "workspace.setDirectoryWatches":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["paths"]) &&
+        Array.isArray(result.paths) &&
+        result.paths.every(isString)
+        ? null
+        : "invalid workspace.setDirectoryWatches result";
     case "session.getCommands":
       return isPlainObject(result) &&
         hasExactKeys(result, ["commands"]) &&
@@ -1210,6 +1233,13 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         : "invalid host.fatal payload";
     case "workspace.changed":
       return isWorkspaceSnapshot(payload) ? null : "invalid workspace.changed payload";
+    case "workspace.filesChanged":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["directories"]) &&
+        Array.isArray(payload.directories) &&
+        payload.directories.every(isString)
+        ? null
+        : "invalid workspace.filesChanged payload";
     case "session.snapshot":
       return payload === null || isSessionSnapshot(payload) ? null : "invalid session.snapshot payload";
     case "session.infoChanged":

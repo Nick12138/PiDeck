@@ -2,16 +2,56 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { applyTheme } from "../../lib/theme";
 import { hostClient } from "../../lib/bridge/host-client";
-import { ArrowLeft, ChartColumn, KeyRound, Package, Settings2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChartColumn,
+  KeyRound,
+  Package,
+  RefreshCw,
+  Settings2,
+  SquareTerminal,
+} from "lucide-react";
+import type { TerminalProfileId } from "@pideck/protocol";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
+
+type ShellProfileSummary = {
+  id: TerminalProfileId;
+  label: string;
+  path: string;
+};
+
+type ShellProfileCatalog = {
+  profiles: ShellProfileSummary[];
+  automaticProfile: ShellProfileSummary;
+};
 
 function GeneralSettings() {
   const host = useAppStore((s) => s.host);
   const desktopSettings = useAppStore((s) => s.desktopSettings);
   const setDesktopSettings = useAppStore((s) => s.setDesktopSettings);
   const pushNotification = useAppStore((s) => s.pushNotification);
+  const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
+  const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
+  const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
+
+  async function loadShellProfiles() {
+    setShellCatalogLoading(true);
+    setShellCatalogError(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      setShellCatalog(await invoke<ShellProfileCatalog>("shell_terminal_profiles"));
+    } catch (error) {
+      setShellCatalogError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setShellCatalogLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadShellProfiles();
+  }, []);
 
   async function patchDesktop(patch: Record<string, unknown>) {
     try {
@@ -104,6 +144,77 @@ function GeneralSettings() {
                 }
               />
             </label>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted">
+            <SquareTerminal size={15} />
+            Terminal
+          </h2>
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <label htmlFor="default-shell" className="text-sm">
+                Default shell
+              </label>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <select
+                  id="default-shell"
+                  className="min-w-44 max-w-72 rounded border border-border bg-surface px-2 py-1 text-xs"
+                  value={desktopSettings?.terminalProfile ?? "auto"}
+                  disabled={shellCatalogLoading && !shellCatalog}
+                  onChange={(event) =>
+                    void patchDesktop({
+                      terminalProfile: event.target.value as TerminalProfileId,
+                    })
+                  }
+                >
+                  <option value="auto">
+                    Automatic
+                    {shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""}
+                  </option>
+                  {shellCatalog?.profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                  {desktopSettings?.terminalProfile &&
+                    desktopSettings.terminalProfile !== "auto" &&
+                    !shellCatalog?.profiles.some(
+                      (profile) => profile.id === desktopSettings.terminalProfile,
+                    ) && (
+                      <option value={desktopSettings.terminalProfile} disabled>
+                        {desktopSettings.terminalProfile} (unavailable)
+                      </option>
+                    )}
+                </select>
+                <button
+                  type="button"
+                  title="Detect shells again"
+                  aria-label="Detect shells again"
+                  disabled={shellCatalogLoading}
+                  className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                  onClick={() => void loadShellProfiles()}
+                >
+                  <RefreshCw size={14} className={shellCatalogLoading ? "animate-spin" : ""} />
+                </button>
+              </div>
+            </div>
+            {shellCatalogError && (
+              <p role="status" className="text-xs text-warning">
+                {shellCatalogError}
+              </p>
+            )}
+            {shellCatalog && (
+              <p className="truncate text-right font-mono text-[11px] text-muted">
+                {desktopSettings?.terminalProfile === "auto" ||
+                !desktopSettings?.terminalProfile
+                  ? shellCatalog.automaticProfile.path
+                  : shellCatalog.profiles.find(
+                      (profile) => profile.id === desktopSettings.terminalProfile,
+                    )?.path}
+              </p>
+            )}
           </div>
         </section>
 

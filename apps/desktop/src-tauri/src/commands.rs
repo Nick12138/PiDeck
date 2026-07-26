@@ -1,9 +1,12 @@
 use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
-use crate::shell_terminal::{ShellTerminalCreateResult, ShellTerminalEvent};
+use crate::browser_surface::{BrowserSurfaceBounds, BrowserSurfaceSnapshot};
+use crate::shell_terminal::{
+    shell_profile_catalog, ShellProfileCatalog, ShellTerminalCreateResult, ShellTerminalEvent,
+};
 use crate::AppState;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, AppHandle, State};
 
 #[tauri::command]
 pub async fn desktop_settings_get(
@@ -58,10 +61,16 @@ pub async fn shell_terminal_create(
     cwd: String,
     cols: u16,
     rows: u16,
+    profile_id: String,
     on_event: Channel<ShellTerminalEvent>,
 ) -> Result<ShellTerminalCreateResult, String> {
     let mut terminals = state.terminals.lock().await;
-    terminals.create(&cwd, cols, rows, on_event)
+    terminals.create(&cwd, cols, rows, &profile_id, on_event)
+}
+
+#[tauri::command]
+pub async fn shell_terminal_profiles() -> Result<ShellProfileCatalog, String> {
+    shell_profile_catalog()
 }
 
 #[tauri::command]
@@ -92,6 +101,77 @@ pub async fn shell_terminal_close(
 ) -> Result<bool, String> {
     let mut terminals = state.terminals.lock().await;
     Ok(terminals.close(&terminal_id))
+}
+
+#[tauri::command]
+pub async fn browser_surface_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    surface_id: String,
+    url: String,
+    bounds: BrowserSurfaceBounds,
+    visible: bool,
+) -> Result<BrowserSurfaceSnapshot, String> {
+    let mut browsers = state.browsers.lock().await;
+    browsers.create(&app, &surface_id, &url, bounds, visible)
+}
+
+#[tauri::command]
+pub async fn browser_surface_navigate(
+    state: State<'_, AppState>,
+    surface_id: String,
+    url: String,
+) -> Result<String, String> {
+    let browsers = state.browsers.lock().await;
+    browsers.navigate(&surface_id, &url)
+}
+
+#[tauri::command]
+pub async fn browser_surface_control(
+    state: State<'_, AppState>,
+    surface_id: String,
+    action: String,
+) -> Result<(), String> {
+    let browsers = state.browsers.lock().await;
+    browsers.control(&surface_id, &action)
+}
+
+#[tauri::command]
+pub async fn browser_surface_set_bounds(
+    state: State<'_, AppState>,
+    surface_id: String,
+    bounds: BrowserSurfaceBounds,
+) -> Result<(), String> {
+    let browsers = state.browsers.lock().await;
+    browsers.set_bounds(&surface_id, bounds)
+}
+
+#[tauri::command]
+pub async fn browser_surface_set_visible(
+    state: State<'_, AppState>,
+    surface_id: String,
+    visible: bool,
+) -> Result<(), String> {
+    let browsers = state.browsers.lock().await;
+    browsers.set_visible(&surface_id, visible)
+}
+
+#[tauri::command]
+pub async fn browser_surface_focus(
+    state: State<'_, AppState>,
+    surface_id: String,
+) -> Result<(), String> {
+    let browsers = state.browsers.lock().await;
+    browsers.focus(&surface_id)
+}
+
+#[tauri::command]
+pub async fn browser_surface_close(
+    state: State<'_, AppState>,
+    surface_id: String,
+) -> Result<bool, String> {
+    let mut browsers = state.browsers.lock().await;
+    browsers.close(&surface_id)
 }
 
 /// What the file manager should do with a validated local path.
@@ -157,7 +237,21 @@ fn open_in_file_manager(target: OpenTarget) -> Result<(), String> {
         cmd.spawn().map_err(|e| e.to_string())?;
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        match &target {
+            OpenTarget::Directory(dir) => {
+                cmd.arg(dir);
+            }
+            OpenTarget::Reveal(file) => {
+                cmd.arg("-R").arg(file);
+            }
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         let dir = match &target {
             OpenTarget::Directory(dir) => dir.clone(),
