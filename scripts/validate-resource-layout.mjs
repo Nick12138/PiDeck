@@ -6,11 +6,30 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import {
+  assertPiPackageTree,
+  assertReleaseProductionManifest,
+  assertReleaseSdkEvidence,
+  loadReleaseSdkEvidence,
+} from "./release-sdk-evidence.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const res = join(root, "apps/desktop/src-tauri/resources");
 const errors = [];
 const info = {};
+const runtimeLock = JSON.parse(
+  readFileSync(join(root, "scripts/release-runtime.lock.json"), "utf8"),
+);
+const protocolVersion = JSON.parse(
+  readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
+).version;
+let expectedSdkEvidence = null;
+try {
+  expectedSdkEvidence = loadReleaseSdkEvidence(root, runtimeLock);
+  info.sdkEvidence = expectedSdkEvidence;
+} catch (error) {
+  errors.push(error instanceof Error ? error.message : String(error));
+}
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -78,10 +97,16 @@ if (existsSync(join(res, "pi-host/package.json"))) {
   info.hostPackageName = n;
 }
 
-if (existsSync(expandedSdk)) {
-  const v = JSON.parse(readFileSync(expandedSdk, "utf8")).version;
-  if (v !== "0.80.7") errors.push(`SDK version ${v} !== 0.80.7`);
-  info.sdkVersion = v;
+if (existsSync(expandedSdk) && expectedSdkEvidence) {
+  try {
+    info.piPackageVersions = assertPiPackageTree(
+      hostRoot,
+      expectedSdkEvidence,
+      "expanded staged Host tree",
+    );
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
 }
 
 if (existsSync(join(res, "pi-host/STAGING.json"))) {
@@ -89,8 +114,43 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
   if (s.usedProcessExecPath === true) errors.push("STAGING usedProcessExecPath must be false");
   if (s.usedGlobalNpm === true) errors.push("STAGING usedGlobalNpm must be false");
   if (s.unlockedNpmInstall === true) errors.push("STAGING unlockedNpmInstall must be false");
-  if (s.pnpmLockVerified !== true && s.pnpmLockSha256) {
-    // optional
+  if (s.pnpmLockVerified !== true) errors.push("STAGING pnpmLockVerified must be true");
+  if (expectedSdkEvidence) {
+    try {
+      assertReleaseSdkEvidence(s.sdkEvidence, expectedSdkEvidence, "STAGING SDK evidence");
+      if (s.sdkVersion !== expectedSdkEvidence.sdkVersion) {
+        errors.push(
+          `STAGING sdkVersion ${s.sdkVersion ?? "missing"} !== ${expectedSdkEvidence.sdkVersion}`,
+        );
+      }
+      if (s.pnpmLockSha256 !== expectedSdkEvidence.pnpmLock.sha256) {
+        errors.push(
+          `STAGING pnpmLockSha256 ${s.pnpmLockSha256 ?? "missing"} !== ${expectedSdkEvidence.pnpmLock.sha256}`,
+        );
+      }
+      if (s.pnpmLockSha256Expected !== expectedSdkEvidence.pnpmLock.sha256) {
+        errors.push(
+          `STAGING pnpmLockSha256Expected ${s.pnpmLockSha256Expected ?? "missing"} !== ${expectedSdkEvidence.pnpmLock.sha256}`,
+        );
+      }
+      const releaseManifest = JSON.parse(
+        readFileSync(join(res, "pi-host/package.json"), "utf8"),
+      );
+      assertReleaseProductionManifest(
+        releaseManifest,
+        expectedSdkEvidence,
+        { "@pideck/protocol": protocolVersion },
+        "staged release Host manifest",
+      );
+      assertReleaseProductionManifest(
+        { dependencies: s.productionDependencies },
+        expectedSdkEvidence,
+        { "@pideck/protocol": protocolVersion },
+        "STAGING production dependency evidence",
+      );
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
   }
   if (compacted && s.nodeModulesZipSha256 !== info.nodeModulesZipSha256) {
     errors.push(
@@ -98,7 +158,9 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
     );
   }
   info.staging = {
-    sdk: s.sdk,
+    sdkVersion: s.sdkVersion,
+    sdkEvidence: s.sdkEvidence ?? null,
+    productionDependencies: s.productionDependencies ?? null,
     usedProcessExecPath: s.usedProcessExecPath,
     usedGlobalNpm: s.usedGlobalNpm,
     unlockedNpmInstall: s.unlockedNpmInstall,
@@ -107,7 +169,6 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
     nodeModulesZipSha256: s.nodeModulesZipSha256 ?? null,
     pnpmLockSha256: s.pnpmLockSha256 ?? null,
     pnpmLockVerified: s.pnpmLockVerified ?? false,
-    runtimeLockSdk: s.runtimeLockSdk ?? null,
   };
 }
 

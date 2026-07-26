@@ -11,11 +11,33 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  assertPiPackageTree,
+  assertReleaseProductionManifest,
+  assertReleaseSdkEvidence,
+  loadReleaseSdkEvidence,
+} from "./release-sdk-evidence.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const resources = join(root, "apps", "desktop", "src-tauri", "resources");
 const lock = JSON.parse(
   readFileSync(join(root, "scripts", "release-runtime.lock.json"), "utf8"),
+);
+const sdkEvidence = loadReleaseSdkEvidence(root, lock);
+const stagedHostRoot = join(resources, "pi-host");
+const staging = JSON.parse(readFileSync(join(stagedHostRoot, "STAGING.json"), "utf8"));
+const stagedManifest = JSON.parse(
+  readFileSync(join(stagedHostRoot, "package.json"), "utf8"),
+);
+const protocolVersion = JSON.parse(
+  readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
+).version;
+assertReleaseSdkEvidence(staging.sdkEvidence, sdkEvidence, "STAGING SDK evidence");
+assertReleaseProductionManifest(
+  stagedManifest,
+  sdkEvidence,
+  { "@pideck/protocol": protocolVersion },
+  "staged release Host manifest",
 );
 const nodePath =
   process.env.PIDECK_STAGED_NODE ?? join(resources, "node", "node.exe");
@@ -183,9 +205,10 @@ try {
   const hostInstanceId = ready.hostInstanceId ?? readyStatus?.hostInstanceId;
   assert(typeof hostInstanceId === "string", "host.ready did not include hostInstanceId");
   assert(
-    readyStatus?.sdkVersion === lock.sdk,
-    `Expected SDK ${lock.sdk}, got ${readyStatus?.sdkVersion}`,
+    readyStatus?.sdkVersion === sdkEvidence.sdkVersion,
+    `Expected SDK ${sdkEvidence.sdkVersion}, got ${readyStatus?.sdkVersion}`,
   );
+  assertPiPackageTree(stagedHostRoot, sdkEvidence, "smoke-extracted staged Host tree");
   assert(
     readyStatus?.nodeVersion === `v${expectedNodeVersion}`,
     `Expected Node v${expectedNodeVersion}, got ${readyStatus?.nodeVersion}`,

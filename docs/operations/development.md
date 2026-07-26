@@ -18,7 +18,9 @@ The repository does not currently claim Linux support.
 pnpm install --frozen-lockfile
 ```
 
-Lockfile: `pnpm-lock.yaml` (committed). SDK pin: `@earendil-works/pi-coding-agent@0.80.7`.
+Lockfile: `pnpm-lock.yaml` (committed). The Pi SDK pins are the exact
+`@earendil-works/pi-*` production dependencies in `packages/pi-host/package.json`;
+release scripts derive and validate the installed SDK family from that manifest.
 
 ## SDK patch (pnpm patch)
 

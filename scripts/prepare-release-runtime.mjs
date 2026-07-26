@@ -62,7 +62,6 @@ function extractZipWindows(zipPath, destDir) {
 }
 
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-if (lock.sdk !== "0.80.7") die(`lock sdk must be 0.80.7, got ${lock.sdk}`);
 if (lock.node.os !== "win" || lock.node.arch !== "x64") {
   die("R1 lock is Windows x64 only for P0");
 }
@@ -213,7 +212,6 @@ function stageFrom(srcRoot) {
     archiveSha256: hash,
     stagedFrom: srcRoot,
     nodeExe,
-    sdk: lock.sdk,
     preparedAt: new Date().toISOString(),
     usedProcessExecPath: false,
   };

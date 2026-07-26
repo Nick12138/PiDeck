@@ -19,6 +19,11 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { inspectWindowsInstaller } from "./windows-installer-integrity.mjs";
+import {
+  assertReleaseProductionManifest,
+  assertReleaseSdkEvidence,
+  loadReleaseSdkEvidence,
+} from "./release-sdk-evidence.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "apps/desktop/src-tauri/target/release-staging");
@@ -182,6 +187,23 @@ const criticalResourcePaths = [
 function writeResourceManifest(resourceDir) {
   const runtimeLockPath = join(root, "scripts", "release-runtime.lock.json");
   const runtimeLock = JSON.parse(readFileSync(runtimeLockPath, "utf8"));
+  const sdkEvidence = loadReleaseSdkEvidence(root, runtimeLock);
+  const staging = JSON.parse(
+    readFileSync(join(resourceDir, "pi-host", "STAGING.json"), "utf8"),
+  );
+  assertReleaseSdkEvidence(staging.sdkEvidence, sdkEvidence, "STAGING SDK evidence");
+  const protocolVersion = JSON.parse(
+    readFileSync(join(root, "packages", "protocol", "package.json"), "utf8"),
+  ).version;
+  const releaseHostManifest = JSON.parse(
+    readFileSync(join(resourceDir, "pi-host", "package.json"), "utf8"),
+  );
+  assertReleaseProductionManifest(
+    releaseHostManifest,
+    sdkEvidence,
+    { "@pideck/protocol": protocolVersion },
+    "staged release Host manifest",
+  );
   const files = criticalResourcePaths.map((relativePath) => {
     const path = join(resourceDir, ...relativePath.split("/"));
     if (!existsSync(path)) throw new Error(`critical release resource missing: ${relativePath}`);
@@ -189,9 +211,10 @@ function writeResourceManifest(resourceDir) {
     return { path: relativePath, sha256: sha256File(path), size: stat.size };
   });
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
-    sdkVersion: runtimeLock.sdk,
+    sdkVersion: sdkEvidence.sdkVersion,
+    sdkEvidence,
     nodeVersion: runtimeLock.node.version,
     nodeArchiveSha256: runtimeLock.node.sha256,
     gitVersion: runtimeLock.git.portable.version,

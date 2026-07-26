@@ -1,8 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "platform": "win32",
   "arch": "x64",
-  "sdk": "0.80.7",
   "node": {
     "version": "24.18.0",
     "arch": "x64",
@@ -37,12 +36,12 @@
   },
   "pnpmLock": {
     "path": "pnpm-lock.yaml",
-    "sha256": "b8b81f4ece43b8f158b18a00b4a31dc5c2fddd1a514631c216ae5b41cd4fe307"
+    "sha256": "2ab36330143599dc48a9a909f2771ff1d5e715ef94006f29660b51c1be79df56"
   },
   "hostProductionDeps": {
     "strategy": "pnpm-deploy-from-frozen-lockfile",
-    "sdkPackage": "@earendil-works/pi-coding-agent",
-    "sdkVersion": "0.80.7",
+    "manifest": "packages/pi-host/package.json",
+    "sdkPatchSha256": "ef9e0f8e9bc6eddc8005e5f425c140d2a52cc0072c4115a0a553ddaedac6baca",
     "forbidUnlockedNpmInstall": true,
     "forbidGlobalNpmFallback": true,
     "forbidProcessExecPathAsRuntime": true

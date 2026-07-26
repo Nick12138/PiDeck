@@ -36,6 +36,12 @@ The candidate contains:
 
 The exact runtime inputs are pinned by
 [`scripts/release-runtime.lock.json`](../../scripts/release-runtime.lock.json).
+The Pi SDK version is not duplicated in that runtime lock. It is derived from
+the exact production dependencies in
+[`packages/pi-host/package.json`](../../packages/pi-host/package.json), then
+checked against `pnpm-lock.yaml`, the deployed dependency tree, and the staged
+tree. `STAGING.json` and `RELEASE_RESOURCES.json` retain the four Pi package
+versions together with the SDK patch and pnpm-lock SHA-256 values.
 The packaging path, runtime lock, Tauri bundle target, and integrity inspection
 are all Windows-specific.
 

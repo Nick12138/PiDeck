@@ -26,6 +26,12 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import {
+  assertPiPackageTree,
+  assertReleaseProductionManifest,
+  deriveReleaseProductionDependencies,
+  loadReleaseSdkEvidence,
+} from "./release-sdk-evidence.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDist = join(root, "packages/pi-host/dist");
@@ -65,9 +71,15 @@ if (!existsSync(lockPath)) die("scripts/release-runtime.lock.json missing");
 if (!existsSync(pnpmLock)) die("pnpm-lock.yaml missing");
 
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-if (lock.sdk !== "0.80.7") die(`lock.sdk must be 0.80.7, got ${lock.sdk}`);
 if (lock.hostProductionDeps?.forbidUnlockedNpmInstall !== true) {
   die("lock must set hostProductionDeps.forbidUnlockedNpmInstall=true");
+}
+
+let sdkEvidence;
+try {
+  sdkEvidence = loadReleaseSdkEvidence(root, lock);
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
 }
 
 // Verify frozen lock hash
@@ -147,12 +159,7 @@ if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
 
 function proveRuntimeImports(hostDir) {
   const nodeExe = join(nodeDir, process.platform === "win32" ? "node.exe" : "node");
-  const modules = [
-    "@earendil-works/pi-ai",
-    "@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-tui",
-    "@pideck/protocol",
-  ];
+  const modules = Object.keys(sdkEvidence.hostManifest.productionDependencies);
   const prove = spawnSync(
     nodeExe,
     [
@@ -198,6 +205,12 @@ function stageHostWithDeploy() {
       );
     }
 
+    try {
+      assertPiPackageTree(deployedFrom, sdkEvidence, "pnpm deployed Host tree");
+    } catch (error) {
+      die(error instanceof Error ? error.message : String(error));
+    }
+
     const deployImportError = proveRuntimeImports(deployedFrom);
     if (deployImportError) die(`deploy runtime import failed: ${deployImportError}`);
 
@@ -213,6 +226,11 @@ function stageHostWithDeploy() {
     );
     const hoistedImportError = proveRuntimeImports(deployedFrom);
     if (hoistedImportError) die(`runtime import failed after hoist: ${hoistedImportError}`);
+    try {
+      assertPiPackageTree(deployedFrom, sdkEvidence, "hoisted Host tree");
+    } catch (error) {
+      die(error instanceof Error ? error.message : String(error));
+    }
 
     rmSync(dest, { recursive: true, force: true });
     mkdirSync(dest, { recursive: true });
@@ -237,6 +255,11 @@ function stageHostWithDeploy() {
 
     const stagedImportError = proveRuntimeImports(dest);
     if (stagedImportError) die(`runtime import failed after dependency transfer: ${stagedImportError}`);
+    try {
+      assertPiPackageTree(dest, sdkEvidence, "staged Host tree");
+    } catch (error) {
+      die(error instanceof Error ? error.message : String(error));
+    }
     return `pnpm-deploy-temp-node-modules-only-hoisted-${dependencyTransfer}`;
   } finally {
     try {
@@ -395,17 +418,23 @@ const releasePkg = {
   private: true,
   type: "module",
   main: "./main.js",
-  dependencies: {
-    "@earendil-works/pi-coding-agent": "0.80.7",
-    "@pideck/protocol": "0.1.0",
-  },
+  dependencies: deriveReleaseProductionDependencies(sdkEvidence, {
+    "@pideck/protocol": protoMeta.version,
+  }),
 };
 writeFileSync(join(dest, "package.json"), JSON.stringify(releasePkg, null, 2));
 
-const sdkPkgPath = join(dest, "node_modules/@earendil-works/pi-coding-agent/package.json");
-if (!existsSync(sdkPkgPath)) die("SDK missing after pnpm deploy stage");
-const sdkVer = JSON.parse(readFileSync(sdkPkgPath, "utf8")).version;
-if (sdkVer !== "0.80.7") die(`SDK version ${sdkVer} !== 0.80.7`);
+try {
+  assertReleaseProductionManifest(
+    releasePkg,
+    sdkEvidence,
+    { "@pideck/protocol": protoMeta.version },
+    "staged release Host manifest",
+  );
+  assertPiPackageTree(dest, sdkEvidence, "final staged Host tree");
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
 
 // Layout validation — refuse flatten collision of package.json identities
 const hostPkgName = JSON.parse(readFileSync(join(dest, "package.json"), "utf8")).name;
@@ -417,7 +446,8 @@ if (protocolName !== "@pideck/protocol") die("protocol package identity broken")
 
 const staging = {
   status: "ok",
-  sdk: sdkVer,
+  sdkVersion: sdkEvidence.sdkVersion,
+  sdkEvidence,
   entry: "main.js",
   layout: "flat-dist-with-pnpm-deploy-node_modules",
   stagedAt: new Date().toISOString(),
@@ -433,8 +463,7 @@ const staging = {
   pnpmLockSha256: lockSha,
   pnpmLockSha256Expected: expectedSha,
   pnpmLockVerified: true,
-  sdkInstalled: true,
-  runtimeLockSdk: lock.sdk,
+  productionDependencies: releasePkg.dependencies,
   hostPackageName: hostPkgName,
   protocolPackageName: protocolName,
   stagingStrategy: depStrategy,
