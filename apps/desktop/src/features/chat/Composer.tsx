@@ -34,6 +34,7 @@ import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
 import { requestTreePanel } from "../../lib/dock-tree";
 import { requestExport } from "../../lib/export-actions";
+import { useImeComposition } from "../../lib/use-ime-composition";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -207,6 +208,7 @@ export function Composer({
     truncated: boolean;
   } | null>(null);
   const fileSearchSeq = useRef(0);
+  const ime = useImeComposition();
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
 
@@ -755,7 +757,10 @@ export function Composer({
                 void addFiles(pasted);
               }
             }}
+            onCompositionStart={ime.onCompositionStart}
+            onCompositionEnd={ime.onCompositionEnd}
             onKeyDown={(event) => {
+              if (ime.isImeKey(event)) return;
               if (completion) {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();

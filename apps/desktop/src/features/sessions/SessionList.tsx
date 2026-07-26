@@ -42,6 +42,7 @@ import {
   type SessionCatalogEntry,
   type SessionRuntimeState,
 } from "../../lib/stores/session-catalog";
+import { useImeComposition } from "../../lib/use-ime-composition";
 
 export type SessionFilter = "active" | "archived";
 
@@ -219,6 +220,7 @@ export function SessionList({
     null,
   );
   const [confirmAction, setConfirmAction] = useState<SessionConfirmAction | null>(null);
+  const ime = useImeComposition();
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
     readPinnedSessionIds(useAppStore.getState().workspace?.id),
   );
@@ -977,7 +979,13 @@ export function SessionList({
                     value={nameDraft}
                     maxLength={120}
                     onChange={(event) => setNameDraft(event.target.value)}
+                    onCompositionStart={ime.onCompositionStart}
+                    onCompositionEnd={ime.onCompositionEnd}
                     onKeyDown={(event) => {
+                      if (event.key === "Enter" && ime.isImeKey(event)) {
+                        event.preventDefault();
+                        return;
+                      }
                       if (event.key === "Escape") cancelRename();
                     }}
                     className="h-7 min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-foreground outline-none"

@@ -3,6 +3,7 @@ import { ChevronDown, Pencil, Play, Trash2, ArrowUp, Check, X } from "lucide-rea
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { activeSessionContext } from "../../lib/bridge/host-context";
+import { useImeComposition } from "../../lib/use-ime-composition";
 import type { ActiveSessionContext } from "@pideck/protocol";
 
 /**
@@ -37,6 +38,7 @@ export function QueuePanel() {
   const [collapsed, setCollapsed] = useState(false);
   const [busyOp, setBusyOp] = useState(false);
   const [editing, setEditing] = useState<{ index: number; text: string } | null>(null);
+  const ime = useImeComposition();
 
   const steering = session?.pending.steering ?? [];
   const followUp = session?.pending.followUp ?? [];
@@ -152,7 +154,10 @@ export function QueuePanel() {
                   className="min-h-[52px] flex-1 rounded border border-accent bg-surface px-2 py-1 text-xs outline-none"
                   value={editing.text}
                   onChange={(event) => setEditing({ index, text: event.target.value })}
+                  onCompositionStart={ime.onCompositionStart}
+                  onCompositionEnd={ime.onCompositionEnd}
                   onKeyDown={(event) => {
+                    if (ime.isImeKey(event)) return;
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
                       const next = [...followUp];
