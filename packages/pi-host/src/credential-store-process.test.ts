@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -89,6 +89,21 @@ async function killGroup(child: ReturnType<typeof spawnDetachedChild>): Promise<
   await exited;
 }
 
+/**
+ * Wait until a child signals it is actually inside the critical section.
+ *
+ * A fixed sleep is not enough: cold-starting node plus tsx can exceed a second
+ * on a slow CI runner, and the parent would then probe a lock nobody holds.
+ */
+async function waitForMarker(path: string, timeoutMs = 30_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`child never signalled ${path}`);
+}
+
 function runChild(scriptPath: string, args: string[]): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, childArgv(scriptPath, args), {
@@ -139,19 +154,21 @@ for (let i = 0; i < Number(iterations); i += 1) {
   it("keeps auth.json parseable when a process is killed mid-write", async () => {
     writeFileSync(authPath, JSON.stringify({ p: { type: "api_key", key: "original" } }), "utf8");
 
+    const marker = join(root, "holding-lock");
     const script = writeChildScript(`
-const [authPath] = process.argv.slice(2);
+import { writeFileSync } from "node:fs";
+const [authPath, marker] = process.argv.slice(2);
 const store = new FileCredentialStore(authPath);
 await store.modify("p", async () => {
-  process.stdout.write("");
+  writeFileSync(marker, "1");
   // Hold the lock open until the parent kills this process.
   await new Promise(() => {});
   return undefined;
 });
 `);
 
-    const child = spawnDetachedChild(script, [authPath]);
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const child = spawnDetachedChild(script, [authPath, marker]);
+    await waitForMarker(marker);
     await killGroup(child);
 
     // The interrupted process never reached a write, and an atomic rename means
@@ -176,18 +193,24 @@ await store.modify("p", async () => {
   it("reports a typed lock_timeout instead of waiting indefinitely", async () => {
     writeFileSync(authPath, JSON.stringify({ p: { type: "api_key", key: "held" } }), "utf8");
 
+    const marker = join(root, "holding-lock");
     const script = writeChildScript(`
-const [authPath] = process.argv.slice(2);
+import { writeFileSync } from "node:fs";
+const [authPath, marker] = process.argv.slice(2);
 const store = new FileCredentialStore(authPath);
 await store.modify("p", async () => {
-  await new Promise((resolve) => setTimeout(resolve, 10_000));
+  writeFileSync(marker, "1");
+  await new Promise((resolve) => setTimeout(resolve, 30_000));
   return undefined;
 });
 `);
 
-    const child = spawnDetachedChild(script, [authPath]);
+    const child = spawnDetachedChild(script, [authPath, marker]);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      // Probe only once the child is provably inside modify(); a fixed sleep
+      // raced cold node+tsx startup on the slower CI lane and probed a lock
+      // nobody held yet.
+      await waitForMarker(marker);
 
       const { CredentialStoreError, FileCredentialStore } = await import("./credential-store.js");
       const impatient = new FileCredentialStore(authPath, {
