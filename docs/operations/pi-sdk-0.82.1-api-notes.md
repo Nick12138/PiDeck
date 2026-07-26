@@ -173,12 +173,43 @@ export interface ResourceLoaderReloadOptions {
 }
 ```
 
-两件事同时成立：
+三件事同时成立：
 
 1. reload 选项里**没有** signal，所以 `AgentSession.reload()` 期间的包解析无法通过公共 API 取消。
 2. `DefaultResourceLoader` 有 `private packageManager`，是它自己构造的独立实例。对 PiDeck graph 级 PackageManager 调用 `setOperationSignal()` **不会**影响它。
+3. `reload()` 调用 `this.packageManager.resolve()` 且**不传 `onMissing`**（`resource-loader.js:232`、`:348`）。在这个形态下 `resolvePackageSources()` 会静默安装：
 
-交接文档 §6.7 要求对这一点做出明确决定并记录，指的就是这里：要么 patch 也覆盖 ResourceLoader 的注入，要么把验收措辞收窄为「mutation 子进程可取消」并为不可取消的 reload 保留 shutdown 兜底。
+```js
+const installMissing = async () => {
+  if (isOfflineModeEnabled()) return false;
+  if (!onMissing) {
+    await this.installParsedSource(parsed, resolvedScope);   // 直接装
+    return true;
+  }
+  ...
+};
+```
+
+npm 包的触发条件是「磁盘上不存在」或「已装版本不满足配置的 range」（版本比较是纯本地 semver，不联网；只有安装联网）；git 包的触发条件是「目录不存在」。也就是说 `reload()` 会真的执行 `npm install` / `git clone`。
+
+注意 `parseSource()`：npm 源必须写成 `npm:<spec>`，未加前缀的字符串会被归类为 `local`，不触发安装。写这条路径的测试时如果漏了前缀，测试会静默失效。
+
+### PiDeck 的决定
+
+不扩大 patch。改为让**非用户发起**的 reload 不可能安装。
+
+`isOfflineModeEnabled()` 每次调用现读 `process.env.PI_OFFLINE`（`1` / `true` / `yes`），因此可以在调用点前后临时设置。`installNpm` / `installGit` 本身**不检查**该开关，所以 PiDeck 自己的 `package.install` 不受影响；但 `checkForAvailableUpdates` 会检查，所以不能全局设置。
+
+`packages/pi-host/src/offline-package-resolution.ts` 的 `withoutImplicitPackageInstall()` 包住两个调用点：
+
+```text
+workspace-lifecycle.ts   workspace 建图（含启动预载）
+session-lifecycle.ts     session create / open
+```
+
+这两条路径正是交接文档 §6.4 要求「不得访问网络」的路径。package mutation 之后的 reconcile reload **不包**——那是用户显式发起的包操作，联网是预期行为；它仍然不可取消，由 Host shutdown 兜底。
+
+四个 reload 调用点全部在 `serviceGraphLock` 下，所以进程级环境变量的临时切换不会被并发的解析观察到。
 
 另外，`ResourceLoaderReloadOptions` 里没有 `preserveExtensionCache` —— 那是现有 `0.80.7` patch 加的字段。新 patch 删除该行为后，这个选项不复存在，Package reconcile 必须走官方完整 reload。
 
@@ -208,7 +239,9 @@ bash_execution_update
 
 ## 10. 由此得出的待决项
 
-1. Host 启动路径必须适配 `ModelRuntime.create()` 的异步性，包括 faux provider 注册和首次 refresh 的顺序。
-2. 新 patch 应把 `setOperationSignal` 声明为 `PackageManager` 接口上的**必需**方法，让 `pm.setOperationSignal?.(...)` 这种静默退化在编译期就不成立。
-3. ResourceLoader 私有 PackageManager 是否也注入 signal，必须在 PR-3 review 前有明确结论。
-4. `runNpmCommandSync` 不可取消，需要在验收措辞中显式排除或单独处理。
+1. ~~Host 启动路径必须适配 `ModelRuntime.create()` 的异步性~~ —— 已完成，启动改为 `await ModelRuntime.create()` 并显式 await 首次本地 refresh。
+2. ~~新 patch 应把 `setOperationSignal` 声明为必需方法~~ —— 已完成，`?.` 静默退化现在是编译错误。
+3. ~~ResourceLoader 私有 PackageManager 是否也注入 signal~~ —— 已决定，见上节：不扩大 patch，改用 `withoutImplicitPackageInstall()` 让隐式 reload 不可能安装。
+4. `runNpmCommandSync` 不可取消（`npm root -g`、`npm pm bin -g`、`npm list -g`），patch 只加了 abort 预检。验收措辞必须显式排除这条路径。
+5. 迁移备份仍未接入：首次对真实 `PI_CODING_AGENT_DIR` 调用 `ModelRuntime.create()` 之前应先备份并写 manifest（§6.3）。
+6. Provider 事务目前是整文件 credential 快照 + 回滚，尚未实现 journal 或 `modelConfigHealth: degraded` 恢复状态（§6.6）。

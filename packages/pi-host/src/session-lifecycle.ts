@@ -29,6 +29,7 @@ import {
   commitActiveSessionState,
 } from "./session-runtime-cache.js";
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
+import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
   return resolveSessionStorageDirs(factory.deps.agentDir, g.canonicalCwd);
@@ -403,7 +404,10 @@ async function createSessionResourceLoader(
     agentDir: factory.deps.agentDir,
     settingsManager: g.settingsManager!,
   });
-  await resourceLoader.reload();
+  // Session create/open must not reach the network. Without this the SDK would
+  // npm-install or git-clone any configured package missing from disk, in a
+  // package manager PiDeck cannot cancel.
+  await withoutImplicitPackageInstall(() => resourceLoader.reload());
   return resourceLoader;
 }
 

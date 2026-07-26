@@ -21,6 +21,7 @@ import {
 import { activateOnce, bindForCandidate } from "./extension-ui-lifecycle.js";
 import { logger } from "./logger.js";
 import { buildPackageSnapshot } from "./package-snapshot.js";
+import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
@@ -650,7 +651,9 @@ export class WorkspaceLifecycle {
         agentDir,
         settingsManager,
       });
-      await resourceLoader.reload();
+      // Workspace selection (including the startup preload) must not reach the
+      // network; see withoutImplicitPackageInstall.
+      await withoutImplicitPackageInstall(() => resourceLoader.reload());
       markStep("resourceLoader.reload");
       const sessionManager = SessionManager.create(args.canonicalCwd);
       await Promise.resolve(this.context.deps.refreshModelHealth());

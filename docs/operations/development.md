@@ -45,6 +45,33 @@ changes and added a `preserveExtensionCache` reload option. Both are gone in
 re-imports extension modules. Re-evaluate the patch on every SDK upgrade;
 consider proposing the cancellation hook upstream.
 
+The patch deliberately stops at `DefaultPackageManager`.
+`DefaultResourceLoader` builds its own private package manager that PiDeck
+cannot reach, so a reload can neither be cancelled nor bounded. Rather than
+patching a second class, PiDeck removes the reason to cancel: see
+"Implicit resource loading" below.
+
+## Implicit resource loading
+
+`DefaultResourceLoader.reload()` resolves configured packages with no
+`onMissing` handler, which makes the SDK install silently — a configured npm
+package absent from disk (or whose installed version no longer satisfies its
+range) triggers a real `npm install`, and an absent git package a real
+`git clone`.
+
+Workspace selection, the startup preload, and session create/open must all stay
+offline, so they wrap the reload in `withoutImplicitPackageInstall()`
+(`packages/pi-host/src/offline-package-resolution.ts`), which scopes the SDK's
+`PI_OFFLINE` flag. Missing packages are skipped and reported instead of
+fetched; the user installs them from the Packages page.
+
+Package mutation reconcile is deliberately **not** wrapped: there, fetching is
+the point. That reload remains uncancellable, bounded only by Host shutdown.
+
+Do not set `PI_OFFLINE` globally — it would also disable the update-check
+capability. The scoping is safe because every reload call site runs under
+`serviceGraphLock`.
+
 ## Commands
 
 | Command | Purpose |
