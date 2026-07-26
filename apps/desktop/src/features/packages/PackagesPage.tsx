@@ -149,7 +149,7 @@ function TypeBadge({ type }: { type: ResourceType }) {
     prompt: "bg-warning/15 text-warning",
     theme: "bg-surface-overlay text-muted",
   };
-  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${colors[type]}`}>{type}</span>;
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium uppercase ${colors[type]}`}>{type}</span>;
 }
 
 function packageMemberName(resource: ResourceRecord, pkg: PackageRecord): string {
@@ -197,7 +197,7 @@ function PackagePreferenceControl({
     : ["enabled", "disabled"];
   return (
     <div className="flex min-w-0 items-center gap-2">
-      {state === "mixed" && <span className="text-[10px] text-warning">Mixed</span>}
+      {state === "mixed" && <span className="text-[11px] text-warning">Mixed</span>}
       <div role="group" aria-label={label} className="inline-flex h-8 rounded-md border border-border p-0.5">
         {values.map((value) => (
           <button
@@ -246,6 +246,7 @@ export function PackagesPage() {
   const [loadError, setLoadError] = useState("");
   const [projectGate, setProjectGate] = useState<PendingProjectMutation | null>(null);
   const [review, setReview] = useState<MutationReview | null>(null);
+  const [dismissedProgressOp, setDismissedProgressOp] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const refreshRequest = useRef(0);
 
@@ -290,6 +291,9 @@ export function PackagesPage() {
   );
 
   const updateCheckSupported = host?.capabilities.packageUpdateCheck ?? false;
+  const knownUpdates = allPackages.filter((item) => item.updateAvailable).length;
+  const updateCheckDone =
+    updateCheckSupported && packages?.updateCheck?.checkedAt !== undefined;
   const reloadRequired = packages?.resourceReloadRequired === true;
   const reconcileRequired = packages?.mutation?.reconcileRequired === true;
   const progressActive = packageProgress?.type === "start" || packageProgress?.type === "progress";
@@ -345,6 +349,14 @@ export function PackagesPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, [progressActive, packageProgress?.operationId]);
+
+  useEffect(() => {
+    // A finished operation should not occupy the strip forever.
+    if (packageProgress?.type !== "complete") return;
+    const operationId = packageProgress.operationId;
+    const timer = window.setTimeout(() => setDismissedProgressOp(operationId), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [packageProgress?.type, packageProgress?.operationId]);
 
   useEffect(() => {
     if (!selectedId || allPackages.some((item) => item.id === selectedId)) return;
@@ -692,20 +704,20 @@ export function PackagesPage() {
               return count > 0 ? (
                 <span key={type} className="inline-flex items-center gap-1">
                   <TypeBadge type={type} />
-                  {count > 1 && <span className="text-[10px] text-muted">{count}</span>}
+                  {count > 1 && <span className="text-[11px] text-muted">{count}</span>}
                 </span>
               ) : null;
             })}
             {diagnostics.some((diagnostic) => diagnostic.severity === "error") && <AlertTriangle size={13} className="text-danger" />}
           </div>
           {pkg.description && <p className="mt-1 text-xs text-muted">{pkg.description}</p>}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
             <span>{scopeLabel(pkg.scope)} package / {pkg.kind}</span>
             {pkg.versionOrRef && <span>{pkg.versionOrRef}</span>}
             <span>{summary.total} resource{summary.total === 1 ? "" : "s"}</span>
           </div>
           <details className="mt-2 text-xs">
-            <summary className="w-fit cursor-pointer select-none text-[10px] text-accent hover:underline">
+            <summary className="w-fit cursor-pointer select-none text-[11px] text-accent hover:underline">
               Show package resources
             </summary>
             <ul className="mt-2 divide-y divide-border border-y border-border">
@@ -714,10 +726,10 @@ export function PackagesPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <TypeBadge type={resource.type} />
                     <span className="font-medium">{packageMemberName(resource, pkg)}</span>
-                    {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
-                    <span className={`ml-auto text-[10px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
+                    {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">Manual only</span>}
+                    <span className={`ml-auto text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
                   </div>
-                  <p className="mt-1 truncate font-mono text-[10px] text-muted" title={resource.path}>{resource.relativePath ?? resource.path}</p>
+                  <p className="mt-1 truncate font-mono text-[11px] text-muted" title={resource.path}>{resource.relativePath ?? resource.path}</p>
                   {resource.diagnostics.map((diagnostic, index) => (
                     <p key={`${diagnostic.message}-${index}`} className={`mt-1 text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}>{diagnostic.message}</p>
                   ))}
@@ -727,7 +739,7 @@ export function PackagesPage() {
           </details>
         </div>
         <div className="flex min-w-40 self-start items-center justify-between gap-3 sm:justify-end">
-          <span className={`text-[10px] ${summary.enabled > 0 ? "text-success" : "text-muted"}`}>{activeLabel}</span>
+          <span className={`text-[11px] ${summary.enabled > 0 ? "text-success" : "text-muted"}`}>{activeLabel}</span>
           {configurable > 0 ? (
             <PackagePreferenceControl
               label={`${pkg.displayName} package`}
@@ -737,7 +749,7 @@ export function PackagesPage() {
               onChange={(preference) => setPackagePreference(item.resources, resourceMode, preference)}
             />
           ) : (
-            <span className="max-w-44 text-right text-[10px] text-muted">Read only</span>
+            <span className="max-w-44 text-right text-[11px] text-muted">Read only</span>
           )}
         </div>
       </li>
@@ -766,11 +778,11 @@ export function PackagesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={resource.type} />
             <span className="truncate text-sm font-medium">{resource.name}</span>
-            {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
+            {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">Manual only</span>}
             {resource.diagnostics.some((item) => item.severity === "error") && <AlertTriangle size={13} className="text-danger" />}
           </div>
           {resource.description && <p className="mt-1 text-xs text-muted">{resource.description}</p>}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
             <span>{scopeLabel(resource.scope)} / {resource.origin}</span>
             {ownerPackage && <span>Owner: {ownerPackage.displayName}</span>}
             {owner && (
@@ -789,7 +801,7 @@ export function PackagesPage() {
           )}
         </div>
         <div className="flex min-w-40 items-center justify-between gap-3 sm:justify-end">
-          <span className={`text-[10px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
+          <span className={`text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
           {configurable ? (
             <div className="inline-flex h-8 rounded-md border border-border p-0.5">
               {(resourceMode === "project" ? ["inherit", "enabled", "disabled"] : ["enabled", "disabled"]).map((value) => (
@@ -797,7 +809,7 @@ export function PackagesPage() {
               ))}
             </div>
           ) : (
-            <span className="max-w-44 text-right text-[10px] text-muted" title={readOnlyReason}>{readOnlyReason ?? "Read only"}</span>
+            <span className="max-w-44 text-right text-[11px] text-muted" title={readOnlyReason}>{readOnlyReason ?? "Read only"}</span>
           )}
         </div>
       </li>
@@ -906,12 +918,31 @@ export function PackagesPage() {
         </Dialog>
       )}
 
-      {packageProgress && pendingPreferenceUpdates.length === 0 && (
+      {packageProgress &&
+        pendingPreferenceUpdates.length === 0 &&
+        dismissedProgressOp !== packageProgress.operationId && (
         <div className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs">
           <RefreshCw size={13} className={progressActive ? "animate-spin" : ""} />
           <span className="font-medium capitalize">{packageProgress.action}</span>
           <span className="min-w-0 flex-1 truncate text-muted" title={packageProgress.source}>{packageProgress.message ?? packageProgress.source}</span>
-          <span className={packageProgress.type === "error" ? "text-danger" : "text-muted"}>{progressIdle ? "Still waiting" : packageProgress.type}</span>
+          <span className={packageProgress.type === "error" ? "text-danger" : "text-muted"}>
+            {progressIdle
+              ? "Still waiting"
+              : packageProgress.type === "error"
+                ? "Failed"
+                : packageProgress.type === "complete"
+                  ? "Done"
+                  : "Working…"}
+          </span>
+          <button
+            type="button"
+            title="Dismiss"
+            aria-label="Dismiss package progress"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+            onClick={() => setDismissedProgressOp(packageProgress.operationId)}
+          >
+            <X size={13} />
+          </button>
         </div>
       )}
 
@@ -962,15 +993,31 @@ export function PackagesPage() {
 
       <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <h1 className="mr-2 text-sm font-semibold">Packages</h1>
-        <div role="tablist" className="flex h-8 rounded-md border border-border bg-surface p-0.5">
-          <button role="tab" aria-selected={tab === "installed"} type="button" className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("installed")}>Installed</button>
-          <button role="tab" aria-selected={tab === "resources"} type="button" className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("resources")}>Resources</button>
+        <div role="group" aria-label="Packages view" className="flex h-8 rounded-md border border-border bg-surface p-0.5">
+          <button aria-pressed={tab === "installed"} type="button" className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("installed")}>Installed</button>
+          <button aria-pressed={tab === "resources"} type="button" className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("resources")}>Resources</button>
         </div>
         <button type="button" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent" onClick={() => void openCatalog()}>pi.dev catalog <ExternalLink size={11} /></button>
         <div className="ml-auto flex items-center gap-1">
           {updateCheckSupported && <button type="button" title="Check for updates" className={secondaryButton} disabled={busy} onClick={() => void checkUpdates()}><RefreshCw size={14} /><span className="hidden sm:inline">Check</span></button>}
           <button type="button" title="Refresh packages" className={secondaryButton} disabled={loadState === "loading" || busy || mutationRunning} onClick={() => void refresh()}><RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} /></button>
-          <button type="button" className={primaryButton} disabled={mutationBlocked || allPackages.length === 0} onClick={() => beginUpdateReview(allPackages, true)}><Download size={14} /><span className="hidden sm:inline">Update all</span></button>
+          <button
+            type="button"
+            className={primaryButton}
+            title="Update all packages"
+            aria-label="Update all packages"
+            disabled={
+              mutationBlocked ||
+              allPackages.length === 0 ||
+              (updateCheckDone && knownUpdates === 0)
+            }
+            onClick={() => beginUpdateReview(allPackages, true)}
+          >
+            <Download size={14} />
+            <span className="hidden sm:inline">
+              {updateCheckDone && knownUpdates > 0 ? `Update all (${knownUpdates})` : "Update all"}
+            </span>
+          </button>
         </div>
       </header>
 
@@ -988,7 +1035,7 @@ export function PackagesPage() {
                 <input className={`${inputClass} flex-1`} aria-label="Package source" placeholder="npm:package, git URL, or local path" value={installSource} onChange={(event) => setInstallSource(event.target.value)} />
                 <div className="flex gap-2">
                   <select className={inputClass} aria-label="Install scope" value={installScope} onChange={(event) => setInstallScope(event.target.value as "user" | "project")}><option value="user">User</option><option value="project">Project</option></select>
-                  <button type="button" className={primaryButton} disabled={mutationBlocked || !installSource.trim()} onClick={beginInstallReview}>Review</button>
+                  <button type="button" className={primaryButton} disabled={mutationBlocked || !installSource.trim()} onClick={beginInstallReview}>Install…</button>
                 </div>
               </div>
             </div>
@@ -1013,12 +1060,12 @@ export function PackagesPage() {
               <ul>
                 {visiblePackages.map((item) => (
                   <li key={item.id}>
-                    <button type="button" className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`} onClick={() => setSelectedId(item.id)}>
+                    <button type="button" aria-current={selectedId === item.id ? "true" : undefined} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`} onClick={() => setSelectedId(item.id)}>
                       <Boxes size={15} className={selectedId === item.id ? "text-accent" : "text-muted"} />
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-medium">{item.displayName}</span>{item.updateAvailable && <span className="rounded bg-warning/15 px-1 text-[10px] text-warning">Update</span>}</span>
-                        <span className="mt-0.5 block truncate text-[10px] text-muted">{scopeLabel(item.scope)} / {item.kind}{item.versionOrRef ? ` / ${item.versionOrRef}` : ""}{!item.effective ? " / Replaced by project" : item.projectOverride || item.overridesPackageId ? " / Workspace overrides" : ""}</span>
-                        <span className="mt-0.5 flex items-center gap-2 text-[10px] text-muted"><span>{packageResourceTotal(item) ?? "?"} resources</span>{packageDiagnosticCount(item) > 0 && <span className="inline-flex items-center gap-0.5 text-warning"><AlertTriangle size={10} />{packageDiagnosticCount(item)} diagnostic{packageDiagnosticCount(item) === 1 ? "" : "s"}</span>}</span>
+                        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-medium">{item.displayName}</span>{item.updateAvailable && <span className="rounded bg-warning/15 px-1 text-[11px] text-warning">Update</span>}</span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">{scopeLabel(item.scope)} / {item.kind}{item.versionOrRef ? ` / ${item.versionOrRef}` : ""}{!item.effective ? " / Replaced by project" : item.projectOverride || item.overridesPackageId ? " / Workspace overrides" : ""}</span>
+                        <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted"><span>{packageResourceTotal(item) ?? "?"} resources</span>{packageDiagnosticCount(item) > 0 && <span className="inline-flex items-center gap-0.5 text-warning"><AlertTriangle size={10} />{packageDiagnosticCount(item)} diagnostic{packageDiagnosticCount(item) === 1 ? "" : "s"}</span>}</span>
                       </span>
                       <ChevronRight size={13} className="text-muted" />
                     </button>
@@ -1034,7 +1081,7 @@ export function PackagesPage() {
             ) : (
               <div className="mx-auto max-w-4xl">
                 <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold">{selected.displayName}</h2><span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] uppercase text-muted">{scopeLabel(selected.scope)}</span>{!selected.effective && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">Replaced by project</span>}</div>{selected.description && <p className="mt-1 text-sm text-muted">{selected.description}</p>}</div>
+                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold">{selected.displayName}</h2><span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] uppercase text-muted">{scopeLabel(selected.scope)}</span>{!selected.effective && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning">Replaced by project</span>}</div>{selected.description && <p className="mt-1 text-sm text-muted">{selected.description}</p>}</div>
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button" className={secondaryButton} disabled={mutationBlocked} onClick={() => beginUpdateReview([selected])}><Download size={13} />Update</button>
                     {selected.installedPath && <button type="button" className={secondaryButton} onClick={async () => { try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("desktop_open_path", { path: selected.installedPath }); } catch { pushNotification("Open folder unavailable", "warning"); } }}><FolderOpen size={13} />Open</button>}
@@ -1087,7 +1134,7 @@ export function PackagesPage() {
                           className="flex min-h-14 flex-col items-stretch justify-center rounded-md border border-border px-2 py-1.5 text-left text-xs"
                         >
                           <span className="flex items-center justify-between gap-2"><span>{pluralType(type)}</span><span className="font-mono text-muted">{enabled}/{resources.length}</span></span>
-                          <span className="mt-0.5 text-[10px] text-muted">{state}</span>
+                          <span className="mt-0.5 text-[11px] text-muted">{state}</span>
                         </div>
                       );
                     })}
@@ -1109,12 +1156,11 @@ export function PackagesPage() {
             </div>
             {hasActiveResourceFilters(resourceFilters) && <button type="button" title="Clear all resource filters" aria-label="Clear all resource filters" className={secondaryButton} onClick={clearResourceFilters}><X size={13} /></button>}
           </div>
-          <div role="tablist" aria-label="Resource type" className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2">
+          <div role="group" aria-label="Resource type" className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2">
             {(["all", ...PACKAGE_RESOURCE_TYPES] as ResourceTypeFilter[]).map((type) => (
               <button
                 key={type}
-                role="tab"
-                aria-selected={resourceType === type}
+                aria-pressed={resourceType === type}
                 type="button"
                 className={`h-7 shrink-0 rounded px-2.5 text-xs ${resourceType === type ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
                 onClick={() => setResourceType(type)}
@@ -1124,11 +1170,13 @@ export function PackagesPage() {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-raised px-3 py-2 text-xs">
-            <span className="text-muted">{visibleResourceItems.length} shown / {visiblePreferenceResources.length} resources / {configurableVisible.length} configurable</span>
-            <span className="ml-auto text-muted">Set shown items:</span>
-            {resourceMode === "project" && <button type="button" title="Inherit all resources in shown packages and shown standalone items" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("inherit")}>Inherit</button>}
-            <button type="button" title="Enable all resources in shown packages and shown standalone items" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("enabled")}><Check size={13} />Enable</button>
-            <button type="button" title="Disable all resources in shown packages and shown standalone items" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("disabled")}><X size={13} />Disable</button>
+            <span className="text-muted">
+              {configurableVisible.length} configurable resource{configurableVisible.length === 1 ? "" : "s"} in {visibleResourceItems.length} shown item{visibleResourceItems.length === 1 ? "" : "s"}
+            </span>
+            <span className="ml-auto" />
+            {resourceMode === "project" && <button type="button" title="Inherit all resources in shown packages and shown standalone items, including collapsed package members" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("inherit")}>Inherit all shown</button>}
+            <button type="button" title="Enable all resources in shown packages and shown standalone items, including collapsed package members" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("enabled")}><Check size={13} />Enable all shown</button>
+            <button type="button" title="Disable all resources in shown packages and shown standalone items, including collapsed package members" className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("disabled")}><X size={13} />Disable all shown</button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {loadState === "loading" && !packages ? (
@@ -1158,7 +1206,7 @@ export function PackagesPage() {
               <div>
                 {resourceSections.map((section) => (
                     <section key={section.key} aria-labelledby={`resource-group-${section.key}`}>
-                      <h3 id={`resource-group-${section.key}`} className="sticky top-0 z-10 border-y border-border bg-surface-raised px-4 py-1.5 text-[10px] font-semibold uppercase text-muted">{section.label} <span className="font-normal">({section.items.length})</span></h3>
+                      <h3 id={`resource-group-${section.key}`} className="sticky top-0 z-10 border-y border-border bg-surface-raised px-4 py-1.5 text-[11px] font-semibold uppercase text-muted">{section.label} <span className="font-normal">({section.items.length})</span></h3>
                       <ul className="divide-y divide-border">
                         {section.items.map((item) => item.kind === "package"
                           ? renderPackageResourceRow(item)

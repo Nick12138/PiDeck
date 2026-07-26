@@ -53,4 +53,6 @@ explicit confirmation before a Project Package mutation can execute code.
 Install, update, and remove all confirm through the shared review dialog
 (`components/Dialog.tsx`); removal uses the danger tone and captures the
 project authorization up front, so a project-scoped removal needs exactly one
-dialog.
+dialog. Update all shows the known update count and is disabled when a
+completed check found none; the progress strip reports human-readable states,
+auto-clears after completion, and can be dismissed.

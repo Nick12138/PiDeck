@@ -34,7 +34,7 @@ import {
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
-import { Dialog } from "../../components/Dialog";
+import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
 
@@ -162,6 +162,27 @@ export function automaticThinkingConfig(
 
 export function shouldOpenAdvancedEndpoint(modelsUrl: string | undefined): boolean {
   return Boolean(modelsUrl?.trim());
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function validateProviderDraft(draft: ProviderDraft): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!draft.name.trim()) errors.name = "Display name is required";
+  if (!draft.id.trim()) errors.id = "Provider ID is required";
+  const baseUrl = draft.baseUrl.trim();
+  if (!baseUrl) errors.baseUrl = "Base URL is required";
+  else if (!isHttpUrl(baseUrl)) errors.baseUrl = "Must be an http(s) URL";
+  const modelsUrl = draft.modelsUrl?.trim();
+  if (modelsUrl && !isHttpUrl(modelsUrl)) errors.modelsUrl = "Must be an http(s) URL";
+  return errors;
 }
 
 export function providerDraftForSave(
@@ -320,6 +341,7 @@ export function ProvidersSettings() {
     { kind: "select"; id: string } | { kind: "new" } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Serialized shape of the draft as loaded/saved; any divergence means unsaved edits.
   const baselineRef = useRef<string | null>(null);
   // Bumped on every draft replacement. In-flight save/fetch/test continuations
@@ -426,6 +448,7 @@ export function ProvidersSettings() {
     setClearApiKey(false);
     setEditingModelId(null);
     setManualOpen(false);
+    setFieldErrors({});
     setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
     setConnectionResult(null);
   }
@@ -441,13 +464,32 @@ export function ProvidersSettings() {
     setClearApiKey(false);
     setEditingModelId(null);
     setManualOpen(false);
+    setFieldErrors({});
     setAdvancedEndpointOpen(false);
     setConnectionResult(null);
   }
 
   function updateDraft(patch: Partial<ProviderDraft>) {
     setConnectionResult(null);
+    setFieldErrors((current) => {
+      const patched = Object.keys(patch).filter((key) => key in current);
+      if (patched.length === 0) return current;
+      const next = { ...current };
+      for (const key of patched) delete next[key];
+      return next;
+    });
     setDraft((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function validateUrlField(field: "baseUrl" | "modelsUrl") {
+    if (!draft) return;
+    const errors = validateProviderDraft(draft);
+    setFieldErrors((current) => {
+      const next = { ...current };
+      if (errors[field]) next[field] = errors[field];
+      else delete next[field];
+      return next;
+    });
   }
 
   function syncModels(nextCatalog: DiscoveredProviderModel[]) {
@@ -462,8 +504,10 @@ export function ProvidersSettings() {
     // removal: that deletion is irreversible and belongs to the explicit Save.
     const { notify = true, includeKeyRemoval = true } = options;
     if (!host || !draft || saving) return null;
-    if (!draft.id.trim() || !draft.name.trim() || !draft.baseUrl.trim()) {
-      pushNotification("Provider ID, name, and Base URL are required", "error");
+    const errors = validateProviderDraft(draft);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      pushNotification("Fix the highlighted Provider fields before saving", "error");
       return null;
     }
     const removeStoredKey = clearApiKey && includeKeyRemoval;
@@ -710,8 +754,6 @@ export function ProvidersSettings() {
     updateDraft({ headers });
   }
 
-  const editingModel = catalog.find((model) => model.id === editingModelId);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
@@ -757,6 +799,7 @@ export function ProvidersSettings() {
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left"
+                  aria-current={selectedId === provider.id ? "true" : undefined}
                   onClick={() =>
                     dirty
                       ? setPendingSwitch({ kind: "select", id: provider.id })
@@ -794,8 +837,21 @@ export function ProvidersSettings() {
       </aside>
 
       {!draft ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted">
-          Select or add a Provider
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted">
+          {providers.length === 0 && !loading ? (
+            <>
+              <p>No Providers configured yet.</p>
+              <button
+                type="button"
+                className={secondaryButton}
+                onClick={startNewProvider}
+              >
+                <Plus size={14} /> Add Provider
+              </button>
+            </>
+          ) : (
+            "Select or add a Provider"
+          )}
         </div>
       ) : (
         <div className="min-w-0 flex-1 overflow-auto">
@@ -902,31 +958,47 @@ export function ProvidersSettings() {
 
             <section className="grid grid-cols-2 gap-4">
               <label className="flex flex-col gap-1.5 text-xs text-muted">
-                Display name
+                <span>Display name <span className="text-danger">*</span></span>
                 <input
-                  className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
+                  className={`h-8 rounded-md border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent ${
+                    fieldErrors.name ? "border-danger" : "border-border"
+                  }`}
                   value={draft.name}
                   onChange={(event) => updateDraft({ name: event.target.value })}
                 />
+                {fieldErrors.name && (
+                  <span className="text-[11px] text-danger">{fieldErrors.name}</span>
+                )}
               </label>
               <label className="flex flex-col gap-1.5 text-xs text-muted">
-                Provider ID
+                <span>Provider ID <span className="text-danger">*</span></span>
                 <input
-                  className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
+                  className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                    fieldErrors.id ? "border-danger" : "border-border"
+                  }`}
                   value={draft.id}
                   onChange={(event) => updateDraft({ id: event.target.value })}
                 />
+                {fieldErrors.id && (
+                  <span className="text-[11px] text-danger">{fieldErrors.id}</span>
+                )}
               </label>
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
-                Base URL
+                <span>Base URL <span className="text-danger">*</span></span>
                 <input
-                  className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
+                  className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                    fieldErrors.baseUrl ? "border-danger" : "border-border"
+                  }`}
                   placeholder={draft.api === "anthropic-messages"
                     ? "https://api.example.com"
                     : "https://api.example.com/v1"}
                   value={draft.baseUrl}
                   onChange={(event) => updateDraft({ baseUrl: event.target.value })}
+                  onBlur={() => validateUrlField("baseUrl")}
                 />
+                {fieldErrors.baseUrl && (
+                  <span className="text-[11px] text-danger">{fieldErrors.baseUrl}</span>
+                )}
               </label>
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                 API protocol
@@ -952,11 +1024,17 @@ export function ProvidersSettings() {
                 <label className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
                   <span>Models URL <span className="font-normal text-muted">(optional)</span></span>
                   <input
-                    className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
+                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                      fieldErrors.modelsUrl ? "border-danger" : "border-border"
+                    }`}
                     placeholder="Auto-detect from Base URL"
                     value={draft.modelsUrl ?? ""}
                     onChange={(event) => updateDraft({ modelsUrl: event.target.value })}
+                    onBlur={() => validateUrlField("modelsUrl")}
                   />
+                  {fieldErrors.modelsUrl && (
+                    <span className="text-[11px] text-danger">{fieldErrors.modelsUrl}</span>
+                  )}
                 </label>
               </details>
               {draft.api === "openai-completions" && (
@@ -1111,141 +1189,154 @@ export function ProvidersSettings() {
                   </button>
                 </div>
               )}
-              <div className="max-h-72 overflow-auto rounded-md border border-border">
+              <div className="max-h-96 overflow-auto rounded-md border border-border">
                 {filteredModels.length === 0 ? (
                   <p className="p-4 text-center text-xs text-muted">Fetch or add models to configure visibility</p>
                 ) : (
                   filteredModels.map((model) => (
-                    <div key={model.id} className="flex h-10 items-center gap-3 border-b border-border px-3 last:border-b-0">
-                      <input
-                        type="checkbox"
-                        checked={model.enabled}
-                        aria-label={`Show ${model.name} in chat`}
-                        onChange={(event) => updateModel(model.id, { enabled: event.target.checked })}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm" title={model.id}>{model.name}</span>
-                      {model.reasoning && (
-                        <span className="text-[10px] text-muted" title={thinkingSourceLabel(model)}>
-                          reasoning
-                        </span>
+                    <div key={model.id} className="border-b border-border last:border-b-0">
+                      <div className="flex h-10 items-center gap-3 px-3">
+                        <input
+                          type="checkbox"
+                          checked={model.enabled}
+                          aria-label={`Show ${model.name} in chat`}
+                          onChange={(event) => updateModel(model.id, { enabled: event.target.checked })}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm" title={model.id}>{model.name}</span>
+                        {model.reasoning && (
+                          <span className="text-[11px] text-muted" title={thinkingSourceLabel(model)}>
+                            reasoning
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className={`flex size-7 items-center justify-center rounded-md ${
+                            editingModelId === model.id
+                              ? "bg-accent/15 text-accent"
+                              : "text-muted hover:text-foreground"
+                          }`}
+                          title="Model settings"
+                          aria-expanded={editingModelId === model.id}
+                          onClick={() => setEditingModelId((current) => (current === model.id ? null : model.id))}
+                        >
+                          <SlidersHorizontal size={14} />
+                        </button>
+                      </div>
+                      {editingModelId === model.id && (
+                        <div className="grid grid-cols-2 gap-3 border-t border-border bg-surface-raised/60 p-3">
+                          <div className="col-span-2 flex items-center justify-between">
+                            <span className="font-mono text-xs">{model.id}</span>
+                            <button
+                              type="button"
+                              className="text-muted hover:text-foreground"
+                              title="Close model settings"
+                              aria-label="Close model settings"
+                              onClick={() => setEditingModelId(null)}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                          <label className="flex flex-col gap-1 text-[11px] text-muted">
+                            Display name
+                            <input
+                              className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+                              value={model.name}
+                              onChange={(event) => updateModel(model.id, { name: event.target.value })}
+                            />
+                          </label>
+                          <NumberField
+                            key={`${model.id}:contextWindow`}
+                            label="Context window"
+                            value={model.contextWindow}
+                            onCommit={(next) => updateModel(model.id, { contextWindow: next })}
+                          />
+                          <NumberField
+                            key={`${model.id}:maxTokens`}
+                            label="Max output tokens"
+                            value={model.maxTokens}
+                            onCommit={(next) => updateModel(model.id, { maxTokens: next })}
+                          />
+                          <label className="flex flex-col gap-1 text-[11px] text-muted">
+                            Thinking support
+                            <select
+                              className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+                              value={thinkingMode(model)}
+                              onChange={(event) => {
+                                const mode = event.target.value;
+                                if (mode === "disabled") {
+                                  updateModel(model.id, {
+                                    reasoning: false,
+                                    thinkingLevelMap: undefined,
+                                    thinkingSource: "manual",
+                                  });
+                                  return;
+                                }
+                                if (mode === "custom") {
+                                  updateModel(model.id, {
+                                    reasoning: true,
+                                    thinkingLevelMap: customThinkingMap(model),
+                                    thinkingSource: "manual",
+                                  });
+                                  return;
+                                }
+                                updateModel(model.id, automaticThinkingConfig(model.id));
+                              }}
+                            >
+                              <option value="auto">Auto</option>
+                              <option value="custom">Custom</option>
+                              <option value="disabled">Disabled</option>
+                            </select>
+                          </label>
+                          <div className="flex items-end gap-4 pb-1 text-xs">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={model.input.includes("image")}
+                                onChange={(event) =>
+                                  updateModel(model.id, { input: event.target.checked ? ["text", "image"] : ["text"] })
+                                }
+                              /> Images
+                            </label>
+                          </div>
+                          <p className="col-span-2 text-[11px] text-muted">
+                            {thinkingSourceLabel(model)}
+                          </p>
+                          {thinkingMode(model) === "custom" && (
+                            <div className="col-span-2 grid grid-cols-4 gap-2 border-t border-border pt-2">
+                              {THINKING_LEVELS.map((level) => {
+                                const enabled = model.thinkingLevelMap?.[level] !== null;
+                                const enabledCount = THINKING_LEVELS.filter(
+                                  (item) => model.thinkingLevelMap?.[item] !== null,
+                                ).length;
+                                return (
+                                  <label key={level} className="flex items-center gap-2 text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={enabled}
+                                      onChange={(event) => {
+                                        if (!event.target.checked && enabledCount <= 1) return;
+                                        updateModel(model.id, {
+                                          reasoning: true,
+                                          thinkingLevelMap: {
+                                            ...customThinkingMap(model),
+                                            [level]: event.target.checked ? level : null,
+                                          },
+                                          thinkingSource: "manual",
+                                        });
+                                      }}
+                                    />
+                                    {level}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       )}
-                      <button
-                        type="button"
-                        className="flex size-7 items-center justify-center text-muted hover:text-foreground"
-                        title="Model settings"
-                        onClick={() => setEditingModelId((current) => (current === model.id ? null : model.id))}
-                      >
-                        <SlidersHorizontal size={14} />
-                      </button>
                     </div>
                   ))
                 )}
               </div>
-              {editingModel && (
-                <div className="mt-2 grid grid-cols-2 gap-3 border-l-2 border-accent pl-3">
-                  <div className="col-span-2 flex items-center justify-between">
-                    <span className="font-mono text-xs">{editingModel.id}</span>
-                    <button type="button" className="text-muted hover:text-foreground" onClick={() => setEditingModelId(null)}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <label className="flex flex-col gap-1 text-[11px] text-muted">
-                    Display name
-                    <input
-                      className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
-                      value={editingModel.name}
-                      onChange={(event) => updateModel(editingModel.id, { name: event.target.value })}
-                    />
-                  </label>
-                  <NumberField
-                    key={`${editingModel.id}:contextWindow`}
-                    label="Context window"
-                    value={editingModel.contextWindow}
-                    onCommit={(next) => updateModel(editingModel.id, { contextWindow: next })}
-                  />
-                  <NumberField
-                    key={`${editingModel.id}:maxTokens`}
-                    label="Max output tokens"
-                    value={editingModel.maxTokens}
-                    onCommit={(next) => updateModel(editingModel.id, { maxTokens: next })}
-                  />
-                  <label className="flex flex-col gap-1 text-[11px] text-muted">
-                    Thinking support
-                    <select
-                      className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
-                      value={thinkingMode(editingModel)}
-                      onChange={(event) => {
-                        const mode = event.target.value;
-                        if (mode === "disabled") {
-                          updateModel(editingModel.id, {
-                            reasoning: false,
-                            thinkingLevelMap: undefined,
-                            thinkingSource: "manual",
-                          });
-                          return;
-                        }
-                        if (mode === "custom") {
-                          updateModel(editingModel.id, {
-                            reasoning: true,
-                            thinkingLevelMap: customThinkingMap(editingModel),
-                            thinkingSource: "manual",
-                          });
-                          return;
-                        }
-                        updateModel(editingModel.id, automaticThinkingConfig(editingModel.id));
-                      }}
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="custom">Custom</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
-                  </label>
-                  <div className="flex items-end gap-4 pb-1 text-xs">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={editingModel.input.includes("image")}
-                        onChange={(event) =>
-                          updateModel(editingModel.id, { input: event.target.checked ? ["text", "image"] : ["text"] })
-                        }
-                      /> Images
-                    </label>
-                  </div>
-                  <p className="col-span-2 text-[11px] text-muted">
-                    {thinkingSourceLabel(editingModel)}
-                  </p>
-                  {thinkingMode(editingModel) === "custom" && (
-                    <div className="col-span-2 grid grid-cols-4 gap-2 border-t border-border pt-2">
-                      {THINKING_LEVELS.map((level) => {
-                        const enabled = editingModel.thinkingLevelMap?.[level] !== null;
-                        const enabledCount = THINKING_LEVELS.filter(
-                          (item) => editingModel.thinkingLevelMap?.[item] !== null,
-                        ).length;
-                        return (
-                          <label key={level} className="flex items-center gap-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={(event) => {
-                                if (!event.target.checked && enabledCount <= 1) return;
-                                updateModel(editingModel.id, {
-                                  reasoning: true,
-                                  thinkingLevelMap: {
-                                    ...customThinkingMap(editingModel),
-                                    [level]: event.target.checked ? level : null,
-                                  },
-                                  thinkingSource: "manual",
-                                });
-                              }}
-                            />
-                            {level}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
             </section>
 
             <details className="border-t border-border pt-4">

@@ -151,7 +151,7 @@ describe("ProvidersSettings dirty tracking", () => {
     await renderLoaded();
 
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("Display name"), "X");
+    await user.type(screen.getByLabelText(/Display name/), "X");
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
     expect(useAppStore.getState().providersDirty).toBe(true);
 
@@ -161,11 +161,11 @@ describe("ProvidersSettings dirty tracking", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByLabelText("Display name")).toHaveValue("Provider AX");
+    expect(screen.getByLabelText(/Display name/)).toHaveValue("Provider AX");
 
     await user.click(screen.getByRole("button", { name: /Provider B/ }));
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
-    expect(screen.getByLabelText("Display name")).toHaveValue("Provider B");
+    expect(screen.getByLabelText(/Display name/)).toHaveValue("Provider B");
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
     expect(useAppStore.getState().providersDirty).toBe(false);
   });
@@ -175,7 +175,7 @@ describe("ProvidersSettings dirty tracking", () => {
     mockRequests();
     const { unmount } = render(<ProvidersSettings />);
     await screen.findByDisplayValue("Provider A");
-    await user.type(screen.getByLabelText("Display name"), "X");
+    await user.type(screen.getByLabelText(/Display name/), "X");
     expect(useAppStore.getState().providersDirty).toBe(true);
 
     unmount();
@@ -317,7 +317,7 @@ describe("ProvidersSettings in-flight guards", () => {
 
     expect(screen.queryByText("From A")).not.toBeInTheDocument();
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Display name")).toHaveValue("Provider B");
+    expect(screen.getByLabelText(/Display name/)).toHaveValue("Provider B");
   });
 
   it("does not report unsaved changes when a fetch only reorders the saved models", async () => {
@@ -358,7 +358,7 @@ describe("ProvidersSettings in-flight guards", () => {
     const user = userEvent.setup();
     await renderLoaded();
 
-    await user.type(screen.getByLabelText("Display name"), "X");
+    await user.type(screen.getByLabelText(/Display name/), "X");
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
 
     useAppStore
@@ -366,9 +366,29 @@ describe("ProvidersSettings in-flight guards", () => {
       .setHost({ ...host(), hostInstanceId: "99999999-9999-4999-8999-999999999999" });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Display name")).toHaveValue("Provider AX"),
+      expect(screen.getByLabelText(/Display name/)).toHaveValue("Provider AX"),
     );
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  });
+});
+
+describe("ProvidersSettings inline validation", () => {
+  it("shows URL errors inline on blur and blocks saving until fixed", async () => {
+    const user = userEvent.setup();
+    const spy = await renderLoaded();
+
+    const baseUrl = screen.getByLabelText(/Base URL/);
+    await user.clear(baseUrl);
+    await user.type(baseUrl, "not a url");
+    await user.tab();
+    expect(screen.getByText("Must be an http(s) URL")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(callsFor(spy, "provider.save")).toHaveLength(0);
+
+    await user.clear(baseUrl);
+    await user.type(baseUrl, "https://fixed.example.com/v1");
+    expect(screen.queryByText("Must be an http(s) URL")).not.toBeInTheDocument();
   });
 });
 
@@ -381,7 +401,7 @@ describe("ProvidersSettings delete confirmation", () => {
     });
     await renderLoaded(spy);
 
-    await user.type(screen.getByLabelText("Display name"), " renamed");
+    await user.type(screen.getByLabelText(/Display name/), " renamed");
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     const dialog = screen.getByRole("dialog", { name: "Delete Provider" });

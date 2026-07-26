@@ -259,12 +259,12 @@ describe("PackagesPage DOM workflows", () => {
   it("groups package resources with project tri-state controls and keeps runtime rows read-only", async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await screen.findByRole("tab", { name: "Resources" });
-    await user.click(screen.getByRole("tab", { name: "Resources" }));
+    await screen.findByRole("button", { name: "Resources" });
+    await user.click(screen.getByRole("button", { name: "Resources" }));
     await user.click(screen.getByRole("button", { name: "project" }));
 
     for (const name of ["All", "Extensions", "Skills", "Prompts", "Themes"]) {
-      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
     expect(screen.getByLabelText("Resource source")).toHaveTextContent("Standalone");
     expect(screen.getByLabelText("Resource source")).toHaveTextContent("Runtime");
@@ -301,7 +301,7 @@ describe("PackagesPage DOM workflows", () => {
     });
     await user.click(screen.getByRole("button", { name: "Provided by Tools extension" }));
     expect(screen.getByLabelText("Search resources")).toHaveValue("Tools");
-    expect(screen.getByRole("tab", { name: "Extensions" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Extensions" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("controls all direct resources from the installed package detail", async () => {
@@ -385,7 +385,7 @@ describe("PackagesPage DOM workflows", () => {
 
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await user.click(await screen.findByRole("tab", { name: "Resources" }));
+    await user.click(await screen.findByRole("button", { name: "Resources" }));
     const enable = screen.getByRole("button", {
       name: "enabled all resources in Tools package",
     });
@@ -479,7 +479,7 @@ describe("PackagesPage DOM workflows", () => {
 
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await user.click(screen.getByRole("tab", { name: "Resources" }));
+    await user.click(screen.getByRole("button", { name: "Resources" }));
     await user.click(screen.getByRole("button", {
       name: "enabled all resources in Tools package",
     }));
@@ -527,7 +527,7 @@ describe("PackagesPage DOM workflows", () => {
     render(<PackagesPage />);
     await screen.findByLabelText("Package source");
     await user.type(screen.getByLabelText("Package source"), "npm:trusted-tools");
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(screen.getByRole("button", { name: "Install…" }));
 
     expect(screen.getByRole("dialog", { name: "Review package install" })).toBeInTheDocument();
     expect(screen.getByText(/dependency lifecycle scripts/i)).toBeInTheDocument();
@@ -555,6 +555,43 @@ describe("PackagesPage DOM workflows", () => {
     expect(screen.getByRole("button", { name: "Update package" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Review package update" })).not.toBeInTheDocument();
+  });
+
+  it("disables Update all when a completed check reports no updates", async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await screen.findByRole("button", { name: /Tools.*User/ });
+    expect(screen.getByRole("button", { name: "Update all packages" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Check" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Update all packages" })).toBeDisabled(),
+    );
+  });
+
+  it("shows a human progress label and can be dismissed", async () => {
+    const user = userEvent.setup();
+    useAppStore.getState().setPackageProgress({
+      operationId: "op-9",
+      action: "install",
+      source: "npm:tools",
+      message: "Installing package",
+      type: "progress",
+      lastEventAt: Date.now(),
+    });
+    try {
+      render(<PackagesPage />);
+
+      expect(await screen.findByText("Working…")).toBeInTheDocument();
+      expect(screen.queryByText("progress")).not.toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole("button", { name: "Dismiss package progress" }),
+      );
+      expect(screen.queryByText("Working…")).not.toBeInTheDocument();
+    } finally {
+      useAppStore.getState().setPackageProgress(null);
+    }
   });
 
   it("requires a danger review before removing a package", async () => {
@@ -605,19 +642,19 @@ describe("PackagesPage DOM workflows", () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
 
-    expect(await screen.findByRole("button", { name: "Update all" })).toBeDisabled();
-    await user.click(screen.getByRole("tab", { name: "Resources" }));
+    expect(await screen.findByRole("button", { name: "Update all packages" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Resources" }));
     const toolsControls = screen.getByRole("group", { name: "Tools package" });
     expect(within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" })).toBeDisabled();
     expect(within(toolsControls).getByRole("button", { name: "disabled all resources in Tools package" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Enable" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Enable all shown" })).toBeDisabled();
   });
 
   it("keeps a package bundled under a type filter and mutates all cross-type members", async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await user.click(await screen.findByRole("tab", { name: "Resources" }));
-    await user.click(screen.getByRole("tab", { name: "Extensions" }));
+    await user.click(await screen.findByRole("button", { name: "Resources" }));
+    await user.click(screen.getByRole("button", { name: "Extensions" }));
 
     expect(screen.getByRole("heading", { name: /Packages \(1\)/ })).toBeInTheDocument();
     expect(screen.getAllByRole("group", { name: "Tools package" })).toHaveLength(1);
@@ -627,7 +664,7 @@ describe("PackagesPage DOM workflows", () => {
     expect(within(packageRow!).getByText("Tools extension")).toBeInTheDocument();
     expect(within(packageRow!).getByText("Review skill")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Disable" }));
+    await user.click(screen.getByRole("button", { name: "Disable all shown" }));
     await waitFor(() => {
       const mutations = request.mock.calls.filter(([method]) => method === "resource.setPreferences");
       expect(mutations).toHaveLength(1);
@@ -655,7 +692,7 @@ describe("PackagesPage DOM workflows", () => {
   it("distinguishes an empty resource inventory from filtered-out resources", async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await user.click(await screen.findByRole("tab", { name: "Resources" }));
+    await user.click(await screen.findByRole("button", { name: "Resources" }));
     await user.type(screen.getByLabelText("Search resources"), "nothing-can-match-this");
     expect(screen.getByText("No resources match these filters.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
@@ -665,7 +702,7 @@ describe("PackagesPage DOM workflows", () => {
     currentSnapshot = snapshot({ resources: [] });
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     render(<PackagesPage />);
-    await user.click(await screen.findByRole("tab", { name: "Resources" }));
+    await user.click(await screen.findByRole("button", { name: "Resources" }));
     expect(screen.getByText("No resources are available yet.")).toBeInTheDocument();
   });
 

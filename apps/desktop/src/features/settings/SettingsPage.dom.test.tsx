@@ -22,7 +22,7 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="providers" />);
 
-    expect(screen.getByText("Select or add a Provider")).toBeInTheDocument();
+    expect(screen.getByText("No Providers configured yet.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "General" }));
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("SettingsPage navigation guard", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByText("Select or add a Provider")).toBeInTheDocument();
+    expect(screen.getByText("No Providers configured yet.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Discard changes" }));

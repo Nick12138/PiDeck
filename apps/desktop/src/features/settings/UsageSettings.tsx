@@ -105,15 +105,6 @@ function useSessionUsageReport() {
 export function UsageSettings() {
   const { report, error, loading, refresh } = useSessionUsageReport();
   const usage = report?.totals.usage;
-  const usageTooltip = usage
-    ? [
-        `Input: ${formatTokenCount(usage.input)}`,
-        `Output: ${formatTokenCount(usage.output)}`,
-        `Cache read: ${formatTokenCount(usage.cacheRead)}`,
-        `Cache write: ${formatTokenCount(usage.cacheWrite)}`,
-        `Reasoning: ${usage.reasoning === undefined ? "not reported" : formatTokenCount(usage.reasoning)}`,
-      ].join("\n")
-    : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -131,11 +122,27 @@ export function UsageSettings() {
       </SectionHeader>
 
       <div className="grid shrink-0 grid-cols-3 border-b border-border">
-        <div className="border-r border-border px-6 py-4" title={usageTooltip}>
+        <div className="border-r border-border px-6 py-4">
           <p className="text-[11px] text-muted">Total tokens</p>
           <p className="mt-1 text-base font-semibold tabular-nums">
             {usage ? formatTokenCount(usage.totalTokens) : "--"}
           </p>
+          {usage && (
+            <dl className="mt-2 grid max-w-52 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px] text-muted">
+              <dt>Input</dt>
+              <dd className="text-right tabular-nums">{formatTokenCount(usage.input)}</dd>
+              <dt>Output</dt>
+              <dd className="text-right tabular-nums">{formatTokenCount(usage.output)}</dd>
+              <dt>Cache read</dt>
+              <dd className="text-right tabular-nums">{formatTokenCount(usage.cacheRead)}</dd>
+              <dt>Cache write</dt>
+              <dd className="text-right tabular-nums">{formatTokenCount(usage.cacheWrite)}</dd>
+              <dt>Reasoning</dt>
+              <dd className="text-right tabular-nums">
+                {usage.reasoning === undefined ? "—" : formatTokenCount(usage.reasoning)}
+              </dd>
+            </dl>
+          )}
         </div>
         <div className="border-r border-border px-6 py-4">
           <p className="text-[11px] text-muted">Total cost</p>
@@ -168,10 +175,10 @@ export function UsageSettings() {
           <table className="w-full table-fixed border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 bg-surface-raised text-[11px] text-muted">
               <tr className="border-b border-border">
-                <th className="w-[42%] px-6 py-2.5 font-medium">Session</th>
-                <th className="w-[24%] px-3 py-2.5 font-medium">Updated</th>
-                <th className="w-[18%] px-3 py-2.5 text-right font-medium">Tokens</th>
-                <th className="w-[16%] px-6 py-2.5 text-right font-medium">Cost</th>
+                <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">Session</th>
+                <th scope="col" className="w-[24%] px-3 py-2.5 font-medium">Updated</th>
+                <th scope="col" className="w-[18%] px-3 py-2.5 text-right font-medium">Tokens</th>
+                <th scope="col" className="w-[16%] px-6 py-2.5 text-right font-medium">Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -180,7 +187,10 @@ export function UsageSettings() {
                   <td className="px-6 py-3">
                     <div className="flex min-w-0 items-center gap-2">
                       {session.archived && (
-                        <Archive size={13} className="shrink-0 text-muted" aria-label="Archived" />
+                        <>
+                          <Archive size={13} className="shrink-0 text-muted" aria-hidden />
+                          <span className="sr-only">Archived</span>
+                        </>
                       )}
                       <span className="truncate font-medium" title={session.sessionPath}>
                         {session.name ?? "Untitled session"}

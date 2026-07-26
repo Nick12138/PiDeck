@@ -281,6 +281,7 @@ export function SettingsPage({
                   ? "bg-surface-overlay font-medium text-foreground"
                   : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
               }`}
+              aria-current={section === id ? "page" : undefined}
               onClick={() => requestSection(id)}
             >
               <Icon size={16} />
