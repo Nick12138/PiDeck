@@ -8,6 +8,7 @@ import { RightDock } from "../components/RightDock";
 import { WindowControls } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { Dialog } from "../components/Dialog";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { applyTheme } from "../lib/theme";
 import {
@@ -35,13 +36,20 @@ import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
 function SettingsOverlay({ section }: { section: "general" | "packages" }) {
   const setPage = useAppStore((s) => s.setPage);
   const [active, setActive] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     const firstFrame = requestAnimationFrame(() => {
       requestAnimationFrame(() => setActive(true));
     });
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActive(false);
+      // Dialogs inside Settings consume their own Escape before it reaches window.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (useAppStore.getState().providersDirty) {
+        setConfirmDiscard(true);
+        return;
+      }
+      setActive(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => {
@@ -49,6 +57,11 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, []);
+
+  const requestClose = () => {
+    if (useAppStore.getState().providersDirty) setConfirmDiscard(true);
+    else setActive(false);
+  };
 
   return (
     <div
@@ -59,10 +72,24 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
         if (event.target === event.currentTarget && !active) setPage("chat");
       }}
     >
-      <SettingsPage
-        initialSection={section}
-        onClose={() => setActive(false)}
-      />
+      <SettingsPage initialSection={section} onClose={requestClose} />
+      {confirmDiscard && (
+        <Dialog
+          title="Discard unsaved Provider changes?"
+          confirmLabel="Discard changes"
+          destructive
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            setActive(false);
+          }}
+        >
+          <p>
+            The Provider form has edits that were not saved. Closing Settings
+            will discard them.
+          </p>
+        </Dialog>
+      )}
     </div>
   );
 }

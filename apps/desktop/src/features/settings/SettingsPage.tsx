@@ -12,6 +12,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import type { TerminalProfileId } from "@pideck/protocol";
+import { Dialog } from "../../components/Dialog";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
@@ -317,10 +318,21 @@ export function SettingsPage({
   onClose?: () => void;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const providersDirty = useAppStore((s) => s.providersDirty);
+  const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
 
   useEffect(() => {
     setSection(initialSection);
   }, [initialSection]);
+
+  function requestSection(next: SettingsSection) {
+    if (next === section) return;
+    if (providersDirty) {
+      setPendingSection(next);
+      return;
+    }
+    setSection(next);
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
@@ -355,7 +367,7 @@ export function SettingsPage({
                   ? "bg-surface-overlay font-medium text-foreground"
                   : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
               }`}
-              onClick={() => setSection(id)}
+              onClick={() => requestSection(id)}
             >
               <Icon size={16} />
               {label}
@@ -374,6 +386,23 @@ export function SettingsPage({
           )}
         </div>
       </div>
+      {pendingSection && (
+        <Dialog
+          title="Discard unsaved Provider changes?"
+          confirmLabel="Discard changes"
+          destructive
+          onCancel={() => setPendingSection(null)}
+          onConfirm={() => {
+            setSection(pendingSection);
+            setPendingSection(null);
+          }}
+        >
+          <p>
+            The Provider form has edits that were not saved. Leaving this
+            section will discard them.
+          </p>
+        </Dialog>
+      )}
     </div>
   );
 }

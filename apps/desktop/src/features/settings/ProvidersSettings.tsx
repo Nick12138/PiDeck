@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiscoveredProviderModel,
   ProviderConnectionResult,
@@ -34,6 +34,7 @@ import {
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { Dialog } from "../../components/Dialog";
 
 type DraftState = ProviderDraft & { originalId?: string };
 
@@ -72,6 +73,27 @@ function snapshotToDraft(provider: ProviderSnapshot): DraftState {
       };
     }),
   };
+}
+
+function draftFingerprint(draft: DraftState): string {
+  // Canonical serialization for dirty comparison: the host returns discovered
+  // models sorted by id while saved configs keep insertion order, and model
+  // objects reach the draft through different construction paths — normalize
+  // order and key layout so only semantic changes count as edits.
+  return JSON.stringify({
+    ...draft,
+    models: [...draft.models]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((model) => ({
+        id: model.id,
+        name: model.name,
+        reasoning: model.reasoning,
+        thinkingLevelMap: model.thinkingLevelMap,
+        input: model.input,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+      })),
+  });
 }
 
 function emptyDraft(): DraftState {
@@ -199,6 +221,69 @@ function thinkingSourceLabel(model: DiscoveredProviderModel): string {
   }
 }
 
+function NumberField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (next: number) => void;
+}) {
+  // Keep the raw text while typing; committing on every keystroke would snap
+  // a cleared field to the fallback and corrupt the value being entered.
+  const [text, setText] = useState(String(value));
+  const [committed, setCommitted] = useState(value);
+  const skipCommitRef = useRef(false);
+  if (value !== committed) {
+    // The draft changed underneath us (catalog refetch, host reload): the
+    // committed value is the source of truth, stale text must not survive.
+    setCommitted(value);
+    setText(String(value));
+  }
+  const commit = () => {
+    const parsed = Math.floor(Number(text));
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      onCommit(parsed);
+      setCommitted(parsed);
+      setText(String(parsed));
+    } else {
+      setText(String(value));
+    }
+  };
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-muted">
+      {label}
+      <input
+        type="number"
+        min={1}
+        className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={() => {
+          if (skipCommitRef.current) {
+            skipCommitRef.current = false;
+            return;
+          }
+          commit();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape") {
+            // First Escape resolves the field (revert + leave) and must not
+            // bubble on to close the whole Settings overlay.
+            event.preventDefault();
+            event.stopPropagation();
+            skipCommitRef.current = true;
+            setText(String(value));
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </label>
+  );
+}
+
 function authLabel(provider: ProviderSnapshot | undefined): string {
   if (!provider?.auth.configured) {
     return provider?.auth.label ? `Available via ${provider.auth.label}` : "No stored API key";
@@ -229,13 +314,36 @@ export function ProvidersSettings() {
   const [advancedEndpointOpen, setAdvancedEndpointOpen] = useState(false);
   const [manualId, setManualId] = useState("");
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const [pendingSwitch, setPendingSwitch] = useState<
+    { kind: "select"; id: string } | { kind: "new" } | null
+  >(null);
+  // Serialized shape of the draft as loaded/saved; any divergence means unsaved edits.
+  const baselineRef = useRef<string | null>(null);
+  // Bumped on every draft replacement. In-flight save/fetch/test continuations
+  // compare it so a resolved request never writes into a different draft.
+  const draftEpochRef = useRef(0);
 
   const selectedProvider = providers.find((provider) => provider.id === selectedId);
+  const setProvidersDirty = useAppStore((state) => state.setProvidersDirty);
+  const dirty = useMemo(
+    () =>
+      draft !== null &&
+      (apiKey !== "" || clearApiKey || draftFingerprint(draft) !== baselineRef.current),
+    [draft, apiKey, clearApiKey],
+  );
+
+  useEffect(() => {
+    setProvidersDirty(dirty);
+  }, [dirty, setProvidersDirty]);
+  useEffect(() => () => setProvidersDirty(false), [setProvidersDirty]);
 
   useEffect(() => {
     if (!host) {
       setProviders([]);
       setDraft(null);
+      baselineRef.current = null;
+      draftEpochRef.current += 1;
+      setPendingSwitch(null);
       setAdvancedEndpointOpen(false);
       return;
     }
@@ -250,6 +358,13 @@ export function ProvidersSettings() {
           return;
         }
         setProviders(response.result.providers);
+        // A pending switch confirmation refers to the pre-reload world.
+        setPendingSwitch(null);
+        if (useAppStore.getState().providersDirty) {
+          // Host restarted mid-edit: keep the unsaved draft instead of
+          // silently replacing it with the reloaded snapshot.
+          return;
+        }
         const preferred =
           response.result.providers.find((provider) => provider.id === selectedId) ??
           response.result.providers[0];
@@ -257,11 +372,15 @@ export function ProvidersSettings() {
           const nextDraft = snapshotToDraft(preferred);
           setSelectedId(preferred.id);
           setDraft(nextDraft);
+          baselineRef.current = draftFingerprint(nextDraft);
+          draftEpochRef.current += 1;
           setCatalog(enabledCatalog(nextDraft.models));
           setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
         } else {
           setSelectedId(null);
           setDraft(null);
+          baselineRef.current = null;
+          draftEpochRef.current += 1;
           setCatalog([]);
           setAdvancedEndpointOpen(false);
         }
@@ -297,6 +416,8 @@ export function ProvidersSettings() {
     const nextDraft = snapshotToDraft(provider);
     setSelectedId(provider.id);
     setDraft(nextDraft);
+    baselineRef.current = draftFingerprint(nextDraft);
+    draftEpochRef.current += 1;
     setCatalog(enabledCatalog(nextDraft.models));
     setApiKey("");
     setClearApiKey(false);
@@ -307,8 +428,11 @@ export function ProvidersSettings() {
   }
 
   function startNewProvider() {
+    const nextDraft = emptyDraft();
     setSelectedId(null);
-    setDraft(emptyDraft());
+    setDraft(nextDraft);
+    baselineRef.current = draftFingerprint(nextDraft);
+    draftEpochRef.current += 1;
     setCatalog([]);
     setApiKey("");
     setClearApiKey(false);
@@ -328,12 +452,19 @@ export function ProvidersSettings() {
     updateDraft({ models: nextCatalog.filter((model) => model.enabled).map(stripEnabled) });
   }
 
-  async function persistDraft(notify = true): Promise<ProviderSnapshot | null> {
+  async function persistDraft(
+    options: { notify?: boolean; includeKeyRemoval?: boolean } = {},
+  ): Promise<ProviderSnapshot | null> {
+    // Implicit saves (before Test/Fetch) must never commit a pending stored-key
+    // removal: that deletion is irreversible and belongs to the explicit Save.
+    const { notify = true, includeKeyRemoval = true } = options;
     if (!host || !draft || saving) return null;
     if (!draft.id.trim() || !draft.name.trim() || !draft.baseUrl.trim()) {
       pushNotification("Provider ID, name, and Base URL are required", "error");
       return null;
     }
+    const removeStoredKey = clearApiKey && includeKeyRemoval;
+    const epoch = draftEpochRef.current;
     setSaving(true);
     try {
       const provider = providerDraftForSave(
@@ -349,7 +480,7 @@ export function ProvidersSettings() {
           ...(draft.originalId ? { originalId: draft.originalId } : {}),
           provider,
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-          ...(clearApiKey ? { clearApiKey: true } : {}),
+          ...(removeStoredKey ? { clearApiKey: true } : {}),
         },
       );
       if (!response.ok) {
@@ -364,21 +495,27 @@ export function ProvidersSettings() {
           (left, right) => left.name.localeCompare(right.name),
         ),
       );
-      setSelectedId(saved.id);
-      setDraft(snapshotToDraft(saved));
-      setCatalog((current) => {
-        const savedIds = new Set(saved.models.map((model) => model.id));
-        const savedById = new Map(saved.models.map((model) => [model.id, model]));
-        if (current.length === 0) return enabledCatalog(saved.models);
-        return current.map((model) => ({
-          ...model,
-          ...(savedById.get(model.id) ?? {}),
-          enabled: savedIds.has(model.id),
-        }));
-      });
-      setApiKey("");
-      setClearApiKey(false);
       refreshProviderConfig();
+      if (epoch === draftEpochRef.current) {
+        // Only touch draft-local state when this is still the same draft the
+        // request was made for; the user may have switched providers mid-save.
+        setSelectedId(saved.id);
+        const savedDraft = snapshotToDraft(saved);
+        setDraft(savedDraft);
+        baselineRef.current = draftFingerprint(savedDraft);
+        setCatalog((current) => {
+          const savedIds = new Set(saved.models.map((model) => model.id));
+          const savedById = new Map(saved.models.map((model) => [model.id, model]));
+          if (current.length === 0) return enabledCatalog(saved.models);
+          return current.map((model) => ({
+            ...model,
+            ...(savedById.get(model.id) ?? {}),
+            enabled: savedIds.has(model.id),
+          }));
+        });
+        setApiKey("");
+        if (removeStoredKey) setClearApiKey(false);
+      }
       if (notify) pushNotification("Provider saved");
       return saved;
     } catch (error) {
@@ -391,7 +528,8 @@ export function ProvidersSettings() {
 
   async function fetchModels() {
     if (!host || !draft || fetching) return;
-    const saved = await persistDraft(false);
+    const epoch = draftEpochRef.current;
+    const saved = await persistDraft({ notify: false, includeKeyRemoval: false });
     if (!saved) return;
     setFetching(true);
     try {
@@ -405,6 +543,9 @@ export function ProvidersSettings() {
         pushNotification(response.error?.message ?? "Could not fetch models", "error");
         return;
       }
+      // The user may have switched to another Provider while the fetch was in
+      // flight; never write another Provider's models into the current draft.
+      if (epoch !== draftEpochRef.current) return;
       setCatalog(response.result.models);
       setDraft((current) =>
         current
@@ -424,7 +565,8 @@ export function ProvidersSettings() {
 
   async function testConnection() {
     if (!host || !draft || testing) return;
-    const saved = await persistDraft(false);
+    const epoch = draftEpochRef.current;
+    const saved = await persistDraft({ notify: false, includeKeyRemoval: false });
     if (!saved) return;
     const modelId = saved.models[0]?.id;
     if (!modelId) {
@@ -444,6 +586,8 @@ export function ProvidersSettings() {
         pushNotification(response.error?.message ?? "Could not test Provider", "error");
         return;
       }
+      // Never render a result banner for a Provider the user switched away from.
+      if (epoch !== draftEpochRef.current) return;
       setConnectionResult(response.result);
       if (response.result.ok) pushNotification(`Provider responded in ${response.result.latencyMs} ms`);
     } catch (error) {
@@ -493,8 +637,13 @@ export function ProvidersSettings() {
   }
 
   async function removeProvider() {
-    if (!host || !draft?.originalId || saving) return;
-    if (!window.confirm(`Delete ${draft.name}?`)) return;
+    if (!host || !draft?.originalId || saving || fetching || testing) return;
+    // Confirm with the saved name, not the (possibly edited) draft name —
+    // deletion targets the stored provider, not the draft.
+    const savedName =
+      providers.find((provider) => provider.id === draft.originalId)?.name ??
+      draft.originalId;
+    if (!window.confirm(`Delete ${savedName}?`)) return;
     setSaving(true);
     try {
       const response = await hostClient.request(
@@ -583,7 +732,7 @@ export function ProvidersSettings() {
             type="button"
             className="flex size-8 shrink-0 items-center justify-center rounded border border-border hover:bg-surface-overlay"
             title="Add Provider"
-            onClick={startNewProvider}
+            onClick={() => (dirty ? setPendingSwitch({ kind: "new" }) : startNewProvider())}
           >
             <Plus size={15} />
           </button>
@@ -606,7 +755,11 @@ export function ProvidersSettings() {
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left"
-                  onClick={() => selectProvider(provider)}
+                  onClick={() =>
+                    dirty
+                      ? setPendingSwitch({ kind: "select", id: provider.id })
+                      : selectProvider(provider)
+                  }
                 >
                   <span
                     className={`mt-1.5 size-2 shrink-0 rounded-full ${
@@ -651,22 +804,27 @@ export function ProvidersSettings() {
                 <h1 className="text-lg font-semibold">{draft.originalId ? "Edit Provider" : "Add Provider"}</h1>
                 <p className="mt-1 text-xs text-muted">{draft.originalId ?? "Custom Provider"}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                {dirty && (
+                  <span className="flex items-center gap-1 text-[11px] text-warning">
+                    <AlertTriangle size={12} /> Unsaved changes
+                  </span>
+                )}
                 <button
                   type="button"
                   className="flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
                   disabled={saving || fetching || testing || draft.models.length === 0}
-                  title="Send a minimal request through the configured model API"
+                  title="Saves the Provider, then sends a minimal request through the configured model API"
                   onClick={() => void testConnection()}
                 >
                   <Activity className={testing ? "animate-pulse" : ""} size={14} />
-                  {testing ? "Testing" : "Test"}
+                  {testing ? "Testing" : "Save & test"}
                 </button>
                 {draft.originalId && (
                   <button
                     type="button"
                     className="flex h-8 items-center gap-1.5 rounded border border-danger/40 px-2.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
-                    disabled={saving}
+                    disabled={saving || fetching || testing}
                     onClick={() => void removeProvider()}
                   >
                     <Trash2 size={14} /> Delete
@@ -841,7 +999,13 @@ export function ProvidersSettings() {
               <div className="mb-2 flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-medium">API key</h2>
-                  <p className="text-[11px] text-muted">{clearApiKey ? "Stored key will be removed" : authLabel(selectedProvider)}</p>
+                  {clearApiKey ? (
+                    <p className="flex items-center gap-1 text-[11px] text-danger">
+                      <AlertTriangle size={12} /> Stored key will be removed when you save
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted">{authLabel(selectedProvider)}</p>
+                  )}
                 </div>
                 {selectedProvider?.auth.configured && (
                   <button
@@ -900,8 +1064,8 @@ export function ProvidersSettings() {
                   <button
                     type="button"
                     className="flex size-8 items-center justify-center rounded hover:bg-surface-overlay disabled:opacity-50"
-                    title="Fetch models"
-                    disabled={fetching || saving}
+                    title="Save the Provider and fetch its model list"
+                    disabled={fetching || saving || testing}
                     onClick={() => void fetchModels()}
                   >
                     <RefreshCw className={fetching ? "animate-spin" : ""} size={15} />
@@ -992,26 +1156,18 @@ export function ProvidersSettings() {
                       onChange={(event) => updateModel(editingModel.id, { name: event.target.value })}
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-[11px] text-muted">
-                    Context window
-                    <input
-                      type="number"
-                      min={1}
-                      className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
-                      value={editingModel.contextWindow}
-                      onChange={(event) => updateModel(editingModel.id, { contextWindow: Number(event.target.value) || 1 })}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-[11px] text-muted">
-                    Max output tokens
-                    <input
-                      type="number"
-                      min={1}
-                      className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
-                      value={editingModel.maxTokens}
-                      onChange={(event) => updateModel(editingModel.id, { maxTokens: Number(event.target.value) || 1 })}
-                    />
-                  </label>
+                  <NumberField
+                    key={`${editingModel.id}:contextWindow`}
+                    label="Context window"
+                    value={editingModel.contextWindow}
+                    onCommit={(next) => updateModel(editingModel.id, { contextWindow: next })}
+                  />
+                  <NumberField
+                    key={`${editingModel.id}:maxTokens`}
+                    label="Max output tokens"
+                    value={editingModel.maxTokens}
+                    onCommit={(next) => updateModel(editingModel.id, { maxTokens: next })}
+                  />
                   <label className="flex flex-col gap-1 text-[11px] text-muted">
                     Thinking support
                     <select
@@ -1132,6 +1288,31 @@ export function ProvidersSettings() {
             </details>
           </div>
         </div>
+      )}
+      {pendingSwitch !== null && (
+        <Dialog
+          title="Discard unsaved changes?"
+          confirmLabel="Discard changes"
+          destructive
+          onCancel={() => setPendingSwitch(null)}
+          onConfirm={() => {
+            const target = pendingSwitch;
+            setPendingSwitch(null);
+            if (target.kind === "new") {
+              startNewProvider();
+              return;
+            }
+            // Resolve against the live list; the provider may have vanished
+            // (host reload) between opening and confirming the dialog.
+            const live = providers.find((provider) => provider.id === target.id);
+            if (live) selectProvider(live);
+          }}
+        >
+          <p>
+            Edits to {draft?.name?.trim() || "this Provider"} have not been
+            saved. Switching away will discard them.
+          </p>
+        </Dialog>
       )}
     </div>
   );

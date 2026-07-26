@@ -157,7 +157,10 @@ export type AppState = EpochState & {
   hostFatal: string | null;
   connecting: boolean;
   rehydrating: boolean;
+  /** True while the Providers settings form holds unsaved edits (guards Settings close/nav). */
+  providersDirty: boolean;
   setPage: (page: NavPage) => void;
+  setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
   beginHostEpoch: (host: HostStatusSnapshot) => void;
   setHost: (host: HostStatusSnapshot | null) => void;
@@ -251,11 +254,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   hostFatal: null,
   connecting: true,
   rehydrating: false,
+  providersDirty: false,
   setPage: (page) =>
     set((state) => ({
       page,
       ...(page !== state.page ? { extensionWidgetsOpen: false } : {}),
     })),
+  setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
   beginHostEpoch: (host) => {
     const next = epochBeginHost(epochSlice(get()), host);
