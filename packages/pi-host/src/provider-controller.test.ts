@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AuthStorage,
   ModelRegistry,
@@ -64,6 +64,7 @@ function setup(initialModels: unknown) {
   return {
     layout,
     authStorage,
+    server,
     handlers: createProviderHandlers(factory),
   };
 }
@@ -373,6 +374,100 @@ describe("Provider controller", () => {
         }),
       ]);
     }
+  });
+
+  it.each(["configuration", "identity"] as const)(
+    "releases the graph lock during discovery and rejects stale results after %s changes",
+    async (change) => {
+      let markRequestStarted!: () => void;
+      let releaseResponse!: () => void;
+      const requestStarted = new Promise<void>((resolve) => {
+        markRequestStarted = resolve;
+      });
+      const responseGate = new Promise<void>((resolve) => {
+        releaseResponse = resolve;
+      });
+      const catalogServer = createServer(async (_request, response) => {
+        markRequestStarted();
+        await responseGate;
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ data: [{ id: "stale-model" }] }));
+      });
+      httpServers.push(catalogServer);
+      await new Promise<void>((resolve) => catalogServer.listen(0, "127.0.0.1", resolve));
+      const address = catalogServer.address();
+      if (!address || typeof address === "string") throw new Error("No HTTP address");
+
+      const fixture = setup({
+        providers: {
+          custom: {
+            name: "Custom",
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            api: "openai-completions",
+            models: [],
+          },
+        },
+      });
+      const pending = fixture.handlers["provider.fetchModels"]!({
+        id: "fetch-stale",
+        params: { providerId: "custom" },
+      } as never);
+      await requestStarted;
+
+      expect(fixture.server.serviceGraphLock.getOwner()).toBeNull();
+      expect(fixture.server.graphOperations.getActive()).toBeNull();
+      if (change === "configuration") {
+        const modelsPath = join(fixture.layout.agentDir, "models.json");
+        const changed = JSON.parse(readFileSync(modelsPath, "utf8"));
+        changed.providers.custom.headers = { "X-Revision": "changed" };
+        writeFileSync(modelsPath, JSON.stringify(changed, null, 2));
+      } else {
+        fixture.server.identity.bumpWorkspaceRevision();
+      }
+      releaseResponse();
+
+      const outcome = await pending;
+      expect("error" in outcome && outcome.error.code).toBe("STALE_REVISION");
+      expect(fixture.server.serviceGraphLock.getOwner()).toBeNull();
+      expect(fixture.server.graphOperations.getActive()).toBeNull();
+    },
+  );
+
+  it("cancels model discovery when Host quiescing begins", async () => {
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    const catalogServer = createServer((_request, _response) => {
+      markRequestStarted();
+    });
+    httpServers.push(catalogServer);
+    await new Promise<void>((resolve) => catalogServer.listen(0, "127.0.0.1", resolve));
+    const address = catalogServer.address();
+    if (!address || typeof address === "string") throw new Error("No HTTP address");
+
+    const fixture = setup({
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          api: "openai-completions",
+          models: [],
+        },
+      },
+    });
+    vi.spyOn(fixture.server, "shutdown").mockResolvedValue();
+    const pending = fixture.handlers["provider.fetchModels"]!({
+      id: "fetch-cancelled",
+      params: { providerId: "custom" },
+    } as never);
+    await requestStarted;
+
+    await fixture.server.requestShutdown("provider discovery test");
+    const outcome = await pending;
+    expect("error" in outcome && outcome.error.code).toBe("HOST_SHUTTING_DOWN");
+    expect(fixture.server.serviceGraphLock.getOwner()).toBeNull();
+    expect(fixture.server.graphOperations.getActive()).toBeNull();
   });
 
   it("discovers a root Anthropic-compatible Provider at /v1/models", async () => {
@@ -801,6 +896,58 @@ describe("Provider controller", () => {
     } as never);
     expect("error" in repeated ? repeated.error.message : null).toBeNull();
     expect(authorizations).toEqual([undefined, "Bearer do-not-expose", "Bearer do-not-expose"]);
+  });
+
+  it("does not persist detected authentication after Host shutdown cancellation", async () => {
+    let markRetryStarted!: () => void;
+    const retryStarted = new Promise<void>((resolve) => {
+      markRetryStarted = resolve;
+    });
+    const apiServer = createServer((request, response) => {
+      if (request.headers.authorization === "Bearer do-not-expose") {
+        markRetryStarted();
+        return;
+      }
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        type: "error",
+        error: { type: "authentication_error", message: "Authorization header required" },
+      }));
+    });
+    httpServers.push(apiServer);
+    await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
+    const address = apiServer.address();
+    if (!address || typeof address === "string") throw new Error("No HTTP address");
+
+    const fixture = setup({
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          api: "anthropic-messages",
+          authHeader: false,
+          headers: { "User-Agent": "PiDeck/0.1" },
+          models: [{ id: "relay-model" }],
+        },
+      },
+    });
+    fixture.authStorage.set("custom", { type: "api_key", key: "do-not-expose" });
+    vi.spyOn(fixture.server, "shutdown").mockResolvedValue();
+    const pending = fixture.handlers["provider.checkConnection"]!({
+      id: "detect-cancelled",
+      params: { providerId: "custom", modelId: "relay-model" },
+    } as never);
+    await retryStarted;
+
+    await fixture.server.requestShutdown("provider connection test");
+    const outcome = await pending;
+    expect("error" in outcome && outcome.error.code).toBe("HOST_SHUTTING_DOWN");
+    const persisted = JSON.parse(
+      readFileSync(join(fixture.layout.agentDir, "models.json"), "utf8"),
+    );
+    expect(persisted.providers.custom.authHeader).toBe(false);
+    expect(fixture.server.graphOperations.getActive()).toBeNull();
+    expect(fixture.server.serviceGraphLock.getOwner()).toBeNull();
   });
 
   it("tests the Coding Agent system role and honors OpenAI compatibility overrides", async () => {

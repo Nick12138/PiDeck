@@ -3,6 +3,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAgentHandlers, summarizeModel } from "./agent-controller.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
+import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import type { PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { getActiveExtensionCommandOrigin } from "./extension-command-context.js";
@@ -138,6 +139,7 @@ function stableHandlerFixture(wait: Promise<void>) {
   let phase = "ready";
   const server = {
     identity,
+    graphOperations: new GraphOperationRegistry(),
     serviceGraphLock,
     emit: vi.fn(),
     emitForIdentity: vi.fn(),

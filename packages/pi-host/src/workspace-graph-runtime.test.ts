@@ -720,6 +720,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
 
     return {
       root,
+      agentDir,
       retainedDir,
       identity,
       server,
@@ -894,6 +895,38 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
       const extensionsDir = join(state.retainedDir, ".pi", "extensions");
       mkdirSync(extensionsDir, { recursive: true });
       writeFileSync(join(extensionsDir, "changed.ts"), "export default () => {};\n");
+
+      const result = await state.internal.tryReactivateRetainedGraph({
+        canonical: state.retainedDir,
+        previousGraph: state.previous,
+        revision: 8,
+        sessionRevision: 10,
+        packageRevision: 5,
+      });
+
+      expect(result).toBeNull();
+      expect(state.factory.getGraph()).toBe(state.previous);
+      expect(retainedSession.bindExtensions).not.toHaveBeenCalled();
+      expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("discards a retained graph when models-store.json is created", async () => {
+    const state = setup();
+    try {
+      const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
+      const retained = fakeWorkspaceGraph(
+        state.retainedDir,
+        "77777777-7777-4777-8777-777777777777",
+        retainedSession,
+      );
+      await state.internal.retainGraph(retained);
+      writeFileSync(
+        join(state.agentDir, "models-store.json"),
+        JSON.stringify({ custom: { source: "runtime" } }),
+      );
 
       const result = await state.internal.tryReactivateRetainedGraph({
         canonical: state.retainedDir,

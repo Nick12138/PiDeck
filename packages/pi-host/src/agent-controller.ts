@@ -18,6 +18,7 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
 import { getEnabledProviderIds } from "./provider-controller.js";
+import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { createProvisionalSessionTitle } from "./session-title.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import {
@@ -1057,90 +1058,81 @@ export function createAgentHandlers(
       if (!server) {
         return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       }
-      if (
-        !server.serviceGraphLock.tryAcquire({
-          operationKind: "model.setCurrent",
-          requestId: ctx.id,
-        })
-      ) {
-        return {
-          error: createHostError("SERVICE_GRAPH_BUSY", "Service graph busy", {
-            retryable: true,
-          }),
-        };
-      }
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "model.setCurrent",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          const stale = factory.checkIdentity(ctx.context, {
+            requireWorkspace: true,
+            requireSession: true,
+          });
+          if (stale) return { error: stale };
+          const g = factory.getGraph();
+          if (!g?.agentSession || !g.sessionManager) {
+            return { error: createHostError("AGENT_NOT_READY", "No active session") };
+          }
+          if (factory.getSessionOperationLock(g.agentSession).isHeld() || !g.agentSession.isIdle) {
+            return { error: createHostError("AGENT_BUSY", "Agent is busy", { retryable: true }) };
+          }
 
-      try {
-        const stale = factory.checkIdentity(ctx.context, {
-          requireWorkspace: true,
-          requireSession: true,
-        });
-        if (stale) return { error: stale };
-        const g = factory.getGraph();
-        if (!g?.agentSession || !g.sessionManager) {
-          return { error: createHostError("AGENT_NOT_READY", "No active session") };
-        }
-        if (factory.getSessionOperationLock(g.agentSession).isHeld() || !g.agentSession.isIdle) {
-          return { error: createHostError("AGENT_BUSY", "Agent is busy", { retryable: true }) };
-        }
+          const params = ctx.params as { provider: string; modelId: string };
+          const registry = factory.deps.modelRegistry;
+          const enabledProviders = await getEnabledProviderIds(
+            factory.deps.agentDir,
+            g.agentSession.model?.provider,
+          );
+          if (enabledProviders && !enabledProviders.includes(params.provider)) {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                `Provider ${params.provider} is disabled; enable it before selecting one of its models`,
+              ),
+            };
+          }
+          const all = registry.getAvailable?.() ?? [];
+          const model = all.find(
+            (m: { provider: string; id: string }) =>
+              m.provider === params.provider && m.id === params.modelId,
+          );
+          if (!model) {
+            return {
+              error: createHostError(
+                "MODEL_NOT_FOUND",
+                `Model not found: ${params.provider}/${params.modelId}`,
+              ),
+            };
+          }
 
-        const params = ctx.params as { provider: string; modelId: string };
-        const registry = factory.deps.modelRegistry;
-        const enabledProviders = await getEnabledProviderIds(
-          factory.deps.agentDir,
-          g.agentSession.model?.provider,
-        );
-        if (enabledProviders && !enabledProviders.includes(params.provider)) {
+          signal.throwIfAborted();
+          await g.agentSession.setModel(model);
+          const identity = server.getIdentity();
+          const snap = buildSessionSnapshot({
+            session: g.agentSession,
+            sessionManager: g.sessionManager,
+            cwd: g.canonicalCwd,
+            sessionId: identity.sessionId ?? "",
+            revision: identity.sessionRevision,
+            workspaceId: g.workspaceId,
+            toolRevision: g.toolRevision,
+          });
+          g.sessionSnapshot = snap;
+          const thinkingLevels = g.agentSession.getAvailableThinkingLevels().map(String);
+          server.emit("model.changed", {
+            model: snap.model,
+            thinkingLevel: snap.thinkingLevel,
+            availableThinkingLevels: thinkingLevels,
+          });
           return {
-            error: createHostError(
-              "INVALID_REQUEST",
-              `Provider ${params.provider} is disabled; enable it before selecting one of its models`,
-            ),
+            result: {
+              model: snap.model!,
+              thinkingLevels,
+              session: snap,
+            },
+            identity,
           };
-        }
-        const all = registry.getAvailable?.() ?? [];
-        const model = all.find(
-          (m: { provider: string; id: string }) =>
-            m.provider === params.provider && m.id === params.modelId,
-        );
-        if (!model) {
-          return {
-            error: createHostError(
-              "MODEL_NOT_FOUND",
-              `Model not found: ${params.provider}/${params.modelId}`,
-            ),
-          };
-        }
-
-        await g.agentSession.setModel(model);
-        const identity = server.getIdentity();
-        const snap = buildSessionSnapshot({
-          session: g.agentSession,
-          sessionManager: g.sessionManager,
-          cwd: g.canonicalCwd,
-          sessionId: identity.sessionId ?? "",
-          revision: identity.sessionRevision,
-          workspaceId: g.workspaceId,
-          toolRevision: g.toolRevision,
-        });
-        g.sessionSnapshot = snap;
-        const thinkingLevels = g.agentSession.getAvailableThinkingLevels().map(String);
-        server.emit("model.changed", {
-          model: snap.model,
-          thinkingLevel: snap.thinkingLevel,
-          availableThinkingLevels: thinkingLevels,
-        });
-        return {
-          result: {
-            model: snap.model!,
-            thinkingLevels,
-            session: snap,
-          },
-          identity,
-        };
-      } finally {
-        server.serviceGraphLock.release(ctx.id);
-      }
+        },
+      });
     },
 
     "model.setThinkingLevel": async (ctx) => {

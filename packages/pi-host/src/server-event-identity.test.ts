@@ -263,6 +263,8 @@ describe("PiHostServer shutdown", () => {
       operationId: "package-operation",
     });
     expect(operation).not.toBeNull();
+    const shutdownSignal = host.getShutdownSignal();
+    expect(shutdownSignal.aborted).toBe(false);
 
     const handling = host.handleLine(
       JSON.stringify({
@@ -275,6 +277,8 @@ describe("PiHostServer shutdown", () => {
     );
 
     await vi.waitFor(() => expect(operation?.signal.aborted).toBe(true));
+    expect(shutdownSignal.aborted).toBe(true);
+    expect(host.getShutdownSignal()).toBe(shutdownSignal);
     expect(dispose).not.toHaveBeenCalled();
 
     host.serviceGraphLock.release("package-request");

@@ -354,6 +354,7 @@ export class WorkspaceLifecycle {
     await visit(join(graph.canonicalCwd, ".pi"));
     await visit(join(this.context.deps.agentDir, "settings.json"));
     await visit(join(this.context.deps.agentDir, "models.json"));
+    await visit(join(this.context.deps.agentDir, "models-store.json"));
     await visit(join(this.context.deps.agentDir, "auth.json"));
     for (const directory of ["packages", "npm", "git"]) {
       await visit(join(this.context.deps.agentDir, directory));

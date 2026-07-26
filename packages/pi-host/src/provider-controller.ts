@@ -17,6 +17,7 @@ import {
   detectModelThinking,
   type DiscoveredProviderModel,
   type HostError,
+  type HostIdentity,
   type ProviderApi,
   type ProviderConnectionCategory,
   type ProviderConnectionResult,
@@ -28,12 +29,33 @@ import {
   type ThinkingLevel,
   type ThinkingLevelMap,
 } from "@pideck/protocol";
-import type { MethodHandler } from "./server.js";
+import type { MethodHandler, PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
+import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
+import { withStableGraphRead } from "./stable-graph-read.js";
 
 type JsonObject = Record<string, unknown>;
 type ModelsConfig = { root: JsonObject; providers: JsonObject; original: string | null };
+type ProviderFetchCapture =
+  | {
+      snapshot: {
+        original: string | null;
+        provider: ProviderSnapshot;
+        apiKey: string | undefined;
+      };
+    }
+  | { error: HostError };
+type ProviderConnectionCapture =
+  | {
+      snapshot: {
+        original: string | null;
+        provider: ProviderSnapshot;
+        model: Model<Api>;
+        auth: Awaited<ReturnType<ModelRegistry["getApiKeyAndHeaders"]>>;
+      };
+    }
+  | { error: HostError };
 const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
 const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
 
@@ -499,10 +521,11 @@ async function fetchModelCatalog(
   url: URL,
   headers: Headers,
   sensitiveValues: string[],
+  signal: AbortSignal,
 ): Promise<CatalogResponse> {
   const response = await fetch(url, {
     headers,
-    signal: AbortSignal.timeout(12_000),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
   });
   const text = await response.text();
   let payload: unknown;
@@ -549,6 +572,7 @@ async function fetchModelCatalog(
 async function discoverModels(
   provider: ProviderSnapshot,
   apiKey: string | undefined,
+  signal: AbortSignal,
 ): Promise<DiscoveredProviderModel[]> {
   const headers = new Headers(provider.headers);
   headers.set("Accept", "application/json");
@@ -571,8 +595,9 @@ async function discoverModels(
     attempted.push(catalogEndpointLabel(url));
     let result: CatalogResponse;
     try {
-      result = await fetchModelCatalog(url, headers, sensitiveValues);
+      result = await fetchModelCatalog(url, headers, sensitiveValues, signal);
     } catch (error) {
+      signal.throwIfAborted();
       const raw = error instanceof Error ? error.message : String(error);
       const timeout = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
       result = {
@@ -708,11 +733,12 @@ function classifyConnectionFailure(
 async function checkProviderConnection(
   provider: ProviderSnapshot,
   model: Model<Api>,
-  factory: WorkspaceGraphFactory,
+  auth: Awaited<ReturnType<ModelRegistry["getApiKeyAndHeaders"]>>,
+  signal: AbortSignal,
   authHeaderOverride?: boolean,
 ): Promise<ProviderConnectionResult> {
   const startedAt = Date.now();
-  const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
+  signal.throwIfAborted();
   if (!auth.ok) {
     const failure = classifyConnectionFailure(auth.error, provider, []);
     return {
@@ -749,10 +775,12 @@ async function checkProviderConnection(
       env: auth.env,
       maxTokens: 4,
       ...(model.reasoning ? { reasoning: "minimal" as const } : {}),
+      signal,
       timeoutMs: 15_000,
       maxRetries: 0,
       maxRetryDelayMs: 0,
     });
+    signal.throwIfAborted();
     if (response.stopReason === "error" || response.stopReason === "aborted") {
       const failure = classifyConnectionFailure(
         response.errorMessage ?? `Generation ${response.stopReason}`,
@@ -778,6 +806,7 @@ async function checkProviderConnection(
       message: `Generation succeeded with ${provider.api}.`,
     };
   } catch (error) {
+    signal.throwIfAborted();
     const failure = classifyConnectionFailure(
       error instanceof Error ? error.message : String(error),
       provider,
@@ -798,35 +827,96 @@ async function persistDetectedAuthHeader(
   modelsPath: string,
   providerId: string,
   authHeader: boolean,
+  expectedOriginal: string | null,
+  expectedIdentity: HostIdentity,
   requestId: string,
   factory: WorkspaceGraphFactory,
-): Promise<void> {
+): Promise<{ error: HostError } | { identity: HostIdentity }> {
   if (factory.hasBusySessions()) {
     throw new Error("Stop running sessions before applying detected Provider authentication");
   }
   const server = factory.getServer();
   if (!server) throw new Error("Server not bound");
-  if (!server.serviceGraphLock.tryAcquire({ operationKind: "provider.mutation", requestId })) {
-    throw new Error("Service graph is busy");
+  return withRegisteredGraphMutation({
+    server,
+    operationKind: "provider.mutation",
+    requestId,
+    run: async ({ signal }) => {
+      const config = await readModelsConfig(modelsPath);
+      const identity = server.getIdentity();
+      if (
+        config.original !== expectedOriginal ||
+        !hostIdentitiesEqual(identity, expectedIdentity)
+      ) {
+        return {
+          error: createHostError(
+            "STALE_REVISION",
+            "Provider configuration changed during connection testing",
+            { retryable: true },
+          ),
+        };
+      }
+      const raw = config.providers[providerId];
+      if (!isObject(raw)) throw new Error(`Provider not found: ${providerId}`);
+      if (raw.authHeader === authHeader) return { identity };
+      await invalidateRetainedRuntimes(factory);
+      signal.throwIfAborted();
+      raw.authHeader = authHeader;
+      await commitModelsConfig(modelsPath, config.root, factory);
+      try {
+        await refreshRegistry(factory, true);
+      } catch (error) {
+        await restoreModelsConfig(modelsPath, config.original);
+        await refreshRegistry(factory, true);
+        throw error;
+      }
+      return { identity };
+    },
+  });
+}
+
+async function readModelsOriginalUnderLock(
+  server: PiHostServer,
+  modelsPath: string,
+  requestId: string,
+) {
+  return withStableGraphRead({
+    requestId,
+    identity: server.identity,
+    serviceGraphLock: server.serviceGraphLock,
+    run: async () => (await readModelsConfig(modelsPath)).original,
+  });
+}
+
+function hostShuttingDownError(): HostError {
+  return createHostError("HOST_SHUTTING_DOWN", "Host is shutting down", {
+    retryable: true,
+  });
+}
+
+function hostIdentitiesEqual(left: HostIdentity, right: HostIdentity): boolean {
+  return left.hostInstanceId === right.hostInstanceId &&
+    left.workspaceId === right.workspaceId &&
+    left.workspaceRevision === right.workspaceRevision &&
+    left.sessionId === right.sessionId &&
+    left.sessionRevision === right.sessionRevision &&
+    left.packageRevision === right.packageRevision;
+}
+
+function providerReadStaleError(args: {
+  capturedIdentity: HostIdentity;
+  validatedIdentity: HostIdentity;
+  capturedOriginal: string | null;
+  validatedOriginal: string | null;
+  message: string;
+}): HostError | null {
+  if (
+    hostIdentitiesEqual(args.capturedIdentity, args.validatedIdentity) &&
+    args.capturedOriginal === args.validatedOriginal
+  ) {
+    return null;
   }
-  try {
-    const config = await readModelsConfig(modelsPath);
-    const raw = config.providers[providerId];
-    if (!isObject(raw)) throw new Error(`Provider not found: ${providerId}`);
-    if (raw.authHeader === authHeader) return;
-    await invalidateRetainedRuntimes(factory);
-    raw.authHeader = authHeader;
-    await commitModelsConfig(modelsPath, config.root, factory);
-    try {
-      await refreshRegistry(factory, true);
-    } catch (error) {
-      await restoreModelsConfig(modelsPath, config.original);
-      await refreshRegistry(factory, true);
-      throw error;
-    }
-  } finally {
-    server.serviceGraphLock.release(requestId);
-  }
+  return createHostError("STALE_REVISION", args.message, { retryable: true });
 }
 
 export function createProviderHandlers(
@@ -877,55 +967,65 @@ export function createProviderHandlers(
       }
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
-      if (!server.serviceGraphLock.tryAcquire({ operationKind: "provider.mutation", requestId: ctx.id })) {
-        return { error: createHostError("SERVICE_GRAPH_BUSY", "Service graph busy", { retryable: true }) };
-      }
-      try {
-        const config = await readModelsConfig(modelsPath);
-        const raw = config.providers[providerId];
-        if (!isObject(raw)) {
-          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
-        }
-        await invalidateRetainedRuntimes(factory);
-        const nextEnabled = new Set(resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-        ));
-        if (enabled) nextEnabled.add(providerId);
-        else nextEnabled.delete(providerId);
-        config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
-        delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-        await commitModelsConfig(modelsPath, config.root, factory);
-        try {
-          await refreshRegistry(factory, true);
-          const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
-          if (!currentProvider || !nextEnabled.has(currentProvider)) {
-            const targetProvider = enabled ? providerId : [...nextEnabled][0];
-            const targetRaw = targetProvider ? config.providers[targetProvider] : undefined;
-            const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
-              ? targetRaw.models
-                  .filter((model): model is JsonObject => isObject(model))
-                  .map((model) => model.id)
-                  .filter((id): id is string => typeof id === "string")
-              : [];
-            await alignCurrentSessionModel(factory, targetProvider, modelIds);
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "provider.mutation",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          try {
+            if (factory.hasBusySessions()) {
+              return {
+                error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
+                  retryable: true,
+                }),
+              };
+            }
+            const config = await readModelsConfig(modelsPath);
+            const raw = config.providers[providerId];
+            if (!isObject(raw)) {
+              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+            }
+            await invalidateRetainedRuntimes(factory);
+            signal.throwIfAborted();
+            const nextEnabled = new Set(resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+            ));
+            if (enabled) nextEnabled.add(providerId);
+            else nextEnabled.delete(providerId);
+            config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
+            delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
+            await commitModelsConfig(modelsPath, config.root, factory);
+            try {
+              await refreshRegistry(factory, true);
+              const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
+              if (!currentProvider || !nextEnabled.has(currentProvider)) {
+                const targetProvider = enabled ? providerId : [...nextEnabled][0];
+                const targetRaw = targetProvider ? config.providers[targetProvider] : undefined;
+                const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
+                  ? targetRaw.models
+                      .filter((model): model is JsonObject => isObject(model))
+                      .map((model) => model.id)
+                      .filter((id): id is string => typeof id === "string")
+                  : [];
+                await alignCurrentSessionModel(factory, targetProvider, modelIds);
+              }
+            } catch (error) {
+              await restoreModelsConfig(modelsPath, config.original);
+              await refreshRegistry(factory, true);
+              throw error;
+            }
+            return { result: { providerId, enabled } };
+          } catch (error) {
+            return {
+              error: createHostError(
+                "SETTINGS_WRITE_FAILED",
+                error instanceof Error ? error.message : "Could not update enabled Providers",
+              ),
+            };
           }
-        } catch (error) {
-          await restoreModelsConfig(modelsPath, config.original);
-          await refreshRegistry(factory, true);
-          throw error;
-        }
-        return { result: { providerId, enabled } };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "SETTINGS_WRITE_FAILED",
-            error instanceof Error ? error.message : "Could not update enabled Providers",
-          ),
-        };
-      } finally {
-        server.serviceGraphLock.release(ctx.id);
-      }
+        },
+      });
     },
 
     "provider.save": async (ctx) => {
@@ -948,83 +1048,93 @@ export function createProviderHandlers(
       }
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
-      if (!server.serviceGraphLock.tryAcquire({ operationKind: "provider.mutation", requestId: ctx.id })) {
-        return { error: createHostError("SERVICE_GRAPH_BUSY", "Service graph busy", { retryable: true }) };
-      }
-      try {
-        const config = await readModelsConfig(modelsPath);
-        const enabledBefore = resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-        );
-        const wasFirstProvider = Object.keys(config.providers).length === 0;
-        if (draft.id !== originalId && config.providers[draft.id] !== undefined) {
-          return { error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`) };
-        }
-        const existing = isObject(config.providers[originalId]) ? config.providers[originalId] : {};
-        const modelConflict = currentModelConflict(
-          factory,
-          originalId,
-          draft,
-          Array.isArray(existing.models),
-        );
-        if (modelConflict) return { error: modelConflict };
-        await invalidateRetainedRuntimes(factory);
-        const merged = mergeProvider(existing, draft);
-        if (params.apiKey !== undefined || params.clearApiKey === true) delete merged.apiKey;
-        if (draft.id !== originalId) delete config.providers[originalId];
-        config.providers[draft.id] = merged;
-        const enabledAfter = enabledBefore.map((id) => id === originalId ? draft.id : id);
-        if (wasFirstProvider && !enabledAfter.includes(draft.id)) enabledAfter.push(draft.id);
-        config.root[ENABLED_PROVIDERS_KEY] = [...new Set(enabledAfter)];
-        delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "provider.mutation",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          try {
+            if (factory.hasBusySessions()) {
+              return {
+                error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider configuration", {
+                  retryable: true,
+                }),
+              };
+            }
+            const config = await readModelsConfig(modelsPath);
+            const enabledBefore = resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+            );
+            const wasFirstProvider = Object.keys(config.providers).length === 0;
+            if (draft.id !== originalId && config.providers[draft.id] !== undefined) {
+              return { error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`) };
+            }
+            const existing = isObject(config.providers[originalId]) ? config.providers[originalId] : {};
+            const modelConflict = currentModelConflict(
+              factory,
+              originalId,
+              draft,
+              Array.isArray(existing.models),
+            );
+            if (modelConflict) return { error: modelConflict };
+            await invalidateRetainedRuntimes(factory);
+            signal.throwIfAborted();
+            const merged = mergeProvider(existing, draft);
+            if (params.apiKey !== undefined || params.clearApiKey === true) delete merged.apiKey;
+            if (draft.id !== originalId) delete config.providers[originalId];
+            config.providers[draft.id] = merged;
+            const enabledAfter = enabledBefore.map((id) => id === originalId ? draft.id : id);
+            if (wasFirstProvider && !enabledAfter.includes(draft.id)) enabledAfter.push(draft.id);
+            config.root[ENABLED_PROVIDERS_KEY] = [...new Set(enabledAfter)];
+            delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
 
-        const oldSourceCredential = factory.deps.authStorage.get(originalId);
-        const oldTargetCredential = factory.deps.authStorage.get(draft.id);
-        await commitModelsConfig(modelsPath, config.root, factory);
-        try {
-          if (params.clearApiKey) {
-            factory.deps.authStorage.remove(draft.id);
-          } else if (params.apiKey !== undefined) {
-            factory.deps.authStorage.set(draft.id, { type: "api_key", key: params.apiKey });
-          } else if (draft.id !== originalId && oldSourceCredential) {
-            factory.deps.authStorage.set(draft.id, oldSourceCredential);
+            const oldSourceCredential = factory.deps.authStorage.get(originalId);
+            const oldTargetCredential = factory.deps.authStorage.get(draft.id);
+            await commitModelsConfig(modelsPath, config.root, factory);
+            try {
+              if (params.clearApiKey) {
+                factory.deps.authStorage.remove(draft.id);
+              } else if (params.apiKey !== undefined) {
+                factory.deps.authStorage.set(draft.id, { type: "api_key", key: params.apiKey });
+              } else if (draft.id !== originalId && oldSourceCredential) {
+                factory.deps.authStorage.set(draft.id, oldSourceCredential);
+              }
+              if (draft.id !== originalId) factory.deps.authStorage.remove(originalId);
+              await refreshRegistry(factory, true);
+              const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
+              const targetProvider = currentProvider && enabledAfter.includes(currentProvider)
+                ? undefined
+                : enabledAfter[0];
+              await alignCurrentSessionModel(factory, targetProvider, targetProvider === draft.id
+                ? draft.models.map((model) => model.id)
+                : []);
+            } catch (error) {
+              await restoreModelsConfig(modelsPath, config.original);
+              if (oldTargetCredential) factory.deps.authStorage.set(draft.id, oldTargetCredential);
+              else factory.deps.authStorage.remove(draft.id);
+              if (draft.id !== originalId && oldSourceCredential) {
+                factory.deps.authStorage.set(originalId, oldSourceCredential);
+              }
+              await refreshRegistry(factory, true);
+              throw error;
+            }
+            const enabledProviders = new Set(resolveEnabledProviders(config));
+            return {
+              result: {
+                provider: providerSnapshot(draft.id, merged, factory, enabledProviders.has(draft.id)),
+              },
+            };
+          } catch (error) {
+            return {
+              error: createHostError(
+                "SETTINGS_WRITE_FAILED",
+                error instanceof Error ? error.message : "Could not save Provider configuration",
+              ),
+            };
           }
-          if (draft.id !== originalId) factory.deps.authStorage.remove(originalId);
-          await refreshRegistry(factory, true);
-          const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
-          const targetProvider = currentProvider && enabledAfter.includes(currentProvider)
-            ? undefined
-            : enabledAfter[0];
-          await alignCurrentSessionModel(factory, targetProvider, targetProvider === draft.id
-            ? draft.models.map((model) => model.id)
-            : []);
-        } catch (error) {
-          await restoreModelsConfig(modelsPath, config.original);
-          if (oldTargetCredential) factory.deps.authStorage.set(draft.id, oldTargetCredential);
-          else factory.deps.authStorage.remove(draft.id);
-          if (draft.id !== originalId && oldSourceCredential) {
-            factory.deps.authStorage.set(originalId, oldSourceCredential);
-          }
-          await refreshRegistry(factory, true);
-          throw error;
-        }
-        const enabledProviders = new Set(resolveEnabledProviders(config));
-        return {
-          result: {
-            provider: providerSnapshot(draft.id, merged, factory, enabledProviders.has(draft.id)),
-          },
-        };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "SETTINGS_WRITE_FAILED",
-            error instanceof Error ? error.message : "Could not save Provider configuration",
-          ),
-        };
-      } finally {
-        server.serviceGraphLock.release(ctx.id);
-      }
+        },
+      });
     },
 
     "provider.remove": async (ctx) => {
@@ -1036,70 +1146,112 @@ export function createProviderHandlers(
       }
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
-      if (!server.serviceGraphLock.tryAcquire({ operationKind: "provider.mutation", requestId: ctx.id })) {
-        return { error: createHostError("SERVICE_GRAPH_BUSY", "Service graph busy", { retryable: true }) };
-      }
-      try {
-        const config = await readModelsConfig(modelsPath);
-        if (config.providers[providerId] === undefined) {
-          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
-        }
-        await invalidateRetainedRuntimes(factory);
-        const enabledBefore = resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-        );
-        delete config.providers[providerId];
-        config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
-        delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-        const oldCredential = factory.deps.authStorage.get(providerId);
-        await commitModelsConfig(modelsPath, config.root, factory);
-        try {
-          factory.deps.authStorage.remove(providerId);
-          await refreshRegistry(factory, true);
-        } catch (error) {
-          await restoreModelsConfig(modelsPath, config.original);
-          if (oldCredential) factory.deps.authStorage.set(providerId, oldCredential);
-          await refreshRegistry(factory, true);
-          throw error;
-        }
-        return { result: { providerId, removed: true as const } };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "SETTINGS_WRITE_FAILED",
-            error instanceof Error ? error.message : "Could not delete Provider",
-          ),
-        };
-      } finally {
-        server.serviceGraphLock.release(ctx.id);
-      }
+      return withRegisteredGraphMutation({
+        server,
+        operationKind: "provider.mutation",
+        requestId: ctx.id,
+        run: async ({ signal }) => {
+          try {
+            const conflictUnderLock = currentModelConflict(factory, providerId);
+            if (conflictUnderLock) return { error: conflictUnderLock };
+            if (factory.hasBusySessions()) {
+              return { error: createHostError("AGENT_BUSY", "Stop running sessions before deleting a Provider", { retryable: true }) };
+            }
+            const config = await readModelsConfig(modelsPath);
+            if (config.providers[providerId] === undefined) {
+              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+            }
+            await invalidateRetainedRuntimes(factory);
+            signal.throwIfAborted();
+            const enabledBefore = resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+            );
+            delete config.providers[providerId];
+            config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
+            delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
+            const oldCredential = factory.deps.authStorage.get(providerId);
+            await commitModelsConfig(modelsPath, config.root, factory);
+            try {
+              factory.deps.authStorage.remove(providerId);
+              await refreshRegistry(factory, true);
+            } catch (error) {
+              await restoreModelsConfig(modelsPath, config.original);
+              if (oldCredential) factory.deps.authStorage.set(providerId, oldCredential);
+              await refreshRegistry(factory, true);
+              throw error;
+            }
+            return { result: { providerId, removed: true as const } };
+          } catch (error) {
+            return {
+              error: createHostError(
+                "SETTINGS_WRITE_FAILED",
+                error instanceof Error ? error.message : "Could not delete Provider",
+              ),
+            };
+          }
+        },
+      });
     },
 
     "provider.fetchModels": async (ctx) => {
       const { providerId } = ctx.params as { providerId: string };
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      const shutdownSignal = server.getShutdownSignal();
       try {
-        const config = await readModelsConfig(modelsPath);
-        const raw = config.providers[providerId];
-        if (!isObject(raw)) {
-          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+        shutdownSignal.throwIfAborted();
+        const captured = await withStableGraphRead({
+          requestId: ctx.id,
+          identity: server.identity,
+          serviceGraphLock: server.serviceGraphLock,
+          run: async (): Promise<ProviderFetchCapture> => {
+            const config = await readModelsConfig(modelsPath);
+            const raw = config.providers[providerId];
+            if (!isObject(raw)) {
+              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+            }
+            const provider = providerSnapshot(
+              providerId,
+              raw,
+              factory,
+              resolveEnabledProviders(
+                config,
+                factory.getGraph()?.agentSession?.model?.provider,
+              ).includes(providerId),
+            );
+            if (!provider.baseUrl) {
+              return { error: createHostError("INVALID_REQUEST", "Provider Base URL is required") };
+            }
+            const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(providerId);
+            return { snapshot: { original: config.original, provider, apiKey } };
+          },
+        });
+        if (!captured.ok) return { error: captured.error, identity: captured.identity };
+        if (!("snapshot" in captured.result)) {
+          return { error: captured.result.error, identity: captured.identity };
         }
-        const provider = providerSnapshot(
-          providerId,
-          raw,
-          factory,
-          resolveEnabledProviders(
-            config,
-            factory.getGraph()?.agentSession?.model?.provider,
-          ).includes(providerId),
-        );
-        if (!provider.baseUrl) {
-          return { error: createHostError("INVALID_REQUEST", "Provider Base URL is required") };
+
+        const { original, provider, apiKey } = captured.result.snapshot;
+        const models = await discoverModels(provider, apiKey, shutdownSignal);
+        const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
+        if (!validated.ok) return { error: validated.error, identity: validated.identity };
+        const stale = providerReadStaleError({
+          capturedIdentity: captured.identity,
+          validatedIdentity: validated.identity,
+          capturedOriginal: original,
+          validatedOriginal: validated.result,
+          message: "Provider configuration changed while fetching models",
+        });
+        if (stale) {
+          return {
+            error: stale,
+            identity: validated.identity,
+          };
         }
-        const apiKey = await factory.deps.modelRegistry.getApiKeyForProvider(providerId);
-        const models = await discoverModels(provider, apiKey);
-        return { result: { providerId, models } };
+        return { result: { providerId, models }, identity: validated.identity };
       } catch (error) {
+        if (shutdownSignal.aborted) return { error: hostShuttingDownError() };
         return {
           error: createHostError(
             "INTERNAL_ERROR",
@@ -1112,58 +1264,132 @@ export function createProviderHandlers(
 
     "provider.checkConnection": async (ctx) => {
       const { providerId, modelId } = ctx.params as { providerId: string; modelId?: string };
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      const shutdownSignal = server.getShutdownSignal();
       try {
-        await refreshRegistry(factory);
-        const config = await readModelsConfig(modelsPath);
-        const raw = config.providers[providerId];
-        if (!isObject(raw)) {
-          return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+        shutdownSignal.throwIfAborted();
+        const captured = await withStableGraphRead({
+          requestId: ctx.id,
+          identity: server.identity,
+          serviceGraphLock: server.serviceGraphLock,
+          run: async (): Promise<ProviderConnectionCapture> => {
+            await refreshRegistry(factory);
+            const config = await readModelsConfig(modelsPath);
+            const raw = config.providers[providerId];
+            if (!isObject(raw)) {
+              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+            }
+            const provider = providerSnapshot(
+              providerId,
+              raw,
+              factory,
+              resolveEnabledProviders(
+                config,
+                factory.getGraph()?.agentSession?.model?.provider,
+              ).includes(providerId),
+            );
+            const targetModelId = modelId?.trim() || provider.models[0]?.id;
+            if (!targetModelId) {
+              return {
+                error: createHostError(
+                  "INVALID_REQUEST",
+                  "Add and enable at least one model before testing the Provider",
+                ),
+              };
+            }
+            const model = factory.deps.modelRegistry.find(providerId, targetModelId);
+            if (!model) {
+              return {
+                error: createHostError(
+                  "MODEL_NOT_FOUND",
+                  `Model not found in Provider ${providerId}: ${targetModelId}`,
+                ),
+              };
+            }
+            const auth = await factory.deps.modelRegistry.getApiKeyAndHeaders(model);
+            return { snapshot: { original: config.original, provider, model, auth } };
+          },
+        });
+        if (!captured.ok) return { error: captured.error, identity: captured.identity };
+        if (!("snapshot" in captured.result)) {
+          return { error: captured.result.error, identity: captured.identity };
         }
-        const provider = providerSnapshot(
-          providerId,
-          raw,
-          factory,
-          resolveEnabledProviders(
-            config,
-            factory.getGraph()?.agentSession?.model?.provider,
-          ).includes(providerId),
+
+        const { original, provider, model, auth } = captured.result.snapshot;
+        const result = await checkProviderConnection(
+          provider,
+          model,
+          auth,
+          shutdownSignal,
         );
-        const targetModelId = modelId?.trim() || provider.models[0]?.id;
-        if (!targetModelId) {
-          return {
-            error: createHostError(
-              "INVALID_REQUEST",
-              "Add and enable at least one model before testing the Provider",
-            ),
-          };
-        }
-        const model = factory.deps.modelRegistry.find(providerId, targetModelId);
-        if (!model) {
-          return {
-            error: createHostError(
-              "MODEL_NOT_FOUND",
-              `Model not found in Provider ${providerId}: ${targetModelId}`,
-            ),
-          };
-        }
-        const result = await checkProviderConnection(provider, model, factory);
         if (
           result.category !== "authentication" ||
           hasHeader(provider.headers, "authorization")
         ) {
-          return { result };
+          const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
+          if (!validated.ok) return { error: validated.error, identity: validated.identity };
+          const stale = providerReadStaleError({
+            capturedIdentity: captured.identity,
+            validatedIdentity: validated.identity,
+            capturedOriginal: original,
+            validatedOriginal: validated.result,
+            message: "Provider configuration changed during connection testing",
+          });
+          if (stale) {
+            return {
+              error: stale,
+              identity: validated.identity,
+            };
+          }
+          return { result, identity: validated.identity };
         }
         const detectedAuthHeader = !provider.authHeader;
-        const retry = await checkProviderConnection(provider, model, factory, detectedAuthHeader);
-        if (!retry.ok) return { result };
-        await persistDetectedAuthHeader(modelsPath, providerId, detectedAuthHeader, ctx.id, factory);
+        const retry = await checkProviderConnection(
+          provider,
+          model,
+          auth,
+          shutdownSignal,
+          detectedAuthHeader,
+        );
+        if (!retry.ok) {
+          const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
+          if (!validated.ok) return { error: validated.error, identity: validated.identity };
+          const stale = providerReadStaleError({
+            capturedIdentity: captured.identity,
+            validatedIdentity: validated.identity,
+            capturedOriginal: original,
+            validatedOriginal: validated.result,
+            message: "Provider configuration changed during connection testing",
+          });
+          if (stale) {
+            return {
+              error: stale,
+              identity: validated.identity,
+            };
+          }
+          return { result, identity: validated.identity };
+        }
+        shutdownSignal.throwIfAborted();
+        const persistence = await persistDetectedAuthHeader(
+          modelsPath,
+          providerId,
+          detectedAuthHeader,
+          original,
+          captured.identity,
+          ctx.id,
+          factory,
+        );
+        if ("error" in persistence) return persistence;
         return {
           result: {
             ...retry,
             message: `${retry.message} Authentication mode was detected automatically.`,
           },
+          identity: persistence.identity,
         };
       } catch (error) {
+        if (shutdownSignal.aborted) return { error: hostShuttingDownError() };
         return {
           error: createHostError(
             "INTERNAL_ERROR",

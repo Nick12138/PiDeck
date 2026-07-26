@@ -84,6 +84,7 @@ export class PiHostServer {
   readonly serviceGraphLock = new TryMutex();
   readonly agentOperationLock = new AgentOperationLock();
   readonly graphOperations = new GraphOperationRegistry();
+  private readonly shutdownController = new AbortController();
   private sequence = 0;
   private phase: HostPhase = "booting";
   private shuttingDown = false;
@@ -117,6 +118,10 @@ export class PiHostServer {
 
   getPhase(): HostPhase {
     return this.phase;
+  }
+
+  getShutdownSignal(): AbortSignal {
+    return this.shutdownController.signal;
   }
 
   setLastError(error: HostError | undefined): void {
@@ -242,6 +247,7 @@ export class PiHostServer {
     if (this.cleanupPromise) return this.cleanupPromise;
     this.shuttingDown = true;
     this.phase = "shuttingDown";
+    this.shutdownController.abort(new Error(`Host shutdown: ${reason}`));
     logger.warn("Quiescing Pi Host", { reason });
     this.cleanupPromise = (async () => {
       const deadline = Date.now() + HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS;
