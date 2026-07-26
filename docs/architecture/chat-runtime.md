@@ -29,14 +29,15 @@
 | Auto-compaction switch | `agent.setAutoCompaction` |
 | `/session` stats dialog | `session.getStats` |
 | `/tree` dock panel | `session.getTree` / `agent.navigateTree` |
+| `/fork` selector or tree fork button | `session.getForkPoints` / `session.fork` |
 | Tools panel | `agent.getTools` / `agent.setActiveTools` |
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
 
 The Composer's `/` completion merges `session.getCommands` (prompt templates,
 extension commands, skills) with PiDeck's built-in commands
-(`features/chat/builtin-commands.ts`, currently `/compact`, `/session`, and
-`/tree`). A
+(`features/chat/builtin-commands.ts`, currently `/compact`, `/session`,
+`/tree`, and `/fork`). A
 draft matching a built-in command runs locally instead of being sent to the
 model; unknown `/name` text still goes to the model unchanged. Manual
 compaction requires an idle agent and shares the per-session operation lock
@@ -50,6 +51,14 @@ leaf path highlighted, and clicking an entry calls `agent.navigateTree`
 (always `summarize: false` — navigation is local, no LLM call), which shares
 the per-session operation lock, requires an idle agent, and returns the
 rebuilt snapshot plus optional `editorText` restored into the Composer draft.
+`/fork` (also available as an inline button on the tree panel's user rows)
+picks a user message from `session.getForkPoints`; `session.fork` then writes
+a branched session file via `SessionManager.createBranchedSession` before that
+message and reuses the standard `session.open` flow to switch to it, returning
+the new snapshot plus the message text for the Composer draft. Unlike the CLI,
+PiDeck does not emit `session_before_fork` to extensions, and the forked
+session starts through the normal open path rather than a `session_start`
+with reason `fork`. Forking before the first message is not supported.
 
 ## Queue transactions
 

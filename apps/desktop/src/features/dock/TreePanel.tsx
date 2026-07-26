@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Bot, CircleDot, GitBranch, LoaderCircle, RefreshCw, UserRound } from "lucide-react";
+import {
+  Bot,
+  CircleDot,
+  GitBranch,
+  GitFork,
+  LoaderCircle,
+  RefreshCw,
+  UserRound,
+} from "lucide-react";
 import type { SerializableSessionTreeNode } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
@@ -8,6 +16,7 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { requestFork } from "../../lib/fork-actions";
 import { flattenSessionTree, type TreeRowKind } from "./tree-model";
 
 const KIND_ICON: Record<TreeRowKind, typeof UserRound> = {
@@ -25,6 +34,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
   const [leafId, setLeafId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState<string | null>(null);
+  const [forking, setForking] = useState<string | null>(null);
   const [refreshSeq, setRefreshSeq] = useState(0);
 
   const hostInstanceId = useAppStore((state) => state.host?.hostInstanceId);
@@ -93,6 +103,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
     setNodes(null);
     setLeafId(null);
     setNavigating(null);
+    setForking(null);
   }, [sessionId]);
 
   async function navigate(targetId: string) {
@@ -178,40 +189,61 @@ export function TreePanel({ visible }: { visible: boolean }) {
         ) : (
           rows.map((row) => {
             const Icon = KIND_ICON[row.kind];
-            const disabled = busy || navigating !== null || row.isLeaf;
+            const actionLocked = busy || navigating !== null || forking !== null;
             return (
-              <button
+              <div
                 key={row.id}
-                type="button"
-                disabled={disabled}
-                aria-current={row.isLeaf ? "true" : undefined}
-                title={row.excerpt}
-                className={`flex w-full items-center gap-1.5 py-1 pr-3 text-left text-xs ${
-                  row.onPath ? "text-foreground" : "text-muted"
-                } ${row.isLeaf ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"} disabled:cursor-default`}
-                style={{ paddingLeft: `${12 + row.depth * 16}px` }}
-                onClick={() => void navigate(row.id)}
+                className={`group flex items-stretch ${
+                  row.isLeaf ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
+                }`}
               >
-                {navigating === row.id ? (
-                  <LoaderCircle size={12} className="shrink-0 animate-spin" />
-                ) : (
-                  <Icon
-                    size={12}
-                    className={`shrink-0 ${row.onPath ? "text-accent" : ""}`}
-                  />
+                <button
+                  type="button"
+                  disabled={actionLocked || row.isLeaf}
+                  aria-current={row.isLeaf ? "true" : undefined}
+                  title={row.excerpt}
+                  className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs ${
+                    row.onPath ? "text-foreground" : "text-muted"
+                  } disabled:cursor-default`}
+                  style={{ paddingLeft: `${12 + row.depth * 16}px` }}
+                  onClick={() => void navigate(row.id)}
+                >
+                  {navigating === row.id || forking === row.id ? (
+                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
+                  ) : (
+                    <Icon
+                      size={12}
+                      className={`shrink-0 ${row.onPath ? "text-accent" : ""}`}
+                    />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{row.excerpt}</span>
+                  {row.label && (
+                    <span className="shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                      {row.label}
+                    </span>
+                  )}
+                  {row.isLeaf && (
+                    <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
+                      current
+                    </span>
+                  )}
+                </button>
+                {row.kind === "user" && (
+                  <button
+                    type="button"
+                    disabled={actionLocked}
+                    title="Fork from here"
+                    aria-label={`Fork from: ${row.excerpt}`}
+                    className="hidden shrink-0 items-center justify-center px-2 text-muted hover:text-foreground disabled:opacity-40 group-hover:flex"
+                    onClick={() => {
+                      setForking(row.id);
+                      void requestFork(row.id).finally(() => setForking(null));
+                    }}
+                  >
+                    <GitFork size={12} />
+                  </button>
                 )}
-                <span className="min-w-0 flex-1 truncate">{row.excerpt}</span>
-                {row.label && (
-                  <span className="shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
-                    {row.label}
-                  </span>
-                )}
-                {row.isLeaf && (
-                  <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
-                    current
-                  </span>
-                )}
-              </button>
+              </div>
             );
           })
         )}

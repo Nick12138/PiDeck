@@ -100,6 +100,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.getEntries": null,
   "session.getTree": null,
   "session.getStats": null,
+  "session.getForkPoints": null,
+  "session.fork": { entryId: "55555555-5555-4555-8555-555555555555" },
   "session.usageReport": null,
   "session.getCommands": null,
   "agent.prompt": { text: "hi" },
@@ -218,6 +220,7 @@ function invalidParams(method: HostMethod): unknown {
     case "session.getSnapshot":
     case "session.getTree":
     case "session.getStats":
+    case "session.getForkPoints":
     case "session.usageReport":
     case "agent.abort":
     case "agent.abortCompaction":
@@ -262,6 +265,8 @@ function invalidParams(method: HostMethod): unknown {
       return "x";
     case "agent.navigateTree":
       return { targetId: "" };
+    case "session.fork":
+      return { entryId: "" };
     case "agent.setAutoCompaction":
     case "agent.setAutoRetry":
       return { enabled: "yes" };

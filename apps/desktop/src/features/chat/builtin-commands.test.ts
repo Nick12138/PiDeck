@@ -15,8 +15,10 @@ describe("matchBuiltinCommand", () => {
     });
   });
 
-  it("matches /session", () => {
+  it("matches /session, /tree, and /fork", () => {
     expect(matchBuiltinCommand("/session")).toEqual({ name: "session" });
+    expect(matchBuiltinCommand("/tree")).toEqual({ name: "tree" });
+    expect(matchBuiltinCommand("/fork")).toEqual({ name: "fork" });
   });
 
   it("rejects unknown commands and non-command text", () => {

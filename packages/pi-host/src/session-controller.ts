@@ -301,6 +301,75 @@ export function createSessionHandlers(
       return { result: out.result, identity: out.identity };
     },
 
+    "session.getForkPoints": async (ctx) => {
+      const server = factory.getServer();
+      if (!server) {
+        return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      }
+      const { withStableGraphRead } = await import("./stable-graph-read.js");
+      const out = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        precheck: () =>
+          factory.checkIdentity(ctx.context, {
+            requireWorkspace: true,
+            requireSession: true,
+          }),
+        run: async () => {
+          const g = factory.getGraph();
+          if (!g?.agentSession) throw new Error("No active session");
+          return {
+            items: g.agentSession
+              .getUserMessagesForForking()
+              .map(({ entryId, text }) => ({ entryId, text })),
+          };
+        },
+      });
+      if (!out.ok) return { error: out.error, identity: out.identity };
+      return { result: out.result, identity: out.identity };
+    },
+
+    "session.fork": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, {
+        requireWorkspace: true,
+        requireSession: true,
+      });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      const server = factory.getServer();
+      if (!g?.agentSession || !g.sessionManager || !server) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
+      }
+      if (
+        !g.agentSession.isIdle ||
+        factory.getSessionOperationLock(g.agentSession).isHeld()
+      ) {
+        return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
+      }
+      const params = ctx.params as { entryId: string };
+      const { prepareForkFile } = await import("./session-lifecycle.js");
+      const prepared = prepareForkFile({
+        sessionFile: g.sessionManager.getSessionFile(),
+        canonicalCwd: g.canonicalCwd,
+        entryId: params.entryId,
+      });
+      if ("error" in prepared) return { error: prepared.error };
+      // openSession owns graph-operation locking and identity advancement.
+      const opened = await factory.openSession(ctx.id, prepared.forkedPath);
+      if (opened && typeof opened === "object" && "error" in opened) {
+        return { error: opened.error };
+      }
+      return {
+        result: {
+          session: opened,
+          ...(prepared.selectedText !== undefined
+            ? { selectedText: prepared.selectedText }
+            : {}),
+        },
+      };
+    },
+
     "session.usageReport": async (ctx) => {
       const server = factory.getServer();
       if (!server) {

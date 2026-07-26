@@ -914,6 +914,95 @@ export async function openSession(
   }
 }
 
+function forkedUserText(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  for (const block of content) {
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string"
+    ) {
+      return (block as { text: string }).text;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Create a forked session file branched before the given user message.
+ * Reads the persisted session from disk (callers ensure the agent is idle,
+ * so disk matches memory) and never touches the live graph.
+ */
+export function prepareForkFile(args: {
+  sessionFile: string | null | undefined;
+  canonicalCwd: string;
+  entryId: string;
+}): { error: HostError } | { forkedPath: string; selectedText?: string } {
+  const { sessionFile, canonicalCwd, entryId } = args;
+  if (!sessionFile || !existsSync(sessionFile)) {
+    return {
+      error: createHostError(
+        "INVALID_REQUEST",
+        "This session has not been saved yet. Wait for the first assistant response before forking.",
+      ),
+    };
+  }
+  let source: SessionManager;
+  try {
+    source = SessionManager.open(sessionFile, undefined, canonicalCwd);
+  } catch (err) {
+    return {
+      error: createHostError(
+        "SESSION_SWITCH_FAILED",
+        err instanceof Error ? err.message : "Failed to read the session file",
+      ),
+    };
+  }
+  const entry = source.getEntry(entryId) as
+    | {
+        type: string;
+        parentId?: string | null;
+        message?: { role?: string; content?: unknown };
+      }
+    | undefined;
+  if (!entry || entry.type !== "message" || entry.message?.role !== "user") {
+    return {
+      error: createHostError("INVALID_REQUEST", "Only user messages can be forked"),
+    };
+  }
+  if (!entry.parentId) {
+    return {
+      error: createHostError(
+        "INVALID_REQUEST",
+        "Forking before the first message is not supported",
+      ),
+    };
+  }
+  let forkedPath: string | undefined;
+  try {
+    forkedPath = source.createBranchedSession(entry.parentId);
+  } catch (err) {
+    return {
+      error: createHostError(
+        "SESSION_SWITCH_FAILED",
+        err instanceof Error ? err.message : "Failed to create the forked session",
+      ),
+    };
+  }
+  if (!forkedPath) {
+    return {
+      error: createHostError("SESSION_SWITCH_FAILED", "Failed to create the forked session"),
+    };
+  }
+  const selectedText = forkedUserText(entry.message?.content);
+  return {
+    forkedPath,
+    ...(selectedText !== undefined ? { selectedText } : {}),
+  };
+}
+
 export async function reloadSession(
   factory: WorkspaceGraphFactory,
   requestId: string,

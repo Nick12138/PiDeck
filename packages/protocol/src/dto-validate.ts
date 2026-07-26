@@ -1070,6 +1070,26 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid session stats";
     case "session.usageReport":
       return isSessionUsageReport(result) ? null : "invalid session usage report";
+    case "session.getForkPoints":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["items"]) &&
+        Array.isArray(result.items) &&
+        result.items.every(
+          (item) =>
+            isPlainObject(item) &&
+            hasExactKeys(item, ["entryId", "text"]) &&
+            isString(item.entryId) &&
+            isString(item.text),
+        )
+        ? null
+        : "invalid session.getForkPoints result";
+    case "session.fork":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["session"], ["selectedText"]) &&
+        isSessionSnapshot(result.session) &&
+        (result.selectedText === undefined || isString(result.selectedText))
+        ? null
+        : "invalid session.fork result";
     case "agent.setQueue":
       return isQueueSnapshot(result) ? null : "invalid agent.setQueue result";
     case "agent.runNow":

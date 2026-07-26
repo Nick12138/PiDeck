@@ -204,6 +204,36 @@ describe("TreePanel", () => {
     expect(screen.getByText("abandoned attempt").closest("button")).toBeDisabled();
   });
 
+  it("forks from a user row via the inline fork button", async () => {
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockImplementation(async (method) => {
+        if (method === "session.getTree") {
+          return envelope("session.getTree", { tree: TREE, leafId: "u2" }) as never;
+        }
+        return envelope("session.fork", {
+          session: session(),
+          selectedText: "abandoned attempt",
+        }) as never;
+      });
+    const user = userEvent.setup();
+    render(<TreePanel visible />);
+
+    await screen.findByText("abandoned attempt");
+    await user.click(
+      screen.getByRole("button", { name: "Fork from: abandoned attempt" }),
+    );
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "session.fork",
+        EXPECTED_CONTEXT,
+        { entryId: "u3" },
+        expect.any(Number),
+      ),
+    );
+  });
+
   it("shows tree load errors", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({
       ...envelope("session.getTree", undefined),

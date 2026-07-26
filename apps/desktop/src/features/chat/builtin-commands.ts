@@ -20,6 +20,10 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     name: "tree",
     description: "Navigate session tree (switch branches)",
   },
+  {
+    name: "fork",
+    description: "Create a new fork from a previous user message",
+  },
 ];
 
 export type BuiltinCommandMatch = { name: string; args?: string };

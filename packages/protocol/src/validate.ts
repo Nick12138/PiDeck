@@ -209,6 +209,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "session.getSnapshot":
     case "session.getTree":
     case "session.getStats":
+    case "session.getForkPoints":
     case "session.usageReport":
     case "session.getCommands":
     case "agent.abort":
@@ -330,6 +331,12 @@ export function validateRequestParams<M extends HostMethod>(
         params.targetId.length > 0
         ? ok(params)
         : fail("invalid agent.navigateTree params", { method });
+    case "session.fork":
+      return exactObject(params, ["entryId"]) &&
+        isString(params.entryId) &&
+        params.entryId.length > 0
+        ? ok(params)
+        : fail("invalid session.fork params", { method });
     case "agent.setAutoCompaction":
     case "agent.setAutoRetry":
       return exactObject(params, ["enabled"]) && isBoolean(params.enabled)

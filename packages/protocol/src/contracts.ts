@@ -74,6 +74,8 @@ export type HostContextMap = {
   "session.getEntries": ActiveSessionContext;
   "session.getTree": ActiveSessionContext;
   "session.getStats": ActiveSessionContext;
+  "session.getForkPoints": ActiveSessionContext;
+  "session.fork": ActiveSessionContext;
   "session.usageReport": WorkspaceContext;
   "session.getCommands": ActiveSessionContext;
   "agent.prompt": ActiveSessionContext;
@@ -141,6 +143,8 @@ export type HostRequestParams = {
   "session.getEntries": { sinceEntryId?: string } | null;
   "session.getTree": null;
   "session.getStats": null;
+  "session.getForkPoints": null;
+  "session.fork": { entryId: string };
   "session.usageReport": null;
   "session.getCommands": null;
   "agent.prompt": {
@@ -243,6 +247,8 @@ export type HostResultMap = {
     leafId: string | null;
   };
   "session.getStats": SessionStatsSnapshot;
+  "session.getForkPoints": { items: { entryId: string; text: string }[] };
+  "session.fork": { session: SessionSnapshot; selectedText?: string };
   "session.usageReport": SessionUsageReport;
   "session.getCommands": { commands: CommandSummary[] };
   "agent.prompt": { accepted: true; runId: string };

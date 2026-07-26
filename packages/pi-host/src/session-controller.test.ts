@@ -74,6 +74,46 @@ describe("session.list runtime metadata", () => {
   });
 });
 
+describe("session.getForkPoints", () => {
+  it("lists the session's user messages for the fork selector", async () => {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const serviceGraphLock = new TryMutex();
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock }),
+      checkIdentity: () => null,
+      getGraph: () => ({
+        agentSession: {
+          getUserMessagesForForking: () => [
+            { entryId: "u1", text: "first ask" },
+            { entryId: "u2", text: "second ask" },
+          ],
+        },
+      }),
+    } as unknown as WorkspaceGraphFactory;
+    const handler = createSessionHandlers(factory)["session.getForkPoints"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getForkPoints",
+      params: null,
+      context: {},
+    } as HandlerContext);
+
+    expect(response).toHaveProperty("result");
+    if (!("result" in response)) return;
+    expect(response.result).toEqual({
+      items: [
+        { entryId: "u1", text: "first ask" },
+        { entryId: "u2", text: "second ask" },
+      ],
+    });
+  });
+});
+
 describe("session.getStats", () => {
   it("maps AgentSession.getSessionStats into the protocol snapshot", async () => {
     const identity = new IdentityState();

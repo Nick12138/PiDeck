@@ -31,6 +31,7 @@ import { subscribeComposerInsert } from "../../lib/composer-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
+import { ForkModal } from "./ForkModal";
 import { requestTreePanel } from "../../lib/dock-tree";
 
 const MAX_IMAGES = 4;
@@ -194,6 +195,7 @@ export function Composer({
   const [dragOver, setDragOver] = useState(false);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [forkOpen, setForkOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const extensionWidgetAnchorRef = useRef<HTMLDivElement>(null);
@@ -241,6 +243,7 @@ export function Composer({
     setDragOver(false);
     setCompletion(null);
     setStatsOpen(false);
+    setForkOpen(false);
     fileSnapshotRef.current = null;
   }, [sessionId]);
 
@@ -476,6 +479,12 @@ export function Composer({
       setSessionDraft(session.sessionId, "");
       setCompletion(null);
       requestTreePanel();
+      return;
+    }
+    if (builtin?.name === "fork") {
+      setSessionDraft(session.sessionId, "");
+      setCompletion(null);
+      setForkOpen(true);
       return;
     }
     if (builtin?.name === "compact") {
@@ -842,6 +851,7 @@ export function Composer({
           onClose={closeExtensionWidgets}
         />
         <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
+        <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
       </div>
       {welcomeWorkspaceName && (
         <div
