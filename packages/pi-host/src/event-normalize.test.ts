@@ -21,6 +21,9 @@ const reviewedFields = {
   compaction_end: ["reason", "result", "aborted", "willRetry", "errorMessage"],
   auto_retry_start: ["attempt", "maxAttempts", "delayMs", "errorMessage"],
   auto_retry_end: ["success", "attempt", "finalError"],
+  summarization_retry_scheduled: ["attempt", "maxAttempts", "delayMs", "errorMessage"],
+  summarization_retry_attempt_start: ["source", "reason"],
+  summarization_retry_finished: [],
   error: ["error", "message"],
 } as const;
 
@@ -51,6 +54,7 @@ const representativeFields = {
   steering: ["steer"],
   followUp: ["follow"],
   reason: "manual",
+  source: "compaction",
   entry: { type: "session_info", id: "entry-1", parentId: null },
   name: "Fixture session",
   level: "high",
@@ -92,6 +96,15 @@ describe("normalizeAgentEvent", () => {
         type: "future_sdk_event_with_sensitive_name",
         credential: "must-not-cross-the-boundary",
       }),
+    ).toEqual({ type: "unknown" });
+  });
+
+  it("keeps bash_execution_update unreviewed by decision, not by accident", () => {
+    // 0.82.1 emits this only from AgentSession.executeBash, which PiDeck never
+    // calls; the transcript still shows the result via the bashExecution
+    // session message. Wiring the delta stream is a deliberate future step.
+    expect(
+      normalizeAgentEvent({ type: "bash_execution_update", id: "b1", delta: "chunk" }),
     ).toEqual({ type: "unknown" });
   });
 

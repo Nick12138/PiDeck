@@ -255,6 +255,18 @@ export function applyAgentEvent(
       next = { ...next, isRetrying: false };
       break;
 
+    // The summarization call inside compaction or branch-summary can back off
+    // and retry on transient stream errors. During compaction the header keeps
+    // saying "Compacting" (isCompacting wins); for branch summaries this is the
+    // only signal that the session is waiting on a retry, not stuck.
+    case "summarization_retry_scheduled":
+    case "summarization_retry_attempt_start":
+      next = { ...next, isRetrying: true, isIdle: false };
+      break;
+    case "summarization_retry_finished":
+      next = { ...next, isRetrying: false };
+      break;
+
     case "agent_end":
       // agent_end closes one core-agent run. Pi may still retry, compact, or
       // process a continuation queued by an extension before agent_settled.

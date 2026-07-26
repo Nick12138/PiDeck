@@ -22,6 +22,13 @@ const EVENT_FIELDS = {
   compaction_end: ["reason", "result", "aborted", "willRetry", "errorMessage"],
   auto_retry_start: ["attempt", "maxAttempts", "delayMs", "errorMessage"],
   auto_retry_end: ["success", "attempt", "finalError"],
+  // Retries of the summarization LLM call inside compaction or branch-summary.
+  // The desktop uses these to keep the header truthful while a summarization
+  // attempt is backing off; `bash_execution_update` stays unreviewed because
+  // nothing in PiDeck calls AgentSession.executeBash, its only emitter.
+  summarization_retry_scheduled: ["attempt", "maxAttempts", "delayMs", "errorMessage"],
+  summarization_retry_attempt_start: ["source", "reason"],
+  summarization_retry_finished: [],
   error: ["error", "message"],
 } as const satisfies Record<string, readonly string[]>;
 

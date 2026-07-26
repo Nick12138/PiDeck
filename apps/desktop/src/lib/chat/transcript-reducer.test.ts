@@ -619,6 +619,61 @@ describe("applyAgentEvent", () => {
     expect(typeof part?.endedAt).toBe("number");
   });
 
+  it("marks the session retrying across a summarization retry cycle", () => {
+    let s = baseSession();
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "summarization_retry_scheduled",
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2000,
+        errorMessage: "stream dropped",
+      },
+    })!;
+    expect(s.isRetrying).toBe(true);
+    expect(s.isIdle).toBe(false);
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "summarization_retry_attempt_start", source: "branchSummary" },
+    })!;
+    expect(s.isRetrying).toBe(true);
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "summarization_retry_finished" },
+    })!;
+    expect(s.isRetrying).toBe(false);
+  });
+
+  it("keeps compaction primacy while its summarization call retries", () => {
+    let s = baseSession();
+    s = applyAgentEvent(s, { runId: "r1", event: { type: "compaction_start", reason: "threshold" } })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "summarization_retry_scheduled",
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 100,
+        errorMessage: "overloaded",
+      },
+    })!;
+    // The header resolves isCompacting before isRetrying, so the user keeps
+    // seeing "Compacting"; the retry flag must not end compaction early.
+    expect(s.isCompacting).toBe(true);
+    expect(s.isRetrying).toBe(true);
+
+    s = applyAgentEvent(s, { runId: "r1", event: { type: "summarization_retry_finished" } })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "compaction_end", reason: "threshold", aborted: false, willRetry: false },
+    })!;
+    expect(s.isCompacting).toBe(false);
+    expect(s.isRetrying).toBe(false);
+  });
+
   it("updates queue from queue_update", () => {
     let s = baseSession();
     s = applyAgentEvent(s, {
