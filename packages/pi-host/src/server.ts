@@ -200,7 +200,7 @@ export class PiHostServer {
   }
 
   /** Graceful shutdown for transport loss / signals — mirrors system.shutdown cleanup. */
-  async requestShutdown(reason: string): Promise<void> {
+  async requestShutdown(reason: string, exitCode = 0): Promise<void> {
     if (this.shutdownRequestPromise) return this.shutdownRequestPromise;
     const requestId = `shutdown:${reason}`;
     this.shutdownRequestPromise = (async () => {
@@ -219,9 +219,23 @@ export class PiHostServer {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      await this.stopTransport(cleanupCompleted ? 0 : 1);
+      await this.stopTransport(cleanupCompleted ? exitCode : 1);
     })();
     return this.shutdownRequestPromise;
+  }
+
+  requestFatalShutdown(error: HostError, reason: string): Promise<void> {
+    if (!this.shutdownRequestPromise) {
+      this.setFatalError(error);
+      try {
+        this.emit("host.fatal", { error });
+      } catch (emitError) {
+        logger.error("Failed to publish fatal Host state", {
+          error: emitError instanceof Error ? emitError.message : String(emitError),
+        });
+      }
+    }
+    return this.requestShutdown(reason, 1);
   }
 
   private quiesceAndCleanup(reason: string, requestId: string): Promise<boolean> {
@@ -380,32 +394,58 @@ export class PiHostServer {
         return;
       }
 
-      const identity = this.identity.snapshot();
-      const host = this.buildStatus();
-      const state = this.deps.getRehydrateState?.() ?? {
-        workspace: null,
-        session: null,
-        tools: null,
-        packages: null,
-      };
-      this.outbound.enqueueBarrierResponse((watermark) => {
-        const result: RehydrateSnapshot = { watermark, host, ...state };
-        const validation = validateSuccessResult(method, result);
-        if (!validation.ok) {
-          logger.error("Rejected invalid atomic rehydrate snapshot", {
-            validation: validation.error.message,
-          });
-          return createFailureResponse(
-            identity,
+      if (
+        !this.serviceGraphLock.tryAcquire({
+          operationKind: "system.rehydrate",
+          requestId: id,
+        })
+      ) {
+        this.writeResponse(
+          createFailureResponse(
+            this.identity.snapshot(),
             id,
             method,
-            createHostError("INTERNAL_ERROR", "Host recovery snapshot is inconsistent", {
-              details: { validation: validation.error.message },
+            createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+              retryable: true,
+              details: {
+                operationKind: this.serviceGraphLock.getOwner()?.operationKind ?? null,
+              },
             }),
-          );
-        }
-        return createSuccessResponse(identity, id, method, result);
-      });
+          ),
+        );
+        return;
+      }
+
+      try {
+        const identity = this.identity.snapshot();
+        const host = this.buildStatus();
+        const state = this.deps.getRehydrateState?.() ?? {
+          workspace: null,
+          session: null,
+          tools: null,
+          packages: null,
+        };
+        this.outbound.enqueueBarrierResponse((watermark) => {
+          const result: RehydrateSnapshot = { watermark, host, ...state };
+          const validation = validateSuccessResult(method, result);
+          if (!validation.ok) {
+            logger.error("Rejected invalid atomic rehydrate snapshot", {
+              validation: validation.error.message,
+            });
+            return createFailureResponse(
+              identity,
+              id,
+              method,
+              createHostError("INTERNAL_ERROR", "Host recovery snapshot is inconsistent", {
+                details: { validation: validation.error.message },
+              }),
+            );
+          }
+          return createSuccessResponse(identity, id, method, result);
+        });
+      } finally {
+        this.serviceGraphLock.release(id);
+      }
       return;
     }
 

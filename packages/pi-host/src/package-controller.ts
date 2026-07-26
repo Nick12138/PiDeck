@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   createHostError,
@@ -79,9 +79,10 @@ export async function waitForPackageMutation<T>(
  * cannot be mistaken for a no-op. This is reconciliation evidence only; SDK
  * resolve output remains the source of truth for resources shown to the UI.
  */
-async function capturePackageDiskFingerprint(
+export async function capturePackageDiskFingerprint(
   g: WorkspaceGraph,
   agentDir: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const packageManager = g.packageManager;
   if (!packageManager) return "packageManager:null";
@@ -106,19 +107,27 @@ async function capturePackageDiskFingerprint(
   }
 
   const hash = createHash("sha256");
-  const visit = (root: string, path: string): void => {
+  const visit = async (root: string, path: string): Promise<void> => {
+    signal?.throwIfAborted();
     const label = relative(root, path).replace(/\\/g, "/") || ".";
-    if (!existsSync(path)) {
-      hash.update(`missing:${path}\n`);
-      return;
+    let stat: Awaited<ReturnType<typeof lstat>>;
+    try {
+      stat = await lstat(path);
+    } catch (err) {
+      signal?.throwIfAborted();
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        hash.update(`missing:${path}\n`);
+        return;
+      }
+      throw err;
     }
-    const stat = lstatSync(path);
     hash.update(`${label}|${stat.mode}|${stat.size}|${Math.trunc(stat.mtimeMs)}\n`);
     if (!stat.isDirectory()) return;
-    for (const entry of readdirSync(path, { withFileTypes: true }).sort((a, b) =>
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) =>
       a.name.localeCompare(b.name),
     )) {
-      visit(root, join(path, entry.name));
+      await visit(root, join(path, entry.name));
     }
   };
 
@@ -126,7 +135,7 @@ async function capturePackageDiskFingerprint(
     if (root === "configured:error") {
       hash.update("configured:error\n");
     } else {
-      visit(root, root);
+      await visit(root, root);
     }
   }
   return hash.digest("hex");
@@ -449,27 +458,33 @@ async function mutatePackageUnderLock(
 
   server.setPhase("packageBusy");
 
-  // Capture before snapshot for disk-aware reconcile (B-PKG-DISK-01)
-  const trackPackageDisk = packageMutationMayChangeDisk(kind);
-  let beforeConfigured: string | undefined;
-  let beforeDiskFingerprint: string | undefined;
   try {
-    beforeConfigured = JSON.stringify(g.packageManager.listConfiguredPackages());
-  } catch {
-    beforeConfigured = undefined;
-  }
-  if (trackPackageDisk) {
+    // Capture before snapshot for disk-aware reconcile (B-PKG-DISK-01)
+    const trackPackageDisk = packageMutationMayChangeDisk(kind);
+    let beforeConfigured: string | undefined;
+    let beforeDiskFingerprint: string | undefined;
     try {
-      beforeDiskFingerprint = await capturePackageDiskFingerprint(g, factory.deps.agentDir);
+      beforeConfigured = JSON.stringify(g.packageManager.listConfiguredPackages());
     } catch {
-      beforeDiskFingerprint = undefined;
+      beforeConfigured = undefined;
     }
-  }
+    if (trackPackageDisk) {
+      try {
+        beforeDiskFingerprint = await capturePackageDiskFingerprint(
+          g,
+          factory.deps.agentDir,
+          signal,
+        );
+      } catch {
+        // Preserve the SDK cancellation/reconcile path below. An already
+        // aborted signal is installed on PackageManager before mutation.
+        beforeDiskFingerprint = undefined;
+      }
+    }
 
-  let mutationError: Error | null = null;
-  let changed = false;
+    let mutationError: Error | null = null;
+    let changed = false;
 
-  try {
     // re-check identity under lock
     const stale2 = factory.checkIdentity(ctx.context, {
       requireWorkspace: true,
@@ -522,7 +537,11 @@ async function mutatePackageUnderLock(
     }
     if (trackPackageDisk) {
       try {
-        afterDiskFingerprint = await capturePackageDiskFingerprint(g, factory.deps.agentDir);
+        afterDiskFingerprint = await capturePackageDiskFingerprint(
+          g,
+          factory.deps.agentDir,
+          signal,
+        );
       } catch (err) {
         reconcileError = err instanceof Error ? err : new Error(String(err));
       }

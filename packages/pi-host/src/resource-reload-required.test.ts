@@ -540,6 +540,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
         params: { source: "npm:never-finishes", scope: "user" },
       } as never);
       await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(operationSignal).toBeDefined());
       expect(operationSignal?.aborted).toBe(false);
 
       await vi.advanceTimersByTimeAsync(600_000);

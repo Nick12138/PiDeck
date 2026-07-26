@@ -15,10 +15,10 @@
  *   customFrame data for the same panel concatenates (ANSI streams compose),
  *   and latest-wins snapshots (status/widget/runtime/progress/queue/host
  *   status) replace their queued predecessor.
- * - Above the hard cap, droppable events are discarded outright; if the
- *   queue is still over the cap, all queued events are dropped (responses
- *   are always kept) and one sequence number is deliberately skipped — the
- *   frontend's gap detection then drives its standard rehydrate recovery.
+ * - Above the hard cap, droppable events are discarded outright. Any shed
+ *   deliberately skips one sequence number so the frontend resets from an
+ *   authoritative rehydrate snapshot. If the queue remains over the cap, all
+ *   queued events are dropped; responses are always kept.
  */
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
 import { createEvent } from "@pideck/protocol";
@@ -224,6 +224,7 @@ export class OutboundWriter {
         this.pendingBytes -= entry.bytes;
       }
     }
+    if (shed > 0) this.nextSequence();
 
     if (this.pendingBytes > this.hardCap) {
       // Catastrophic: consumer is effectively gone. Drop all events (keep
@@ -237,7 +238,7 @@ export class OutboundWriter {
           this.pendingBytes -= entry.bytes;
         }
       }
-      this.nextSequence();
+      if (shed === 0) this.nextSequence();
       logger.error("Outbound queue exceeded hard cap; events dropped, sequence gap forced", {
         shedBytes: shed,
         droppedEvents,
@@ -247,7 +248,7 @@ export class OutboundWriter {
     }
 
     if (shed > 0) {
-      logger.warn("Outbound queue over hard cap; coalescible events shed", {
+      logger.warn("Outbound queue over hard cap; coalescible events shed and recovery forced", {
         shedBytes: shed,
         pendingBytes: this.pendingBytes,
       });

@@ -245,7 +245,7 @@ describe("OutboundWriter", () => {
     ]);
   });
 
-  it("never drops responses or agent events at the hard cap, and forces a sequence gap in catastrophe", async () => {
+  it("never drops responses and forces a sequence gap in catastrophe", async () => {
     const fake = fakeStream({ stalled: true });
     const { out, lastSequence } = writer(fake.stream, { softWatermark: 1, hardCap: 200 });
 
@@ -279,7 +279,7 @@ describe("OutboundWriter", () => {
 
   it("sheds widget attention with its widget snapshot at the hard cap", async () => {
     const fake = fakeStream({ stalled: true });
-    const { out } = writer(fake.stream, { softWatermark: 1, hardCap: 300 });
+    const { out, lastSequence } = writer(fake.stream, { softWatermark: 1, hardCap: 300 });
 
     out.enqueueEvent(identity, "extensionUi.notification", {
       message: "hold",
@@ -306,11 +306,13 @@ describe("OutboundWriter", () => {
     const events = fake.parsed().map((message) => message.event);
     expect(events).not.toContain("extensionUi.widgetChanged");
     expect(events).not.toContain("extensionUi.widgetAttentionRequested");
+    const written = fake.parsed().filter((message) => typeof message.sequence === "number").length;
+    expect(lastSequence()).toBeGreaterThan(written);
   });
 
   it("does not enqueue attention after its widget snapshot is shed on arrival", async () => {
     const fake = fakeStream({ stalled: true });
-    const { out } = writer(fake.stream, { softWatermark: 1, hardCap: 200 });
+    const { out, lastSequence } = writer(fake.stream, { softWatermark: 1, hardCap: 200 });
 
     out.enqueueEvent(identity, "extensionUi.notification", {
       message: "hold",
@@ -333,6 +335,30 @@ describe("OutboundWriter", () => {
     const events = fake.parsed().map((message) => message.event);
     expect(events).not.toContain("extensionUi.widgetChanged");
     expect(events).not.toContain("extensionUi.widgetAttentionRequested");
+    const written = fake.parsed().filter((message) => typeof message.sequence === "number").length;
+    expect(lastSequence()).toBeGreaterThan(written);
+  });
+
+  it("forces recovery when first-pass shedding drops final authoritative state", async () => {
+    const fake = fakeStream({ stalled: true });
+    const { out, lastSequence } = writer(fake.stream, { softWatermark: 1, hardCap: 200 });
+
+    out.enqueueEvent(identity, "extensionUi.notification", { message: "hold", level: "info" });
+    await settle();
+    out.enqueueEvent(identity, "session.runtimeChanged", {
+      sessionId: identity.sessionId,
+      sessionRevision: identity.sessionRevision,
+      state: "error",
+      updatedAt: 1,
+      error: "x".repeat(300),
+    });
+
+    fake.unstall();
+    await out.drain();
+
+    expect(fake.parsed().some((message) => message.event === "session.runtimeChanged")).toBe(false);
+    const written = fake.parsed().filter((message) => typeof message.sequence === "number").length;
+    expect(lastSequence()).toBeGreaterThan(written);
   });
 
   it("drain resolves immediately when idle", async () => {

@@ -7,6 +7,7 @@ import type {
   SerializableSessionEntry,
   SessionSnapshot,
   SerializableAgentMessage,
+  HostIdentity,
 } from "@pideck/protocol";
 import { toJsonValue } from "@pideck/protocol";
 import { isAbortedToolResult } from "./tool-result-status";
@@ -50,10 +51,25 @@ export type AgentEventEnvelope = {
   };
 };
 
-export type TimedAgentEventEnvelope = {
+export type TimedAgentEventEnvelope = HostIdentity & {
+  sequence: number;
   payload: AgentEventEnvelope;
   receivedAt: number;
 };
+
+export function matchesTimedAgentEventIdentity(
+  event: TimedAgentEventEnvelope,
+  identity: HostIdentity,
+): boolean {
+  return (
+    event.hostInstanceId === identity.hostInstanceId &&
+    event.workspaceId === identity.workspaceId &&
+    event.workspaceRevision === identity.workspaceRevision &&
+    event.sessionId === identity.sessionId &&
+    event.sessionRevision === identity.sessionRevision &&
+    event.packageRevision === identity.packageRevision
+  );
+}
 
 export function applyAgentEventBatch(
   session: SessionSnapshot | null,

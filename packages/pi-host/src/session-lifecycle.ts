@@ -70,7 +70,23 @@ async function withSessionFileMutation<T>(
   if (!server || !g || !g.servicesReady) {
     return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
   }
+  const operation = server.graphOperations.begin({
+    operationKind,
+    requestId,
+    operationId: randomUUID(),
+  });
+  if (!operation) {
+    return {
+      error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+        retryable: true,
+        details: {
+          operationKind: server.graphOperations.getActive()?.operationKind ?? null,
+        },
+      }),
+    };
+  }
   if (!server.serviceGraphLock.tryAcquire({ operationKind, requestId })) {
+    operation.finish();
     return {
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
         retryable: true,
@@ -78,6 +94,7 @@ async function withSessionFileMutation<T>(
     };
   }
   try {
+    operation.signal.throwIfAborted();
     return await run(g);
   } catch (error) {
     return {
@@ -88,6 +105,7 @@ async function withSessionFileMutation<T>(
     };
   } finally {
     server.serviceGraphLock.release(requestId);
+    operation.finish();
   }
 }
 
@@ -403,7 +421,23 @@ export async function createSession(
     return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
   }
 
+  const operation = server.graphOperations.begin({
+    operationKind: "session.create",
+    requestId,
+    operationId: randomUUID(),
+  });
+  if (!operation) {
+    return {
+      error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+        retryable: true,
+        details: {
+          operationKind: server.graphOperations.getActive()?.operationKind ?? null,
+        },
+      }),
+    };
+  }
   if (!server.serviceGraphLock.tryAcquire({ operationKind: "session.create", requestId })) {
+    operation.finish();
     return {
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
         retryable: true,
@@ -418,6 +452,7 @@ export async function createSession(
   let unsubscribeAgent: (() => void) | null = null;
 
   try {
+    operation.signal.throwIfAborted();
     // C4 candidate-commit: build new session fully before disposing old (B-SESSION-TXN-01)
     const prev = captureActiveSessionState(g, server.identity);
 
@@ -462,6 +497,7 @@ export async function createSession(
       unsubscribeAgent = session.subscribe((event) => {
         factory.handleAgentEvent(g, session, event);
       });
+      operation.signal.throwIfAborted();
     } catch (bindErr) {
       // Discard candidate — keep previous session.
       try {
@@ -484,6 +520,7 @@ export async function createSession(
         error: createHostError(
           "SESSION_SWITCH_FAILED",
           bindErr instanceof Error ? bindErr.message : "Extension bind failed",
+          { retryable: operation.signal.aborted },
         ),
       };
     }
@@ -598,10 +635,12 @@ export async function createSession(
       error: createHostError(
         "SESSION_SWITCH_FAILED",
         err instanceof Error ? err.message : "Failed to create session",
+        { retryable: operation.signal.aborted },
       ),
     };
   } finally {
     server.serviceGraphLock.release(requestId);
+    operation.finish();
   }
 }
 
@@ -617,18 +656,36 @@ export async function openSession(
     return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
   }
 
+  const operationKind = options.forceReload ? "session.reload" : "session.open";
+  const operation = server.graphOperations.begin({
+    operationKind,
+    requestId,
+    operationId: randomUUID(),
+  });
+  if (!operation) {
+    return {
+      error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+        retryable: true,
+        details: {
+          operationKind: server.graphOperations.getActive()?.operationKind ?? null,
+        },
+      }),
+    };
+  }
   if (
     !server.serviceGraphLock.tryAcquire({
-      operationKind: options.forceReload ? "session.reload" : "session.open",
+      operationKind,
       requestId,
     })
   ) {
+    operation.finish();
     return {
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", { retryable: true }),
     };
   }
 
   try {
+    operation.signal.throwIfAborted();
     const isCurrentSession = Boolean(
       g.sessionSnapshot &&
         factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
@@ -672,13 +729,18 @@ export async function openSession(
       factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
     );
     if (retained) {
+      operation.signal.throwIfAborted();
       return await factory.promoteBackgroundRuntime(g, retained);
     }
     const retainedIdle = [...(g.retainedSessions?.values() ?? [])].find((runtime) =>
       factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
     );
     if (retainedIdle) {
-      const promoted = await factory.promoteRetainedSessionRuntime(g, retainedIdle);
+      const promoted = await factory.promoteRetainedSessionRuntime(
+        g,
+        retainedIdle,
+        operation.signal,
+      );
       if (promoted !== null) return promoted;
     }
 
@@ -724,6 +786,7 @@ export async function openSession(
       candidateUnsubscribeAgent = session.subscribe((event) => {
         factory.handleAgentEvent(g, session, event);
       });
+      operation.signal.throwIfAborted();
       const sessionSnapshot = buildSessionSnapshot({
         session,
         sessionManager,
@@ -775,6 +838,7 @@ export async function openSession(
           error: createHostError(
             "SESSION_SWITCH_FAILED",
             bindErr instanceof Error ? bindErr.message : "Extension bind failed",
+            { retryable: operation.signal.aborted },
           ),
         };
       }
@@ -827,6 +891,7 @@ export async function openSession(
         error: createHostError(
           "SESSION_SWITCH_FAILED",
           err instanceof Error ? err.message : "Failed to open session",
+          { retryable: operation.signal.aborted },
         ),
       };
     }
@@ -835,10 +900,12 @@ export async function openSession(
       error: createHostError(
         "SESSION_SWITCH_FAILED",
         err instanceof Error ? err.message : "Failed to open session",
+        { retryable: operation.signal.aborted },
       ),
     };
   } finally {
     server.serviceGraphLock.release(requestId);
+    operation.finish();
   }
 }
 

@@ -3,6 +3,7 @@
  */
 
 export type GraphOperationKind =
+  | "system.rehydrate"
   | "system.shutdown"
   | "workspace.setCurrent"
   | "session.create"

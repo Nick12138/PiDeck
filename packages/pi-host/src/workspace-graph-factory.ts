@@ -209,8 +209,9 @@ export class WorkspaceGraphFactory {
   async promoteRetainedSessionRuntime(
     graph: WorkspaceGraph,
     runtime: BackgroundSessionRuntime,
+    signal?: AbortSignal,
   ): Promise<SessionSnapshot | { error: HostError } | null> {
-    return this.sessionRuntimeCache.promoteRetainedSessionRuntime(graph, runtime);
+    return this.sessionRuntimeCache.promoteRetainedSessionRuntime(graph, runtime, signal);
   }
 
   async disposeGraph(g: WorkspaceGraph): Promise<void> {

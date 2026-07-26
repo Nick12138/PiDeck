@@ -19,7 +19,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import type { HostCapabilities } from "@pideck/protocol";
+import { createHostError, type HostCapabilities } from "@pideck/protocol";
 import { buildModelConfigHealth } from "./model-health.js";
 import { logger } from "./logger.js";
 import { PiHostServer } from "./server.js";
@@ -209,13 +209,18 @@ async function main(): Promise<void> {
     server.emit("host.statusChanged", server.buildStatus());
   };
 
-  // Process-level guards: a stray rejection must not kill live agent sessions;
-  // an uncaught exception means unknown state — exit so the desktop shell restarts us.
+  // Unknown detached-task failures invalidate Host authority. Publish fatal,
+  // perform bounded cleanup, and let the desktop apply its restart policy.
   process.on("unhandledRejection", (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
     logger.error("Unhandled promise rejection in Pi Host", {
-      error: reason instanceof Error ? reason.message : String(reason),
+      error: message,
       stack: reason instanceof Error ? reason.stack : undefined,
     });
+    void server.requestFatalShutdown(
+      createHostError("INTERNAL_ERROR", `Unhandled asynchronous failure: ${message}`),
+      "unhandled promise rejection",
+    );
   });
   process.on("uncaughtException", (err) => {
     logger.error("Uncaught exception in Pi Host", {

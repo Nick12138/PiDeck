@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyAgentEvent,
   applyAgentEventBatch,
+  matchesTimedAgentEventIdentity,
   type AgentEventEnvelope,
 } from "./transcript-reducer.js";
 import type { SessionSnapshot } from "@pideck/protocol";
@@ -120,8 +121,18 @@ describe("applyAgentEvent", () => {
       90,
     )!;
 
+    const identity = {
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+      packageRevision: 1,
+    };
     s = applyAgentEventBatch(s, [
       {
+        ...identity,
+        sequence: 1,
         receivedAt: 100,
         payload: {
           runId: "r1",
@@ -136,6 +147,8 @@ describe("applyAgentEvent", () => {
         },
       },
       {
+        ...identity,
+        sequence: 2,
         receivedAt: 140,
         payload: {
           runId: "r1",
@@ -150,6 +163,8 @@ describe("applyAgentEvent", () => {
         },
       },
       {
+        ...identity,
+        sequence: 3,
         receivedAt: 150,
         payload: {
           runId: "r1",
@@ -164,6 +179,8 @@ describe("applyAgentEvent", () => {
         },
       },
       {
+        ...identity,
+        sequence: 4,
         receivedAt: 160,
         payload: {
           runId: "r1",
@@ -183,6 +200,32 @@ describe("applyAgentEvent", () => {
       { type: "thinking", thinking: "Plan", startedAt: 100, endedAt: 140 },
       { type: "text", text: "Hello world" },
     ]);
+  });
+
+  it("rejects buffered events from a different Session generation", () => {
+    const identity = {
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+      packageRevision: 1,
+    };
+    const event = {
+      ...identity,
+      sequence: 10,
+      receivedAt: 100,
+      payload: { event: { type: "message_update", delta: "stale" } },
+    };
+
+    expect(matchesTimedAgentEventIdentity(event, identity)).toBe(true);
+    expect(
+      matchesTimedAgentEventIdentity(event, {
+        ...identity,
+        sessionId: "s2",
+        sessionRevision: 2,
+      }),
+    ).toBe(false);
   });
 
   it("keeps thinking and text deltas in separate content blocks", () => {

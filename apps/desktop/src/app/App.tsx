@@ -13,7 +13,7 @@ import { applyTheme } from "../lib/theme";
 import {
   applyAgentEvent,
   applyAgentEventBatch,
-  type AgentEventEnvelope,
+  matchesTimedAgentEventIdentity,
   type TimedAgentEventEnvelope,
 } from "../lib/chat/transcript-reducer";
 import { classifyToolSnapshot } from "../lib/stores/tool-revision";
@@ -72,7 +72,7 @@ export async function runFullRehydrate(
   recoveryEvents: RecoveryEventBuffer,
   requestRecovery: (reason: string) => void,
   agentEventBuffer: {
-    enqueue: (payload: AgentEventEnvelope) => void;
+    enqueue: (event: HostEventEnvelope<"agent.event">) => void;
     flush: () => void;
   },
 ): Promise<boolean> {
@@ -123,7 +123,7 @@ function handleHostEvent(
   event: HostEventEnvelope,
   requestRecovery: (reason: string) => void,
   agentEventBuffer: {
-    enqueue: (payload: AgentEventEnvelope) => void;
+    enqueue: (event: HostEventEnvelope<"agent.event">) => void;
     flush: () => void;
   },
 ): void {
@@ -377,7 +377,7 @@ function handleHostEvent(
       break;
     case "agent.event": {
       if (bufferableMessageUpdate) {
-        agentEventBuffer.enqueue(event.payload);
+        agentEventBuffer.enqueue(event);
         break;
       }
       const cur = useAppStore.getState().session;
@@ -513,9 +513,25 @@ export function App() {
             agentEventFrame = null;
           }
           if (pendingAgentEvents.length === 0) return;
-          const batch = pendingAgentEvents;
+          const current = useAppStore.getState();
+          const currentIdentity = current.host
+            ? {
+                ...current.host,
+                workspaceId: current.workspace?.id ?? current.host.workspaceId,
+                workspaceRevision:
+                  current.workspace?.revision ?? current.host.workspaceRevision,
+                sessionId: current.session?.sessionId ?? current.host.sessionId,
+                sessionRevision: current.session?.revision ?? current.host.sessionRevision,
+                packageRevision: current.packages?.revision ?? current.host.packageRevision,
+              }
+            : null;
+          const batch = currentIdentity
+            ? pendingAgentEvents.filter((event) =>
+                matchesTimedAgentEventIdentity(event, currentIdentity),
+              )
+            : [];
           pendingAgentEvents = [];
-          const currentSession = useAppStore.getState().session;
+          const currentSession = current.session;
           const nextSession = applyAgentEventBatch(currentSession, batch);
           if (nextSession) useAppStore.getState().applySessionSnapshot(nextSession);
         };
@@ -530,8 +546,18 @@ export function App() {
         cancelPendingAgentEvents = cancelAgentEvents;
 
         const agentEventBuffer = {
-          enqueue: (payload: AgentEventEnvelope) => {
-            pendingAgentEvents.push({ payload, receivedAt: Date.now() });
+          enqueue: (event: HostEventEnvelope<"agent.event">) => {
+            pendingAgentEvents.push({
+              hostInstanceId: event.hostInstanceId,
+              workspaceId: event.workspaceId,
+              workspaceRevision: event.workspaceRevision,
+              sessionId: event.sessionId,
+              sessionRevision: event.sessionRevision,
+              packageRevision: event.packageRevision,
+              sequence: event.sequence,
+              payload: event.payload,
+              receivedAt: Date.now(),
+            });
             if (agentEventFrame !== null) return;
             agentEventFrame = window.requestAnimationFrame(() => {
               agentEventFrame = null;

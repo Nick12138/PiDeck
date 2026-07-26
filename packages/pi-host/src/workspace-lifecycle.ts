@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
 import { join, resolve as pathResolve, win32 } from "node:path";
 import {
   createAgentSession,
@@ -162,7 +163,23 @@ export class WorkspaceLifecycle {
     if (!server) {
       return { error: createHostError("HOST_NOT_READY", "Server not bound") };
     }
+    const operation = server.graphOperations.begin({
+      operationKind: "workspace.setCurrent",
+      requestId,
+      operationId: randomUUID(),
+    });
+    if (!operation) {
+      return {
+        error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+          retryable: true,
+          details: {
+            operationKind: server.graphOperations.getActive()?.operationKind ?? null,
+          },
+        }),
+      };
+    }
     if (!server.serviceGraphLock.tryAcquire({ operationKind: "workspace.setCurrent", requestId })) {
+      operation.finish();
       return {
         error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
           retryable: true,
@@ -174,6 +191,7 @@ export class WorkspaceLifecycle {
     }
 
     try {
+      operation.signal.throwIfAborted();
       if (this.sessionRuntimeCache.hasBusySessions()) {
         return {
           error: createHostError(
@@ -211,6 +229,7 @@ export class WorkspaceLifecycle {
         revision,
         sessionRevision: candidateSessionRevision,
         packageRevision: candidatePackageRevision,
+        signal: operation.signal,
       });
       if (reactivated) return reactivated;
 
@@ -222,6 +241,10 @@ export class WorkspaceLifecycle {
         sessionRevision: candidateSessionRevision,
         packageRevision: candidatePackageRevision,
       });
+      if (operation.signal.aborted) {
+        if ("graph" in built) await this.disposeGraph(built.graph);
+        operation.signal.throwIfAborted();
+      }
       if ("error" in built) {
         await this.commitWorkspaceFailure({
           previousGraph,
@@ -283,8 +306,17 @@ export class WorkspaceLifecycle {
         workspace,
         ...(built.graph.sessionSnapshot ? { session: built.graph.sessionSnapshot } : {}),
       };
+    } catch (err) {
+      return {
+        error: createHostError(
+          "WORKSPACE_SWITCH_FAILED",
+          err instanceof Error ? err.message : "Workspace switch cancelled",
+          { retryable: operation.signal.aborted },
+        ),
+      };
     } finally {
       server.serviceGraphLock.release(requestId);
+      operation.finish();
     }
   }
 
@@ -292,33 +324,39 @@ export class WorkspaceLifecycle {
     return workspaceIdentityKey(canonicalCwd, this.context.platform);
   }
 
-  private retainedGraphFingerprint(graph: WorkspaceGraph): string {
+  private async retainedGraphFingerprint(
+    graph: WorkspaceGraph,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const hash = createHash("sha256");
-    const visit = (path: string): void => {
-      if (!existsSync(path)) {
-        hash.update(`missing:${path}\n`);
-        return;
-      }
+    const visit = async (path: string): Promise<void> => {
+      signal?.throwIfAborted();
       try {
-        const stat = lstatSync(path);
+        const stat = await lstat(path);
         hash.update(`${path}|${stat.mode}|${stat.size}|${Math.trunc(stat.mtimeMs)}\n`);
         if (!stat.isDirectory()) return;
-        for (const entry of readdirSync(path, { withFileTypes: true }).sort((a, b) =>
+        const entries = await readdir(path, { withFileTypes: true });
+        for (const entry of entries.sort((a, b) =>
           a.name.localeCompare(b.name),
         )) {
-          visit(join(path, entry.name));
+          await visit(join(path, entry.name));
         }
       } catch (err) {
-        hash.update(`error:${path}:${err instanceof Error ? err.message : String(err)}\n`);
+        signal?.throwIfAborted();
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          hash.update(`missing:${path}\n`);
+        } else {
+          hash.update(`error:${path}:${err instanceof Error ? err.message : String(err)}\n`);
+        }
       }
     };
 
-    visit(join(graph.canonicalCwd, ".pi"));
-    visit(join(this.context.deps.agentDir, "settings.json"));
-    visit(join(this.context.deps.agentDir, "models.json"));
-    visit(join(this.context.deps.agentDir, "auth.json"));
+    await visit(join(graph.canonicalCwd, ".pi"));
+    await visit(join(this.context.deps.agentDir, "settings.json"));
+    await visit(join(this.context.deps.agentDir, "models.json"));
+    await visit(join(this.context.deps.agentDir, "auth.json"));
     for (const directory of ["packages", "npm", "git"]) {
-      visit(join(this.context.deps.agentDir, directory));
+      await visit(join(this.context.deps.agentDir, directory));
     }
     return hash.digest("hex");
   }
@@ -344,7 +382,7 @@ export class WorkspaceLifecycle {
     }
     graph.extensionUiCleanup = null;
     graph.extensionUiUpdateIdentity = null;
-    graph.retainedFingerprint = this.retainedGraphFingerprint(graph);
+    graph.retainedFingerprint = await this.retainedGraphFingerprint(graph);
 
     const key = this.retainedGraphKey(graph.canonicalCwd);
     const existing = this.retainedGraphs.get(key);
@@ -387,6 +425,7 @@ export class WorkspaceLifecycle {
     revision: number;
     sessionRevision: number;
     packageRevision: number;
+    signal?: AbortSignal;
   }): Promise<{ workspace: WorkspaceSnapshot; session?: SessionSnapshot } | null> {
     const server = this.context.getServer();
     if (!server) return null;
@@ -395,10 +434,22 @@ export class WorkspaceLifecycle {
 
     const retainedFingerprint = graph.retainedFingerprint;
     graph.retainedFingerprint = undefined;
-    if (
-      !retainedFingerprint ||
-      retainedFingerprint !== this.retainedGraphFingerprint(graph)
-    ) {
+    if (!retainedFingerprint) {
+      logger.info("Retained workspace changed on disk; rebuilding", {
+        cwd: args.canonical,
+      });
+      await this.disposeGraph(graph);
+      return null;
+    }
+
+    let currentFingerprint: string;
+    try {
+      currentFingerprint = await this.retainedGraphFingerprint(graph, args.signal);
+    } catch (err) {
+      await this.disposeGraph(graph);
+      throw err;
+    }
+    if (retainedFingerprint !== currentFingerprint) {
       logger.info("Retained workspace changed on disk; rebuilding", {
         cwd: args.canonical,
       });
@@ -469,7 +520,13 @@ export class WorkspaceLifecycle {
         error: err instanceof Error ? err.message : String(err),
       });
       await this.disposeGraph(graph);
+      args.signal?.throwIfAborted();
       return null;
+    }
+
+    if (args.signal?.aborted) {
+      await this.disposeGraph(graph);
+      args.signal.throwIfAborted();
     }
 
     const previousIdentity = server.getIdentity();

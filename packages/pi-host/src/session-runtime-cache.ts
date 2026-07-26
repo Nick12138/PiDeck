@@ -498,6 +498,7 @@ export class SessionRuntimeCache {
   async promoteRetainedSessionRuntime(
     graph: WorkspaceGraph,
     runtime: BackgroundSessionRuntime,
+    signal?: AbortSignal,
   ): Promise<SessionSnapshot | { error: HostError } | null> {
     const server = this.context.getServer();
     const retainedSessions = this.retainedSessionRuntimes(graph);
@@ -526,6 +527,14 @@ export class SessionRuntimeCache {
       });
       await this.disposeRetainedSessionRuntime(graph, runtime);
       return null;
+    }
+
+    if (signal?.aborted) {
+      try {
+        binding.cleanup();
+      } finally {
+        signal.throwIfAborted();
+      }
     }
 
     const unsubscribe = runtime.agentSession.subscribe((event) => {

@@ -6,6 +6,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
 import type { PiHostServer } from "./server.js";
 import { TryMutex } from "./locks.js";
+import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import {
   WorkspaceGraphFactory,
   type BackgroundSessionRuntime,
@@ -625,6 +626,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     const server = {
       identity,
       serviceGraphLock: new TryMutex(),
+      graphOperations: new GraphOperationRegistry(),
     } as unknown as PiHostServer;
     const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
     factory.bindServer(server);
@@ -648,6 +650,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
 
     expect("error" in result && result.error.code).toBe("AGENT_BUSY");
     expect(server.serviceGraphLock.isHeld()).toBe(false);
+    expect(server.graphOperations.getActive()).toBeNull();
   });
 });
 
@@ -672,6 +675,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     const server = {
       identity,
       serviceGraphLock: new TryMutex(),
+      graphOperations: new GraphOperationRegistry(),
       getIdentity: () => ({ ...identity }),
       emit: vi.fn(),
       emitForIdentity: vi.fn(),
@@ -699,7 +703,12 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
           revision: number;
           sessionRevision: number;
           packageRevision: number;
+          signal?: AbortSignal;
         }) => Promise<unknown>;
+        retainedGraphFingerprint: (
+          graph: WorkspaceGraph,
+          signal?: AbortSignal,
+        ) => Promise<string>;
         buildServices: () => Promise<{ graph: WorkspaceGraph }>;
         disposeRetainedGraphs: () => Promise<void>;
       };
@@ -787,6 +796,53 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
+  it("cancels a supervised Workspace before candidate commit", async () => {
+    const state = setup();
+    try {
+      const candidateSession = fakeSession(true, BACKGROUND_SESSION_ID);
+      const candidate = fakeWorkspaceGraph(
+        state.retainedDir,
+        "99999999-9999-4999-8999-999999999999",
+        candidateSession,
+      );
+      let resolveBuild!: (value: { graph: WorkspaceGraph }) => void;
+      const buildServices = vi
+        .spyOn(
+          state.internal as unknown as {
+            buildServices: () => Promise<{ graph: WorkspaceGraph }>;
+          },
+          "buildServices",
+        )
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveBuild = resolve;
+            }),
+        );
+      const originalIdentity = { ...state.identity };
+
+      const switching = state.factory.setCurrent(state.retainedDir, "switch-cancelled");
+      await vi.waitFor(() => expect(buildServices).toHaveBeenCalledOnce());
+      const operation = state.server.graphOperations.getActive();
+      expect(operation?.operationKind).toBe("workspace.setCurrent");
+      operation?.cancel("Host shutdown");
+      resolveBuild({ graph: candidate });
+      const result = await switching;
+
+      expect("error" in result && result.error).toMatchObject({
+        code: "WORKSPACE_SWITCH_FAILED",
+        retryable: true,
+      });
+      expect(state.factory.getGraph()).toBe(state.previous);
+      expect(state.identity).toEqual(originalIdentity);
+      expect(candidateSession.dispose).toHaveBeenCalledTimes(1);
+      expect(state.server.serviceGraphLock.isHeld()).toBe(false);
+      expect(state.server.graphOperations.getActive()).toBeNull();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
   it("rolls back the active graph and identity when retained activation fails", async () => {
     const state = setup();
     try {
@@ -850,6 +906,51 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
       expect(result).toBeNull();
       expect(state.factory.getGraph()).toBe(state.previous);
       expect(retainedSession.bindExtensions).not.toHaveBeenCalled();
+      expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("disposes a retained graph when fingerprinting is cancelled", async () => {
+    const state = setup();
+    try {
+      const retainedSession = fakeSession(true, BACKGROUND_SESSION_ID);
+      const retained = fakeWorkspaceGraph(
+        state.retainedDir,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        retainedSession,
+      );
+      await state.internal.retainGraph(retained);
+
+      let markFingerprintStarted!: () => void;
+      const fingerprintStarted = new Promise<void>((resolve) => {
+        markFingerprintStarted = resolve;
+      });
+      vi.spyOn(state.internal, "retainedGraphFingerprint").mockImplementation(
+        (_graph, signal) =>
+          new Promise((_resolve, reject) => {
+            markFingerprintStarted();
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      );
+      const controller = new AbortController();
+
+      const reactivating = state.internal.tryReactivateRetainedGraph({
+        canonical: state.retainedDir,
+        previousGraph: state.previous,
+        revision: 8,
+        sessionRevision: 10,
+        packageRevision: 5,
+        signal: controller.signal,
+      });
+      await fingerprintStarted;
+      controller.abort(new Error("Host shutdown"));
+
+      await expect(reactivating).rejects.toThrow("Host shutdown");
+      expect(state.factory.getGraph()).toBe(state.previous);
+      expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
+      await state.internal.disposeRetainedGraphs();
       expect(retainedSession.dispose).toHaveBeenCalledTimes(1);
     } finally {
       rmSync(state.root, { recursive: true, force: true });

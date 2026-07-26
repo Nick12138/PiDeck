@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PiHostServer } from "./server.js";
 import { TryMutex } from "./locks.js";
+import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import {
   WorkspaceGraphFactory,
   type GraphFactoryDeps,
@@ -48,6 +49,7 @@ function createFixture() {
   Reflect.set(factory, "graph", graph);
   factory.bindServer({
     serviceGraphLock: new TryMutex(),
+    graphOperations: new GraphOperationRegistry(),
     identity: {
       sessionId: null,
       sessionRevision: 0,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HostIdentity } from "@pideck/protocol";
+import { createHostError, type HostIdentity } from "@pideck/protocol";
+import type { GraphOperationKind } from "./locks.js";
 import { HOST_SHUTDOWN_QUIESCE_TIMEOUT_MS, PiHostServer } from "./server.js";
 
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -86,6 +87,65 @@ describe("PiHostServer.emitForIdentity", () => {
 });
 
 describe("PiHostServer rehydrate barrier", () => {
+  it.each<GraphOperationKind>([
+    "workspace.setCurrent",
+    "session.open",
+    "package.mutation",
+  ])("does not sample graph state during %s", async (operationKind) => {
+    const getRehydrateState = vi.fn(() => {
+      throw new Error("uncommitted graph state was sampled");
+    });
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      getRehydrateState,
+    });
+    const responses: Array<Record<string, unknown>> = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(
+      ((chunk: string | Uint8Array) => {
+        responses.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+        return true;
+      }) as typeof process.stdout.write,
+    );
+    expect(
+      host.serviceGraphLock.tryAcquire({
+        operationKind,
+        requestId: "graph-mutation",
+      }),
+    ).toBe(true);
+
+    await host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "55555555-5555-4555-8555-555555555555",
+        method: "system.rehydrate",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getRehydrateState).not.toHaveBeenCalled();
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      ok: false,
+      error: {
+        code: "SERVICE_GRAPH_BUSY",
+        retryable: true,
+        details: { operationKind },
+      },
+    });
+    expect(host.serviceGraphLock.getOwner()?.requestId).toBe("graph-mutation");
+    host.serviceGraphLock.release("graph-mutation");
+  });
+
   it("returns an atomic no-Workspace snapshot at the preceding event watermark", async () => {
     const host = new PiHostServer({
       agentDir: "C:/agent",
@@ -139,10 +199,37 @@ describe("PiHostServer rehydrate barrier", () => {
         packages: null,
       },
     });
+    expect(host.serviceGraphLock.isHeld()).toBe(false);
   });
 });
 
 describe("PiHostServer shutdown", () => {
+  it("publishes fatal state, cleans up, and exits nonzero for unknown async failures", async () => {
+    const dispose = vi.fn(async () => {});
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.80.7",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      onShutdown: dispose,
+    });
+    const emit = vi.spyOn(host, "emit").mockImplementation(() => {});
+    const shutdown = vi.spyOn(host, "shutdown").mockResolvedValue();
+    const error = createHostError("INTERNAL_ERROR", "detached task failed");
+
+    await host.requestFatalShutdown(error, "unhandled promise rejection");
+
+    expect(emit).toHaveBeenCalledWith("host.fatal", { error });
+    expect(host.buildStatus().fatalError).toEqual(error);
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(shutdown).toHaveBeenCalledWith(1);
+  });
+
   it("cancels and waits for a package mutation before disposing the graph", async () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
