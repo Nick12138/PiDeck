@@ -245,4 +245,6 @@ bash_execution_update
 4. `runNpmCommandSync` 不可取消（`npm root -g`、`npm pm bin -g`、`npm list -g`），patch 只加了 abort 预检。验收措辞必须显式排除这条路径。
 5. ~~迁移备份仍未接入~~ —— 已完成，`migration-backup.ts` 在首次 `ModelRuntime.create()` 之前备份并写 manifest，完成标记要求 runtime create、local refresh、旧 Session 打开、provider snapshot、正常 shutdown 全部达成（可跨多次运行累积）。
 6. ~~Provider 事务尚未实现 journal 或 degraded 恢复状态~~ —— 已完成，`provider-journal.ts` 在提交前把 `models.json` 与 `auth.json` 的原始字节落盘；条目残留即代表上次变更未完成，启动时先恢复，恢复不完整则 `modelConfigHealth` 报 `degraded`（协议新增该状态与 `provider.journal` 来源）。
-7. `§6.7` 的真实 npm/git 子进程 abort 行为测试仍未编写：目前只有 patch 内容与编译期保证，没有「启动长运行子进程 → abort → 断言子进程退出、mutation settled、graph lock 可重新获得」的测试。
+7. ~~§6.7 的真实子进程 abort 行为测试仍未编写~~ —— 已完成，`sdk-package-cancellation.test.ts` 起真实长运行子进程、abort、并用 `process.kill(pid, 0)` 断言进程确实被回收，覆盖 inherit 与 capture 两类 spawn。把 patch 的 signal 注入去掉后三条测试都会红，证明它们不是空转。
+
+   注意 capture 那条的断言顺序：`runCommandCapture` 自带 10s 网络超时，如果先 await 操作再检查子进程，超时早已把子进程收掉，测试在没有 patch 时也会绿。必须在 await 之前用远小于 10s 的期限断言。

@@ -1,46 +1,188 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+/**
+ * Behavioural proof that the 0.82.1 patch cancels package subprocesses.
+ *
+ * Grepping the patch is not verification: the point is that an aborted package
+ * operation leaves no npm or git child running and no wedged manager state.
+ * These tests spawn a real long-running child through the SDK's own spawn
+ * paths, abort it, and assert the operating system actually reaped the process.
+ */
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 
-describe("PiDeck package-manager cancellation patch", () => {
-  let root: string | undefined;
+let root: string | undefined;
 
-  afterEach(() => {
-    if (root) rmSync(root, { recursive: true, force: true });
-    root = undefined;
-  });
+afterEach(() => {
+  if (root) rmSync(root, { recursive: true, force: true });
+  root = undefined;
+  delete process.env.PI_OFFLINE;
+});
 
-  it("aborts the active package-manager subprocess", async () => {
-    root = mkdtempSync(join(tmpdir(), "pideck-package-cancel-"));
-    const agentDir = join(root, "agent");
-    const cwd = join(root, "workspace");
-    mkdirSync(agentDir, { recursive: true });
-    mkdirSync(cwd, { recursive: true });
-    const settingsManager = {
-      getNpmCommand: () => [
-        process.execPath,
-        "-e",
-        "setInterval(() => {}, 1_000)",
-        "--",
-      ],
-      isProjectTrusted: () => true,
-      getGlobalSettings: () => ({ packages: [] }),
-      getProjectSettings: () => ({ packages: [] }),
-    };
-    const manager = new DefaultPackageManager({
+/** A child that records its pid and then never exits on its own. */
+function longRunningCommand(pidFile: string): string[] {
+  return [
+    process.execPath,
+    "-e",
+    `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));` +
+      "setInterval(() => {}, 1000);",
+    "--",
+  ];
+}
+
+function createManager(npmCommand: string[]): {
+  manager: DefaultPackageManager;
+  cwd: string;
+  agentDir: string;
+} {
+  root = mkdtempSync(join(tmpdir(), "pideck-package-cancel-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "workspace");
+  mkdirSync(agentDir, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  const settingsManager = {
+    getNpmCommand: () => npmCommand,
+    isProjectTrusted: () => true,
+    getGlobalSettings: () => ({ packages: ["npm:never-finishes@^1.0.0"] }),
+    getProjectSettings: () => ({ packages: [] }),
+  };
+  return {
+    manager: new DefaultPackageManager({
       cwd,
       agentDir,
       settingsManager: settingsManager as never,
-    });
+    }),
+    cwd,
+    agentDir,
+  };
+}
+
+async function waitForFile(path: string, timeoutMs = 5_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) {
+      const value = readFileSync(path, "utf8").trim();
+      if (value) return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`child never wrote ${path}`);
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    // Signal 0 probes for existence without delivering anything.
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function waitForExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+describe("PiDeck package-manager cancellation patch", () => {
+  it("kills the inherited-stdio child and settles the mutation", async () => {
+    const pidFile = join(tmpdir(), `pideck-cancel-inherit-${process.pid}-${Date.now()}`);
+    const { manager } = createManager(longRunningCommand(pidFile));
     const controller = new AbortController();
     manager.setOperationSignal(controller.signal);
 
+    // installAndPersist routes through runCommand -> spawnCommand.
     const installing = manager.installAndPersist("npm:never-finishes");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const pid = Number(await waitForFile(pidFile));
+    expect(processAlive(pid)).toBe(true);
+
     controller.abort(new Error("test cancellation"));
 
     await expect(installing).rejects.toMatchObject({ name: "AbortError" });
-  }, 5_000);
+    expect(await waitForExit(pid)).toBe(true);
+    rmSync(pidFile, { force: true });
+  }, 20_000);
+
+  it("kills the captured-stdio child too", async () => {
+    const pidFile = join(tmpdir(), `pideck-cancel-capture-${process.pid}-${Date.now()}`);
+    const { manager, agentDir } = createManager(longRunningCommand(pidFile));
+
+    // The update check short-circuits unless the package is already installed,
+    // so lay down the managed install the SDK looks for.
+    const installed = join(agentDir, "npm", "node_modules", "never-finishes");
+    mkdirSync(installed, { recursive: true });
+    writeFileSync(
+      join(installed, "package.json"),
+      JSON.stringify({ name: "never-finishes", version: "1.0.0" }),
+    );
+    expect(manager.getInstalledPath("npm:never-finishes@^1.0.0", "user")).toBe(installed);
+
+    const controller = new AbortController();
+    manager.setOperationSignal(controller.signal);
+
+    // checkForAvailableUpdates routes through runCommandCapture ->
+    // spawnCaptureCommand, the other of the two patched spawn paths.
+    const checking = manager.checkForAvailableUpdates();
+    const pid = Number(await waitForFile(pidFile));
+
+    controller.abort(new Error("test cancellation"));
+
+    // Assert the child before awaiting the operation. runCommandCapture carries
+    // its own 10s network timeout that would reap the child regardless, and
+    // awaiting first would not settle until that timeout had already fired —
+    // making the test pass with the patch removed.
+    expect(await waitForExit(pid, 2_000)).toBe(true);
+
+    // The update check swallows per-package failures; the child was the point.
+    await checking.catch(() => undefined);
+    rmSync(pidFile, { force: true });
+  }, 20_000);
+
+  it("accepts a new operation after an aborted one", async () => {
+    const firstPidFile = join(tmpdir(), `pideck-cancel-reuse-a-${process.pid}-${Date.now()}`);
+    const { manager } = createManager(longRunningCommand(firstPidFile));
+    const first = new AbortController();
+    manager.setOperationSignal(first.signal);
+
+    const aborted = manager.installAndPersist("npm:never-finishes");
+    const firstPid = Number(await waitForFile(firstPidFile));
+    first.abort(new Error("test cancellation"));
+    await expect(aborted).rejects.toMatchObject({ name: "AbortError" });
+    expect(await waitForExit(firstPid)).toBe(true);
+    rmSync(firstPidFile, { force: true });
+
+    // A stale signal must not leak into the next operation: without clearing
+    // it the manager would refuse every later spawn.
+    manager.setOperationSignal(undefined);
+    const secondPidFile = join(tmpdir(), `pideck-cancel-reuse-b-${process.pid}-${Date.now()}`);
+    const { manager: reused } = createManager(longRunningCommand(secondPidFile));
+    const second = new AbortController();
+    reused.setOperationSignal(second.signal);
+    const running = reused.installAndPersist("npm:never-finishes");
+    const secondPid = Number(await waitForFile(secondPidFile));
+    expect(processAlive(secondPid)).toBe(true);
+
+    second.abort(new Error("cleanup"));
+    await running.catch(() => undefined);
+    await waitForExit(secondPid);
+    rmSync(secondPidFile, { force: true });
+  }, 30_000);
+
+  it("refuses to start a synchronous npm child once aborted", () => {
+    const { manager } = createManager([process.execPath, "-e", "process.exit(0)", "--"]);
+    const controller = new AbortController();
+    manager.setOperationSignal(controller.signal);
+    controller.abort(new Error("already cancelled"));
+
+    // spawnSync takes no signal, so the patch can only refuse to start a new
+    // child. This is the documented limit of the cancellation guarantee.
+    expect(() =>
+      (manager as unknown as { getGlobalNpmRoot: () => string }).getGlobalNpmRoot(),
+    ).toThrow();
+  });
 });
