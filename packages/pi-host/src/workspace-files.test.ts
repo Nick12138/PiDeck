@@ -9,6 +9,10 @@ import {
   normalizeWorkspaceRelativePath,
 } from "./workspace-files.js";
 
+// Node 24.18.0 predates the Windows fs-event fix in libuv/libuv#5152 and can abort here.
+const hasBrokenWindowsFsWatch =
+  process.platform === "win32" && process.versions.node === "24.18.0";
+
 let root = "";
 
 beforeEach(async () => {
@@ -70,14 +74,17 @@ describe("WorkspaceFileService", () => {
     service.dispose();
   });
 
-  it("coalesces changes for watched expanded directories", async () => {
-    const service = new WorkspaceFileService();
-    const changed = new Promise<string[]>((resolve) => {
-      void service.setDirectoryWatches(root, ["src"], resolve);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await writeFile(join(root, "src", "second.ts"), "export const second = true;");
-    await expect(changed).resolves.toEqual(["src"]);
-    service.dispose();
-  });
+  it.skipIf(hasBrokenWindowsFsWatch)(
+    "coalesces changes for watched expanded directories",
+    async () => {
+      const service = new WorkspaceFileService();
+      const changed = new Promise<string[]>((resolve) => {
+        void service.setDirectoryWatches(root, ["src"], resolve);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await writeFile(join(root, "src", "second.ts"), "export const second = true;");
+      await expect(changed).resolves.toEqual(["src"]);
+      service.dispose();
+    },
+  );
 });

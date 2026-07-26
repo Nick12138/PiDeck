@@ -28,6 +28,12 @@ The release lock had retained the pnpm-lock hash from commit `1e9266f`. Later lo
 
 The staged Host smoke launches the generated compacted bootstrap with the controlled Node runtime and an isolated `PI_CODING_AGENT_DIR`. It requires `host.ready`, `system.getStatus`, atomic `system.rehydrate`, exact `system.shutdown`, and a zero process exit.
 
+## Provisional Node 24 Limitation
+
+Node `24.18.0` on Windows can abort inside libuv `src\\win\\fs-event.c` while exercising `node:fs.watch`. This is the confirmed upstream bug [nodejs/node#63638](https://github.com/nodejs/node/issues/63638); its cited fix is [libuv/libuv#5152](https://github.com/libuv/libuv/pull/5152).
+
+The minimum Node `22.19.0` lane continues to run the real workspace watcher test. That test is skipped only for exact `win32` Node `24.18.0`, so changing the canonical Node pin automatically restores the gate. The final post-2026-07-27 Node pin must run the watcher test successfully on Windows before RC; `24.18.0` is provisional and is not RC-eligible.
+
 ## Upgrade Boundaries
 
 - Keep Pi SDK at `0.80.7` through lifecycle and release-version-source prerequisites.
