@@ -72,7 +72,7 @@ evidence 必须同时验证 Host manifest、pnpm lock、部署树和 staged tree
 | PR-2B | 完成 | `e3faa58` | 以 Host manifest 派生 release SDK evidence |
 | PR-3 | 完成 | `9ebf492` … `c081315` | SDK 0.82.1 原子迁移，见下 |
 | PR-4 | 完成 | `9980c99` … `c64ccf4` | 新事件接入、auth 兼容测试、Extension provider 隔离（泄漏已证明并修复），见 §9 |
-| PR-5/6 | 待执行 | - | 最终 Node 安全版本、RC/canary/rollback gates |
+| PR-5/6 | 已预备，等 07-27 安全版本 | - | pin 脚本/runbook/canary 清单就绪，见 §10；首步是 §10.2 libuv 分叉检查 |
 
 ### PR-3 当前状态
 
@@ -404,11 +404,57 @@ PR-4 验收：与 PR-3 相同的 Windows CI gate 已通过（run `30197892965`�
 
 ## 10. PR-5/6 后续工作
 
-1. 等待并固定 2026-07-27 之后发布的 Node 24 安全版本、archive URL 和 SHA-256。
-2. 删除/自动解除 Node `24.18.0` Windows watcher workaround，并证明真实 watcher test 通过。
-3. 运行 Windows Node 22 minimum、Windows Node 24 full staged/installer、Linux Host、macOS Host 和 fault-injection gates。
-4. 先生成 internal build，再 canary，最后 general release。
-5. Canary 覆盖真实 API key/OAuth、既有用户目录、package install/update、Workspace A/B、重启恢复、长 prompt 和无残留子进程。
+### 10.1 已预备（2026-07-26）
+
+- 官方公告核实：Node 安全发布定于 **2026-07-27（周一）或稍后**，覆盖 22.x / 24.x / 26.x 三条线，最高严重级 HIGH，CVE 未预披露（<https://nodejs.org/en/blog/vulnerability/july-2026-security-releases>）。`nodejs.org/dist/latest-v24.x` 确认 24.18.0 仍是最新 24.x——不存在已发布的替代版本。
+- 替代方案已评估并否决：改 pin Node 22（22.x 明天同样吃 HIGH 补丁，只换来 watcher 修复，纯亏）；24.18.0 直接发版 + win32 绕过 watcher（native abort 不可 catch，且发布即带已知 HIGH 漏洞 runtime，踩 §11）。
+- `scripts/update-node-pin.mjs` 就绪：一条命令更新全部 pin 落点，从官方 SHASUMS256.txt 取哈希；已用 24.18.0 自校验（取回哈希与现 pin 一致、写回字节稳定）。**不带 `--libuv-fix-verified` 拒绝执行**——把 §10.2 的分叉决策固化进工具。
+- macOS Host gate 预演：`pnpm verify:p0` 全链通过（verify:quick + build + test:rust 34 用例，2026-07-26）。
+
+### 10.2 明天第一步：libuv 分叉检查（在动任何 pin 之前）
+
+`workspace-files.test.ts` 的 Windows watcher skip 条件是 `process.versions.node === "24.18.0"` **精确匹配**——任何新版本都会自动解除跳过。而安全发布通常是最小补丁，**未必带 libuv 的 fs-event 修复（libuv/libuv#5152）**。所以：
+
+1. 读新版本 changelog（`https://github.com/nodejs/node/releases/tag/v<VER>`），确认是否包含 libuv bump / fs-event 修复。
+2. **含修复** → 走 §10.3 主路径。
+3. **不含修复** → 停：三选一并记录到本文档——(a) 等包含修复的 24.x；(b) pin 安全版本 + 把 skip 条件扩成版本集合（watcher 缺陷在 Windows 继续存在，不可 RC）；(c) win32 轮询 fallback（功能降级，需改 `workspace-files.ts`）。
+
+### 10.3 主路径（机械步骤）
+
+```bash
+node scripts/update-node-pin.mjs <VER> --libuv-fix-verified
+# 更新 .node-version + release-runtime.lock.json 的 node 段（版本/archive/URL/SHA-256）
+fnm install <VER> && fnm use <VER>
+pnpm install --frozen-lockfile && pnpm verify:quick
+# 提交并 push → Windows gate（verify-p0 + verify-node-minimum）
+```
+
+推送后必须在 CI 日志里确认 `coalesces changes for watched expanded directories` **真实执行且通过**（不再 skip）——这是 §11「Windows watcher gate」的关闭条件。随后更新本文档：§13 预期 node 版本、状态表 PR-5 行、新哈希。
+
+pin 落点清单（脚本覆盖前两处）：`.node-version`（本地 fnm 与 CI `node-version-file` 同源）、`scripts/release-runtime.lock.json`、本文档 §13 预期版本文本。`validate.test.ts:31` 与 `host-context.test.ts:20` 的 `"v24.18.0"` 是合成 fixture 值，不随 pin 变更，勿改。
+
+### 10.4 Gate 现状盘点（诚实版）
+
+| Gate | 现状 |
+| --- | --- |
+| Windows Node 22 minimum | 已有（`verify-node-minimum` lane，watcher 测试在此 lane 一直真实运行） |
+| Windows Node 24 staged/installer | 已有（`verify-p0` lane，用 `.node-version`，pin 更新后自动切换） |
+| macOS Host | 无 CI lane；本地 `pnpm verify:p0` 为其形态（已预演通过） |
+| Linux Host | **不存在**，明天需决定：建 lane 或记录为手动 gate |
+| fault-injection | **不存在**成型脚本，明天需定义范围 |
+
+### 10.5 发布顺序与 canary 检查单
+
+internal build → canary → general release。canary 必须逐项覆盖：
+
+- [ ] 真实 API key provider 完整对话
+- [ ] 真实 OAuth provider（含一次过期刷新，确认 auth.json 轮换且无双写）
+- [ ] 既有用户目录升级（迁移备份出现在 `<agentDir>/backups/`，milestone 全达成）
+- [ ] package install / update / 取消（无残留 npm/git 子进程）
+- [ ] Workspace A/B 切换（含 A 有 `.pi` 扩展 provider 时 B 不可见——PR-4 隔离在真实环境复验）
+- [ ] 重启恢复（API key 仍在、旧 Session 可继续 prompt 并保存）
+- [ ] 长 prompt + compaction 触发（摘要请求带 auth）
+- [ ] 退出后无残留 Host/Node/npm/git 进程
 
 ## 11. 强制停止条件
 
