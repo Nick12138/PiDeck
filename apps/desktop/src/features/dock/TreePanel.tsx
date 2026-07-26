@@ -203,10 +203,22 @@ export function TreePanel({ visible }: { visible: boolean }) {
             return (
               <div
                 key={row.id}
-                className={`group flex items-stretch ${
+                className={`group flex items-stretch pl-3 ${
                   row.isCurrent ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
                 }`}
               >
+                {Array.from({ length: row.depth }, (_, level) => (
+                  <span key={level} className="relative w-4 shrink-0">
+                    {row.branchStart && level === row.depth - 1 ? (
+                      <>
+                        <span className="absolute left-1.5 top-0 h-1/2 w-px bg-border" />
+                        <span className="absolute left-1.5 right-0.5 top-1/2 h-px bg-border" />
+                      </>
+                    ) : (
+                      <span className="absolute inset-y-0 left-1.5 w-px bg-border" />
+                    )}
+                  </span>
+                ))}
                 <button
                   type="button"
                   disabled={actionLocked || row.isCurrent}
@@ -215,7 +227,6 @@ export function TreePanel({ visible }: { visible: boolean }) {
                   className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs ${
                     row.onPath ? "text-foreground" : "text-muted"
                   } disabled:cursor-default`}
-                  style={{ paddingLeft: `${12 + row.depth * 16}px` }}
                   onClick={() => void navigate(row.id)}
                 >
                   {navigating === row.id || forking === row.id ? (
@@ -226,7 +237,13 @@ export function TreePanel({ visible }: { visible: boolean }) {
                       className={`shrink-0 ${row.onPath ? "text-accent" : ""}`}
                     />
                   )}
-                  <span className="min-w-0 flex-1 truncate">{row.excerpt}</span>
+                  <span
+                    className={`min-w-0 flex-1 truncate ${
+                      row.kind === "user" ? "font-medium" : ""
+                    }`}
+                  >
+                    {row.excerpt}
+                  </span>
                   {row.label && (
                     <span className="shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
                       {row.label}

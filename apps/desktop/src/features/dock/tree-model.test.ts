@@ -168,10 +168,10 @@ describe("assistant turn merging", () => {
       ]),
     ];
     const rows = flattenSessionTree(tree, null);
-    expect(rows.map(({ id, depth }) => [id, depth])).toEqual([
-      ["a1", 0],
-      ["a2", 0],
-      ["a3", 1],
+    expect(rows.map(({ id, depth, branchStart }) => [id, depth, branchStart])).toEqual([
+      ["a1", 0, false],
+      ["a2", 0, false],
+      ["a3", 1, true],
     ]);
   });
 });

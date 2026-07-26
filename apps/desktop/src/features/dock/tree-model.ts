@@ -14,6 +14,8 @@ export type TreeRow = {
   onPath: boolean;
   /** Deepest visible row on the current leaf path. */
   isCurrent: boolean;
+  /** True when the row is the first of a new branch (a later sibling). */
+  branchStart: boolean;
 };
 
 const EXCERPT_LIMIT = 96;
@@ -162,7 +164,7 @@ export function flattenSessionTree(
   const path = currentPathIds(nodes, leafId);
   const rows: TreeRow[] = [];
   const members: string[][] = [];
-  const visit = (turn: TurnNode, depth: number) => {
+  const visit = (turn: TurnNode, depth: number, branchStart: boolean) => {
     rows.push({
       id: turn.ids[turn.ids.length - 1]!,
       depth,
@@ -171,13 +173,16 @@ export function flattenSessionTree(
       ...(turn.label ? { label: turn.label } : {}),
       onPath: turn.ids.some((id) => path.has(id)),
       isCurrent: false,
+      branchStart,
     });
     members.push(turn.ids);
     turn.children.forEach((child, index) => {
-      visit(child, index === 0 ? depth : depth + 1);
+      visit(child, index === 0 ? depth : depth + 1, index > 0);
     });
   };
-  buildConversationTurns(nodes).forEach((turn, index) => visit(turn, index === 0 ? 0 : 1));
+  buildConversationTurns(nodes).forEach((turn, index) =>
+    visit(turn, index === 0 ? 0 : 1, index > 0),
+  );
   const rowIndexByMember = new Map<string, number>();
   members.forEach((ids, index) => {
     for (const id of ids) rowIndexByMember.set(id, index);
