@@ -1,4 +1,4 @@
-name: P0 source gate
+name: P0 source and staged release gate
 
 on:
   pull_request:
@@ -16,6 +16,8 @@ jobs:
   verify-p0:
     runs-on: windows-2022
     timeout-minutes: 45
+    env:
+      ARTIFACTS_DIR: artifacts/p0
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -29,5 +31,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+      - uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: ${{ runner.os }}-release-runtime-${{ hashFiles('scripts/release-runtime.lock.json') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify:p0
+      - run: pnpm package:sidecar:with-node
+      - run: pnpm validate:resources
+      - run: pnpm smoke:staged-host
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-resource-layout-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/p0
+          if-no-files-found: ignore
+          retention-days: 14

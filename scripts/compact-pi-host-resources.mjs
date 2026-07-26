@@ -14,6 +14,7 @@ import {
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDir = join(root, "apps/desktop/src-tauri/resources/pi-host");
@@ -24,6 +25,10 @@ const MIN_ZIP_BYTES = 1_000_000; // real SDK tree is tens of MB
 function die(msg) {
   console.error("[compact]", msg);
   process.exit(1);
+}
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 // Windows ships bsdtar at System32\tar.exe (supports -a zip and drive-letter
@@ -148,6 +153,7 @@ if (existsSync(stagingPath)) {
   s.nodeModulesPackagedAs = "node_modules.zip";
   s.bootstrapEntry = "main.js -> extract zip -> host-main.js";
   s.zipBytes = statSync(zipPath).size;
+  s.nodeModulesZipSha256 = sha256File(zipPath);
   writeFileSync(stagingPath, JSON.stringify(s, null, 2));
 }
 
