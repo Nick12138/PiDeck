@@ -4,6 +4,8 @@
 
 本文是从另一台开发机器继续升级工作的当前状态说明。历史基线、最初风险分析和回滚锚点见 [Pi SDK 0.82.1 Upgrade](./pi-sdk-0.82.1-upgrade.md)；该文档中的 `8859c1e` 和 `a92c...` 哈希是历史证据，不是当前依赖锁。
 
+本文说明 PR-3 要做什么；它所依据的 `0.82.1` 公共 API 事实（导出变化、`ModelRuntime`/`CredentialStore` 契约、Package 取消面、ResourceLoader 边界）单独记录在 [Pi SDK 0.82.1 API 核查记录](./pi-sdk-0.82.1-api-notes.md)。
+
 ## 1. 继续点
 
 - 仓库：`https://github.com/Skitre/PiDeck.git`

@@ -1,0 +1,214 @@
+# Pi SDK 0.82.1 API 核查记录
+
+更新日期：2026-07-26
+
+本文记录 PR-3 迁移所依赖的 Pi SDK `0.82.1` 公共 API 事实。它是 [Pi SDK 0.82.1 / Node 升级交接](./pi-sdk-0.82.1-handoff.md) 的证据附件：交接文档说明**做什么**，本文说明**依据是什么**。
+
+仓库当前仍固定在 `0.80.7`，下列内容全部来自已发布的 `0.82.1` 产物，不代表已安装的依赖树。
+
+## 1. 核查方式
+
+在仓库之外的临时目录执行，不触碰 `pnpm-lock.yaml`：
+
+```bash
+npm pack @earendil-works/pi-ai@0.82.1
+npm pack @earendil-works/pi-coding-agent@0.82.1
+npm pack @earendil-works/pi-tui@0.82.1
+npm pack @earendil-works/pi-agent-core@0.82.1
+```
+
+核查时的 tarball SHA-256：
+
+```text
+2f9df9522808b621cd3449876537f03d8a8df8b8d7ec2d5b18c6a910aa85b490  earendil-works-pi-ai-0.82.1.tgz
+8343ab95cbab5766f2f5d48844df8db13e772ead2e2976166cbb820a29dacb7d  earendil-works-pi-coding-agent-0.82.1.tgz
+ff0ddec8c790dc663398d8d2bd62e505e18e7cad77bad82821597a833c56dc8e  earendil-works-pi-tui-0.82.1.tgz
+6087575f20630ad4fcfb6fecdd0af21ea211eacefe2356913776e2a36d84e40b  earendil-works-pi-agent-core-0.82.1.tgz
+```
+
+所有结论均引自各包 `dist/**/*.d.ts` 与 `dist/core/package-manager.js`。npm 上的 tarball 可被重新发布覆盖；如果哈希对不上，请以重新核查的结果为准并更新本文。
+
+## 2. coding-agent 公共导出变化
+
+以 `dist/index.d.ts` 为准。PiDeck 现在使用的导出中：
+
+| 导出 | `0.82.1` |
+| --- | --- |
+| `AgentSession` | 保留 |
+| `SessionManager` | 保留 |
+| `SettingsManager` | 保留 |
+| `DefaultPackageManager` | 保留 |
+| `DefaultResourceLoader` | 保留 |
+| `createAgentSession` | 保留 |
+| `VERSION` | 保留 |
+| `ModelRegistry` | 保留，但语义变为兼容 facade |
+| `ModelRuntime` | 新增 |
+| `AuthStorage` | **已从公共入口移除** |
+
+`AuthStorage` 的文件实现仍在 coding-agent 内部（依旧基于 `proper-lockfile`），但不再从包入口导出。交接文档 §5.7 的约束就来自这里：不得 deep-import 该内部路径。
+
+## 3. ModelRuntime
+
+`dist/core/model-runtime.d.ts`：
+
+```ts
+export interface CreateModelRuntimeOptions {
+  credentials?: CredentialStore;   // 默认使用 authPath 指向的文件
+  authPath?: string;
+  modelsPath?: string | null;
+  modelsStore?: ModelsStore;
+  modelsStorePath?: string;
+  allowModelNetwork?: boolean;     // 默认 false
+  modelRefreshTimeoutMs?: number;  // create 时联网刷新的超时
+  catalogBaseUrl?: string;
+}
+
+export declare class ModelRuntime implements Models {
+  private constructor();
+  static create(options?: CreateModelRuntimeOptions): Promise<ModelRuntime>;
+  refresh(options?: ModelsRefreshOptions): Promise<ModelsRefreshResult>;
+  // ...
+}
+```
+
+要点：
+
+- 构造函数是私有的，只能走 `await ModelRuntime.create()`；它是异步的，而旧的 `ModelRegistry.create()` 是同步的。这会改变 Host 启动路径的时序。
+- `allowModelNetwork` 默认 `false`，且 create 时的联网刷新只有在**显式允许**时才发生。
+- `credentials` 接受任意 `CredentialStore` 实现，这正是 PiDeck 自有持久化实现的注入点。
+
+## 4. 刷新语义
+
+`@earendil-works/pi-ai` 的 `dist/models.d.ts`：
+
+```ts
+export interface ModelsRefreshOptions {
+  allowNetwork?: boolean;
+  force?: boolean;      // 允许联网时跳过 provider 的新鲜度检查，立即拉取
+  signal?: AbortSignal;
+}
+
+export interface ModelsRefreshResult {
+  aborted: boolean;
+  errors: ReadonlyMap<string, Error>;
+}
+```
+
+`ModelRegistry.refresh()` 的签名是 `(): Promise<void>` —— **没有参数，也不返回结果**。因此它既无法声明是否允许联网，也无法传入取消信号，更无法报告 `aborted` 或分 provider 的错误。
+
+这是交接文档 §6.4 禁止继续使用 `modelRegistry.refresh()`、要求改为两个显式 helper 的直接原因。`ModelsRefreshResult` 也意味着 PiDeck 的 refresh helper 应该检查返回值，而不是只 await 一个 `void`。
+
+## 5. ModelRegistry 的新定位
+
+`dist/core/model-registry.d.ts` 的类注释是「Synchronous compatibility facade exposed to extensions. Coding-agent internals use ModelRuntime directly.」
+
+```ts
+export declare class ModelRegistry {
+  constructor(runtime: ModelRuntime);
+  refresh(): Promise<void>;
+  // getAll / getAvailable / find / registerProvider / ... 保持同步读取
+}
+```
+
+静态 `ModelRegistry.create(...)` 与 `ModelRegistry.inMemory(...)` 都不存在了。所有生产代码和测试里的这两种调用都必须改写为 `new ModelRegistry(runtime)`。
+
+## 6. CredentialStore 契约
+
+`@earendil-works/pi-ai` 的 `dist/auth/types.d.ts`：
+
+```ts
+export interface CredentialStore {
+  read(providerId: string): Promise<Credential | undefined>;
+  list(): Promise<readonly CredentialInfo[]>;
+  modify(
+    providerId: string,
+    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+  ): Promise<Credential | undefined>;
+  delete(providerId: string): Promise<void>;
+}
+```
+
+上游注释明确的语义，PiDeck 的实现必须逐条满足：
+
+- `read` 可能返回**已过期**的凭据，仅供展示/状态使用；真正用于请求的 auth 来自 `Models.getAuth()`。
+- `list` 只返回元数据，不解析也不暴露 secret，并且**不得**在列举时执行 provider 配置的 API-key 命令。
+- `modify` 是**唯一**的写入路径。回调能看到当前凭据（refresh、refresh 期间 login 都依赖它）；返回 `undefined` 表示**保持不变**，不是删除。互斥是 per-provider 的，在后端支持时还必须跨进程（例如文件锁）。回调抛出的异常向外传播。
+- `delete` 是独立的删除路径，实现必须让它与 `modify` 串行化。
+- 错误语义：`read` 对不存在的条目 resolve 为 `undefined`；只有存储失败才 reject，`Models` 会把这类 rejection 包成 code 为 `auth` 的 `ModelsError`。
+
+`InMemoryCredentialStore` 是公共导出（`dist/auth/credential-store.d.ts`，经 `export * from "./auth/credential-store.ts"` 暴露），可直接用于隔离的候选 runtime 校验。公共入口**没有**持久化实现——这就是 PiDeck 必须自己写一个的原因。
+
+## 7. createAgentSession 的 runtime 注入
+
+`dist/core/sdk.d.ts` 的 `CreateAgentSessionOptions` 新增：
+
+```ts
+/** Canonical model/auth runtime. Defaults to a runtime using agentDir/auth.json and models.json. */
+modelRuntime?: ModelRuntime;
+```
+
+注意默认行为：**不传就会各自新建一个 runtime**。PiDeck 有多条 `createAgentSession` 调用路径（workspace 建图、session create、session open），任何一条漏传都会静默产生第二个 runtime，导致 provider/auth 状态分叉。这是交接文档 §6.5 把「所有 createAgentSession 收到同一个 Host-owned runtime」列为验收项的原因。
+
+## 8. Package 取消面
+
+`dist/core/package-manager.js` 中 `DefaultPackageManager` 的子进程出口：
+
+| 出口 | 底层 | 可取消 |
+| --- | --- | --- |
+| `spawnCommand()` | `spawnProcess`，`stdio` 为 `inherit` 或 `["ignore", 2, 2]` | 可以：`SpawnOptions` 接受 `signal` |
+| `spawnCaptureCommand()` | `spawnProcess`，`stdio` 为 `["ignore", "pipe", "pipe"]` | 可以：同上 |
+| `runCommandSync()` / `runNpmCommandSync()` | `spawnProcessSync` | **不可以**：`spawnSync` 无 `signal` |
+
+上游 `0.82.1` **没有** `setOperationSignal`，两个 async 出口也没有注入任何 signal——PiDeck 的 patch 仍然必需，且形状与现有 `0.80.7` patch 的 package-manager 部分一致。
+
+同步路径的实际用途是解析全局 npm root：`runNpmCommandSync(["root", "-g"])`，bun 走 `["pm", "bin", "-g"]`。它在 abort 后不会被打断。任何「Package 生命周期完全可取消」的表述都必须排除这条路径，或先把它改造成异步。
+
+### ResourceLoader 的独立边界
+
+`dist/core/resource-loader.d.ts`：
+
+```ts
+export interface ResourceLoaderReloadOptions {
+  resolveProjectTrust?: (input: { extensionsResult: LoadExtensionsResult }) => Promise<boolean>;
+}
+```
+
+两件事同时成立：
+
+1. reload 选项里**没有** signal，所以 `AgentSession.reload()` 期间的包解析无法通过公共 API 取消。
+2. `DefaultResourceLoader` 有 `private packageManager`，是它自己构造的独立实例。对 PiDeck graph 级 PackageManager 调用 `setOperationSignal()` **不会**影响它。
+
+交接文档 §6.7 要求对这一点做出明确决定并记录，指的就是这里：要么 patch 也覆盖 ResourceLoader 的注入，要么把验收措辞收窄为「mutation 子进程可取消」并为不可取消的 reload 保留 shutdown 兜底。
+
+另外，`ResourceLoaderReloadOptions` 里没有 `preserveExtensionCache` —— 那是现有 `0.80.7` patch 加的字段。新 patch 删除该行为后，这个选项不复存在，Package reconcile 必须走官方完整 reload。
+
+## 9. 依赖与事件
+
+coding-agent `0.82.1` 的 `dependencies` 中与本次升级相关的：
+
+```text
+@earendil-works/pi-agent-core  ^0.82.1
+@earendil-works/pi-ai          ^0.82.1
+@earendil-works/pi-tui         ^0.82.1
+proper-lockfile                4.1.2
+```
+
+`proper-lockfile@4.1.2` 与上游一致，且它不自带 TypeScript 声明；PiDeck 若直接 import，需要自行加 `@types/proper-lockfile@4.1.4` 开发依赖。
+
+`dist/core/agent-session.d.ts` 的事件联合相比 `0.80.7` 新增四个：
+
+```text
+summarization_retry_scheduled
+summarization_retry_attempt_start
+summarization_retry_finished
+bash_execution_update
+```
+
+`event-normalize.ts` 是显式白名单，未列入的事件会被规约为 `{ type: "unknown" }`。因此这四个事件在 PR-4 之前不会跨越 Host/Desktop 边界，PR-3 也不需要为它们改协议。
+
+## 10. 由此得出的待决项
+
+1. Host 启动路径必须适配 `ModelRuntime.create()` 的异步性，包括 faux provider 注册和首次 refresh 的顺序。
+2. 新 patch 应把 `setOperationSignal` 声明为 `PackageManager` 接口上的**必需**方法，让 `pm.setOperationSignal?.(...)` 这种静默退化在编译期就不成立。
+3. ResourceLoader 私有 PackageManager 是否也注入 signal，必须在 PR-3 review 前有明确结论。
+4. `runNpmCommandSync` 不可取消，需要在验收措辞中显式排除或单独处理。
