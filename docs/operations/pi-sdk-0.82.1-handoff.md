@@ -70,13 +70,13 @@ evidence 必须同时验证 Host manifest、pnpm lock、部署树和 staged tree
 | PR-1 | 完成 | `06e44a7`, `ba518f6` | 对齐 Node 22 minimum / Node 24 canonical lanes |
 | PR-2 | 完成 | `4c912b1` | graph mutation 生命周期、shutdown cancellation、stale fetch、`models-store.json` fingerprint |
 | PR-2B | 完成 | `e3faa58` | 以 Host manifest 派生 release SDK evidence |
-| PR-3 | 本地完成，待 Windows gate | `9ebf492` … `9c1b281` | SDK 0.82.1 原子迁移，见下 |
+| PR-3 | 完成 | `9ebf492` … `c081315` | SDK 0.82.1 原子迁移，见下 |
 | PR-4 | 待执行 | - | 新事件和扩展兼容测试 |
 | PR-5/6 | 待执行 | - | 最终 Node 安全版本、RC/canary/rollback gates |
 
 ### PR-3 当前状态
 
-本地 §6.1–§6.8 全部落地，未推送。`pnpm verify:p0` 在 Node `24.18.0` 通过：docs 70/0、fixture scan 11、release metadata 3/3、Protocol 359、Host 376、Desktop 324、production build、Rust 34/34。
+§6.1–§6.8 全部完成并通过 Windows gate，`main` 已推送到 `c081315`。下一步是 PR-4。
 
 新规范哈希：
 
@@ -93,7 +93,7 @@ patches/@earendil-works__pi-coding-agent@0.82.1.patch
 1. **不扩大 patch 到 ResourceLoader。** 它私有的 PackageManager 会在 reload 时静默 `npm install` / `git clone`。与其让这件事可取消，不如让它不发生：workspace 建图与 session create/open 的 reload 用 `withoutImplicitPackageInstall()` 包住，符合 §6.4 的不联网要求。package mutation 后的 reconcile 不包，仍不可取消，由 shutdown 兜底。
 2. **`setOperationSignal` 在 `PackageManager` 接口上声明为必需**，`?.` 静默退化变成编译错误。
 
-剩余工作只有 §8 的 Windows push gate，本地无法执行。
+迁移备份与 provider journal 的运行时行为见 [Development Workflow](./development.md)。
 
 历史回滚标签：
 
@@ -103,27 +103,29 @@ pre-pi-sdk-0.82.1-8859c1e414c
 
 ## 4. 最新验证证据
 
-提交 `e3faa58` 的本地验证：
+提交 `c081315`（PR-3 完成）的本地验证：
 
-- Node `22.19.0`：`pnpm verify:quick` 通过。
 - Node `24.18.0`：`pnpm verify:p0` 通过。
-- Protocol：355 tests。
-- Host：305 tests。
+- Protocol：359 tests。
+- Host：376 tests。
 - Desktop：324 tests。
 - Rust：34 tests。
 
 最新 Windows 完整 gate：
 
-- Run：[30192237110](https://github.com/Skitre/PiDeck/actions/runs/30192237110)
+- Run：[30196221459](https://github.com/Skitre/PiDeck/actions/runs/30196221459)
 - Node 22 minimum lane：通过。
 - Node 24 source/P0/staging lane：通过。
-- staged SDK family：四个包均为 `0.80.7`。
-- resource validation errors：`0`。
-- staged rehydrate watermark：`1`。
-- staged Host exit code：`0`。
-- compacted dependency zip SHA-256：`5164562e1fccf786d2ade5695d4ea52f24a590e89010d49511486e0ca1c80894`。
-- artifact ID：`8628999558`。
-- artifact digest：`sha256:af21a5dc495103d31dd24e51e39f5f8f83fcadc613228374096c1e2dc429fab5`。
+- staged SDK family：`pi-ai`、`pi-agent-core`、`pi-coding-agent`、`pi-tui` 均为 `0.82.1`。
+- staged patch：`patches/@earendil-works__pi-coding-agent@0.82.1.patch`。
+- staged pnpm-lock SHA-256：`97ba98eb23cba8c62691c5faaf6ca62eb3d0a355f706841536bc0309980c5676`（`pnpmLockVerified: true`）。
+- resource validation errors：`0`（layout `compacted-zip`）。
+- staged Host smoke：`{"status":"ok","sdkVersion":"0.82.1","nodeVersion":"v24.18.0","rehydrateWatermark":1,"exitCode":0}`。
+- compacted dependency zip SHA-256：`1ffcb72bebeae6c6eec675aa8c24eee6c11341d5244a88a216312b1702335002`。
+- artifact ID：`8630229801`。
+- artifact digest：`sha256:d175fa6a6c070e786f1eb96bce59a1c4258e5ac10ac901d94d52dcaa353a6bbd`。
+
+前两次 Windows 尝试（`12fbdf9`、`d3882e7`）失败的原因全部在 PR-3 新增的测试代码，不在生产代码：`.bin/tsx` 在 Windows 是 `.CMD` 包装、绝对路径不是合法 ESM specifier、POSIX 权限位不被遵守、刚 kill 的子进程仍持有目录句柄，以及一处固定 sleep 在慢 lane 上先于子进程持锁。跨进程测试现在等待子进程写出的标记，不依赖时钟。
 
 GitHub Actions artifact 保留期为 14 天；SHA、run 和测试结果才是长期交接证据。
 
