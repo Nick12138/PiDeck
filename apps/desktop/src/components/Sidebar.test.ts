@@ -33,7 +33,7 @@ describe("Sidebar", () => {
       createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    expect(html).toContain('aria-label="Expand left sidebar"');
+    expect(html).toContain('aria-label="Expand sidebar"');
     expect(html).toContain("margin-left:-268px");
     expect(html).not.toContain("New conversation");
     expect(html).not.toContain("Recent conversations");

@@ -10,6 +10,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestExport, type ExportFormat } from "../../lib/export-actions";
+import { useT } from "../../lib/i18n/use-t";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -33,6 +34,7 @@ export function SessionStatsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -70,14 +72,14 @@ export function SessionStatsModal({
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? "Could not load session stats");
+          setError(res.error?.message ?? t("statsLoadFailed"));
           return;
         }
         setStats(res.result);
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Could not load session stats");
+        setError(err instanceof Error ? err.message : t("statsLoadFailed"));
       });
     return () => {
       cancelled = true;
@@ -111,7 +113,7 @@ export function SessionStatsModal({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 id="session-stats-title" className="truncate text-base font-semibold">
-              {session?.name?.trim() || "Session stats"}
+              {session?.name?.trim() || t("statsTitleFallback")}
             </h2>
             {sessionId && (
               <p className="truncate text-[11px] text-muted" title={sessionId}>
@@ -121,8 +123,8 @@ export function SessionStatsModal({
           </div>
           <button
             type="button"
-            title="Close"
-            aria-label="Close"
+            title={t("commonClose")}
+            aria-label={t("commonClose")}
             className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
             onClick={onClose}
           >
@@ -132,44 +134,44 @@ export function SessionStatsModal({
         {error ? (
           <p className="text-sm text-danger">{error}</p>
         ) : !stats ? (
-          <p className="text-sm text-muted">Loading session stats…</p>
+          <p className="text-sm text-muted">{t("statsLoading")}</p>
         ) : (
           <div className="flex flex-col text-xs leading-5">
             <span className="mb-1 text-[10px] font-medium uppercase text-muted">
-              Messages
+              {t("statsMessages")}
             </span>
             <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5">
-              <StatRow label="Total" value={String(stats.messageCount)} />
+              <StatRow label={t("statsTotal")} value={String(stats.messageCount)} />
               {stats.userMessageCount !== undefined && (
-                <StatRow label="User" value={String(stats.userMessageCount)} />
+                <StatRow label={t("statsUser")} value={String(stats.userMessageCount)} />
               )}
               {stats.assistantMessageCount !== undefined && (
-                <StatRow label="Assistant" value={String(stats.assistantMessageCount)} />
+                <StatRow label={t("statsAssistant")} value={String(stats.assistantMessageCount)} />
               )}
               {stats.toolCallCount !== undefined && (
-                <StatRow label="Tool calls" value={String(stats.toolCallCount)} />
+                <StatRow label={t("statsToolCalls")} value={String(stats.toolCallCount)} />
               )}
               {stats.toolResultCount !== undefined && (
-                <StatRow label="Tool results" value={String(stats.toolResultCount)} />
+                <StatRow label={t("statsToolResults")} value={String(stats.toolResultCount)} />
               )}
             </div>
             {tokens && (
               <>
                 <span className="mb-1 mt-3 text-[10px] font-medium uppercase text-muted">
-                  Tokens
+                  {t("statsTokens")}
                 </span>
                 <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5">
-                  <StatRow label="Input" value={formatTokenCount(tokens.input)} />
-                  <StatRow label="Output" value={formatTokenCount(tokens.output)} />
-                  <StatRow label="Cache read" value={formatTokenCount(tokens.cacheRead)} />
-                  <StatRow label="Cache write" value={formatTokenCount(tokens.cacheWrite)} />
-                  <StatRow label="Total" value={formatTokenCount(tokens.total)} />
+                  <StatRow label={t("usageInput")} value={formatTokenCount(tokens.input)} />
+                  <StatRow label={t("usageOutput")} value={formatTokenCount(tokens.output)} />
+                  <StatRow label={t("usageCacheRead")} value={formatTokenCount(tokens.cacheRead)} />
+                  <StatRow label={t("usageCacheWrite")} value={formatTokenCount(tokens.cacheWrite)} />
+                  <StatRow label={t("statsTotal")} value={formatTokenCount(tokens.total)} />
                 </div>
               </>
             )}
             {stats.cost !== undefined && (
               <div className="mt-3 grid grid-cols-[1fr_auto] gap-x-6">
-                <span className="text-[10px] font-medium uppercase text-muted">Cost</span>
+                <span className="text-[10px] font-medium uppercase text-muted">{t("statsCost")}</span>
                 <span className="tabular-nums">{usd.format(stats.cost)}</span>
               </div>
             )}
@@ -179,7 +181,7 @@ export function SessionStatsModal({
               </p>
             )}
             <p className="mt-3 text-[10px] text-muted">
-              Aggregated over the full session history, including compacted entries.
+{t("statsFootnote")}
             </p>
           </div>
         )}
@@ -193,7 +195,7 @@ export function SessionStatsModal({
               void requestExport("jsonl").finally(() => setExporting(null));
             }}
           >
-            {exporting === "jsonl" ? "Exporting…" : "Export JSONL"}
+            {exporting === "jsonl" ? t("statsExporting") : t("statsExportJsonl")}
           </button>
           <button
             type="button"
@@ -204,7 +206,7 @@ export function SessionStatsModal({
               void requestExport("html").finally(() => setExporting(null));
             }}
           >
-            {exporting === "html" ? "Exporting…" : "Export HTML"}
+            {exporting === "html" ? t("statsExporting") : t("statsExportHtml")}
           </button>
         </div>
       </div>

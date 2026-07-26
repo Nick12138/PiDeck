@@ -15,12 +15,14 @@ import {
   nullableSessionContext,
 } from "../lib/bridge/host-context";
 import { SessionList } from "../features/sessions/SessionList";
+import { useT } from "../lib/i18n/use-t";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
 import { NotificationCenter } from "./NotificationCenter";
 
 function NewSessionButton() {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
@@ -48,7 +50,7 @@ function NewSessionButton() {
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Create session failed", "error");
+        pushNotification(res.error?.message ?? t("notifCreateSessionFailed"), "error");
         return;
       }
       setSession(res.result);
@@ -70,7 +72,7 @@ function NewSessionButton() {
       className="flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
       <MessageCirclePlus size={18} className="shrink-0" />
-      <span>{pending ? "Creating..." : "New conversation"}</span>
+      <span>{pending ? t("sidebarCreating") : t("sidebarNewConversation")}</span>
     </button>
   );
 }
@@ -89,6 +91,7 @@ export function SidebarLayout({
   page: NavPage;
   setPage: (page: NavPage) => void;
 }) {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
@@ -98,14 +101,14 @@ export function SidebarLayout({
   const connectionPending =
     !hostFatal && (connecting || rehydrating || desynchronized);
   const connectionTitle = hostFatal
-    ? "Host offline"
+    ? t("sidebarHostOffline")
     : connecting
-      ? "Connecting to Pi Host"
+      ? t("sidebarConnecting")
       : desynchronized
-        ? "Resynchronizing with Host"
+        ? t("sidebarResync")
         : rehydrating
-          ? "Loading Host snapshots"
-          : host?.phase ?? "Host offline";
+          ? t("sidebarLoadingSnapshots")
+          : host?.phase ?? t("sidebarHostOffline");
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.sessionsCollapsed"),
   );
@@ -135,8 +138,8 @@ export function SidebarLayout({
       <div className="group/sidebar-edge absolute -right-4 top-0 z-40 h-full w-4">
         <button
           type="button"
-          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={sidebarCollapsed ? "Expand left sidebar" : "Collapse left sidebar"}
+          title={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
+          aria-label={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
           aria-expanded={!sidebarCollapsed}
           className="absolute top-1/2 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface-raised text-muted opacity-0 shadow-sm transition-opacity group-hover/sidebar-edge:opacity-100 hover:text-foreground focus-visible:opacity-100"
           onClick={toggleSidebarCollapsed}
@@ -189,7 +192,7 @@ export function SidebarLayout({
           }`}
         >
           <Settings size={17} />
-          <span className="flex-1">Settings</span>
+          <span className="flex-1">{t("settingsTitle")}</span>
           {connectionPending ? (
             <span className="flex shrink-0" title={connectionTitle}>
               <LoaderCircle size={14} className="animate-spin text-muted" />

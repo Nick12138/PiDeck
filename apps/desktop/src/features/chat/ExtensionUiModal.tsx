@@ -3,8 +3,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
+import { useT } from "../../lib/i18n/use-t";
 
 export function ExtensionUiModal() {
+  const t = useT();
   const request = useAppStore((s) => s.extensionUiRequest);
   const setRequest = useAppStore((s) => s.setExtensionUiRequest);
   const pushNotification = useAppStore((s) => s.pushNotification);
@@ -30,7 +32,7 @@ export function ExtensionUiModal() {
     if (!request?.expiresAt) return;
     const delay = Math.max(0, request.expiresAt - Date.now());
     const timer = window.setTimeout(() => {
-      pushNotification("Extension request expired", "warning");
+      pushNotification(t("extUiExpired"), "warning");
       setRequest(null);
     }, delay);
     return () => window.clearTimeout(timer);
@@ -54,13 +56,13 @@ export function ExtensionUiModal() {
         { requestId: request.requestId, status, value },
       );
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "UI response failed", "error");
+        pushNotification(res.error?.message ?? t("extUiRespondFailed"), "error");
         return; // keep modal open on failure
       }
       setRequest(null);
       setInput("");
     } catch (err) {
-      pushNotification(err instanceof Error ? err.message : "UI response failed", "error");
+      pushNotification(err instanceof Error ? err.message : t("extUiRespondFailed"), "error");
     } finally {
       setSubmitting(false);
     }
@@ -99,7 +101,7 @@ export function ExtensionUiModal() {
         className="w-full max-w-md rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
       >
         <h2 id={titleId} className="mb-2 text-base font-semibold">
-          {request.title ?? "Extension request"}
+          {request.title ?? t("extUiDefaultTitle")}
         </h2>
         {request.message && (
           <p className="mb-3 text-sm text-muted">{request.message}</p>
@@ -112,14 +114,14 @@ export function ExtensionUiModal() {
               className="rounded-md border border-border px-3 py-1.5 text-sm"
               onClick={() => void respond("cancelled")}
             >
-              Cancel
+              {t("commonCancel")}
             </button>
             <button
               type="button"
               className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
               onClick={() => void respond("resolved", true)}
             >
-              Confirm
+              {t("extUiConfirm")}
             </button>
           </div>
         )}
@@ -156,14 +158,14 @@ export function ExtensionUiModal() {
                 className="rounded-md border border-border px-3 py-1.5 text-sm"
                 onClick={() => void respond("cancelled")}
               >
-                Cancel
+                {t("commonCancel")}
               </button>
               <button
                 type="button"
                 className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
                 onClick={() => void respond("resolved", input)}
               >
-                OK
+                {t("extUiOk")}
               </button>
             </div>
           </div>
@@ -175,7 +177,7 @@ export function ExtensionUiModal() {
             className="text-xs text-muted underline"
             onClick={() => void respond("cancelled")}
           >
-            Cancel
+            {t("commonCancel")}
           </button>
         )}
       </div>

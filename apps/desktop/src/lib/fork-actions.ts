@@ -8,6 +8,7 @@ import {
 } from "./bridge/host-context";
 import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
 import { requestWithRetry } from "./bridge/request-retry";
+import { tCurrent } from "./i18n/use-t";
 
 /**
  * Fork the active session and switch to the forked session. The default
@@ -30,7 +31,7 @@ export async function requestFork(
   } = useAppStore.getState();
   if (!host || !workspace || !session) return false;
   if (!session.isIdle) {
-    pushNotification("Wait for the agent to finish before forking", "info");
+    pushNotification(tCurrent("notifForkWait"), "info");
     return false;
   }
   const generation = captureRequestGeneration(host);
@@ -53,7 +54,7 @@ export async function requestFork(
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? "Fork failed", "error");
+      pushNotification(res.error?.message ?? tCurrent("notifForkFailed"), "error");
       return false;
     }
     applySessionSnapshot(res.result.session);
@@ -65,10 +66,10 @@ export async function requestFork(
     if (res.result.selectedText !== undefined) {
       setSessionDraft(res.result.session.sessionId, res.result.selectedText);
     }
-    pushNotification("Forked into a new session", "info");
+    pushNotification(tCurrent("notifForked"), "info");
     return true;
   } catch (error) {
-    pushNotification(error instanceof Error ? error.message : "Fork failed", "error");
+    pushNotification(error instanceof Error ? error.message : tCurrent("notifForkFailed"), "error");
     return false;
   }
 }

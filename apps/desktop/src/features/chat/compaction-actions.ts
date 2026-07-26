@@ -6,6 +6,7 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { tCurrent } from "../../lib/i18n/use-t";
 
 /** Manually compact the active session's context. Surfaces the outcome
  * through notifications; returns true when compaction succeeded. */
@@ -14,7 +15,7 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
     useAppStore.getState();
   if (!host || !workspace || !session) return false;
   if (!session.isIdle) {
-    pushNotification("Wait for the agent to finish before compacting", "info");
+    pushNotification(tCurrent("notifCompactWait"), "info");
     return false;
   }
   const generation = captureRequestGeneration(host);
@@ -35,7 +36,7 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? "Compaction failed", "error");
+      pushNotification(res.error?.message ?? tCurrent("notifCompactFailed"), "error");
       return false;
     }
     applySessionSnapshot(res.result.session);
@@ -46,14 +47,17 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
       res.result.result.tokensAfter ?? res.result.result.estimatedTokensAfter;
     pushNotification(
       typeof tokensBefore === "number" && typeof tokensAfter === "number"
-        ? `Context compacted: ${formatTokenCount(tokensBefore)} → ${formatTokenCount(tokensAfter)} tokens`
-        : "Context compacted",
+        ? tCurrent("notifCompacted", {
+            before: formatTokenCount(tokensBefore),
+            after: formatTokenCount(tokensAfter),
+          })
+        : tCurrent("notifCompactedPlain"),
       "info",
     );
     return true;
   } catch (error) {
     pushNotification(
-      error instanceof Error ? error.message : "Compaction failed",
+      error instanceof Error ? error.message : tCurrent("notifCompactFailed"),
       "error",
     );
     return false;
@@ -70,7 +74,7 @@ export async function abortCompaction(): Promise<void> {
     null,
   );
   if (!res.ok) {
-    pushNotification(res.error?.message ?? "Could not stop compaction", "error");
+    pushNotification(res.error?.message ?? tCurrent("notifCompactStopFailed"), "error");
   }
 }
 
@@ -94,7 +98,7 @@ export async function setAutoCompaction(enabled: boolean): Promise<void> {
   }
   if (!res.ok) {
     pushNotification(
-      res.error?.message ?? "Could not update auto-compaction",
+      res.error?.message ?? tCurrent("notifAutoCompactionFailed"),
       "error",
     );
     return;

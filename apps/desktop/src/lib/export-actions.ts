@@ -6,6 +6,7 @@ import {
   isCurrentRequestGeneration,
 } from "./bridge/host-context";
 import { requestWithRetry } from "./bridge/request-retry";
+import { tCurrent } from "./i18n/use-t";
 
 export type ExportFormat = "html" | "jsonl";
 
@@ -30,7 +31,7 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
   const { host, workspace, session, pushNotification } = useAppStore.getState();
   if (!host || !workspace || !session) return false;
   if (!session.isIdle) {
-    pushNotification("Wait for the agent to finish before exporting", "info");
+    pushNotification(tCurrent("notifExportWait"), "info");
     return false;
   }
   let targetPath: string | null;
@@ -46,7 +47,7 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
     });
   } catch (error) {
     pushNotification(
-      error instanceof Error ? error.message : "Save dialog unavailable",
+      error instanceof Error ? error.message : tCurrent("notifSaveDialogUnavailable"),
       "error",
     );
     return false;
@@ -72,14 +73,14 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
       return false;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? "Export failed", "error");
+      pushNotification(res.error?.message ?? tCurrent("notifExportFailed"), "error");
       return false;
     }
-    pushNotification(`Exported to ${res.result.path}`, "info");
+    pushNotification(tCurrent("notifExported", { path: res.result.path }), "info");
     void revealExportedFile(res.result.path);
     return true;
   } catch (error) {
-    pushNotification(error instanceof Error ? error.message : "Export failed", "error");
+    pushNotification(error instanceof Error ? error.message : tCurrent("notifExportFailed"), "error");
     return false;
   }
 }

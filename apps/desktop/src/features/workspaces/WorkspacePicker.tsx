@@ -4,6 +4,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
+import { useT } from "../../lib/i18n/use-t";
 import {
   captureRequestGeneration,
   isCurrentRequestGeneration,
@@ -42,6 +43,7 @@ export function replaceKnownWorkspace(
 const NO_WORKSPACES: string[] = [];
 
 export function WorkspacePicker() {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore(
@@ -116,7 +118,7 @@ export function WorkspacePicker() {
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Failed to set workspace", "error");
+        pushNotification(res.error?.message ?? t("notifSetWorkspaceFailed"), "error");
         return;
       }
 
@@ -144,7 +146,7 @@ export function WorkspacePicker() {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected === "string") cwd = selected;
     } catch {
-      cwd = window.prompt("Enter workspace path") || null;
+      cwd = window.prompt(t("workspacesEnterPath")) || null;
     }
     if (!cwd) return;
     await switchTo(cwd);
@@ -168,10 +170,10 @@ export function WorkspacePicker() {
           type="button"
           onClick={toggleCollapsed}
           aria-expanded={!collapsed}
-          title={collapsed ? "Expand workspaces" : "Collapse workspaces"}
+          title={collapsed ? t("workspacesExpand") : t("workspacesCollapse")}
           className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
         >
-          <span>Workspaces</span>
+          <span>{t("workspacesTitle")}</span>
           <ChevronDown
             size={12}
             className={`opacity-0 transition-all group-hover:opacity-100 ${
@@ -184,8 +186,8 @@ export function WorkspacePicker() {
           onClick={() => void pickAndAdd()}
           disabled={!host || pending}
           className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-          title="Add workspace"
-          aria-label="Add workspace"
+          title={t("workspacesAdd")}
+          aria-label={t("workspacesAdd")}
         >
           <Plus size={15} />
         </button>
@@ -198,7 +200,7 @@ export function WorkspacePicker() {
           className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
         >
           <FolderPlus size={16} />
-          <span>{pending ? "Opening workspace..." : "Add workspace"}</span>
+          <span>{pending ? t("workspacesOpening") : t("workspacesAdd")}</span>
         </button>
       ) : (
         <ul className="flex flex-col gap-0.5">
@@ -242,8 +244,8 @@ export function WorkspacePicker() {
                     onClick={() => removeFromList(path)}
                     disabled={pending}
                     className="mr-1 hidden rounded p-1 text-muted hover:bg-surface hover:text-foreground group-hover:block"
-                    title="Remove from list (folder is not deleted)"
-                    aria-label={`Remove ${workspaceDisplayName(path)} from list`}
+                    title={t("workspacesRemoveTitle")}
+                    aria-label={t("workspacesRemoveAria", { name: workspaceDisplayName(path) })}
                   >
                     <X size={13} />
                   </button>

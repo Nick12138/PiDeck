@@ -9,6 +9,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { requestFork } from "../../lib/fork-actions";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
+import { useT } from "../../lib/i18n/use-t";
 
 type ForkPoint = { entryId: string; text: string };
 
@@ -19,6 +20,7 @@ export function ForkModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const session = useAppStore((s) => s.session);
   const [items, setItems] = useState<ForkPoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,14 +62,14 @@ export function ForkModal({
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? "Could not load fork points");
+          setError(res.error?.message ?? t("forkLoadFailed"));
           return;
         }
         setItems(res.result.items);
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Could not load fork points");
+        setError(err instanceof Error ? err.message : t("forkLoadFailed"));
       });
     return () => {
       cancelled = true;
@@ -110,12 +112,12 @@ export function ForkModal({
             id="fork-modal-title"
             className="flex items-center gap-2 text-base font-semibold"
           >
-            <GitFork size={15} className="text-muted" /> Fork session
+            <GitFork size={15} className="text-muted" /> {t("forkTitle")}
           </h2>
           <button
             type="button"
-            title="Close"
-            aria-label="Close"
+            title={t("commonClose")}
+            aria-label={t("commonClose")}
             className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
             onClick={onClose}
           >
@@ -123,17 +125,16 @@ export function ForkModal({
           </button>
         </div>
         <p className="mb-3 text-xs text-muted">
-          Pick a user message. A new session keeps the history before it, and the
-          message text returns to the composer.
+{t("forkIntro")}
         </p>
         {error ? (
           <p className="text-sm text-danger">{error}</p>
         ) : items === null ? (
           <p className="flex items-center gap-2 text-sm text-muted">
-            <LoaderCircle size={13} className="animate-spin" /> Loading messages…
+            <LoaderCircle size={13} className="animate-spin" /> {t("forkLoading")}
           </p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-muted">No user messages to fork from.</p>
+          <p className="text-sm text-muted">{t("forkEmpty")}</p>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">
             {items.map((item, index) => (
@@ -157,7 +158,7 @@ export function ForkModal({
         )}
         {busy && (
           <p className="mt-3 text-[11px] text-muted">
-            Agent is busy — forking is available when the session is idle.
+{t("forkBusy")}
           </p>
         )}
       </div>

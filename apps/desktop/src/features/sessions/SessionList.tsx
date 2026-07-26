@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { tCurrent, useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
@@ -65,8 +66,11 @@ export function includeActiveSession(
   return [current, ...items.filter((item) => item.sessionId !== active.sessionId)];
 }
 
-export function sessionDisplayName(item: Pick<SessionSummary, "name">): string {
-  return item.name?.trim() || "新会话";
+export function sessionDisplayName(
+  item: Pick<SessionSummary, "name">,
+  fallback = "新会话",
+): string {
+  return item.name?.trim() || fallback;
 }
 
 export function sessionRuntimeLabel(state: SessionRuntimeState): string {
@@ -173,6 +177,7 @@ export function SessionList({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -219,7 +224,8 @@ export function SessionList({
         if (mounted.current) setSessionOpenPending(running);
       },
       (error) => {
-        const message = error instanceof Error ? error.message : "Open session failed";
+        const message =
+          error instanceof Error ? error.message : tCurrent("notifOpenSessionFailed");
         useAppStore.getState().pushNotification(message, "error");
       },
     );
@@ -353,7 +359,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Create session failed", "error");
+        pushNotification(res.error?.message ?? t("notifCreateSessionFailed"), "error");
         return;
       }
       setSession(res.result);
@@ -445,11 +451,11 @@ export function SessionList({
           setSessionRuntimeState(
             target.sessionId,
             "error",
-            res.error?.message ?? "Open session failed",
+            res.error?.message ?? t("notifOpenSessionFailed"),
           );
         }
         pushNotification(
-          res.error?.message ?? "Open session failed",
+          res.error?.message ?? t("notifOpenSessionFailed"),
           res.error?.retryable === true ? "warning" : "error",
         );
         return;
@@ -462,7 +468,8 @@ export function SessionList({
       }
     } catch (error) {
       if (isSuperseded()) return;
-      const message = error instanceof Error ? error.message : "Open session failed";
+      const message =
+        error instanceof Error ? error.message : t("notifOpenSessionFailed");
       if (target) setSessionRuntimeState(target.sessionId, "error", message);
       pushNotification(message, "error");
     }
@@ -472,7 +479,7 @@ export function SessionList({
     if (!canRenameSession(item, session) || sessionMutationBlocked) return;
     setMenuSessionId(null);
     setEditingSessionId(item.sessionId);
-    setNameDraft(sessionDisplayName(item));
+    setNameDraft(sessionDisplayName(item, t("sessionsUntitled")));
   }
 
   function cancelRename() {
@@ -488,7 +495,7 @@ export function SessionList({
     if (!item || !canRenameSession(item, session)) return;
     const name = nameDraft.trim();
     if (!name) {
-      pushNotification("Session name cannot be empty", "error");
+      pushNotification(t("notifSessionNameEmpty"), "error");
       return;
     }
     const request = ++mutationRequest.current;
@@ -509,7 +516,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Rename session failed", "error");
+        pushNotification(res.error?.message ?? t("notifRenameFailed"), "error");
         return;
       }
       updateSessionCatalogInfo(res.result.sessionId, res.result.name);
@@ -517,7 +524,7 @@ export function SessionList({
       cancelRename();
     } catch (error) {
       pushNotification(
-        error instanceof Error ? error.message : "Rename session failed",
+        error instanceof Error ? error.message : t("notifRenameFailed"),
         "error",
       );
     } finally {
@@ -570,7 +577,10 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Session file operation failed", "error");
+        pushNotification(
+          res.error?.message ?? t("notifSessionFileOpFailed"),
+          "error",
+        );
         return;
       }
       if (method === "session.archive") {
@@ -585,13 +595,13 @@ export function SessionList({
       await refresh();
       pushNotification(
         method === "session.archive"
-          ? "Session archived"
-          : "Session restored",
+          ? t("notifSessionArchived")
+          : t("notifSessionRestored"),
         "success",
       );
     } catch (error) {
       pushNotification(
-        error instanceof Error ? error.message : "Session file operation failed",
+        error instanceof Error ? error.message : t("notifSessionFileOpFailed"),
         "error",
       );
     } finally {
@@ -605,8 +615,8 @@ export function SessionList({
     if (!canDeleteSession(item, currentSession)) {
       pushNotification(
         currentSession?.sessionId === item.sessionId
-          ? "Switch to another Session before deleting"
-          : "Wait for the Session run to finish before deleting",
+          ? t("sessionsDeleteSwitch")
+          : t("sessionsDeleteWait"),
         "warning",
       );
       setConfirmAction(null);
@@ -636,10 +646,13 @@ export function SessionList({
           await refresh();
           removePinnedSessions([item.sessionId]);
           setConfirmAction(null);
-          pushNotification("Session no longer exists; list refreshed", "warning");
+          pushNotification(t("notifSessionGone"), "warning");
           return;
         }
-        pushNotification(deleted.error?.message ?? "Session delete failed", "error");
+        pushNotification(
+          deleted.error?.message ?? t("notifSessionDeleteFailed"),
+          "error",
+        );
         return;
       }
 
@@ -653,10 +666,10 @@ export function SessionList({
       await refresh();
       removePinnedSessions([item.sessionId]);
       setConfirmAction(null);
-      pushNotification("Session permanently deleted", "success");
+      pushNotification(t("notifSessionDeleted"), "success");
     } catch (error) {
       pushNotification(
-        error instanceof Error ? error.message : "Session delete failed",
+        error instanceof Error ? error.message : t("notifSessionDeleteFailed"),
         "error",
       );
     } finally {
@@ -684,7 +697,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Archive cleanup failed", "error");
+        pushNotification(res.error?.message ?? t("notifCleanupFailed"), "error");
         return;
       }
       await refresh();
@@ -701,13 +714,16 @@ export function SessionList({
       setConfirmAction(null);
       pushNotification(
         res.result.failedCount > 0
-          ? `Deleted ${res.result.deletedCount} Sessions; ${res.result.failedCount} failed`
-          : `Deleted ${res.result.deletedCount} archived Sessions`,
+          ? t("notifCleanupPartial", {
+              deleted: res.result.deletedCount,
+              failed: res.result.failedCount,
+            })
+          : t("notifCleanupDone", { deleted: res.result.deletedCount }),
         res.result.failedCount > 0 ? "warning" : "success",
       );
     } catch (error) {
       pushNotification(
-        error instanceof Error ? error.message : "Archive cleanup failed",
+        error instanceof Error ? error.message : t("notifCleanupFailed"),
         "error",
       );
     } finally {
@@ -738,7 +754,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Session reload failed", "error");
+        pushNotification(res.error?.message ?? t("notifSessionReloadFailed"), "error");
         return;
       }
       setSession(res.result);
@@ -747,10 +763,10 @@ export function SessionList({
         const nextHost = mergeHostIdentity(currentHost, res);
         if (nextHost) useAppStore.getState().setHost(nextHost);
       }
-      pushNotification("Session reloaded from disk", "success");
+      pushNotification(t("notifSessionReloaded"), "success");
     } catch (error) {
       pushNotification(
-        error instanceof Error ? error.message : "Session reload failed",
+        error instanceof Error ? error.message : t("notifSessionReloadFailed"),
         "error",
       );
     } finally {
@@ -773,10 +789,10 @@ export function SessionList({
             type="button"
             onClick={onToggleCollapsed}
             aria-expanded={!collapsed}
-            title={collapsed ? "Expand conversations" : "Collapse conversations"}
+            title={collapsed ? t("sessionsExpand") : t("sessionsCollapse")}
             className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
           >
-            <span>Recent conversations</span>
+            <span>{t("sessionsRecent")}</span>
             <ChevronDown
               size={12}
               className={`opacity-0 transition-all group-hover:opacity-100 ${
@@ -785,14 +801,14 @@ export function SessionList({
             />
           </button>
         ) : (
-          <span className="text-[11px] font-medium text-muted">Recent conversations</span>
+          <span className="text-[11px] font-medium text-muted">{t("sessionsRecent")}</span>
         )}
         <div className="flex items-center gap-0.5">
           {archivedCount > 0 && (
             <button
               type="button"
-              title={`Clear ${archivedCount} archived Sessions`}
-              aria-label="Clear archived sessions"
+              title={t("sessionsClearArchivedTitle", { count: archivedCount })}
+              aria-label={t("sessionsClearArchivedAria")}
               className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-danger"
               onClick={() => setConfirmAction({ kind: "cleanup", count: archivedCount })}
               disabled={sessionMutationBlocked}
@@ -802,8 +818,8 @@ export function SessionList({
           )}
           <button
             type="button"
-            title="Search and filter conversations"
-            aria-label="Search and filter conversations"
+            title={t("sessionsSearchFilterTitle")}
+            aria-label={t("sessionsSearchFilterTitle")}
             className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground"
             onClick={() => setControlsOpen((open) => !open)}
           >
@@ -811,7 +827,7 @@ export function SessionList({
           </button>
           {showCreateAction && <button
             type="button"
-            title="New session"
+            title={t("sessionsNew")}
             className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground"
             onClick={() => void createSession()}
             disabled={!workspace?.servicesReady || sessionMutationBlocked}
@@ -823,7 +839,7 @@ export function SessionList({
       {collapsed ? null : (
         <>
       {!workspace?.servicesReady && (
-        <p className="px-1 text-xs text-muted">Select a workspace first.</p>
+        <p className="px-1 text-xs text-muted">{t("sessionsSelectWorkspaceFirst")}</p>
       )}
       {workspace?.servicesReady && (controlsOpen || Boolean(query) || filter !== "active") && (
         <div className="flex gap-1 px-1">
@@ -834,8 +850,8 @@ export function SessionList({
             />
             <input
               type="search"
-              aria-label="Search sessions"
-              placeholder="Search"
+              aria-label={t("sessionsSearchAria")}
+              placeholder={t("sessionsSearchPlaceholder")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
@@ -843,7 +859,7 @@ export function SessionList({
           </label>
           <div
             role="group"
-            aria-label="Filter sessions"
+            aria-label={t("sessionsFilterAria")}
             className="flex h-7 shrink-0 overflow-hidden rounded-md border border-border text-xs"
           >
             <button
@@ -856,7 +872,7 @@ export function SessionList({
                   : "bg-surface text-muted hover:text-foreground"
               }`}
             >
-              Active
+              {t("sessionsFilterActive")}
             </button>
             <button
               type="button"
@@ -868,7 +884,9 @@ export function SessionList({
                   : "bg-surface text-muted hover:text-foreground"
               }`}
             >
-              {archivedCount > 0 ? `Archived (${archivedCount})` : "Archived"}
+              {archivedCount > 0
+                ? t("sessionsFilterArchivedCount", { count: archivedCount })
+                : t("sessionsFilterArchived")}
             </button>
           </div>
         </div>
@@ -905,7 +923,7 @@ export function SessionList({
                 >
                   <input
                     autoFocus
-                    aria-label="Session name"
+                    aria-label={t("sessionsNameAria")}
                     value={nameDraft}
                     maxLength={120}
                     onChange={(event) => setNameDraft(event.target.value)}
@@ -916,7 +934,7 @@ export function SessionList({
                   />
                   <button
                     type="submit"
-                    title="Save name"
+                    title={t("sessionsSaveName")}
                     disabled={sessionMutationBlocked || !nameDraft.trim()}
                     className="rounded p-1 text-accent hover:bg-surface-overlay disabled:opacity-40"
                   >
@@ -924,7 +942,7 @@ export function SessionList({
                   </button>
                   <button
                     type="button"
-                    title="Cancel rename"
+                    title={t("sessionsCancelRename")}
                     onClick={cancelRename}
                     disabled={sessionMutationBlocked}
                     className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
@@ -946,16 +964,20 @@ export function SessionList({
                     className="min-w-0 flex-1 px-2.5 py-2 text-left"
                     title={
                       item.runtimeState === "error" && item.lastError
-                        ? `${sessionDisplayName(item)} — ${item.lastError}`
-                        : sessionDisplayName(item)
+                        ? `${sessionDisplayName(item, t("sessionsUntitled"))} — ${item.lastError}`
+                        : sessionDisplayName(item, t("sessionsUntitled"))
                     }
                   >
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className={`truncate ${active ? "font-medium" : ""}`}>
-                        {sessionDisplayName(item)}
+                        {sessionDisplayName(item, t("sessionsUntitled"))}
                       </span>
                       {pinned && (
-                        <Pin size={10} aria-label="Pinned" className="shrink-0 text-muted" />
+                        <Pin
+                          size={10}
+                          aria-label={t("sessionsPinned")}
+                          className="shrink-0 text-muted"
+                        />
                       )}
                     </div>
                   </button>
@@ -977,8 +999,8 @@ export function SessionList({
                     )}
                     <button
                       type="button"
-                      title="Session actions"
-                      aria-label="Session actions"
+                      title={t("sessionsActionsTitle")}
+                      aria-label={t("sessionsActionsTitle")}
                       aria-expanded={menuOpen}
                       onClick={(event) => {
                         if (menuOpen) {
@@ -1024,16 +1046,14 @@ export function SessionList({
                         <button
                           type="button"
                           title={
-                            canRename
-                              ? "Rename Session"
-                              : "Wait for the Session run to finish before renaming"
+                            canRename ? t("sessionsRenameTitle") : t("sessionsRenameWait")
                           }
                           disabled={!canRename}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={() => beginRename(item)}
                         >
                           <Pencil size={13} />
-                          Rename
+                          {t("sessionsRename")}
                         </button>
                         <button
                           type="button"
@@ -1041,35 +1061,35 @@ export function SessionList({
                           onClick={() => togglePinnedSession(item)}
                         >
                           {pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                          {pinned ? "Unpin" : "Pin"}
+                          {pinned ? t("sessionsUnpin") : t("sessionsPin")}
                         </button>
                         <button
                           type="button"
                           title={
                             canReload
-                              ? "Reload Session from disk"
+                              ? t("sessionsReloadTitle")
                               : active
-                                ? "Wait for the Session run to finish before reloading"
-                                : "Only the active Session can be reloaded"
+                                ? t("sessionsReloadWait")
+                                : t("sessionsReloadOnlyActive")
                           }
                           disabled={!canReload}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={() => void reloadSessionFromDisk()}
                         >
                           <RefreshCw size={13} />
-                          Reload
+                          {t("sessionsReload")}
                         </button>
                         <div className="my-1 border-t border-border" />
                         <button
                           type="button"
                           title={
                             item.archived
-                              ? "Restore Session"
+                              ? t("sessionsRestoreTitle")
                               : canArchive
-                                ? "Archive Session"
+                                ? t("sessionsArchiveTitle")
                                 : active
-                                  ? "Switch away from the Session before archiving"
-                                  : "Wait for the Session run to finish before archiving"
+                                  ? t("sessionsArchiveSwitchAway")
+                                  : t("sessionsArchiveWait")
                           }
                           disabled={!item.archived && !canArchive}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
@@ -1085,16 +1105,16 @@ export function SessionList({
                           ) : (
                             <Archive size={13} />
                           )}
-                          {item.archived ? "Restore" : "Archive"}
+                          {item.archived ? t("sessionsRestore") : t("sessionsArchive")}
                         </button>
                         <button
                           type="button"
                           title={
                             canDelete
-                              ? "Permanently delete Session"
+                              ? t("sessionsDeleteTitle")
                               : active
-                                ? "Switch to another Session before deleting"
-                                : "Wait for the Session run to finish before deleting"
+                                ? t("sessionsDeleteSwitch")
+                                : t("sessionsDeleteWait")
                           }
                           disabled={!canDelete}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-danger hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
@@ -1104,7 +1124,7 @@ export function SessionList({
                           }}
                         >
                           <Trash2 size={13} />
-                          Delete
+                          {t("commonDelete")}
                         </button>
                       </div>
                     )}
@@ -1116,7 +1136,7 @@ export function SessionList({
         })}
       </ul>
       {workspace?.servicesReady && allItems.length > 0 && visibleItems.length === 0 && (
-        <p className="px-2 py-3 text-center text-xs text-muted">No matching sessions</p>
+        <p className="px-2 py-3 text-center text-xs text-muted">{t("sessionsNoMatch")}</p>
       )}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -1128,13 +1148,15 @@ export function SessionList({
           >
             <h2 id="session-delete-title" className="text-base font-semibold">
               {confirmAction.kind === "delete"
-                ? "Permanently delete Session?"
-                : "Clear archived Sessions?"}
+                ? t("sessionsDeleteConfirmTitle")
+                : t("sessionsCleanupConfirmTitle")}
             </h2>
             <p className="mt-2 text-sm text-muted">
               {confirmAction.kind === "delete"
-                ? `“${sessionDisplayName(confirmAction.item)}” will be removed from disk. This cannot be undone.`
-                : `${confirmAction.count} archived Sessions will be removed from disk. This cannot be undone.`}
+                ? t("sessionsDeleteConfirmBody", {
+                    name: sessionDisplayName(confirmAction.item, t("sessionsUntitled")),
+                  })
+                : t("sessionsCleanupConfirmBody", { count: confirmAction.count })}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -1144,7 +1166,7 @@ export function SessionList({
                 onClick={() => setConfirmAction(null)}
                 disabled={sessionMutationBlocked}
               >
-                Cancel
+                {t("commonCancel")}
               </button>
               <button
                 type="button"
@@ -1158,7 +1180,7 @@ export function SessionList({
                 }}
                 disabled={sessionMutationBlocked}
               >
-                Delete permanently
+                {t("sessionsDeletePermanently")}
               </button>
             </div>
           </div>
