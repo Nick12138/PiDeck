@@ -32,7 +32,7 @@ Both platforms can run the full application with `tauri:dev`. The optimized `dev
 
 ### Requirements
 
-- Node.js **22.19.0**
+- Node.js — the version pinned in [`.node-version`](./.node-version), which development and CI both use. **22.19.0** is the minimum supported runtime.
 - pnpm **9.15.0**
 - Rust stable
 - [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/)
@@ -51,13 +51,13 @@ For Windows desktop development, install:
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). It is already present on most Windows 11 installations.
 - [Rustup](https://rustup.rs/) with the stable toolchain.
 
-In PowerShell, `fnm` plus Corepack can provide the pinned Node and pnpm versions:
+In PowerShell, `fnm` plus Corepack can provide the pinned Node and pnpm versions. Run this from the repository root so `.node-version` resolves:
 
 ```powershell
 winget install Schniz.fnm
 fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm install 22.19.0
-fnm use 22.19.0
+fnm install (Get-Content .node-version)
+fnm use (Get-Content .node-version)
 
 npm install --global corepack@latest
 corepack enable pnpm
@@ -66,13 +66,13 @@ corepack prepare pnpm@9.15.0 --activate
 
 To load `fnm` automatically in future PowerShell sessions, add the `fnm env` line to `$PROFILE`.
 
-One way to install the expected Node and pnpm versions on macOS is:
+One way to install the expected Node and pnpm versions on macOS is, again from the repository root:
 
 ```bash
 brew install fnm
 eval "$(fnm env --use-on-cd --shell zsh)"
-fnm install 22.19.0
-fnm use 22.19.0
+fnm install "$(cat .node-version)"
+fnm use "$(cat .node-version)"
 
 npm install --global corepack@latest
 corepack enable pnpm

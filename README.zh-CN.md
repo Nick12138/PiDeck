@@ -32,7 +32,7 @@ PiDeck 当前固定使用 Pi SDK `0.80.7`。
 
 ### 环境要求
 
-- Node.js **22.19.0**
+- Node.js —— 使用 [`.node-version`](./.node-version) 中固定的版本，开发与 CI 都以它为准；**22.19.0** 是最低支持版本。
 - pnpm **9.15.0**
 - Rust stable
 - [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)
@@ -51,13 +51,13 @@ xcode-select --install
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。大多数 Windows 11 系统已经自带。
 - [Rustup](https://rustup.rs/)，并使用 stable 工具链。
 
-在 PowerShell 中，可以使用 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本：
+在 PowerShell 中，可以使用 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本。请在仓库根目录执行，`.node-version` 才能被正确读取：
 
 ```powershell
 winget install Schniz.fnm
 fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm install 22.19.0
-fnm use 22.19.0
+fnm install (Get-Content .node-version)
+fnm use (Get-Content .node-version)
 
 npm install --global corepack@latest
 corepack enable pnpm
@@ -66,13 +66,13 @@ corepack prepare pnpm@9.15.0 --activate
 
 如需让 `fnm` 在之后的 PowerShell 会话中自动加载，请将 `fnm env` 那一行加入 `$PROFILE`。
 
-在 macOS 上，可以通过 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本：
+在 macOS 上，同样在仓库根目录，可以通过 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本：
 
 ```bash
 brew install fnm
 eval "$(fnm env --use-on-cd --shell zsh)"
-fnm install 22.19.0
-fnm use 22.19.0
+fnm install "$(cat .node-version)"
+fnm use "$(cat .node-version)"
 
 npm install --global corepack@latest
 corepack enable pnpm

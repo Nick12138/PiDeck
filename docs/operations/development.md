@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Node.js `>= 22.19.0`
+- Node.js `>= 22.19.0` minimum; development and CI use the exact version pinned
+  in `.node-version` / `.nvmrc`
 - pnpm `9.x`
 - Rust stable + [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (for desktop)
 - Windows 11 x64 or Apple Silicon macOS for source development
@@ -30,7 +31,9 @@ workspace switch). User-scope packages are identical for every workspace, so
 their modules now load once per host process; with ~13 user packages this
 takes a cold workspace build from ~2.5-3.2 s down to ~0.2 s. Extension
 factories receive cwd at invocation, and package install/update still clears
-the cache explicitly. Re-evaluate the patch on every SDK upgrade; consider
+the cache explicitly. The same patch also gives `DefaultPackageManager` a
+`setOperationSignal()` hook so npm/git child processes can be cancelled;
+upstream has no such hook. Re-evaluate the patch on every SDK upgrade; consider
 proposing it upstream.
 
 ## Commands
