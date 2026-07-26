@@ -12,7 +12,8 @@ export type TreeRow = {
   label?: string;
   /** True when the row lies on the path from the root to the current leaf. */
   onPath: boolean;
-  isLeaf: boolean;
+  /** Deepest visible row on the current leaf path. */
+  isCurrent: boolean;
 };
 
 const EXCERPT_LIMIT = 96;
@@ -81,14 +82,38 @@ export function currentPathIds(
 }
 
 /**
- * DFS flatten. The first child continues its parent's depth (trunk); each
- * additional child starts a new branch one level deeper.
+ * Conversation-turn view of the tree: keep user/assistant message nodes and
+ * collapse everything else (tool results, model changes, session_info, …) so
+ * their children reattach to the nearest visible ancestor. A hidden node's
+ * branch label survives on its first visible descendant.
+ */
+export function filterConversationTree(
+  nodes: SerializableSessionTreeNode[],
+): SerializableSessionTreeNode[] {
+  const visit = (node: SerializableSessionTreeNode): SerializableSessionTreeNode[] => {
+    const children = node.children.flatMap(visit);
+    if (entryExcerpt(node.entry).kind !== "other") {
+      return [{ ...node, children }];
+    }
+    if (node.label && children.length > 0 && !children[0]!.label) {
+      children[0] = { ...children[0]!, label: node.label };
+    }
+    return children;
+  };
+  return nodes.flatMap(visit);
+}
+
+/**
+ * DFS flatten of the conversation-turn view. The first child continues its
+ * parent's depth (trunk); each additional child starts a new branch one level
+ * deeper. The current marker lands on the deepest visible row along the leaf
+ * path — the actual leaf entry may be a collapsed one (e.g. a tool result).
  */
 export function flattenSessionTree(
   nodes: SerializableSessionTreeNode[],
   leafId: string | null,
 ): TreeRow[] {
-  const onPath = currentPathIds(nodes, leafId);
+  const path = currentPathIds(nodes, leafId);
   const rows: TreeRow[] = [];
   const visit = (node: SerializableSessionTreeNode, depth: number) => {
     const { kind, excerpt } = entryExcerpt(node.entry);
@@ -98,13 +123,21 @@ export function flattenSessionTree(
       kind,
       excerpt,
       ...(node.label ? { label: node.label } : {}),
-      onPath: onPath.has(node.entry.id),
-      isLeaf: node.entry.id === leafId,
+      onPath: path.has(node.entry.id),
+      isCurrent: false,
     });
     node.children.forEach((child, index) => {
       visit(child, index === 0 ? depth : depth + 1);
     });
   };
-  nodes.forEach((node, index) => visit(node, index === 0 ? 0 : 1));
+  filterConversationTree(nodes).forEach((node, index) => visit(node, index === 0 ? 0 : 1));
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  for (const id of [...path].reverse()) {
+    const row = rowById.get(id);
+    if (row) {
+      row.isCurrent = true;
+      break;
+    }
+  }
   return rows;
 }

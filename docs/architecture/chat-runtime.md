@@ -46,11 +46,19 @@ the usage breakdown, a Compact now action, and the auto-compaction switch.
 `/session` opens a dialog with message, token, and cost aggregates from
 `session.getStats`, which the Host builds from `AgentSession.getSessionStats()`
 (whole-history aggregates, including compacted-away entries). `/tree` opens the
-Tree page in the right dock: it renders `session.getTree` with the current
-leaf path highlighted, and clicking an entry calls `agent.navigateTree`
-(always `summarize: false` — navigation is local, no LLM call), which shares
-the per-session operation lock, requires an idle agent, and returns the
-rebuilt snapshot plus optional `editorText` restored into the Composer draft.
+Tree page in the right dock: it renders `session.getTree` as conversation
+turns only — tool results, model changes, and other bookkeeping entries are
+collapsed, with hidden branch labels carried to their first visible
+descendant and the current marker on the deepest visible row of the leaf
+path. Clicking an entry calls `agent.navigateTree` (always
+`summarize: false` — navigation is local, no LLM call), which shares the
+per-session operation lock, requires an idle agent, and returns the rebuilt
+snapshot plus optional `editorText` restored into the Composer draft. The
+panel refetches on session identity changes, busy edges, navigation, and
+manual refresh — never per streamed message, because every stable read
+briefly takes the service graph lock. Tree, fork, and model-list requests
+retry transient retryable failures (`SERVICE_GRAPH_BUSY`) through
+`lib/bridge/request-retry.ts`.
 `/fork` (also available as an inline button on the tree panel's user rows)
 picks a user message from `session.getForkPoints`; `session.fork` then writes
 a branched session file via `SessionManager.createBranchedSession` before that

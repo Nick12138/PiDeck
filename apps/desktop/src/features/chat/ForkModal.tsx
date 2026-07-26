@@ -8,6 +8,7 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { requestFork } from "../../lib/fork-actions";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 
 type ForkPoint = { entryId: string; text: string };
 
@@ -39,14 +40,18 @@ export function ForkModal({
     setError(null);
     setForking(null);
     const generation = captureRequestGeneration(current.host);
-    void hostClient
-      .request(
-        "session.getForkPoints",
-        activeSessionContext(current.host, current.workspace, current.session),
-        null,
-      )
+    void requestWithRetry(
+      () =>
+        hostClient.request(
+          "session.getForkPoints",
+          activeSessionContext(current.host!, current.workspace!, current.session!),
+          null,
+        ),
+      undefined,
+      () => !cancelled,
+    )
       .then((res) => {
-        if (cancelled) return;
+        if (cancelled || !res) return;
         if (
           !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
             session: true,

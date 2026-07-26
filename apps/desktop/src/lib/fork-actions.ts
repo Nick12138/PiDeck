@@ -7,6 +7,7 @@ import {
   mergeHostIdentity,
 } from "./bridge/host-context";
 import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
+import { requestWithRetry } from "./bridge/request-retry";
 
 /**
  * Fork the active session before the given user message and switch to the
@@ -29,12 +30,15 @@ export async function requestFork(entryId: string): Promise<boolean> {
   const generation = captureRequestGeneration(host);
   try {
     // Fork ends in the session-open flow, so it shares its generous timeout.
-    const res = await hostClient.request(
-      "session.fork",
-      activeSessionContext(host, workspace, session),
-      { entryId },
-      SESSION_OPEN_TIMEOUT_MS,
+    const res = await requestWithRetry(() =>
+      hostClient.request(
+        "session.fork",
+        activeSessionContext(host, workspace, session),
+        { entryId },
+        SESSION_OPEN_TIMEOUT_MS,
+      ),
     );
+    if (!res) return false;
     if (
       !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
         session: true,

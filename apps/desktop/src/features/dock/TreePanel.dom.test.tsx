@@ -86,33 +86,50 @@ const EXPECTED_CONTEXT = {
   expectedSessionRevision: 3,
 };
 
-// u1 → a1 → { u2 (current leaf), u3 (abandoned branch) }
+// u1 → mc1(model_change) → a1 → { u2 → tr1(toolResult, current leaf), u3 }
 const TREE: SerializableSessionTreeNode[] = [
   {
     entry: { id: "u1", type: "message", message: { role: "user", content: "first ask" } },
     children: [
       {
-        entry: {
-          id: "a1",
-          type: "message",
-          message: { role: "assistant", content: [{ type: "text", text: "the answer" }] },
-        },
+        entry: { id: "mc1", type: "model_change" },
         children: [
           {
             entry: {
-              id: "u2",
+              id: "a1",
               type: "message",
-              message: { role: "user", content: "trunk follow-up" },
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "the answer" }],
+              },
             },
-            children: [],
-          },
-          {
-            entry: {
-              id: "u3",
-              type: "message",
-              message: { role: "user", content: "abandoned attempt" },
-            },
-            children: [],
+            children: [
+              {
+                entry: {
+                  id: "u2",
+                  type: "message",
+                  message: { role: "user", content: "trunk follow-up" },
+                },
+                children: [
+                  {
+                    entry: {
+                      id: "tr1",
+                      type: "message",
+                      message: { role: "toolResult", content: "tool output" },
+                    },
+                    children: [],
+                  },
+                ],
+              },
+              {
+                entry: {
+                  id: "u3",
+                  type: "message",
+                  message: { role: "user", content: "abandoned attempt" },
+                },
+                children: [],
+              },
+            ],
           },
         ],
       },
@@ -157,7 +174,7 @@ describe("TreePanel", () => {
       .spyOn(hostClient, "request")
       .mockImplementation(async (method) => {
         if (method === "session.getTree") {
-          return envelope("session.getTree", { tree: TREE, leafId: "u2" }) as never;
+          return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
         }
         return envelope("agent.navigateTree", {
           session: session({ thinkingLevel: "high" }),
@@ -171,6 +188,12 @@ describe("TreePanel", () => {
     expect(await screen.findByText("abandoned attempt")).toBeInTheDocument();
     expect(request).toHaveBeenCalledWith("session.getTree", EXPECTED_CONTEXT, null);
 
+    // Non-conversation entries are collapsed out of the panel.
+    expect(screen.queryByText("model_change")).not.toBeInTheDocument();
+    expect(screen.queryByText("tool output")).not.toBeInTheDocument();
+
+    // The actual leaf is a hidden tool result; the marker falls back to the
+    // deepest visible row on its path.
     const current = screen.getByText("trunk follow-up").closest("button")!;
     expect(current).toBeDisabled();
     expect(current).toHaveAttribute("aria-current", "true");
@@ -195,7 +218,7 @@ describe("TreePanel", () => {
       .getState()
       .applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
     vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope("session.getTree", { tree: TREE, leafId: "u2" }) as never,
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
     );
     render(<TreePanel visible />);
 
@@ -209,7 +232,7 @@ describe("TreePanel", () => {
       .spyOn(hostClient, "request")
       .mockImplementation(async (method) => {
         if (method === "session.getTree") {
-          return envelope("session.getTree", { tree: TREE, leafId: "u2" }) as never;
+          return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
         }
         return envelope("session.fork", {
           session: session(),

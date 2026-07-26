@@ -17,6 +17,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { flattenSessionTree, type TreeRowKind } from "./tree-model";
 
 const KIND_ICON: Record<TreeRowKind, typeof UserRound> = {
@@ -43,8 +44,11 @@ export function TreePanel({ visible }: { visible: boolean }) {
   const sessionId = session?.sessionId;
   const sessionRevision = session?.revision;
   const busy = session ? !session.isIdle : true;
-  const messageCount = session?.messages.length ?? 0;
 
+  // Refetch on identity changes, busy edges (run settled), navigation, and
+  // manual refresh — NOT per streamed message: every read briefly takes the
+  // Host's service graph lock, and a per-message cadence starves session
+  // switches and navigation with SERVICE_GRAPH_BUSY.
   useEffect(() => {
     if (!visible) return;
     const current = useAppStore.getState();
@@ -57,14 +61,18 @@ export function TreePanel({ visible }: { visible: boolean }) {
     let cancelled = false;
     setError(null);
     const generation = captureRequestGeneration(current.host);
-    void hostClient
-      .request(
-        "session.getTree",
-        activeSessionContext(current.host, current.workspace, current.session),
-        null,
-      )
+    void requestWithRetry(
+      () =>
+        hostClient.request(
+          "session.getTree",
+          activeSessionContext(current.host!, current.workspace!, current.session!),
+          null,
+        ),
+      undefined,
+      () => !cancelled,
+    )
       .then((res) => {
-        if (cancelled) return;
+        if (cancelled || !res) return;
         if (
           !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
             session: true,
@@ -93,7 +101,6 @@ export function TreePanel({ visible }: { visible: boolean }) {
     workspaceRevision,
     sessionId,
     sessionRevision,
-    messageCount,
     busy,
     refreshSeq,
   ]);
@@ -113,11 +120,14 @@ export function TreePanel({ visible }: { visible: boolean }) {
     setNavigating(targetId);
     const generation = captureRequestGeneration(current.host);
     try {
-      const res = await hostClient.request(
-        "agent.navigateTree",
-        activeSessionContext(current.host, current.workspace, current.session),
-        { targetId },
+      const res = await requestWithRetry(() =>
+        hostClient.request(
+          "agent.navigateTree",
+          activeSessionContext(current.host!, current.workspace!, current.session!),
+          { targetId },
+        ),
       );
+      if (!res) return;
       if (
         !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
           session: true,
@@ -194,13 +204,13 @@ export function TreePanel({ visible }: { visible: boolean }) {
               <div
                 key={row.id}
                 className={`group flex items-stretch ${
-                  row.isLeaf ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
+                  row.isCurrent ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
                 }`}
               >
                 <button
                   type="button"
-                  disabled={actionLocked || row.isLeaf}
-                  aria-current={row.isLeaf ? "true" : undefined}
+                  disabled={actionLocked || row.isCurrent}
+                  aria-current={row.isCurrent ? "true" : undefined}
                   title={row.excerpt}
                   className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs ${
                     row.onPath ? "text-foreground" : "text-muted"
@@ -222,7 +232,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
                       {row.label}
                     </span>
                   )}
-                  {row.isLeaf && (
+                  {row.isCurrent && (
                     <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
                       current
                     </span>

@@ -9,36 +9,15 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { requestCompact, setAutoCompaction } from "./compaction-actions";
 
 const MODEL_MENU_MIN_WIDTH = 120;
 const MODEL_MENU_MAX_WIDTH = 280;
 const MODEL_MENU_ROW_CONTROLS_WIDTH = 48;
-const MODEL_LIST_RETRY_DELAYS_MS = [80, 160, 240, 320] as const;
 
-type RetryableModelListResponse =
-  | { ok: true }
-  | { ok: false; error?: { retryable?: boolean } };
-
-export async function requestModelListWithRetry<T extends RetryableModelListResponse>(
-  request: () => Promise<T>,
-  wait: (delayMs: number) => Promise<unknown> = (delayMs) =>
-    new Promise((resolve) => setTimeout(resolve, delayMs)),
-  shouldContinue: () => boolean = () => true,
-): Promise<T | null> {
-  for (let attempt = 0; ; attempt += 1) {
-    if (!shouldContinue()) return null;
-    const response = await request();
-    if (
-      response.ok ||
-      response.error?.retryable !== true ||
-      attempt === MODEL_LIST_RETRY_DELAYS_MS.length
-    ) {
-      return response;
-    }
-    await wait(MODEL_LIST_RETRY_DELAYS_MS[attempt]!);
-  }
-}
+/** Backwards-compatible alias; the shared helper lives in lib/bridge. */
+export { requestWithRetry as requestModelListWithRetry } from "../../lib/bridge/request-retry";
 
 export function includeCurrentModel(
   models: ModelSummary[],
@@ -288,7 +267,7 @@ export function ModelControls() {
     void (async () => {
       let res;
       try {
-        res = await requestModelListWithRetry(
+        res = await requestWithRetry(
           () =>
             hostClient.request(
               "model.list",

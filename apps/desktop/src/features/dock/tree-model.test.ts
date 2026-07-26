@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SerializableSessionTreeNode } from "@pideck/protocol";
-import { currentPathIds, entryExcerpt, flattenSessionTree } from "./tree-model";
+import {
+  currentPathIds,
+  entryExcerpt,
+  filterConversationTree,
+  flattenSessionTree,
+} from "./tree-model";
 
 function userNode(
   id: string,
@@ -30,6 +35,29 @@ function assistantNode(
   };
 }
 
+function otherNode(
+  id: string,
+  type: string,
+  children: SerializableSessionTreeNode[] = [],
+  label?: string,
+): SerializableSessionTreeNode {
+  return { entry: { id, type }, children, ...(label ? { label } : {}) };
+}
+
+function toolResultNode(
+  id: string,
+  children: SerializableSessionTreeNode[] = [],
+): SerializableSessionTreeNode {
+  return {
+    entry: {
+      id,
+      type: "message",
+      message: { role: "toolResult", content: "tool output" },
+    },
+    children,
+  };
+}
+
 describe("entryExcerpt", () => {
   it("extracts user and assistant text from string and block content", () => {
     expect(entryExcerpt(userNode("u", "hello\nworld").entry)).toEqual({
@@ -42,11 +70,10 @@ describe("entryExcerpt", () => {
     });
   });
 
-  it("falls back to the entry type for non-message entries", () => {
-    expect(entryExcerpt({ id: "c", type: "compaction" })).toEqual({
-      kind: "other",
-      excerpt: "compaction",
-    });
+  it("classifies non-conversation entries as other", () => {
+    expect(entryExcerpt(otherNode("c", "compaction").entry).kind).toBe("other");
+    expect(entryExcerpt(otherNode("m", "model_change").entry).kind).toBe("other");
+    expect(entryExcerpt(toolResultNode("t").entry).kind).toBe("other");
   });
 
   it("truncates long first lines", () => {
@@ -56,50 +83,78 @@ describe("entryExcerpt", () => {
   });
 });
 
-describe("flattenSessionTree", () => {
-  // u1 → a1 → { u2 → a2 (current leaf), u3 (labeled branch) }
-  const tree = [
-    userNode("u1", "first", [
-      assistantNode("a1", "answer", [
-        userNode("u2", "trunk follow-up", [assistantNode("a2", "trunk answer")]),
-        userNode("u3", "abandoned branch", [], "experiment"),
+// u1 → mc1(model_change) → a1 → { u2 → tr1(toolResult, leaf), h1(labeled) → u3 }
+const TREE = [
+  userNode("u1", "first ask", [
+    otherNode("mc1", "model_change", [
+      assistantNode("a1", "the answer", [
+        userNode("u2", "trunk follow-up", [toolResultNode("tr1")]),
+        otherNode("h1", "branch_summary", [userNode("u3", "abandoned")], "experiment"),
       ]),
     ]),
-  ];
+  ]),
+];
 
+describe("filterConversationTree", () => {
+  it("collapses non-conversation nodes and reattaches their children", () => {
+    const visible = filterConversationTree(TREE);
+    expect(visible.map((node) => node.entry.id)).toEqual(["u1"]);
+    expect(visible[0]!.children.map((node) => node.entry.id)).toEqual(["a1"]);
+    expect(visible[0]!.children[0]!.children.map((node) => node.entry.id)).toEqual([
+      "u2",
+      "u3",
+    ]);
+    expect(visible[0]!.children[0]!.children[0]!.children).toEqual([]);
+  });
+
+  it("carries a hidden node's label to its first visible descendant", () => {
+    const visible = filterConversationTree(TREE);
+    const u3 = visible[0]!.children[0]!.children[1]!;
+    expect(u3.entry.id).toBe("u3");
+    expect(u3.label).toBe("experiment");
+  });
+
+  it("drops hidden subtrees without visible descendants", () => {
+    expect(
+      filterConversationTree([otherNode("m", "model_change", [], "orphan-label")]),
+    ).toEqual([]);
+  });
+});
+
+describe("flattenSessionTree", () => {
   it("keeps the trunk at depth 0 and pushes later siblings deeper", () => {
-    const rows = flattenSessionTree(tree, "a2");
+    const rows = flattenSessionTree(TREE, "tr1");
     expect(rows.map(({ id, depth }) => [id, depth])).toEqual([
       ["u1", 0],
       ["a1", 0],
       ["u2", 0],
-      ["a2", 0],
       ["u3", 1],
     ]);
+    expect(rows.find((row) => row.id === "u3")?.label).toBe("experiment");
   });
 
-  it("marks the current path and leaf", () => {
-    const rows = flattenSessionTree(tree, "a2");
+  it("marks the current path and puts the marker on the deepest visible row", () => {
+    const rows = flattenSessionTree(TREE, "tr1");
     expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
       "u1",
       "a1",
       "u2",
-      "a2",
     ]);
-    expect(rows.find((row) => row.id === "a2")?.isLeaf).toBe(true);
-    expect(rows.find((row) => row.id === "u3")?.label).toBe("experiment");
+    expect(rows.filter((row) => row.isCurrent).map((row) => row.id)).toEqual(["u2"]);
   });
 
-  it("marks the abandoned branch as current when the leaf moves", () => {
-    const rows = flattenSessionTree(tree, "u3");
+  it("follows the marker when the leaf moves to another branch", () => {
+    const rows = flattenSessionTree(TREE, "u3");
     expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
       "u1",
       "a1",
       "u3",
     ]);
+    expect(rows.find((row) => row.id === "u3")?.isCurrent).toBe(true);
   });
 
-  it("returns an empty path without a leaf", () => {
-    expect(currentPathIds(tree, null).size).toBe(0);
+  it("marks nothing without a leaf", () => {
+    expect(currentPathIds(TREE, null).size).toBe(0);
+    expect(flattenSessionTree(TREE, null).some((row) => row.isCurrent)).toBe(false);
   });
 });
