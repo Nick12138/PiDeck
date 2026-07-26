@@ -147,6 +147,111 @@ describe("FileCredentialStore field preservation", () => {
   });
 });
 
+/**
+ * The exact callback pi-ai's resolveStoredOAuth passes to modify() when a
+ * request finds an expired oauth credential (auth/resolve.js, 0.82.1):
+ * re-check type and expiry under the lock, refresh only if still expired.
+ */
+function sdkShapedRefresh(
+  refresh: (current: Credential) => Promise<Credential>,
+): (current: Credential | undefined) => Promise<Credential | undefined> {
+  return async (current) => {
+    if (current?.type !== "oauth") return undefined;
+    if (Date.now() < (current as { expires: number }).expires) return undefined;
+    return refresh(current);
+  };
+}
+
+describe("FileCredentialStore oauth refresh (resolveStoredOAuth contract)", () => {
+  const FRESH = 4102444800000; // year 2100, matching the checked-in fixture
+
+  it("returns an oauth credential from read() untouched, extra fields included", async () => {
+    const stored = {
+      type: "oauth",
+      refresh: "r1",
+      access: "a1",
+      expires: FRESH,
+      enterpriseUrl: "https://example.invalid",
+    };
+    writeAuth({ tokens: stored });
+
+    // Template resolution applies to api_key credentials only; an oauth
+    // credential must come back byte-for-byte or the runtime would refresh
+    // against a mutated token.
+    expect(await store.read("tokens")).toEqual(stored);
+  });
+
+  it("persists an SDK-shaped refresh of an expired credential", async () => {
+    writeAuth({ tokens: { type: "oauth", refresh: "r1", access: "a1", expires: 1 } });
+
+    const rotated = await store.modify(
+      "tokens",
+      sdkShapedRefresh(async () => ({
+        type: "oauth",
+        refresh: "r2",
+        access: "a2",
+        expires: FRESH,
+      })),
+    );
+
+    expect(rotated).toEqual({ type: "oauth", refresh: "r2", access: "a2", expires: FRESH });
+    expect(readAuth().tokens).toEqual(rotated);
+    // A restart (new store over the same file) sees the rotated token.
+    expect(await new FileCredentialStore(authPath).read("tokens")).toEqual(rotated);
+  });
+
+  it("skips the refresh when the credential is fresh again under the lock", async () => {
+    // Double-checked locking: a competing refresh already rotated the token,
+    // so this caller's callback returns undefined and modify() must hand back
+    // the current credential — not delete it, not rotate a second time.
+    const current = { type: "oauth", refresh: "r2", access: "a2", expires: FRESH };
+    writeAuth({ tokens: current });
+    const before = readFileSync(authPath, "utf8");
+
+    let refreshed = 0;
+    const result = await store.modify(
+      "tokens",
+      sdkShapedRefresh(async (c) => {
+        refreshed += 1;
+        return c;
+      }),
+    );
+
+    expect(refreshed).toBe(0);
+    expect(result).toEqual(current);
+    expect(readFileSync(authPath, "utf8")).toBe(before);
+  });
+
+  it("keeps the stored token intact when the refresh callback throws", async () => {
+    const stored = { type: "oauth", refresh: "r1", access: "a1", expires: 1 };
+    writeAuth({ tokens: stored });
+
+    await expect(
+      store.modify(
+        "tokens",
+        sdkShapedRefresh(async () => {
+          throw new Error("upstream 400: invalid_grant");
+        }),
+      ),
+    ).rejects.toThrow("invalid_grant");
+
+    // The failed refresh must not corrupt or drop the credential, and the
+    // store must stay usable for the retry.
+    expect(readAuth().tokens).toEqual(stored);
+    expect(
+      await store.modify(
+        "tokens",
+        sdkShapedRefresh(async () => ({
+          type: "oauth",
+          refresh: "r2",
+          access: "a2",
+          expires: FRESH,
+        })),
+      ),
+    ).toMatchObject({ access: "a2" });
+  });
+});
+
 describe("FileCredentialStore durability and permissions", () => {
   it("creates the agent directory 0700 and the credential file 0600", async () => {
     // Windows does not honour POSIX mode bits; the store's permission promise

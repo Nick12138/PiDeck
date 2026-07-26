@@ -8,7 +8,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -149,6 +157,60 @@ for (let i = 0; i < Number(iterations); i += 1) {
 
     const stored = JSON.parse(readFileSync(authPath, "utf8"));
     expect(stored.counter.key).toBe(String(children * iterations));
+  }, 60_000);
+
+  it("rotates an expired oauth credential exactly once across racing processes", async () => {
+    // Both children run pi-ai's resolveStoredOAuth callback shape: re-check
+    // expiry under the lock, refresh only if still expired. The lock must
+    // serialize them so the loser observes the winner's rotation and skips —
+    // a double rotation would invalidate the winner's refresh token upstream,
+    // and a lost update is the §11 stop condition.
+    writeFileSync(
+      authPath,
+      JSON.stringify({ tokens: { type: "oauth", refresh: "r1", access: "a1", expires: 1 } }),
+      "utf8",
+    );
+
+    const script = writeChildScript(`
+import { writeFileSync } from "node:fs";
+const [authPath, markerDir] = process.argv.slice(2);
+const store = new FileCredentialStore(authPath);
+await store.modify("tokens", async (current) => {
+  if (current?.type !== "oauth") return undefined;
+  if (Date.now() < current.expires) return undefined;
+  // Refresh actually ran: record which process rotated.
+  writeFileSync(\`\${markerDir}/refreshed-\${process.pid}\`, "1");
+  return {
+    type: "oauth",
+    refresh: \`r2-\${process.pid}\`,
+    access: \`a2-\${process.pid}\`,
+    expires: 4102444800000,
+  };
+});
+`);
+
+    const markerDir = join(root, "markers");
+    mkdirSync(markerDir, { recursive: true });
+    const results = await Promise.all([
+      runChild(script, [authPath, markerDir]),
+      runChild(script, [authPath, markerDir]),
+    ]);
+    for (const result of results) {
+      expect(result.stderr, result.stderr).not.toContain("Error");
+      expect(result.code).toBe(0);
+    }
+
+    const markers = readdirSync(markerDir);
+    expect(markers).toHaveLength(1);
+    const winnerPid = markers[0]!.replace("refreshed-", "");
+
+    const stored = JSON.parse(readFileSync(authPath, "utf8")).tokens;
+    expect(stored).toEqual({
+      type: "oauth",
+      refresh: `r2-${winnerPid}`,
+      access: `a2-${winnerPid}`,
+      expires: 4102444800000,
+    });
   }, 60_000);
 
   it("keeps auth.json parseable when a process is killed mid-write", async () => {
