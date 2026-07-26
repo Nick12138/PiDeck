@@ -70,9 +70,30 @@ evidence 必须同时验证 Host manifest、pnpm lock、部署树和 staged tree
 | PR-1 | 完成 | `06e44a7`, `ba518f6` | 对齐 Node 22 minimum / Node 24 canonical lanes |
 | PR-2 | 完成 | `4c912b1` | graph mutation 生命周期、shutdown cancellation、stale fetch、`models-store.json` fingerprint |
 | PR-2B | 完成 | `e3faa58` | 以 Host manifest 派生 release SDK evidence |
-| PR-3 | 待执行 | - | SDK 0.82.1 原子迁移 |
+| PR-3 | 本地完成，待 Windows gate | `9ebf492` … `9c1b281` | SDK 0.82.1 原子迁移，见下 |
 | PR-4 | 待执行 | - | 新事件和扩展兼容测试 |
 | PR-5/6 | 待执行 | - | 最终 Node 安全版本、RC/canary/rollback gates |
+
+### PR-3 当前状态
+
+本地 §6.1–§6.8 全部落地，未推送。`pnpm verify:p0` 在 Node `24.18.0` 通过：docs 70/0、fixture scan 11、release metadata 3/3、Protocol 359、Host 376、Desktop 324、production build、Rust 34/34。
+
+新规范哈希：
+
+```text
+pnpm-lock.yaml
+97ba98eb23cba8c62691c5faaf6ca62eb3d0a355f706841536bc0309980c5676
+
+patches/@earendil-works__pi-coding-agent@0.82.1.patch
+9f31547b92db07a205b3a8d4788ec4bc66b44af3a6e66fc011e254e0fb1541dc
+```
+
+两项与原计划不同的决定，理由见 [API 核查记录](./pi-sdk-0.82.1-api-notes.md)：
+
+1. **不扩大 patch 到 ResourceLoader。** 它私有的 PackageManager 会在 reload 时静默 `npm install` / `git clone`。与其让这件事可取消，不如让它不发生：workspace 建图与 session create/open 的 reload 用 `withoutImplicitPackageInstall()` 包住，符合 §6.4 的不联网要求。package mutation 后的 reconcile 不包，仍不可取消，由 shutdown 兜底。
+2. **`setOperationSignal` 在 `PackageManager` 接口上声明为必需**，`?.` 静默退化变成编译错误。
+
+剩余工作只有 §8 的 Windows push gate，本地无法执行。
 
 历史回滚标签：
 
