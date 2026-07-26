@@ -19,6 +19,7 @@
     "package:sidecar:with-node": "node scripts/package-release-sidecar.mjs --prepare-runtime",
     "prepare:runtime": "node scripts/prepare-release-runtime.mjs",
     "validate:resources": "node scripts/validate-resource-layout.mjs",
+    "smoke:staged-host": "node scripts/smoke-staged-host.mjs",
     "verify:docs": "node scripts/verify-doc-links.mjs",
     "test:rust": "node scripts/prepare-rust-test-resources.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/verify-rust",
     "package:release": "node scripts/package-release.mjs",

@@ -12,6 +12,10 @@ const res = join(root, "apps/desktop/src-tauri/resources");
 const errors = [];
 const info = {};
 
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
 function need(p, msg) {
   if (!existsSync(p)) errors.push(msg ?? `missing ${p}`);
 }
@@ -36,6 +40,7 @@ const compacted = existsSync(zipPath) && statSync(zipPath).size > 1_000_000;
 if (compacted) {
   info.layout = "compacted-zip";
   info.zipBytes = statSync(zipPath).size;
+  info.nodeModulesZipSha256 = sha256File(zipPath);
   need(hostMain, "host-main.js missing in compacted layout");
   // Bootstrap main.js must reference zip
   const mainSrc = readFileSync(join(res, "pi-host/main.js"), "utf8");
@@ -87,6 +92,11 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
   if (s.pnpmLockVerified !== true && s.pnpmLockSha256) {
     // optional
   }
+  if (compacted && s.nodeModulesZipSha256 !== info.nodeModulesZipSha256) {
+    errors.push(
+      `STAGING node_modules zip SHA-256 ${s.nodeModulesZipSha256 ?? "missing"} !== ${info.nodeModulesZipSha256}`,
+    );
+  }
   info.staging = {
     sdk: s.sdk,
     usedProcessExecPath: s.usedProcessExecPath,
@@ -94,6 +104,10 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
     unlockedNpmInstall: s.unlockedNpmInstall,
     stagingStrategy: s.stagingStrategy,
     nodeModulesPackagedAs: s.nodeModulesPackagedAs ?? null,
+    nodeModulesZipSha256: s.nodeModulesZipSha256 ?? null,
+    pnpmLockSha256: s.pnpmLockSha256 ?? null,
+    pnpmLockVerified: s.pnpmLockVerified ?? false,
+    runtimeLockSdk: s.runtimeLockSdk ?? null,
   };
 }
 

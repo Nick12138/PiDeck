@@ -26,7 +26,6 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDist = join(root, "packages/pi-host/dist");
@@ -167,7 +166,10 @@ function proveRuntimeImports(hostDir) {
  * directory can recursively package the destination itself when pnpm walks the workspace.
  */
 function stageHostWithDeploy() {
-  const deployedFrom = join(tmpdir(), `pi-host-deploy-${process.pid}-${Date.now()}`);
+  // pnpm 9 resolves deploy links incorrectly when the workspace and target are
+  // on different Windows drives. Keep the target outside the workspace but on
+  // the checkout volume.
+  const deployedFrom = join(dirname(root), `.pideck-host-deploy-${process.pid}-${Date.now()}`);
   try {
     rmSync(deployedFrom, { recursive: true, force: true });
     console.log("[package-sidecar] pnpm deploy --prod ->", deployedFrom);
