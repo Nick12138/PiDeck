@@ -22,6 +22,7 @@ import { expectedIdentityForEvent, isBackgroundExtensionUiRequest } from "./even
 import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
+import { getAppVersion } from "../lib/app-version";
 import {
   persistDesktopSettings,
   persistRecentDesktopLocation,
@@ -614,7 +615,7 @@ export function App() {
               let lastError: unknown;
               for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
                 try {
-                  const status = await hostClient.hello("pideck", "0.1.0");
+                  const status = await hostClient.hello("pideck", await getAppVersion());
                   if (expectedHostId !== "bootstrap" && status.hostInstanceId !== expectedHostId) {
                     throw new Error("Host generation changed during hello");
                   }

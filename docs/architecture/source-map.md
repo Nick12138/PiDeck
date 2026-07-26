@@ -47,7 +47,7 @@ the current Windows development-candidate boundary follow
 | Session Catalog / runtime projection | `apps/desktop/src/lib/stores/session-catalog.ts` | `session-catalog.test.ts`, `app-store.test.ts` |
 | Chat | `apps/desktop/src/features/chat/` | `transcript-model.test.ts` (row build + stable-row reuse) |
 | Packages | `apps/desktop/src/features/packages/PackagesPage.tsx` | atomic mutation apply |
-| Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields) |
+| Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
 | Shared confirm dialog | `apps/desktop/src/components/Dialog.tsx` (tones: default/warning/danger) | `Dialog.dom.test.tsx` (Escape containment, focus) |
 | Shared UI controls | `apps/desktop/src/components/Switch.tsx`, `SectionHeader.tsx` | via settings/packages DOM tests |
 | Global notification/error center | `apps/desktop/src/components/NotificationCenter.tsx` | `NotificationCenter.test.tsx` |

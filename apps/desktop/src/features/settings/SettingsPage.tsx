@@ -1,20 +1,20 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { applyTheme } from "../../lib/theme";
-import { hostClient } from "../../lib/bridge/host-client";
 import {
   ArrowLeft,
   ChartColumn,
   KeyRound,
   Package,
   RefreshCw,
+  ServerCog,
   Settings2,
-  SquareTerminal,
 } from "lucide-react";
 import type { TerminalProfileId } from "@pideck/protocol";
-import { Dialog, secondaryButton } from "../../components/Dialog";
+import { Dialog } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
+import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
@@ -31,10 +31,8 @@ type ShellProfileCatalog = {
 };
 
 function GeneralSettings() {
-  const host = useAppStore((s) => s.host);
   const desktopSettings = useAppStore((s) => s.desktopSettings);
   const setDesktopSettings = useAppStore((s) => s.setDesktopSettings);
-  const pushNotification = useAppStore((s) => s.pushNotification);
   const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
@@ -62,9 +60,6 @@ function GeneralSettings() {
       const next = await invoke<typeof desktopSettings>("desktop_settings_patch", { patch });
       setDesktopSettings(next);
       if (patch.theme && next) applyTheme(next.theme);
-      if (patch.agentDir) {
-        pushNotification("Agent directory changed — restart Pi Host to apply", "warning");
-      }
     } catch {
       // Browser mock
       if (desktopSettings) {
@@ -72,33 +67,6 @@ function GeneralSettings() {
         setDesktopSettings(next);
         if (patch.theme) applyTheme(next!.theme);
       }
-    }
-  }
-
-  async function openAgentDir() {
-    if (!host?.agentDir) return;
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("desktop_open_path", { path: host.agentDir });
-    } catch (err) {
-      pushNotification(err instanceof Error ? err.message : "Open agent directory failed", "error");
-    }
-  }
-
-  async function restartHost() {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      useAppStore.getState().setHostFatal(null);
-      useAppStore.getState().setConnecting(true);
-      hostClient.rejectAllPending("manual Host restart");
-      await invoke("pi_host_restart");
-      pushNotification("Host restarted — waiting for ready…");
-    } catch (err) {
-      useAppStore.getState().setConnecting(false);
-      useAppStore.getState().setHostFatal(
-        err instanceof Error ? err.message : String(err),
-      );
-      pushNotification("Restart Host failed — see Host unavailable banner", "error");
     }
   }
 
@@ -112,10 +80,15 @@ function GeneralSettings() {
       <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
         <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">Desktop</h2>
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <label className="flex items-center justify-between text-sm">
-              <span>Theme</span>
+          <h2 className="mb-2 text-sm font-medium text-muted">Appearance &amp; startup</h2>
+          <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
+            <label className="flex items-center justify-between gap-4">
+              <span className="min-w-0">
+                <span className="block text-sm">Theme</span>
+                <span className="block text-xs text-muted">
+                  Follow the system appearance or force light / dark.
+                </span>
+              </span>
               <select
                 className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
                 value={desktopSettings?.theme ?? "system"}
@@ -130,19 +103,30 @@ function GeneralSettings() {
                 <option value="dark">Dark</option>
               </select>
             </label>
-            <div className="flex items-center justify-between text-sm">
-              <span>Restore last session</span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="min-w-0">
+                <span className="block text-sm">Restore last session</span>
+                <span className="block text-xs text-muted">
+                  Reopen your last workspace and conversation when PiDeck starts.
+                </span>
+              </span>
               <Switch
                 checked={desktopSettings?.restoreLastSession ?? true}
                 label="Restore last session"
                 onChange={(next) => void patchDesktop({ restoreLastSession: next })}
               />
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>Auto-restart host once</span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="min-w-0">
+                <span className="block text-sm">Auto-restart Pi Host</span>
+                <span className="block text-xs text-muted">
+                  If the host process crashes, restart it once automatically
+                  before showing an error.
+                </span>
+              </span>
               <Switch
                 checked={desktopSettings?.autoRestartHostOnce ?? true}
-                label="Auto-restart host once"
+                label="Auto-restart Pi Host"
                 onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
               />
             </div>
@@ -150,14 +134,14 @@ function GeneralSettings() {
         </section>
 
         <section>
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted">
-            <SquareTerminal size={15} />
-            Terminal
-          </h2>
+          <h2 className="mb-2 text-sm font-medium text-muted">Terminal</h2>
           <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
             <div className="flex items-center justify-between gap-4">
-              <label htmlFor="default-shell" className="text-sm">
-                Default shell
+              <label htmlFor="default-shell" className="min-w-0 text-sm">
+                <span className="block">Default shell</span>
+                <span className="block text-xs text-muted">
+                  Shell used by terminals in the right dock.
+                </span>
               </label>
               <div className="flex min-w-0 items-center gap-1.5">
                 <select
@@ -220,86 +204,13 @@ function GeneralSettings() {
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">Pi Host runtime</h2>
-          <div className="flex flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted">SDK</span>
-              <span className="font-mono">{host?.sdkVersion ?? "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">Node</span>
-              <span className="font-mono">{host?.nodeVersion ?? "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">Phase</span>
-              <span>{host?.phase ?? "—"}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="shrink-0 text-muted">Agent dir</span>
-              <span className="truncate font-mono text-xs" title={host?.agentDir}>
-                {host?.agentDir ?? "—"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">Model config</span>
-              <span
-                className={
-                  host?.modelConfigHealth?.state === "ok"
-                    ? "text-success"
-                    : "text-warning"
-                }
-                title={host?.modelConfigHealth?.message}
-              >
-                {host?.modelConfigHealth?.state ?? "—"}
-              </span>
-            </div>
-            {host?.modelConfigHealth?.state === "degraded" && (
-              <p className="text-xs text-warning">
-                A Provider change did not finish and could not be rolled back.
-                Provider settings and credentials may disagree until this is
-                resolved.
-              </p>
-            )}
-            {host?.modelConfigHealth?.migrationHint && (
-              <p className="text-xs text-warning">
-                {host.modelConfigHealth.migrationHint.message}
-              </p>
-            )}
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={secondaryButton}
-                onClick={() => void openAgentDir()}
-              >
-                Open agent directory
-              </button>
-              <button
-                type="button"
-                className={secondaryButton}
-                onClick={() => void restartHost()}
-              >
-                Restart Host
-              </button>
-            </div>
-          </div>
-        </section>
-
-
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">Capabilities</h2>
-          <ul className="rounded-lg border border-border p-4 text-xs text-muted">
-            <li>packageUpdateCheck: {String(host?.capabilities.packageUpdateCheck)}</li>
-            <li>extensionUi: {String(host?.capabilities.extensionUi)}</li>
-          </ul>
-        </section>
       </div>
       </div>
     </div>
   );
 }
 
-export type SettingsSection = "general" | "providers" | "packages" | "usage";
+export type SettingsSection = "general" | "providers" | "packages" | "usage" | "host";
 
 const SETTINGS_NAV: Array<{
   id: SettingsSection;
@@ -310,6 +221,7 @@ const SETTINGS_NAV: Array<{
   { id: "providers", label: "Providers", icon: KeyRound },
   { id: "packages", label: "Packages", icon: Package },
   { id: "usage", label: "Usage", icon: ChartColumn },
+  { id: "host", label: "Host", icon: ServerCog },
 ];
 
 export function SettingsPage({
@@ -383,6 +295,8 @@ export function SettingsPage({
             <ProvidersSettings />
           ) : section === "packages" ? (
             <PackagesPage />
+          ) : section === "host" ? (
+            <HostSettings />
           ) : (
             <UsageSettings />
           )}

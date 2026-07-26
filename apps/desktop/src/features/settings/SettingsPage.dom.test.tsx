@@ -28,6 +28,19 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
   });
 
+  it("offers the Host section with runtime info split out of General", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.queryByText("Capabilities")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Host" }));
+    expect(screen.getByRole("heading", { name: "Host" })).toBeInTheDocument();
+    expect(screen.getByText("Capabilities")).toBeInTheDocument();
+    expect(screen.getByText("Host not connected.")).toBeInTheDocument();
+  });
+
   it("asks before leaving Providers with unsaved changes and keeps the section on cancel", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="providers" />);

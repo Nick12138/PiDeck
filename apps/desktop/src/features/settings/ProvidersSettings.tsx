@@ -193,7 +193,7 @@ export function providerSaveFailureMessage(
     message.includes("invalid provider.save params") &&
     (provider.modelsUrl !== undefined || provider.compat !== undefined)
   ) {
-    return "Pi Host must be restarted before saving Models URL or compatibility overrides. Restart Host in General settings, then save again.";
+    return "Pi Host must be restarted before saving Models URL or compatibility overrides. Restart Host in Host settings, then save again.";
   }
   return message;
 }

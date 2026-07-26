@@ -131,7 +131,7 @@ describe("providerDraftForSave", () => {
       },
     });
     expect(providerSaveFailureMessage("invalid provider.save params", provider)).toContain(
-      "Restart Host in General settings",
+      "Restart Host in Host settings",
     );
   });
 });
