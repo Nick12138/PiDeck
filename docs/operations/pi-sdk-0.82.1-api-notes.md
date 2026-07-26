@@ -243,5 +243,5 @@ bash_execution_update
 2. ~~新 patch 应把 `setOperationSignal` 声明为必需方法~~ —— 已完成，`?.` 静默退化现在是编译错误。
 3. ~~ResourceLoader 私有 PackageManager 是否也注入 signal~~ —— 已决定，见上节：不扩大 patch，改用 `withoutImplicitPackageInstall()` 让隐式 reload 不可能安装。
 4. `runNpmCommandSync` 不可取消（`npm root -g`、`npm pm bin -g`、`npm list -g`），patch 只加了 abort 预检。验收措辞必须显式排除这条路径。
-5. 迁移备份仍未接入：首次对真实 `PI_CODING_AGENT_DIR` 调用 `ModelRuntime.create()` 之前应先备份并写 manifest（§6.3）。
+5. ~~迁移备份仍未接入~~ —— 已完成，`migration-backup.ts` 在首次 `ModelRuntime.create()` 之前备份并写 manifest，完成标记要求 runtime create、local refresh、旧 Session 打开、provider snapshot、正常 shutdown 全部达成（可跨多次运行累积）。
 6. Provider 事务目前是整文件 credential 快照 + 回滚，尚未实现 journal 或 `modelConfigHealth: degraded` 恢复状态（§6.6）。

@@ -9,6 +9,7 @@ import type {
   SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { FileCredentialStore } from "./credential-store.js";
+import type { MigrationMilestone } from "./migration-backup.js";
 import type {
   HostIdentity,
   ModelConfigHealth,
@@ -79,5 +80,11 @@ export type GraphFactoryDeps = {
   getModelConfigHealth: () => ModelConfigHealth;
   /** Local reconcile only — never reaches the network. */
   refreshModelHealth: (signal?: AbortSignal) => Promise<ModelConfigHealth> | ModelConfigHealth;
+  /**
+   * Report that a migration-dependent path succeeded. Absent once the
+   * migration is complete. Never throws — a lost milestone only retains the
+   * backup longer.
+   */
+  recordMigrationMilestone?: (milestone: MigrationMilestone) => Promise<void>;
   packageUpdateCheck: boolean;
 };

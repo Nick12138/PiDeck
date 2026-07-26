@@ -747,7 +747,10 @@ export async function openSession(
       if (promoted !== null) return promoted;
     }
 
+    // Opening a session written before the upgrade is the case the migration
+    // backup exists for, so record it once the SDK has accepted the file.
     const sessionManager = SessionManager.open(sessionPath, undefined, g.canonicalCwd);
+    await factory.deps.recordMigrationMilestone?.("sessionOpened");
     let candidateSession: AgentSession | null = null;
     let candidateExtensionUiCleanup: (() => void) | null = null;
     let candidateExtensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null = null;

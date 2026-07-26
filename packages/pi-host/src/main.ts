@@ -35,6 +35,7 @@ import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
+import { ensureMigrationBackup } from "./migration-backup.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -132,6 +133,11 @@ async function main(): Promise<void> {
     node: process.version,
   });
 
+  // Before anything can rewrite user data. The 0.82.1 runtime introduces
+  // models-store.json and recomposes providers, so a downgrade is only safe
+  // while the pre-migration bytes still exist.
+  const migrationBackup = await ensureMigrationBackup(agentDir);
+
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);
 
@@ -143,12 +149,14 @@ async function main(): Promise<void> {
     modelsStorePath: join(agentDir, "models-store.json"),
     allowModelNetwork: false,
   });
+  await migrationBackup?.recordMilestone("runtimeCreate");
   const modelRegistry = new ModelRegistry(modelRuntime);
 
   installTestFauxProvider(modelRegistry);
   // Awaited: the previous fire-and-forget refresh could still be running when
   // the first workspace graph read the registry.
   await refreshModelsLocal(modelRuntime);
+  await migrationBackup?.recordMilestone("localRefresh");
   applyKnownThinkingProfiles(modelRegistry);
   let modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
 
@@ -177,6 +185,12 @@ async function main(): Promise<void> {
       modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
       return modelConfigHealth;
     },
+    ...(migrationBackup
+      ? {
+          recordMigrationMilestone: (milestone) =>
+            migrationBackup.recordMilestone(milestone),
+        }
+      : {}),
     packageUpdateCheck,
   });
   const workspaceFiles = new WorkspaceFileService();
@@ -216,6 +230,9 @@ async function main(): Promise<void> {
         await graphFactory.disposeGraph(g);
       }
       await graphFactory.disposeRetainedGraphs();
+      // Last milestone: only a clean teardown proves the migrated runtime did
+      // not leave the agent directory in a state that needs the backup.
+      await migrationBackup?.recordMilestone("cleanShutdown");
     },
   });
 

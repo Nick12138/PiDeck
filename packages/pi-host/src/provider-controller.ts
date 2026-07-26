@@ -968,6 +968,8 @@ export function createProviderHandlers(
           .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
           .map(([id, raw]) => providerSnapshot(id, raw, factory, enabledProviders.has(id)))
           .sort((left, right) => left.name.localeCompare(right.name));
+        // Proves the migrated runtime can still compose the user's providers.
+        await factory.deps.recordMigrationMilestone?.("providerSnapshot");
         return { result: { providers } };
       } catch (error) {
         return {

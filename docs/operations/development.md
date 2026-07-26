@@ -72,6 +72,31 @@ Do not set `PI_OFFLINE` globally — it would also disable the update-check
 capability. The scoping is safe because every reload call site runs under
 `serviceGraphLock`.
 
+## Pre-migration backup
+
+Before the 0.82.1 runtime first touches a real agent directory, the Host copies
+the pre-migration user data to:
+
+```text
+<agentDir>/backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/
+```
+
+It holds `auth.json`, `models.json`, `models-store.json`, and `settings.json`
+(each if present), plus `session-headers.jsonl` — one header line per session,
+not conversation bodies. `manifest.json` records sizes and SHA-256 digests but
+never file contents, so it is safe to attach to a bug report. The directory is
+`0700` and the copies are forced to `0600` regardless of the source mode.
+
+The backup is not deleted when the Host starts successfully. Migration is
+declared complete only after every dependent path has succeeded at least once,
+possibly across several runs: runtime creation, a local refresh, opening a
+pre-existing session, a provider snapshot, and a clean shutdown. Progress lives
+in `state.json` beside the backup; once `completedAt` is set the Host skips the
+whole mechanism.
+
+If the backup cannot be written, startup fails. Migrating user data that cannot
+be rolled back is worse than refusing to start.
+
 ## Commands
 
 | Command | Purpose |
