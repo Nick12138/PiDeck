@@ -931,16 +931,20 @@ function forkedUserText(content: unknown): string | undefined {
 }
 
 /**
- * Create a forked session file branched before the given user message.
- * Reads the persisted session from disk (callers ensure the agent is idle,
- * so disk matches memory) and never touches the live graph.
+ * Create a forked session file. `position: "before"` (default) branches
+ * before the given user message and returns its text for the composer;
+ * `position: "at"` keeps history through the given entry — used to fork
+ * from the end of an assistant turn. Reads the persisted session from disk
+ * (callers ensure the agent is idle, so disk matches memory) and never
+ * touches the live graph.
  */
 export function prepareForkFile(args: {
   sessionFile: string | null | undefined;
   canonicalCwd: string;
   entryId: string;
+  position?: "before" | "at";
 }): { error: HostError } | { forkedPath: string; selectedText?: string } {
-  const { sessionFile, canonicalCwd, entryId } = args;
+  const { sessionFile, canonicalCwd, entryId, position = "before" } = args;
   if (!sessionFile || !existsSync(sessionFile)) {
     return {
       error: createHostError(
@@ -962,27 +966,37 @@ export function prepareForkFile(args: {
   }
   const entry = source.getEntry(entryId) as
     | {
+        id: string;
         type: string;
         parentId?: string | null;
         message?: { role?: string; content?: unknown };
       }
     | undefined;
-  if (!entry || entry.type !== "message" || entry.message?.role !== "user") {
-    return {
-      error: createHostError("INVALID_REQUEST", "Only user messages can be forked"),
-    };
-  }
-  if (!entry.parentId) {
-    return {
-      error: createHostError(
-        "INVALID_REQUEST",
-        "Forking before the first message is not supported",
-      ),
-    };
+  let targetLeafId: string;
+  if (position === "at") {
+    if (!entry) {
+      return { error: createHostError("INVALID_REQUEST", "Unknown fork entry") };
+    }
+    targetLeafId = entry.id;
+  } else {
+    if (!entry || entry.type !== "message" || entry.message?.role !== "user") {
+      return {
+        error: createHostError("INVALID_REQUEST", "Only user messages can be forked"),
+      };
+    }
+    if (!entry.parentId) {
+      return {
+        error: createHostError(
+          "INVALID_REQUEST",
+          "Forking before the first message is not supported",
+        ),
+      };
+    }
+    targetLeafId = entry.parentId;
   }
   let forkedPath: string | undefined;
   try {
-    forkedPath = source.createBranchedSession(entry.parentId);
+    forkedPath = source.createBranchedSession(targetLeafId);
   } catch (err) {
     return {
       error: createHostError(
@@ -996,7 +1010,8 @@ export function prepareForkFile(args: {
       error: createHostError("SESSION_SWITCH_FAILED", "Failed to create the forked session"),
     };
   }
-  const selectedText = forkedUserText(entry.message?.content);
+  const selectedText =
+    position === "before" ? forkedUserText(entry.message?.content) : undefined;
   return {
     forkedPath,
     ...(selectedText !== undefined ? { selectedText } : {}),

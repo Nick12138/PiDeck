@@ -12,12 +12,14 @@ import {
   FileText,
   FoldVertical,
   GitBranch,
+  GitFork,
   ListTree,
   LoaderCircle,
   Puzzle,
   Terminal,
 } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
+import { requestFork } from "../../lib/fork-actions";
 import { sanitizeAgentText } from "./markdown-utils";
 import { ToolView } from "./ToolView";
 import { formatDuration } from "./ToolCard";
@@ -419,6 +421,12 @@ const TranscriptRowView = memo(function TranscriptRowView({
           active={working}
         />
         <div className="ml-auto flex items-center gap-1">
+          {!working && row.sourceEndId && (
+            <ForkFromTurnButton
+              entryId={row.sourceEndId}
+              className="opacity-0 group-hover/assistant:opacity-100"
+            />
+          )}
           <CopyMessageButton
             text={row.copyText}
             className="opacity-0 group-hover/assistant:opacity-100"
@@ -429,6 +437,37 @@ const TranscriptRowView = memo(function TranscriptRowView({
     </div>
   );
 });
+
+/** Fork the conversation keeping history through this assistant turn. */
+function ForkFromTurnButton({
+  entryId,
+  className = "",
+}: {
+  entryId: string;
+  className?: string;
+}) {
+  const idle = useAppStore((s) => s.session?.isIdle ?? false);
+  const [pending, setPending] = useState(false);
+  return (
+    <button
+      type="button"
+      title="Fork from here"
+      aria-label="Fork from here"
+      disabled={!idle || pending}
+      className={`flex size-6 items-center justify-center rounded text-muted transition-opacity hover:bg-surface-overlay hover:text-foreground disabled:opacity-40 ${className}`}
+      onClick={() => {
+        setPending(true);
+        void requestFork(entryId, { position: "at" }).finally(() => setPending(false));
+      }}
+    >
+      {pending ? (
+        <LoaderCircle size={13} className="animate-spin" />
+      ) : (
+        <GitFork size={13} />
+      )}
+    </button>
+  );
+}
 
 /**
  * Keep assistant content in the order emitted by Pi. Reasoning and tool calls

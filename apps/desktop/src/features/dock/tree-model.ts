@@ -17,6 +17,7 @@ export type TreeRow = {
 };
 
 const EXCERPT_LIMIT = 96;
+const ASSISTANT_PLACEHOLDER = "(assistant message)";
 
 function firstTextLine(text: string): string {
   const line = text.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
@@ -54,7 +55,7 @@ export function entryExcerpt(entry: {
       const text = firstTextLine(messageText(message.content));
       if (role === "user") return { kind: "user", excerpt: text || "(user message)" };
       if (role === "assistant") {
-        return { kind: "assistant", excerpt: text || "(assistant message)" };
+        return { kind: "assistant", excerpt: text || ASSISTANT_PLACEHOLDER };
       }
       return { kind: "other", excerpt: text || String(role ?? entry.type) };
     }
@@ -103,10 +104,55 @@ export function filterConversationTree(
   return nodes.flatMap(visit);
 }
 
+type TurnNode = {
+  /** Member entry ids in chain order; the last one is the navigation target. */
+  ids: string[];
+  kind: TreeRowKind;
+  excerpt: string;
+  label?: string;
+  children: TurnNode[];
+};
+
 /**
- * DFS flatten of the conversation-turn view. The first child continues its
+ * Group the conversation-turn view into turns: a linear run of assistant
+ * entries (tool-call segments) collapses into one node ending at the last
+ * segment. Branch points break the run so every branch stays addressable.
+ */
+export function buildConversationTurns(
+  nodes: SerializableSessionTreeNode[],
+): TurnNode[] {
+  const toTurn = (node: SerializableSessionTreeNode): TurnNode => {
+    const { kind, excerpt } = entryExcerpt(node.entry);
+    const ids = [node.entry.id];
+    let turnExcerpt = excerpt;
+    let label = node.label;
+    let tail = node;
+    if (kind === "assistant") {
+      while (tail.children.length === 1) {
+        const next = tail.children[0]!;
+        const nextInfo = entryExcerpt(next.entry);
+        if (nextInfo.kind !== "assistant") break;
+        ids.push(next.entry.id);
+        if (turnExcerpt === ASSISTANT_PLACEHOLDER) turnExcerpt = nextInfo.excerpt;
+        if (!label && next.label) label = next.label;
+        tail = next;
+      }
+    }
+    return {
+      ids,
+      kind,
+      excerpt: turnExcerpt,
+      ...(label ? { label } : {}),
+      children: tail.children.map(toTurn),
+    };
+  };
+  return filterConversationTree(nodes).map(toTurn);
+}
+
+/**
+ * DFS flatten of the conversation turns. The first child continues its
  * parent's depth (trunk); each additional child starts a new branch one level
- * deeper. The current marker lands on the deepest visible row along the leaf
+ * deeper. The current marker lands on the deepest visible turn along the leaf
  * path — the actual leaf entry may be a collapsed one (e.g. a tool result).
  */
 export function flattenSessionTree(
@@ -115,27 +161,31 @@ export function flattenSessionTree(
 ): TreeRow[] {
   const path = currentPathIds(nodes, leafId);
   const rows: TreeRow[] = [];
-  const visit = (node: SerializableSessionTreeNode, depth: number) => {
-    const { kind, excerpt } = entryExcerpt(node.entry);
+  const members: string[][] = [];
+  const visit = (turn: TurnNode, depth: number) => {
     rows.push({
-      id: node.entry.id,
+      id: turn.ids[turn.ids.length - 1]!,
       depth,
-      kind,
-      excerpt,
-      ...(node.label ? { label: node.label } : {}),
-      onPath: path.has(node.entry.id),
+      kind: turn.kind,
+      excerpt: turn.excerpt,
+      ...(turn.label ? { label: turn.label } : {}),
+      onPath: turn.ids.some((id) => path.has(id)),
       isCurrent: false,
     });
-    node.children.forEach((child, index) => {
+    members.push(turn.ids);
+    turn.children.forEach((child, index) => {
       visit(child, index === 0 ? depth : depth + 1);
     });
   };
-  filterConversationTree(nodes).forEach((node, index) => visit(node, index === 0 ? 0 : 1));
-  const rowById = new Map(rows.map((row) => [row.id, row]));
+  buildConversationTurns(nodes).forEach((turn, index) => visit(turn, index === 0 ? 0 : 1));
+  const rowIndexByMember = new Map<string, number>();
+  members.forEach((ids, index) => {
+    for (const id of ids) rowIndexByMember.set(id, index);
+  });
   for (const id of [...path].reverse()) {
-    const row = rowById.get(id);
-    if (row) {
-      row.isCurrent = true;
+    const index = rowIndexByMember.get(id);
+    if (index !== undefined) {
+      rows[index]!.isCurrent = true;
       break;
     }
   }

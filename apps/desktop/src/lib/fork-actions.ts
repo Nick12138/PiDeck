@@ -10,10 +10,16 @@ import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
 import { requestWithRetry } from "./bridge/request-retry";
 
 /**
- * Fork the active session before the given user message and switch to the
- * forked session. Returns true when the fork was applied.
+ * Fork the active session and switch to the forked session. The default
+ * position ("before") branches before the given user message and restores
+ * its text into the composer; "at" keeps history through the given entry —
+ * forking from the end of an assistant turn. Returns true when the fork
+ * was applied.
  */
-export async function requestFork(entryId: string): Promise<boolean> {
+export async function requestFork(
+  entryId: string,
+  options: { position?: "before" | "at" } = {},
+): Promise<boolean> {
   const {
     host,
     workspace,
@@ -34,7 +40,7 @@ export async function requestFork(entryId: string): Promise<boolean> {
       hostClient.request(
         "session.fork",
         activeSessionContext(host, workspace, session),
-        { entryId },
+        { entryId, ...(options.position ? { position: options.position } : {}) },
         SESSION_OPEN_TIMEOUT_MS,
       ),
     );

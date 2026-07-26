@@ -121,6 +121,61 @@ describe("filterConversationTree", () => {
   });
 });
 
+describe("assistant turn merging", () => {
+  it("merges a linear assistant run into one row ending at the last segment", () => {
+    const tree = [
+      userNode("u1", "ask", [
+        assistantNode("a1", "part one", [
+          toolResultNode("tr1", [
+            assistantNode("a2", "", [
+              assistantNode("a3", "final words", [userNode("u2", "next ask")]),
+            ]),
+          ]),
+        ]),
+      ]),
+    ];
+    const rows = flattenSessionTree(tree, "u2");
+    expect(rows.map(({ id, kind, depth }) => [id, kind, depth])).toEqual([
+      ["u1", "user", 0],
+      ["a3", "assistant", 0],
+      ["u2", "user", 0],
+    ]);
+    expect(rows[1]!.excerpt).toBe("part one");
+    expect(rows[1]!.onPath).toBe(true);
+  });
+
+  it("uses the first segment with text when the run starts without text", () => {
+    const tree = [assistantNode("a1", "", [assistantNode("a2", "real answer")])];
+    const rows = flattenSessionTree(tree, null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe("a2");
+    expect(rows[0]!.excerpt).toBe("real answer");
+  });
+
+  it("marks the merged turn current when the leaf is inside it", () => {
+    const tree = [
+      userNode("u1", "ask", [assistantNode("a1", "one", [assistantNode("a2", "two")])]),
+    ];
+    const rows = flattenSessionTree(tree, "a1");
+    expect(rows.find((row) => row.id === "a2")?.isCurrent).toBe(true);
+  });
+
+  it("does not merge across branch points", () => {
+    const tree = [
+      assistantNode("a1", "root", [
+        assistantNode("a2", "left"),
+        assistantNode("a3", "right"),
+      ]),
+    ];
+    const rows = flattenSessionTree(tree, null);
+    expect(rows.map(({ id, depth }) => [id, depth])).toEqual([
+      ["a1", 0],
+      ["a2", 0],
+      ["a3", 1],
+    ]);
+  });
+});
+
 describe("flattenSessionTree", () => {
   it("keeps the trunk at depth 0 and pushes later siblings deeper", () => {
     const rows = flattenSessionTree(TREE, "tr1");

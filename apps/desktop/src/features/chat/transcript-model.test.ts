@@ -140,6 +140,40 @@ describe("reuseStableRows", () => {
   });
 });
 
+describe("assistant turn entry ids", () => {
+  it("keeps sourceId at the first segment and sourceEndId at the last", () => {
+    const rows = buildTranscriptRows([], {
+      entries: [
+        {
+          id: "e-user",
+          parentId: null,
+          type: "message",
+          message: { role: "user", content: [{ type: "text", text: "do it" }] },
+        },
+        {
+          id: "e-a1",
+          parentId: "e-user",
+          type: "message",
+          message: { role: "assistant", content: [{ type: "text", text: "part one" }] },
+        },
+        {
+          id: "e-a2",
+          parentId: "e-a1",
+          type: "message",
+          message: { role: "assistant", content: [{ type: "text", text: "part two" }] },
+        },
+      ] as never,
+    });
+
+    const assistant = rows.filter((row) => row.role === "assistant");
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0]?.sourceId).toBe("e-a1");
+    expect(assistant[0]?.sourceEndId).toBe("e-a2");
+    expect(assistant[0]?.copyText).toContain("part one");
+    expect(assistant[0]?.copyText).toContain("part two");
+  });
+});
+
 describe("findStreamingAssistantKey", () => {
   it("accepts real Pi partials that already contain stopReason", () => {
     const messages: SerializableAgentMessage[] = [

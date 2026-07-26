@@ -77,6 +77,25 @@ describe("prepareForkFile", () => {
     expect(forked).not.toContain("second ask");
   });
 
+  it("forks at an assistant entry keeping history through it", () => {
+    const { cwd, sessionPath } = createSessionFile();
+
+    const prepared = prepareForkFile({
+      sessionFile: sessionPath,
+      canonicalCwd: cwd,
+      entryId: "a1",
+      position: "at",
+    });
+
+    expect("error" in prepared).toBe(false);
+    if ("error" in prepared) return;
+    expect(prepared.selectedText).toBeUndefined();
+    const forked = readFileSync(prepared.forkedPath, "utf8");
+    expect(forked).toContain("first ask");
+    expect(forked).toContain("the answer");
+    expect(forked).not.toContain("second ask");
+  });
+
   it("rejects non-user entries", () => {
     const { cwd, sessionPath } = createSessionFile();
 

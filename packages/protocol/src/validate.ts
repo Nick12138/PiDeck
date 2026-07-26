@@ -332,9 +332,12 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid agent.navigateTree params", { method });
     case "session.fork":
-      return exactObject(params, ["entryId"]) &&
+      return exactObject(params, ["entryId"], ["position"]) &&
         isString(params.entryId) &&
-        params.entryId.length > 0
+        params.entryId.length > 0 &&
+        (params.position === undefined ||
+          params.position === "before" ||
+          params.position === "at")
         ? ok(params)
         : fail("invalid session.fork params", { method });
     case "agent.setAutoCompaction":

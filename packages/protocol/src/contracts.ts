@@ -144,7 +144,7 @@ export type HostRequestParams = {
   "session.getTree": null;
   "session.getStats": null;
   "session.getForkPoints": null;
-  "session.fork": { entryId: string };
+  "session.fork": { entryId: string; position?: "before" | "at" };
   "session.usageReport": null;
   "session.getCommands": null;
   "agent.prompt": {

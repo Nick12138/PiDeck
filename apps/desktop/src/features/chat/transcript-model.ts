@@ -94,6 +94,9 @@ export type TranscriptRow = {
   summary?: TranscriptSummary;
   event?: TranscriptEvent;
   sourceId?: string;
+  /** Last persisted entry id contributing to the row — an assistant turn can
+   * merge several session entries; forking "at" the turn targets this one. */
+  sourceEndId?: string;
   timestamp?: number;
   startedAt?: number;
   endedAt?: number;
@@ -875,7 +878,7 @@ export function buildTranscriptRows(
         blocks: [block],
         copyText: "",
         rounds: [[block]],
-        ...(sourceId ? { sourceId } : {}),
+        ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
         ...(timestamp !== undefined ? { timestamp } : {}),
       };
       rows.push(row);
@@ -903,6 +906,7 @@ export function buildTranscriptRows(
           extendRowTiming(activeAssistant, block.tool.startedAt, block.tool.endedAt);
         }
         activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
+        if (sourceId) activeAssistant.sourceEndId = sourceId;
       } else {
         const row: WorkingTranscriptRow = {
           key: `assistant:${sourceKey}`,
@@ -910,7 +914,7 @@ export function buildTranscriptRows(
           blocks: [...toolBlocks],
           copyText: "",
           rounds: [[...toolBlocks]],
-          ...(sourceId ? { sourceId } : {}),
+          ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
           ...(timestamp !== undefined ? { timestamp } : {}),
         };
         rows.push(row);
@@ -931,6 +935,7 @@ export function buildTranscriptRows(
         activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
         activeAssistant.rounds = [...(activeAssistant.rounds ?? []), blocks];
         activeAssistant.usage = mergeUsage(activeAssistant.usage, message.usage);
+        if (sourceId) activeAssistant.sourceEndId = sourceId;
         if (outcome) activeAssistant.outcome = outcome;
         extendRowTiming(activeAssistant, messageStartedAt, messageEndedAt);
         for (const block of blocks) {
@@ -950,7 +955,7 @@ export function buildTranscriptRows(
         copyText: copyTextForBlocks(blocks),
         rounds: [[...blocks]],
         ...(outcome ? { outcome } : {}),
-        ...(sourceId ? { sourceId } : {}),
+        ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
         ...(timestamp !== undefined ? { timestamp } : {}),
         ...(messageStartedAt !== undefined ? { startedAt: messageStartedAt } : {}),
         ...(messageEndedAt !== undefined ? { endedAt: messageEndedAt } : {}),
@@ -1065,6 +1070,7 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
     a.startedAt !== b.startedAt ||
     a.endedAt !== b.endedAt ||
     a.sourceId !== b.sourceId ||
+    a.sourceEndId !== b.sourceEndId ||
     a.timestamp !== b.timestamp ||
     !valuesEquivalent(a.outcome, b.outcome) ||
     a.customType !== b.customType ||

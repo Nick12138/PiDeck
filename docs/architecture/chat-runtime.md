@@ -63,7 +63,13 @@ retry transient retryable failures (`SERVICE_GRAPH_BUSY`) through
 picks a user message from `session.getForkPoints`; `session.fork` then writes
 a branched session file via `SessionManager.createBranchedSession` before that
 message and reuses the standard `session.open` flow to switch to it, returning
-the new snapshot plus the message text for the Composer draft. Unlike the CLI,
+the new snapshot plus the message text for the Composer draft.
+`session.fork` also accepts `position: "at"`, which keeps history through the
+given entry: each settled assistant turn in the transcript shows a fork
+button (left of Copy) targeting the turn's last persisted entry
+(`TranscriptRow.sourceEndId`). The tree panel groups a linear run of
+assistant entries (tool-call segments) into one turn row whose navigation
+target is the run's last entry; branch points break the run. Unlike the CLI,
 PiDeck does not emit `session_before_fork` to extensions, and the forked
 session starts through the normal open path rather than a `session_start`
 with reason `fork`. Forking before the first message is not supported.

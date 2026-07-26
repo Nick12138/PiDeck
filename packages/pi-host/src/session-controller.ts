@@ -371,12 +371,13 @@ export function createSessionHandlers(
       ) {
         return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
       }
-      const params = ctx.params as { entryId: string };
+      const params = ctx.params as { entryId: string; position?: "before" | "at" };
       const { prepareForkFile } = await import("./session-lifecycle.js");
       const prepared = prepareForkFile({
         sessionFile: g.sessionManager.getSessionFile(),
         canonicalCwd: g.canonicalCwd,
         entryId: params.entryId,
+        ...(params.position ? { position: params.position } : {}),
       });
       if ("error" in prepared) return { error: prepared.error };
       // openSession owns graph-operation locking and identity advancement.
