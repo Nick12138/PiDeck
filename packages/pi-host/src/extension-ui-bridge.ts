@@ -1,7 +1,8 @@
 /**
  * Extension UI bridge — R5/C6 public SDK bind only.
  * Uses AgentSession.bindExtensions({ uiContext, mode: "rpc" }).
- * Positional signatures match ExtensionUIContext in 0.80.7.
+ * Positional signatures match the SDK ExtensionUIContext; the absence of a
+ * whole-object cast means typecheck is what proves it, not a pinned version.
  * No whole-object `as unknown as ExtensionUIContext` cast (B-EXT-01).
  */
 import { randomUUID } from "node:crypto";
@@ -277,7 +278,7 @@ type ActiveWidgetFactory = {
 };
 
 /**
- * Build ExtensionUIContext with positional SDK 0.80.7 signatures.
+ * Build ExtensionUIContext with the SDK positional signatures.
  * Returns a value that structurally satisfies ExtensionUIContext (no whole cast).
  */
 export function createExtensionUiContext(

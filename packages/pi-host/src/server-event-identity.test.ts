@@ -10,7 +10,7 @@ const BACKGROUND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 function server(): PiHostServer {
   const instance = new PiHostServer({
     agentDir: "C:/agent",
-    sdkVersion: "0.80.7",
+    sdkVersion: "0.82.1",
     getModelConfigHealth: () => ({
       state: "ok",
       source: "ModelRegistry.getError",
@@ -97,7 +97,7 @@ describe("PiHostServer rehydrate barrier", () => {
     });
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
       capabilities: {
         packageUpdateCheck: false,
@@ -149,7 +149,7 @@ describe("PiHostServer rehydrate barrier", () => {
   it("returns an atomic no-Workspace snapshot at the preceding event watermark", async () => {
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({
         state: "ok",
         source: "ModelRegistry.getError",
@@ -208,7 +208,7 @@ describe("PiHostServer shutdown", () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
       capabilities: {
         packageUpdateCheck: false,
@@ -234,7 +234,7 @@ describe("PiHostServer shutdown", () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({
         state: "ok",
         source: "ModelRegistry.getError",
@@ -328,7 +328,7 @@ describe("PiHostServer shutdown", () => {
     const dispose = vi.fn(() => new Promise<void>(() => {}));
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
       capabilities: {
         packageUpdateCheck: false,
@@ -362,7 +362,7 @@ describe("PiHostServer shutdown", () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
       capabilities: {
         packageUpdateCheck: false,
@@ -384,7 +384,7 @@ describe("PiHostServer shutdown", () => {
     const dispose = vi.fn(async () => {});
     const host = new PiHostServer({
       agentDir: "C:/agent",
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
       capabilities: {
         packageUpdateCheck: false,

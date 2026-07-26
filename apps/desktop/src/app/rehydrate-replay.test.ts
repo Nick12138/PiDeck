@@ -25,7 +25,7 @@ function host(): HostStatusSnapshot {
     sessionRevision: 6,
     packageRevision: 3,
     protocolVersion: 1,
-    sdkVersion: "0.80.7",
+    sdkVersion: "0.82.1",
     nodeVersion: "v22",
     agentDir: "/agent",
     phase: "agentBusy",

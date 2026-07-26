@@ -17,7 +17,7 @@ PiDeck 现已支持在 Windows 和 Apple Silicon macOS 上从源码开始早期�
 - Extension UI 以及集成的工作区 Shell 终端。
 - 通过 `~/.pi/agent` 和项目 `.pi` 目录与 Pi 共享数据。
 
-PiDeck 当前固定使用 Pi SDK `0.80.7`。
+PiDeck 当前固定使用 Pi SDK `0.82.1`。
 
 ## 平台状态
 
@@ -103,7 +103,7 @@ PiDeck 默认使用 `~/.pi/agent`。如果以后安装 Pi CLI 并继续使用它
 
 项目资源位于各工作区的 `.pi` 目录中；当两个应用打开同一个工作区时，这些资源也会共享。
 
-为了获得最佳兼容性，建议让 CLI 版本与 PiDeck 固定的 SDK 版本保持接近。版本高出很多的 CLI 可能写入 SDK `0.80.7` 无法识别的设置或会话条目。不要同时通过 CLI 和 PiDeck 修改同一个会话。
+为了获得最佳兼容性，建议让 CLI 版本与 PiDeck 固定的 SDK 版本保持接近。版本高出很多的 CLI 可能写入 SDK `0.82.1` 无法识别的设置或会话条目。不要同时通过 CLI 和 PiDeck 修改同一个会话。
 
 ## 验证代码
 

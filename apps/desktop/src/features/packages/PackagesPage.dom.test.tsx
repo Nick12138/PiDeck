@@ -28,7 +28,7 @@ function host(overrides: Partial<HostStatusSnapshot> = {}): HostStatusSnapshot {
     sessionId: "s1",
     sessionRevision: 1,
     packageRevision: 1,
-    sdkVersion: "0.80.7",
+    sdkVersion: "0.82.1",
     nodeVersion: process.version,
     agentDir: "C:/agent",
     phase: "ready",

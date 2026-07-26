@@ -17,7 +17,7 @@ PiDeck supports early testing from source on Windows and Apple Silicon macOS. Di
 - Extension UI support and an integrated workspace shell terminal.
 - Shared Pi data compatibility through `~/.pi/agent` and project `.pi` directories.
 
-PiDeck currently pins the Pi SDK to `0.80.7`.
+PiDeck currently pins the Pi SDK to `0.82.1`.
 
 ## Platform status
 
@@ -103,7 +103,7 @@ PiDeck uses `~/.pi/agent` by default. If you install the Pi CLI later and keep i
 
 Project resources live under each workspace's `.pi` directory and are shared when both applications open the same workspace.
 
-For the best compatibility, keep the CLI version close to PiDeck's pinned SDK version. A much newer CLI may write settings or Session entries that SDK `0.80.7` does not understand. Avoid modifying the same Session concurrently from the CLI and PiDeck.
+For the best compatibility, keep the CLI version close to PiDeck's pinned SDK version. A much newer CLI may write settings or Session entries that SDK `0.82.1` does not understand. Avoid modifying the same Session concurrently from the CLI and PiDeck.
 
 ## Verify a checkout
 

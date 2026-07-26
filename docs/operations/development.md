@@ -25,16 +25,25 @@ release scripts derive and validate the installed SDK family from that manifest.
 
 ## SDK patch (pnpm patch)
 
-`patches/@earendil-works__pi-coding-agent@0.80.7.patch` keeps the SDK's
-extension module cache across cwd changes (upstream clears it on every
-workspace switch). User-scope packages are identical for every workspace, so
-their modules now load once per host process; with ~13 user packages this
-takes a cold workspace build from ~2.5-3.2 s down to ~0.2 s. Extension
-factories receive cwd at invocation, and package install/update still clears
-the cache explicitly. The same patch also gives `DefaultPackageManager` a
-`setOperationSignal()` hook so npm/git child processes can be cancelled;
-upstream has no such hook. Re-evaluate the patch on every SDK upgrade; consider
-proposing it upstream.
+`patches/@earendil-works__pi-coding-agent@0.82.1.patch` gives
+`DefaultPackageManager` a `setOperationSignal()` hook and passes that signal to
+both child-process paths, so an aborted package operation actually kills the
+npm or git child instead of leaving it running and holding the graph lock.
+Upstream has no such hook. `setOperationSignal` is declared as a **required**
+member of the `PackageManager` interface, which makes a silently skipped
+`pm.setOperationSignal?.(...)` a compile error rather than a no-op.
+
+The synchronous global-npm-root lookup cannot be interrupted — `spawnSync`
+takes no signal — so the patch only makes it refuse to start a new child once
+the operation is aborted. Every long-running operation (npm install, uninstall,
+view; git clone, checkout, fetch, reset, clean) is on the cancellable async
+path.
+
+The 0.80.7 patch also preserved the SDK's extension module cache across cwd
+changes and added a `preserveExtensionCache` reload option. Both are gone in
+0.82.1: package reconcile now uses the official full reload, and every reload
+re-imports extension modules. Re-evaluate the patch on every SDK upgrade;
+consider proposing the cancellation hook upstream.
 
 ## Commands
 
@@ -94,7 +103,7 @@ Use the equivalent `export PI_CODING_AGENT_DIR=...` syntax on macOS.
 
 | Symptom | Check |
 |---|---|
-| Spike fails on Extension load | Node ≥22.19, SDK 0.80.7, fixture path exists |
+| Spike fails on Extension load | Node ≥22.19, SDK matches the Host manifest, fixture path exists |
 | Host fatal on start | `agentDir` writable; inspect stderr JSON logs |
 | `flush stdin: 管道正在被关闭` / pipe closed | Fixed: Windows must not pass `\\?\` paths to Node. Rebuild Tauri (`tauri:dev` again) after pulling. Also run `pnpm build` first. |
 | Reveal/open path does nothing on macOS | Known limitation: the current non-Windows native path still invokes `xdg-open` instead of Finder's `open` command |

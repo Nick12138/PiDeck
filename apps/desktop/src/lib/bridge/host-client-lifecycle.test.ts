@@ -20,7 +20,7 @@ function ready(hostInstanceId: string, timestamp = Date.now()) {
     payload: {
       protocolVersion: 1,
       ...identity(hostInstanceId),
-      sdkVersion: "0.80.7",
+      sdkVersion: "0.82.1",
       nodeVersion: process.version,
       agentDir: "C:/isolated-agent",
       phase: "waitingForWorkspace",

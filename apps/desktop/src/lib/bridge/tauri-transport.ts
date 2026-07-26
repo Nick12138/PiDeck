@@ -65,7 +65,7 @@ function createMockTransport(): HostTransport {
               sessionId: null,
               sessionRevision: 0,
               packageRevision: 0,
-              sdkVersion: "0.80.7",
+              sdkVersion: "0.82.1",
               nodeVersion: "browser",
               agentDir: "(mock)",
               phase: "waitingForWorkspace",

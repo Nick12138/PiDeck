@@ -2,14 +2,14 @@
  * Milestone 0 hard gate: Windows release sidecar / TypeScript Extension spike.
  *
  * Proves that a controlled Node process (not global `pi` CLI) can:
- * 1. Import @earendil-works/pi-coding-agent@0.80.7
+ * 1. Import the @earendil-works/pi-coding-agent version the Host manifest pins
  * 2. Create DefaultResourceLoader against a temp agentDir
  * 3. Load a fixture TypeScript Extension via real SDK resource loading
  * 4. Complete a harmless event call
  *
  * Does NOT import the global `pi` package binary.
  */
-import { mkdirSync, mkdtempSync, writeFileSync, cpSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, cpSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,16 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** The canonical SDK version source is the Host manifest, not a literal here. */
+function readHostSdkVersion(): string {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, "../../package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  const version = manifest.dependencies?.["@earendil-works/pi-coding-agent"];
+  if (!version) throw new Error("Host manifest does not declare @earendil-works/pi-coding-agent");
+  return version;
+}
 
 function findFixtureExtension(): string {
   // Prefer repo test-fixtures
@@ -40,8 +50,11 @@ async function main(): Promise<void> {
   console.log(`[spike] Node: ${process.version}`);
   console.log(`[spike] NOT using global pi CLI import`);
 
-  if (SDK_VERSION !== "0.80.7") {
-    throw new Error(`Expected SDK 0.80.7, got ${SDK_VERSION}`);
+  // Derived from the Host manifest, which PR-2B made the canonical SDK version
+  // source, so an upgrade cannot leave a stale literal asserting here.
+  const expectedSdkVersion = readHostSdkVersion();
+  if (SDK_VERSION !== expectedSdkVersion) {
+    throw new Error(`Expected SDK ${expectedSdkVersion}, got ${SDK_VERSION}`);
   }
 
   const root = mkdtempSync(join(tmpdir(), "pideck-spike-"));

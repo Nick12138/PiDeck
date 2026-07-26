@@ -44,7 +44,7 @@ Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no cl
 
 ## Extension UI
 
-**Binding (SDK 0.80.7):** Host calls only public
+**Binding (SDK 0.82.1):** Host calls only public
 
 ```ts
 await session.bindExtensions({ uiContext, mode: "rpc" });

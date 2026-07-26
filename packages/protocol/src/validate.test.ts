@@ -27,7 +27,7 @@ const hostStatus = {
   sessionId: SESSION_ID,
   sessionRevision: 1,
   packageRevision: 0,
-  sdkVersion: "0.80.7",
+  sdkVersion: "0.82.1",
   nodeVersion: "v24.18.0",
   agentDir: "C:/agent",
   phase: "ready",

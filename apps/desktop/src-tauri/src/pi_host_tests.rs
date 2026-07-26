@@ -116,7 +116,7 @@ process.stdout.write(JSON.stringify({
   protocolVersion:1,event:'host.ready',sequence:1,timestamp:Date.now(),
   hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,
   sessionId:null,sessionRevision:0,packageRevision:0,
-  payload:{hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,sessionId:null,sessionRevision:0,packageRevision:0,protocolVersion:1,sdkVersion:'0.80.7',nodeVersion:process.version,agentDir:'/tmp',phase:'waitingForWorkspace',capabilities:{packageUpdateCheck:false,extensionUi:true,sessionExport:false},modelConfigHealth:{state:'ok',source:'ModelRegistry.getError'}}
+  payload:{hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,sessionId:null,sessionRevision:0,packageRevision:0,protocolVersion:1,sdkVersion:'0.82.1',nodeVersion:process.version,agentDir:'/tmp',phase:'waitingForWorkspace',capabilities:{packageUpdateCheck:false,extensionUi:true,sessionExport:false},modelConfigHealth:{state:'ok',source:'ModelRegistry.getError'}}
 })+'\n');
 rl.on('line', (line) => {
   try {
@@ -126,7 +126,7 @@ rl.on('line', (line) => {
         protocolVersion:1,id:req.id,method:'system.hello',ok:true,
         hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,
         sessionId:null,sessionRevision:0,packageRevision:0,
-        result:{hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,sessionId:null,sessionRevision:0,packageRevision:0,protocolVersion:1,sdkVersion:'0.80.7',nodeVersion:process.version,agentDir:'/tmp',phase:'waitingForWorkspace',capabilities:{packageUpdateCheck:false,extensionUi:true,sessionExport:false},modelConfigHealth:{state:'ok',source:'ModelRegistry.getError'}}
+        result:{hostInstanceId:'test-host',workspaceId:null,workspaceRevision:0,sessionId:null,sessionRevision:0,packageRevision:0,protocolVersion:1,sdkVersion:'0.82.1',nodeVersion:process.version,agentDir:'/tmp',phase:'waitingForWorkspace',capabilities:{packageUpdateCheck:false,extensionUi:true,sessionExport:false},modelConfigHealth:{state:'ok',source:'ModelRegistry.getError'}}
       })+'\n');
     } else if (req.method === 'system.shutdown') {
       const expected = req.context && req.context.expectedHostInstanceId;
