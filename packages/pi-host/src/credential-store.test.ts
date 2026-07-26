@@ -149,6 +149,9 @@ describe("FileCredentialStore field preservation", () => {
 
 describe("FileCredentialStore durability and permissions", () => {
   it("creates the agent directory 0700 and the credential file 0600", async () => {
+    // Windows does not honour POSIX mode bits; the store's permission promise
+    // is scoped to platforms that do.
+    if (process.platform === "win32") return;
     await store.modify("p", async () => ({ type: "api_key", key: "k" }));
 
     expect(statSync(authPath).mode & 0o777).toBe(0o600);

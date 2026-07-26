@@ -14,8 +14,24 @@ import { afterEach, describe, expect, it } from "vitest";
 
 let root: string | undefined;
 
-afterEach(() => {
-  if (root) rmSync(root, { recursive: true, force: true });
+/**
+ * Windows keeps a handle on the working directory of a child that has only just
+ * been killed, so an immediate recursive delete raises EPERM. Retry briefly,
+ * then give up: a leftover temp directory must not fail the run.
+ */
+async function removeTree(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
+afterEach(async () => {
+  if (root) await removeTree(root);
   root = undefined;
   delete process.env.PI_OFFLINE;
 });

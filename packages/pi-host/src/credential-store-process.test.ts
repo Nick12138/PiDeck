@@ -11,11 +11,25 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const storeModule = join(here, "credential-store.ts");
-const tsxBin = join(here, "..", "node_modules", ".bin", "tsx");
+// A file URL, not a bare path: `D:\...` is not a valid ESM specifier.
+const storeModule = pathToFileURL(join(here, "credential-store.ts")).href;
+
+/**
+ * Run children through `node --import tsx` rather than the `.bin/tsx` shim.
+ * On Windows that shim is a `.CMD` file, which `spawn` cannot execute without a
+ * shell; this is the same launch shape the Host integration test uses.
+ * `--import` resolves against the working directory, which vitest sets to the
+ * package root, so tsx is found there.
+ */
+const childArgv = (scriptPath: string, args: string[]): string[] => [
+  "--import",
+  "tsx",
+  scriptPath,
+  ...args,
+];
 
 let root: string;
 let authPath: string;
@@ -48,9 +62,10 @@ function writeChildScript(body: string): string {
  * process group instead.
  */
 function spawnDetachedChild(scriptPath: string, args: string[]) {
-  return spawn(tsxBin, [scriptPath, ...args], {
+  return spawn(process.execPath, childArgv(scriptPath, args), {
     stdio: ["ignore", "ignore", "ignore"],
-    detached: true,
+    // Windows has no process groups to signal; kill the child directly there.
+    detached: process.platform !== "win32",
   });
 }
 
@@ -63,7 +78,11 @@ async function killGroup(child: ReturnType<typeof spawnDetachedChild>): Promise<
     child.once("exit", () => resolve());
   });
   try {
-    if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+    if (process.platform !== "win32" && child.pid !== undefined) {
+      process.kill(-child.pid, "SIGKILL");
+    } else {
+      child.kill("SIGKILL");
+    }
   } catch {
     child.kill("SIGKILL");
   }
@@ -72,7 +91,9 @@ async function killGroup(child: ReturnType<typeof spawnDetachedChild>): Promise<
 
 function runChild(scriptPath: string, args: string[]): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(tsxBin, [scriptPath, ...args], { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(process.execPath, childArgv(scriptPath, args), {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
