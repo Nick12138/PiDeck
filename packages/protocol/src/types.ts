@@ -479,10 +479,25 @@ export type SerializableSessionTreeNode = {
   labelTimestamp?: string;
 };
 
+export type SessionTokenTotals = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+};
+
 export type SessionStatsSnapshot = {
   messageCount: number;
   toolCallCount?: number;
   tokenUsage?: JsonValue;
+  userMessageCount?: number;
+  assistantMessageCount?: number;
+  toolResultCount?: number;
+  /** Aggregated over ALL session entries, including compacted-away history. */
+  tokens?: SessionTokenTotals;
+  cost?: number;
+  sessionFile?: string;
 };
 
 export type SessionUsageReportItem = {

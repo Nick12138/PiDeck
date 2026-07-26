@@ -30,6 +30,7 @@ import {
 import { subscribeComposerInsert } from "../../lib/composer-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
+import { SessionStatsModal } from "./SessionStatsModal";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -191,6 +192,7 @@ export function Composer({
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const extensionWidgetAnchorRef = useRef<HTMLDivElement>(null);
@@ -237,6 +239,7 @@ export function Composer({
     setFiles([]);
     setDragOver(false);
     setCompletion(null);
+    setStatsOpen(false);
     fileSnapshotRef.current = null;
   }, [sessionId]);
 
@@ -462,6 +465,12 @@ export function Composer({
     if (!text.trim() && images.length === 0 && files.length === 0) return;
 
     const builtin = matchBuiltinCommand(text);
+    if (builtin?.name === "session") {
+      setSessionDraft(session.sessionId, "");
+      setCompletion(null);
+      setStatsOpen(true);
+      return;
+    }
     if (builtin?.name === "compact") {
       if (busy) {
         // requestCompact surfaces the busy notification; keep the draft.
@@ -825,6 +834,7 @@ export function Composer({
           open={extensionWidgetsOpen}
           onClose={closeExtensionWidgets}
         />
+        <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
       </div>
       {welcomeWorkspaceName && (
         <div

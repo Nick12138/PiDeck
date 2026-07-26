@@ -12,6 +12,10 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     description: "Manually compact the session context",
     argumentHint: "[instructions]",
   },
+  {
+    name: "session",
+    description: "Show session info and stats",
+  },
 ];
 
 export type BuiltinCommandMatch = { name: string; args?: string };

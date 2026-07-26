@@ -15,6 +15,10 @@ describe("matchBuiltinCommand", () => {
     });
   });
 
+  it("matches /session", () => {
+    expect(matchBuiltinCommand("/session")).toEqual({ name: "session" });
+  });
+
   it("rejects unknown commands and non-command text", () => {
     expect(matchBuiltinCommand("/compactx")).toBeNull();
     expect(matchBuiltinCommand("/unknown")).toBeNull();

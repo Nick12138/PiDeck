@@ -73,3 +73,66 @@ describe("session.list runtime metadata", () => {
     });
   });
 });
+
+describe("session.getStats", () => {
+  it("maps AgentSession.getSessionStats into the protocol snapshot", async () => {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const serviceGraphLock = new TryMutex();
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock }),
+      checkIdentity: () => null,
+      getGraph: () => ({
+        agentSession: {
+          getSessionStats: () => ({
+            sessionFile: "/sessions/active.jsonl",
+            sessionId: ACTIVE_SESSION_ID,
+            userMessages: 4,
+            assistantMessages: 5,
+            toolCalls: 7,
+            toolResults: 7,
+            totalMessages: 16,
+            tokens: {
+              input: 1200,
+              output: 300,
+              cacheRead: 8000,
+              cacheWrite: 900,
+              total: 10400,
+            },
+            cost: 0.42,
+          }),
+        },
+      }),
+    } as unknown as WorkspaceGraphFactory;
+    const handler = createSessionHandlers(factory)["session.getStats"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getStats",
+      params: null,
+      context: {},
+    } as HandlerContext);
+
+    expect(response).toHaveProperty("result");
+    if (!("result" in response)) return;
+    expect(response.result).toEqual({
+      messageCount: 16,
+      toolCallCount: 7,
+      userMessageCount: 4,
+      assistantMessageCount: 5,
+      toolResultCount: 7,
+      tokens: {
+        input: 1200,
+        output: 300,
+        cacheRead: 8000,
+        cacheWrite: 900,
+        total: 10400,
+      },
+      cost: 0.42,
+      sessionFile: "/sessions/active.jsonl",
+    });
+  });
+});

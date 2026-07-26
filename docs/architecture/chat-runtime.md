@@ -27,18 +27,22 @@
 | Stop (compacting) | `agent.abortCompaction` |
 | `/compact [instructions]` or Compact now | `agent.compact` |
 | Auto-compaction switch | `agent.setAutoCompaction` |
+| `/session` stats dialog | `session.getStats` |
 | Tools panel | `agent.getTools` / `agent.setActiveTools` |
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
 
 The Composer's `/` completion merges `session.getCommands` (prompt templates,
 extension commands, skills) with PiDeck's built-in commands
-(`features/chat/builtin-commands.ts`, currently `/compact`). A draft matching a
-built-in command runs locally instead of being sent to the model; unknown
-`/name` text still goes to the model unchanged. Manual compaction requires an
-idle agent and shares the per-session operation lock with `agent.prompt`. The
-context-usage ring in the Composer opens a panel with the usage breakdown, a
-Compact now action, and the auto-compaction switch.
+(`features/chat/builtin-commands.ts`, currently `/compact` and `/session`). A
+draft matching a built-in command runs locally instead of being sent to the
+model; unknown `/name` text still goes to the model unchanged. Manual
+compaction requires an idle agent and shares the per-session operation lock
+with `agent.prompt`. The context-usage ring in the Composer opens a panel with
+the usage breakdown, a Compact now action, and the auto-compaction switch.
+`/session` opens a dialog with message, token, and cost aggregates from
+`session.getStats`, which the Host builds from `AgentSession.getSessionStats()`
+(whole-history aggregates, including compacted-away entries).
 
 ## Queue transactions
 

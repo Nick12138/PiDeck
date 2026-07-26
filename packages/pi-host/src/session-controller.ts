@@ -278,8 +278,22 @@ export function createSessionHandlers(
         run: async () => {
           const g = factory.getGraph();
           if (!g?.agentSession) throw new Error("No active session");
+          const stats = g.agentSession.getSessionStats();
           return {
-            messageCount: g.agentSession.messages.length,
+            messageCount: stats.totalMessages,
+            toolCallCount: stats.toolCalls,
+            userMessageCount: stats.userMessages,
+            assistantMessageCount: stats.assistantMessages,
+            toolResultCount: stats.toolResults,
+            tokens: {
+              input: stats.tokens.input,
+              output: stats.tokens.output,
+              cacheRead: stats.tokens.cacheRead,
+              cacheWrite: stats.tokens.cacheWrite,
+              total: stats.tokens.total,
+            },
+            cost: stats.cost,
+            ...(stats.sessionFile ? { sessionFile: stats.sessionFile } : {}),
           };
         },
       });

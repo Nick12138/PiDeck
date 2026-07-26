@@ -1027,10 +1027,45 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid session.getCommands result";
     case "session.getStats":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["messageCount"], ["toolCallCount", "tokenUsage"]) &&
+        hasExactKeys(
+          result,
+          ["messageCount"],
+          [
+            "toolCallCount",
+            "tokenUsage",
+            "userMessageCount",
+            "assistantMessageCount",
+            "toolResultCount",
+            "tokens",
+            "cost",
+            "sessionFile",
+          ],
+        ) &&
         isSafeRevision(result.messageCount) &&
         (result.toolCallCount === undefined || isSafeRevision(result.toolCallCount)) &&
-        (result.tokenUsage === undefined || isJsonValue(result.tokenUsage))
+        (result.tokenUsage === undefined || isJsonValue(result.tokenUsage)) &&
+        (result.userMessageCount === undefined ||
+          isSafeRevision(result.userMessageCount)) &&
+        (result.assistantMessageCount === undefined ||
+          isSafeRevision(result.assistantMessageCount)) &&
+        (result.toolResultCount === undefined ||
+          isSafeRevision(result.toolResultCount)) &&
+        (result.tokens === undefined ||
+          (isPlainObject(result.tokens) &&
+            hasExactKeys(result.tokens, [
+              "input",
+              "output",
+              "cacheRead",
+              "cacheWrite",
+              "total",
+            ]) &&
+            isFiniteNumber(result.tokens.input) &&
+            isFiniteNumber(result.tokens.output) &&
+            isFiniteNumber(result.tokens.cacheRead) &&
+            isFiniteNumber(result.tokens.cacheWrite) &&
+            isFiniteNumber(result.tokens.total))) &&
+        (result.cost === undefined || isFiniteNumber(result.cost)) &&
+        (result.sessionFile === undefined || isString(result.sessionFile))
         ? null
         : "invalid session stats";
     case "session.usageReport":
