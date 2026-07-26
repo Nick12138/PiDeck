@@ -1,0 +1,14 @@
+{
+  "defaultProvider": "pideck-fixture",
+  "defaultModel": "fixture-model",
+  "defaultThinkingLevel": "high",
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "all",
+  "packages": ["./packages/local-compat-package"],
+  "retry": {
+    "enabled": true,
+    "maxRetries": 2,
+    "baseDelayMs": 50
+  },
+  "enableAnalytics": false
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@pideck-fixtures/pi-agent-0.80.7-package",
+  "version": "0.80.7",
+  "private": true,
+  "pi": {
+    "extensions": ["./extensions/compat-extension.ts"],
+    "skills": ["./skills/compat-skill"],
+    "prompts": ["./prompts/compat-prompt.md"],
+    "themes": ["./themes/compat-theme.json"]
+  }
+}
