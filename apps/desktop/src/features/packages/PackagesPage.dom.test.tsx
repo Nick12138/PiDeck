@@ -557,6 +557,26 @@ describe("PackagesPage DOM workflows", () => {
     expect(screen.queryByRole("dialog", { name: "Review package update" })).not.toBeInTheDocument();
   });
 
+  it("requires a danger review before removing a package", async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(await screen.findByRole("button", { name: /Tools.*User/ }));
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Remove package" });
+    expect(dialog).toHaveTextContent("Removal cannot be undone");
+    expect(dialog).toHaveTextContent("Tools");
+    await user.click(within(dialog).getByRole("button", { name: "Remove package" }));
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(
+        "package.remove",
+        expect.anything(),
+        { packageId: "package:user:tools" },
+        615_000,
+      );
+    });
+  });
+
   it("renders a retryable loading error when the authoritative snapshot fails", async () => {
     request.mockRejectedValueOnce(new Error("host offline"));
     useAppStore.getState().applyPackageSnapshot(null);

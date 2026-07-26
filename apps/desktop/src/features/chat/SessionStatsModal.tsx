@@ -105,7 +105,7 @@ export function SessionStatsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="session-stats-title"
-        className="w-full max-w-md rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+        className="w-full max-w-md rounded-xl border border-border bg-surface-raised p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-3">

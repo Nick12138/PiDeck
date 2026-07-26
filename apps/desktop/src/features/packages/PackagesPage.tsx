@@ -79,12 +79,13 @@ export type PendingProjectMutation = {
 };
 
 type MutationReview = {
-  kind: "install" | "update";
-  method: "package.install" | "package.update" | "package.updateAll";
+  kind: "install" | "update" | "remove";
+  method: "package.install" | "package.update" | "package.updateAll" | "package.remove";
   params:
     | HostRequestParams["package.install"]
     | HostRequestParams["package.update"]
-    | HostRequestParams["package.updateAll"];
+    | HostRequestParams["package.updateAll"]
+    | HostRequestParams["package.remove"];
   authorization?: WorkspaceAuthorization;
   packages: PackageRecord[];
 };
@@ -95,7 +96,7 @@ type LoadState = "idle" | "loading" | "ready" | "error";
 const PACKAGE_MUTATION_REQUEST_TIMEOUT_MS = 615_000;
 
 const inputClass =
-  "h-8 min-w-0 rounded border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-accent";
+  "h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-accent";
 
 export function reconcileProjectGateAuthorization(
   host: HostStatusSnapshot | null,
@@ -125,7 +126,7 @@ function Segmented<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex h-8 rounded border border-border bg-surface p-0.5">
+    <div className="inline-flex h-8 rounded-md border border-border bg-surface p-0.5">
       {values.map((item) => (
         <button
           key={item}
@@ -197,14 +198,14 @@ function PackagePreferenceControl({
   return (
     <div className="flex min-w-0 items-center gap-2">
       {state === "mixed" && <span className="text-[10px] text-warning">Mixed</span>}
-      <div role="group" aria-label={label} className="inline-flex h-8 rounded border border-border p-0.5">
+      <div role="group" aria-label={label} className="inline-flex h-8 rounded-md border border-border p-0.5">
         {values.map((value) => (
           <button
             key={value}
             type="button"
             aria-label={`${value} all resources in ${label}`}
             aria-pressed={state === value}
-            className={`rounded px-2 text-[10px] capitalize ${state === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+            className={`rounded px-2 text-xs capitalize ${state === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
             disabled={disabled || state === null}
             onClick={() => onChange(value)}
           >
@@ -486,6 +487,22 @@ export function PackagesPage() {
     });
   }
 
+  function beginRemoveReview(pkg: PackageRecord) {
+    if (!host || !workspace) return;
+    // Capture the project authorization up front so a project-scoped removal
+    // needs exactly one dialog instead of chaining into the generic gate.
+    setReview({
+      kind: "remove",
+      method: "package.remove",
+      params: { packageId: pkg.id },
+      packages: [pkg],
+      authorization:
+        pkg.scope === "project"
+          ? captureWorkspaceAuthorization(host, workspace)
+          : undefined,
+    });
+  }
+
   function beginUpdateReview(packageItems: PackageRecord[], updateAll = false) {
     if (!host || !workspace || !packageItems.length) return;
     const plan = planPackageUpdate(packageItems, updateAll);
@@ -697,7 +714,7 @@ export function PackagesPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <TypeBadge type={resource.type} />
                     <span className="font-medium">{packageMemberName(resource, pkg)}</span>
-                    {resource.type === "skill" && resource.manualOnly && <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
+                    {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
                     <span className={`ml-auto text-[10px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
                   </div>
                   <p className="mt-1 truncate font-mono text-[10px] text-muted" title={resource.path}>{resource.relativePath ?? resource.path}</p>
@@ -749,7 +766,7 @@ export function PackagesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={resource.type} />
             <span className="truncate text-sm font-medium">{resource.name}</span>
-            {resource.type === "skill" && resource.manualOnly && <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
+            {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted">Manual only</span>}
             {resource.diagnostics.some((item) => item.severity === "error") && <AlertTriangle size={13} className="text-danger" />}
           </div>
           {resource.description && <p className="mt-1 text-xs text-muted">{resource.description}</p>}
@@ -774,9 +791,9 @@ export function PackagesPage() {
         <div className="flex min-w-40 items-center justify-between gap-3 sm:justify-end">
           <span className={`text-[10px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? "Active" : "Inactive"}</span>
           {configurable ? (
-            <div className="inline-flex h-8 rounded border border-border p-0.5">
+            <div className="inline-flex h-8 rounded-md border border-border p-0.5">
               {(resourceMode === "project" ? ["inherit", "enabled", "disabled"] : ["enabled", "disabled"]).map((value) => (
-                <button key={value} type="button" title={`${value} in ${resourceMode} scope`} className={`rounded px-2 text-[10px] capitalize ${preference === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`} disabled={mutationBlocked} onClick={() => setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")}>{value}</button>
+                <button key={value} type="button" title={`${value} in ${resourceMode} scope`} className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`} disabled={mutationBlocked} onClick={() => setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")}>{value}</button>
               ))}
             </div>
           ) : (
@@ -826,25 +843,50 @@ export function PackagesPage() {
     >
       {review && (
         <Dialog
-          title={review.kind === "install" ? "Review package install" : "Review package update"}
-          confirmLabel={review.kind === "install" ? "Install package" : review.method === "package.updateAll" ? "Update all" : "Update package"}
-          destructive={review.kind === "update"}
+          title={
+            review.kind === "install"
+              ? "Review package install"
+              : review.kind === "remove"
+                ? "Remove package"
+                : "Review package update"
+          }
+          confirmLabel={
+            review.kind === "install"
+              ? "Install package"
+              : review.kind === "remove"
+                ? "Remove package"
+                : review.method === "package.updateAll"
+                  ? "Update all"
+                  : "Update package"
+          }
+          tone={review.kind === "remove" ? "danger" : "default"}
           onCancel={() => setReview(null)}
           onConfirm={confirmReview}
         >
           {review.kind === "install" ? (
             <>
               <p>Packages can execute local code, including dependency lifecycle scripts. Extensions run with your current-user permissions. Skills and Prompts may direct Agent actions. Continue only if you trust this source.</p>
-              <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded border border-border bg-surface p-3 text-xs">
+              <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
                 <dt>Source</dt><dd className="break-all font-mono text-foreground">{(review.params as HostRequestParams["package.install"]).source}</dd>
                 <dt>Scope</dt><dd className="capitalize text-foreground">{(review.params as HostRequestParams["package.install"]).scope}</dd>
+              </dl>
+              {review.authorization && <p className="mt-3 text-warning">This changes project settings for the current workspace.</p>}
+            </>
+          ) : review.kind === "remove" ? (
+            <>
+              <p>This removes the package and its resources from the Agent. Removal cannot be undone from PiDeck.</p>
+              <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
+                <dt>Package</dt><dd className="truncate text-foreground">{review.packages[0]?.displayName}</dd>
+                <dt>Source</dt><dd className="break-all font-mono text-foreground">{review.packages[0]?.source}</dd>
+                <dt>Scope</dt><dd className="text-foreground">{review.packages[0] ? scopeLabel(review.packages[0].scope) : ""}</dd>
+                <dt>Resources</dt><dd className="text-foreground">{review.packages[0] ? packageResourceTotal(review.packages[0]) ?? "Unknown" : ""}</dd>
               </dl>
               {review.authorization && <p className="mt-3 text-warning">This changes project settings for the current workspace.</p>}
             </>
           ) : (
             <>
               <p>Updates may change executable code and Agent instructions. Review the affected packages before continuing.</p>
-              <ul className="mt-3 max-h-40 overflow-auto rounded border border-border bg-surface p-2 text-xs text-foreground">
+              <ul className="mt-3 max-h-40 overflow-auto rounded-md border border-border bg-surface p-2 text-xs text-foreground">
                 {review.packages.map((item) => <li key={item.id} className="flex justify-between gap-3 px-1 py-1"><span className="truncate">{item.displayName}</span><span className="shrink-0 text-muted">{item.versionOrRef ?? item.scope}</span></li>)}
               </ul>
               {review.authorization && <p className="mt-3 text-warning">This includes project packages in the current workspace.</p>}
@@ -918,9 +960,9 @@ export function PackagesPage() {
         </div>
       )}
 
-      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:px-4">
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <h1 className="mr-2 text-sm font-semibold">Packages</h1>
-        <div role="tablist" className="flex h-8 rounded border border-border bg-surface p-0.5">
+        <div role="tablist" className="flex h-8 rounded-md border border-border bg-surface p-0.5">
           <button role="tab" aria-selected={tab === "installed"} type="button" className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("installed")}>Installed</button>
           <button role="tab" aria-selected={tab === "resources"} type="button" className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("resources")}>Resources</button>
         </div>
@@ -971,7 +1013,7 @@ export function PackagesPage() {
               <ul>
                 {visiblePackages.map((item) => (
                   <li key={item.id}>
-                    <button type="button" className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-accent/10" : ""}`} onClick={() => setSelectedId(item.id)}>
+                    <button type="button" className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`} onClick={() => setSelectedId(item.id)}>
                       <Boxes size={15} className={selectedId === item.id ? "text-accent" : "text-muted"} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5"><span className="truncate text-xs font-medium">{item.displayName}</span>{item.updateAvailable && <span className="rounded bg-warning/15 px-1 text-[10px] text-warning">Update</span>}</span>
@@ -996,7 +1038,7 @@ export function PackagesPage() {
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button" className={secondaryButton} disabled={mutationBlocked} onClick={() => beginUpdateReview([selected])}><Download size={13} />Update</button>
                     {selected.installedPath && <button type="button" className={secondaryButton} onClick={async () => { try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("desktop_open_path", { path: selected.installedPath }); } catch { pushNotification("Open folder unavailable", "warning"); } }}><FolderOpen size={13} />Open</button>}
-                    <button type="button" className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`} disabled={mutationBlocked} onClick={() => { if (confirm(`Remove ${selected.displayName}?`)) void runMutation("package.remove", { packageId: selected.id }); }}><Trash2 size={13} />Remove</button>
+                    <button type="button" className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`} disabled={mutationBlocked} onClick={() => beginRemoveReview(selected)}><Trash2 size={13} />Remove</button>
                   </div>
                 </div>
 
@@ -1011,7 +1053,7 @@ export function PackagesPage() {
                 </section>
 
                 {(selected.shadowedByPackageId || selected.overridesPackageId || selected.projectOverride) && (
-                  <section className="mt-5 border-t border-border pt-4"><h3 className="text-xs font-semibold uppercase text-muted">Relationships</h3><div className="mt-2 rounded border border-border bg-surface-raised p-3 text-xs">{selected.shadowedByPackageId && <p><span className="text-muted">Replaced by project: </span>{allPackages.find((item) => item.id === selected.shadowedByPackageId)?.displayName ?? selected.shadowedByPackageId}</p>}{selected.overridesPackageId && <p><span className="text-muted">Overrides user package: </span>{allPackages.find((item) => item.id === selected.overridesPackageId)?.displayName ?? selected.overridesPackageId}</p>}{selected.projectOverride && <p><span className="text-muted">Workspace overrides: </span>{selected.projectOverride.source} / {selected.projectOverride.overrideCount} change{selected.projectOverride.overrideCount === 1 ? "" : "s"}</p>}</div></section>
+                  <section className="mt-5 border-t border-border pt-4"><h3 className="text-xs font-semibold uppercase text-muted">Relationships</h3><div className="mt-2 rounded-md border border-border bg-surface-raised p-3 text-xs">{selected.shadowedByPackageId && <p><span className="text-muted">Replaced by project: </span>{allPackages.find((item) => item.id === selected.shadowedByPackageId)?.displayName ?? selected.shadowedByPackageId}</p>}{selected.overridesPackageId && <p><span className="text-muted">Overrides user package: </span>{allPackages.find((item) => item.id === selected.overridesPackageId)?.displayName ?? selected.overridesPackageId}</p>}{selected.projectOverride && <p><span className="text-muted">Workspace overrides: </span>{selected.projectOverride.source} / {selected.projectOverride.overrideCount} change{selected.projectOverride.overrideCount === 1 ? "" : "s"}</p>}</div></section>
                 )}
 
                 <section className="mt-5 border-t border-border pt-4">
@@ -1042,7 +1084,7 @@ export function PackagesPage() {
                       return (
                         <div
                           key={type}
-                          className="flex min-h-14 flex-col items-stretch justify-center rounded border border-border px-2 py-1.5 text-left text-xs"
+                          className="flex min-h-14 flex-col items-stretch justify-center rounded-md border border-border px-2 py-1.5 text-left text-xs"
                         >
                           <span className="flex items-center justify-between gap-2"><span>{pluralType(type)}</span><span className="font-mono text-muted">{enabled}/{resources.length}</span></span>
                           <span className="mt-0.5 text-[10px] text-muted">{state}</span>

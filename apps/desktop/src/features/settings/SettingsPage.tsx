@@ -12,7 +12,9 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import type { TerminalProfileId } from "@pideck/protocol";
-import { Dialog } from "../../components/Dialog";
+import { Dialog, secondaryButton } from "../../components/Dialog";
+import { SectionHeader } from "../../components/SectionHeader";
+import { Switch } from "../../components/Switch";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
@@ -102,17 +104,20 @@ function GeneralSettings() {
 
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-6">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SectionHeader
+        title="General"
+        subtitle="Desktop behavior and Pi Host configuration"
+      />
+      <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
         <section>
-          <h1 className="mb-1 text-lg font-semibold">General</h1>
-          <p className="mb-6 text-sm text-muted">Desktop behavior and Pi Host configuration.</p>
           <h2 className="mb-2 text-sm font-medium text-muted">Desktop</h2>
           <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
             <label className="flex items-center justify-between text-sm">
               <span>Theme</span>
               <select
-                className="rounded border border-border bg-surface px-2 py-1 text-xs"
+                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
                 value={desktopSettings?.theme ?? "system"}
                 onChange={(e) =>
                   void patchDesktop({
@@ -125,26 +130,22 @@ function GeneralSettings() {
                 <option value="dark">Dark</option>
               </select>
             </label>
-            <label className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-sm">
               <span>Restore last session</span>
-              <input
-                type="checkbox"
+              <Switch
                 checked={desktopSettings?.restoreLastSession ?? true}
-                onChange={(e) =>
-                  void patchDesktop({ restoreLastSession: e.target.checked })
-                }
+                label="Restore last session"
+                onChange={(next) => void patchDesktop({ restoreLastSession: next })}
               />
-            </label>
-            <label className="flex items-center justify-between text-sm">
+            </div>
+            <div className="flex items-center justify-between text-sm">
               <span>Auto-restart host once</span>
-              <input
-                type="checkbox"
+              <Switch
                 checked={desktopSettings?.autoRestartHostOnce ?? true}
-                onChange={(e) =>
-                  void patchDesktop({ autoRestartHostOnce: e.target.checked })
-                }
+                label="Auto-restart host once"
+                onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
               />
-            </label>
+            </div>
           </div>
         </section>
 
@@ -161,7 +162,7 @@ function GeneralSettings() {
               <div className="flex min-w-0 items-center gap-1.5">
                 <select
                   id="default-shell"
-                  className="min-w-44 max-w-72 rounded border border-border bg-surface px-2 py-1 text-xs"
+                  className="h-8 min-w-44 max-w-72 rounded-md border border-border bg-surface px-2 text-xs"
                   value={desktopSettings?.terminalProfile ?? "auto"}
                   disabled={shellCatalogLoading && !shellCatalog}
                   onChange={(event) =>
@@ -194,7 +195,7 @@ function GeneralSettings() {
                   title="Detect shells again"
                   aria-label="Detect shells again"
                   disabled={shellCatalogLoading}
-                  className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
                   onClick={() => void loadShellProfiles()}
                 >
                   <RefreshCw size={14} className={shellCatalogLoading ? "animate-spin" : ""} />
@@ -268,14 +269,14 @@ function GeneralSettings() {
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-surface-overlay"
+                className={secondaryButton}
                 onClick={() => void openAgentDir()}
               >
                 Open agent directory
               </button>
               <button
                 type="button"
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-surface-overlay"
+                className={secondaryButton}
                 onClick={() => void restartHost()}
               >
                 Restart Host
@@ -292,6 +293,7 @@ function GeneralSettings() {
             <li>extensionUi: {String(host?.capabilities.extensionUi)}</li>
           </ul>
         </section>
+      </div>
       </div>
     </div>
   );
@@ -390,7 +392,7 @@ export function SettingsPage({
         <Dialog
           title="Discard unsaved Provider changes?"
           confirmLabel="Discard changes"
-          destructive
+          tone="warning"
           onCancel={() => setPendingSection(null)}
           onConfirm={() => {
             setSection(pendingSection);

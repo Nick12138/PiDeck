@@ -1,23 +1,37 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, PackageOpen } from "lucide-react";
 
-export const secondaryButton =
-  "inline-flex h-8 items-center justify-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40";
-export const primaryButton =
-  "inline-flex h-8 items-center justify-center gap-1.5 rounded bg-accent px-2.5 text-xs text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40";
+const buttonBase =
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
+export const secondaryButton = `${buttonBase} border border-border hover:bg-surface-overlay`;
+export const primaryButton = `${buttonBase} bg-accent text-white hover:bg-accent-hover`;
+
+export type DialogTone = "default" | "warning" | "danger";
+
+const CONFIRM_BUTTON: Record<DialogTone, string> = {
+  default: primaryButton,
+  warning: `${buttonBase} bg-warning text-black hover:bg-warning/80`,
+  danger: `${buttonBase} bg-danger text-white hover:bg-danger/85`,
+};
+
+const ICON_CHIP: Record<DialogTone, string> = {
+  default: "bg-accent/15 text-accent",
+  warning: "bg-warning/15 text-warning",
+  danger: "bg-danger/15 text-danger",
+};
 
 export function Dialog({
   title,
   children,
   confirmLabel,
-  destructive = false,
+  tone = "default",
   onCancel,
   onConfirm,
 }: {
   title: string;
   children: ReactNode;
   confirmLabel: string;
-  destructive?: boolean;
+  tone?: DialogTone;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -70,11 +84,11 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className="max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-lg border border-border bg-surface-raised p-5 shadow-2xl"
+        className="max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
       >
         <div className="flex items-start gap-3">
-          <div className={`mt-0.5 rounded p-1.5 ${destructive ? "bg-warning/15 text-warning" : "bg-accent/15 text-accent"}`}>
-            {destructive ? <AlertTriangle size={18} /> : <PackageOpen size={18} />}
+          <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
+            {tone === "default" ? <PackageOpen size={18} /> : <AlertTriangle size={18} />}
           </div>
           <div className="min-w-0 flex-1">
             <h2 id="app-dialog-title" className="text-base font-semibold">{title}</h2>
@@ -83,11 +97,7 @@ export function Dialog({
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={secondaryButton} onClick={onCancel}>Cancel</button>
-          <button
-            type="button"
-            className={destructive ? `${primaryButton} bg-warning text-black hover:bg-warning/80` : primaryButton}
-            onClick={onConfirm}
-          >
+          <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

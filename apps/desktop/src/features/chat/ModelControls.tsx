@@ -11,6 +11,7 @@ import {
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { requestCompact, setAutoCompaction } from "./compaction-actions";
+import { Switch } from "../../components/Switch";
 
 const MODEL_MENU_MIN_WIDTH = 120;
 const MODEL_MENU_MAX_WIDTH = 280;
@@ -163,25 +164,14 @@ export function ContextUsageRing() {
           <span className="my-2 h-px bg-border" />
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted">Auto-compaction</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoCompactionEnabled}
-              aria-label="Toggle auto-compaction"
+            <Switch
+              checked={autoCompactionEnabled}
+              label="Toggle auto-compaction"
               disabled={!session}
-              className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                autoCompactionEnabled ? "bg-accent" : "bg-border"
-              }`}
-              onClick={() =>
+              onChange={() =>
                 session && void setAutoCompaction(!session.autoCompactionEnabled)
               }
-            >
-              <span
-                className={`absolute left-0.5 top-0.5 size-3 rounded-full bg-surface-raised transition-transform ${
-                  autoCompactionEnabled ? "translate-x-3" : ""
-                }`}
-              />
-            </button>
+            />
           </div>
           <button
             type="button"

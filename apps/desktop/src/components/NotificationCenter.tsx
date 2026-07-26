@@ -132,7 +132,8 @@ export function NotificationCenter() {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      // A dialog or modal above us already acted on this Escape.
+      if (event.key === "Escape" && !event.defaultPrevented) setOpen(false);
     };
     window.addEventListener("pointerdown", closeOutside);
     window.addEventListener("keydown", closeOnEscape);
@@ -148,7 +149,10 @@ export function NotificationCenter() {
   ).length;
 
   return (
-    <div ref={rootRef} className="relative z-[60]">
+    <>
+    {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
+        the toast is a sibling so its own z-[70] layer stays on top of both. */}
+    <div ref={rootRef} className="relative z-30">
       <button
         type="button"
         title="Notifications"
@@ -179,7 +183,7 @@ export function NotificationCenter() {
           />
         </div>
       )}
-
+    </div>
       {toast && (
         <button
           type="button"
@@ -207,6 +211,6 @@ export function NotificationCenter() {
           />
         </button>
       )}
-    </div>
+    </>
   );
 }

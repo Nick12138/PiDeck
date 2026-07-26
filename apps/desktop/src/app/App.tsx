@@ -77,7 +77,7 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
         <Dialog
           title="Discard unsaved Provider changes?"
           confirmLabel="Discard changes"
-          destructive
+          tone="warning"
           onCancel={() => setConfirmDiscard(false)}
           onConfirm={() => {
             setConfirmDiscard(false);

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -375,12 +375,23 @@ describe("ProvidersSettings in-flight guards", () => {
 describe("ProvidersSettings delete confirmation", () => {
   it("confirms with the saved Provider name, not the edited draft name", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await renderLoaded();
+    const spy = mockRequests({
+      "provider.remove": () =>
+        envelope("provider.remove", { providerId: "prov-a" }),
+    });
+    await renderLoaded(spy);
 
     await user.type(screen.getByLabelText("Display name"), " renamed");
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(confirmSpy).toHaveBeenCalledWith("Delete Provider A?");
+    const dialog = screen.getByRole("dialog", { name: "Delete Provider" });
+    expect(dialog).toHaveTextContent(
+      "This deletes Provider A and its stored API key from this machine.",
+    );
+    expect(dialog).not.toHaveTextContent("renamed");
+
+    await user.click(within(dialog).getByRole("button", { name: "Delete Provider" }));
+    await waitFor(() => expect(callsFor(spy, "provider.remove")).toHaveLength(1));
+    expect(callsFor(spy, "provider.remove")[0][2]).toEqual({ providerId: "prov-a" });
   });
 });

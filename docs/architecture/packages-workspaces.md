@@ -50,3 +50,7 @@ completes successfully.
 The Packages page provides scope filters, install source entry, configured
 Package selection, resource toggles, standalone resources, update actions, and
 explicit confirmation before a Project Package mutation can execute code.
+Install, update, and remove all confirm through the shared review dialog
+(`components/Dialog.tsx`); removal uses the danger tone and captures the
+project authorization up front, so a project-scoped removal needs exactly one
+dialog.

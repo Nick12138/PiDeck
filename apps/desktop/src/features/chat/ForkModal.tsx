@@ -102,7 +102,7 @@ export function ForkModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="fork-modal-title"
-        className="flex max-h-[70vh] w-full max-w-md flex-col rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+        className="flex max-h-[70vh] w-full max-w-md flex-col rounded-xl border border-border bg-surface-raised p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-1 flex items-start justify-between gap-3">

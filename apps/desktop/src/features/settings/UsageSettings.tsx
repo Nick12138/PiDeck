@@ -1,5 +1,6 @@
 import type { HostResponseEnvelope, SessionUsageReport } from "@pideck/protocol";
 import { Archive, RefreshCw } from "lucide-react";
+import { SectionHeader } from "../../components/SectionHeader";
 import { useEffect, useState } from "react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
@@ -116,22 +117,18 @@ export function UsageSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex h-16 shrink-0 items-center border-b border-border px-6">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold">Usage</h1>
-          <p className="truncate text-sm text-muted">Token and cost totals for this workspace</p>
-        </div>
+      <SectionHeader title="Usage" subtitle="Token and cost totals for this workspace">
         <button
           type="button"
           onClick={refresh}
           disabled={loading}
-          className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-50"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-50"
           title="Refresh usage report"
           aria-label="Refresh usage report"
         >
           <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
         </button>
-      </header>
+      </SectionHeader>
 
       <div className="grid shrink-0 grid-cols-3 border-b border-border">
         <div className="border-r border-border px-6 py-4" title={usageTooltip}>
@@ -156,7 +153,7 @@ export function UsageSettings() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {error ? (
-          <div className="m-6 border-l-2 border-danger px-3 py-1 text-sm text-danger">
+          <div className="m-6 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </div>
         ) : !report && loading ? (

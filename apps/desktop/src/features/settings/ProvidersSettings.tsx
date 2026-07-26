@@ -35,6 +35,8 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Dialog } from "../../components/Dialog";
+import { SectionHeader } from "../../components/SectionHeader";
+import { Switch } from "../../components/Switch";
 
 type DraftState = ProviderDraft & { originalId?: string };
 
@@ -257,7 +259,7 @@ function NumberField({
       <input
         type="number"
         min={1}
-        className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
+        className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
         value={text}
         onChange={(event) => setText(event.target.value)}
         onBlur={() => {
@@ -317,6 +319,7 @@ export function ProvidersSettings() {
   const [pendingSwitch, setPendingSwitch] = useState<
     { kind: "select"; id: string } | { kind: "new" } | null
   >(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Serialized shape of the draft as loaded/saved; any divergence means unsaved edits.
   const baselineRef = useRef<string | null>(null);
   // Bumped on every draft replacement. In-flight save/fetch/test continuations
@@ -638,12 +641,6 @@ export function ProvidersSettings() {
 
   async function removeProvider() {
     if (!host || !draft?.originalId || saving || fetching || testing) return;
-    // Confirm with the saved name, not the (possibly edited) draft name —
-    // deletion targets the stored provider, not the draft.
-    const savedName =
-      providers.find((provider) => provider.id === draft.originalId)?.name ??
-      draft.originalId;
-    if (!window.confirm(`Delete ${savedName}?`)) return;
     setSaving(true);
     try {
       const response = await hostClient.request(
@@ -716,13 +713,18 @@ export function ProvidersSettings() {
   const editingModel = catalog.find((model) => model.id === editingModelId);
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <SectionHeader
+        title="Providers"
+        subtitle="Model endpoints, credentials, and the chat model list"
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface-raised/40">
         <div className="flex items-center gap-2 border-b border-border p-3">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-2 top-2 text-muted" size={14} />
             <input
-              className="h-8 w-full rounded border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
+              className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
               placeholder="Search Providers"
               value={providerSearch}
               onChange={(event) => setProviderSearch(event.target.value)}
@@ -730,7 +732,7 @@ export function ProvidersSettings() {
           </div>
           <button
             type="button"
-            className="flex size-8 shrink-0 items-center justify-center rounded border border-border hover:bg-surface-overlay"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
             title="Add Provider"
             onClick={() => (dirty ? setPendingSwitch({ kind: "new" }) : startNewProvider())}
           >
@@ -748,7 +750,7 @@ export function ProvidersSettings() {
                 key={provider.id}
                 className={`mb-1 flex w-full items-center rounded-md ${
                   selectedId === provider.id
-                    ? "bg-accent/15 text-foreground"
+                    ? "bg-surface-overlay text-foreground"
                     : "text-muted hover:bg-surface-overlay hover:text-foreground"
                 }`}
               >
@@ -777,12 +779,11 @@ export function ProvidersSettings() {
                   {updatingProviderId === provider.id ? (
                     <RefreshCw className="animate-spin text-muted" size={15} />
                   ) : (
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={provider.enabled}
-                      aria-label={`${provider.enabled ? "Disable" : "Enable"} ${provider.name}`}
+                      label={`${provider.enabled ? "Disable" : "Enable"} ${provider.name}`}
                       disabled={updatingProviderId !== null}
-                      onChange={(event) => void setProviderEnabled(provider, event.target.checked)}
+                      onChange={(next) => void setProviderEnabled(provider, next)}
                     />
                   )}
                 </span>
@@ -812,7 +813,7 @@ export function ProvidersSettings() {
                 )}
                 <button
                   type="button"
-                  className="flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
+                  className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
                   disabled={saving || fetching || testing || draft.models.length === 0}
                   title="Saves the Provider, then sends a minimal request through the configured model API"
                   onClick={() => void testConnection()}
@@ -823,16 +824,16 @@ export function ProvidersSettings() {
                 {draft.originalId && (
                   <button
                     type="button"
-                    className="flex h-8 items-center gap-1.5 rounded border border-danger/40 px-2.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
+                    className="flex h-8 items-center gap-1.5 rounded-md border border-danger/40 px-2.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
                     disabled={saving || fetching || testing}
-                    onClick={() => void removeProvider()}
+                    onClick={() => setConfirmDelete(true)}
                   >
                     <Trash2 size={14} /> Delete
                   </button>
                 )}
                 <button
                   type="button"
-                  className="flex h-8 items-center gap-1.5 rounded bg-accent px-3 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
+                  className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
                   disabled={saving || fetching || testing}
                   onClick={() => void persistDraft()}
                 >
@@ -844,10 +845,10 @@ export function ProvidersSettings() {
 
             {connectionResult && (
               <div
-                className={`border-l-2 px-3 py-2 text-xs ${
+                className={`rounded-lg border px-3 py-2 text-xs ${
                   connectionResult.ok
-                    ? "border-success bg-success/5"
-                    : "border-danger bg-danger/5"
+                    ? "border-success/35 bg-success/10"
+                    : "border-danger/35 bg-danger/10"
                 }`}
               >
                 <div className="flex items-start gap-2">
@@ -903,7 +904,7 @@ export function ProvidersSettings() {
               <label className="flex flex-col gap-1.5 text-xs text-muted">
                 Display name
                 <input
-                  className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                  className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                   value={draft.name}
                   onChange={(event) => updateDraft({ name: event.target.value })}
                 />
@@ -911,7 +912,7 @@ export function ProvidersSettings() {
               <label className="flex flex-col gap-1.5 text-xs text-muted">
                 Provider ID
                 <input
-                  className="h-9 rounded border border-border bg-surface px-3 font-mono text-sm text-foreground outline-none focus:border-accent"
+                  className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
                   value={draft.id}
                   onChange={(event) => updateDraft({ id: event.target.value })}
                 />
@@ -919,7 +920,7 @@ export function ProvidersSettings() {
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                 Base URL
                 <input
-                  className="h-9 rounded border border-border bg-surface px-3 font-mono text-sm text-foreground outline-none focus:border-accent"
+                  className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
                   placeholder={draft.api === "anthropic-messages"
                     ? "https://api.example.com"
                     : "https://api.example.com/v1"}
@@ -930,7 +931,7 @@ export function ProvidersSettings() {
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                 API protocol
                 <select
-                  className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                  className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                   value={draft.api}
                   onChange={(event) => updateDraft({ api: event.target.value as ProviderDraft["api"] })}
                 >
@@ -951,7 +952,7 @@ export function ProvidersSettings() {
                 <label className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
                   <span>Models URL <span className="font-normal text-muted">(optional)</span></span>
                   <input
-                    className="h-9 rounded border border-border bg-surface px-3 font-mono text-sm text-foreground outline-none focus:border-accent"
+                    className="h-8 rounded-md border border-border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent"
                     placeholder="Auto-detect from Base URL"
                     value={draft.modelsUrl ?? ""}
                     onChange={(event) => updateDraft({ modelsUrl: event.target.value })}
@@ -964,7 +965,7 @@ export function ProvidersSettings() {
                   <label className="flex flex-col gap-1.5 text-xs text-muted">
                     System instruction role
                     <select
-                      className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                      className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                       value={compatibilityChoice(draft.compat?.supportsDeveloperRole)}
                       onChange={(event) => updateCompatibility(
                         "supportsDeveloperRole",
@@ -979,7 +980,7 @@ export function ProvidersSettings() {
                   <label className="flex flex-col gap-1.5 text-xs text-muted">
                     Reasoning effort field
                     <select
-                      className="h-9 rounded border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-accent"
+                      className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                       value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
                       onChange={(event) => updateCompatibility(
                         "supportsReasoningEffort",
@@ -1023,7 +1024,7 @@ export function ProvidersSettings() {
               <div className="relative">
                 <input
                   type={showApiKey ? "text" : "password"}
-                  className="h-9 w-full rounded border border-border bg-surface px-3 pr-10 font-mono text-sm outline-none focus:border-accent"
+                  className="h-8 w-full rounded-md border border-border bg-surface px-3 pr-10 font-mono text-xs outline-none focus:border-accent"
                   placeholder={selectedProvider?.auth.configured ? "Leave blank to keep current key" : "Enter API key"}
                   value={apiKey}
                   onChange={(event) => {
@@ -1063,7 +1064,7 @@ export function ProvidersSettings() {
                   </button>
                   <button
                     type="button"
-                    className="flex size-8 items-center justify-center rounded hover:bg-surface-overlay disabled:opacity-50"
+                    className="flex size-8 items-center justify-center rounded-md hover:bg-surface-overlay disabled:opacity-50"
                     title="Save the Provider and fetch its model list"
                     disabled={fetching || saving || testing}
                     onClick={() => void fetchModels()}
@@ -1072,7 +1073,7 @@ export function ProvidersSettings() {
                   </button>
                   <button
                     type="button"
-                    className="flex size-8 items-center justify-center rounded hover:bg-surface-overlay"
+                    className="flex size-8 items-center justify-center rounded-md hover:bg-surface-overlay"
                     title="Add model manually"
                     onClick={() => setManualOpen((current) => !current)}
                   >
@@ -1083,7 +1084,7 @@ export function ProvidersSettings() {
               <div className="relative mb-2">
                 <Search className="absolute left-2.5 top-2.5 text-muted" size={14} />
                 <input
-                  className="h-9 w-full rounded border border-border bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent"
+                  className="h-8 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent"
                   placeholder="Search models"
                   value={modelSearch}
                   onChange={(event) => setModelSearch(event.target.value)}
@@ -1092,7 +1093,7 @@ export function ProvidersSettings() {
               {manualOpen && (
                 <div className="mb-2 flex gap-2">
                   <input
-                    className="h-8 min-w-0 flex-1 rounded border border-border bg-surface px-3 font-mono text-xs outline-none focus:border-accent"
+                    className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-xs outline-none focus:border-accent"
                     placeholder="Model ID"
                     value={manualId}
                     onChange={(event) => setManualId(event.target.value)}
@@ -1102,7 +1103,7 @@ export function ProvidersSettings() {
                   />
                   <button
                     type="button"
-                    className="flex size-8 items-center justify-center rounded bg-accent text-white"
+                    className="flex size-8 items-center justify-center rounded-md bg-accent text-white"
                     title="Add model"
                     onClick={addManualModel}
                   >
@@ -1110,7 +1111,7 @@ export function ProvidersSettings() {
                   </button>
                 </div>
               )}
-              <div className="max-h-72 overflow-auto rounded border border-border">
+              <div className="max-h-72 overflow-auto rounded-md border border-border">
                 {filteredModels.length === 0 ? (
                   <p className="p-4 text-center text-xs text-muted">Fetch or add models to configure visibility</p>
                 ) : (
@@ -1151,7 +1152,7 @@ export function ProvidersSettings() {
                   <label className="flex flex-col gap-1 text-[11px] text-muted">
                     Display name
                     <input
-                      className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
+                      className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
                       value={editingModel.name}
                       onChange={(event) => updateModel(editingModel.id, { name: event.target.value })}
                     />
@@ -1171,7 +1172,7 @@ export function ProvidersSettings() {
                   <label className="flex flex-col gap-1 text-[11px] text-muted">
                     Thinking support
                     <select
-                      className="h-8 rounded border border-border bg-surface px-2 text-xs text-foreground"
+                      className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
                       value={thinkingMode(editingModel)}
                       onChange={(event) => {
                         const mode = event.target.value;
@@ -1253,12 +1254,12 @@ export function ProvidersSettings() {
                 {Object.entries(draft.headers).map(([key, value]) => (
                   <div key={key} className="grid grid-cols-[1fr_1.5fr_32px] gap-2">
                     <input
-                      className="h-8 rounded border border-border bg-surface px-2 font-mono text-xs"
+                      className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs"
                       value={key}
                       onChange={(event) => updateHeader(key, event.target.value, value)}
                     />
                     <input
-                      className="h-8 rounded border border-border bg-surface px-2 font-mono text-xs"
+                      className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs"
                       value={value}
                       onChange={(event) => updateHeader(key, key, event.target.value)}
                     />
@@ -1274,7 +1275,7 @@ export function ProvidersSettings() {
                 ))}
                 <button
                   type="button"
-                  className="flex h-8 w-fit items-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface-overlay"
+                  className="flex h-8 w-fit items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay"
                   onClick={() => {
                     let key = "X-Custom-Header";
                     let index = 2;
@@ -1289,11 +1290,38 @@ export function ProvidersSettings() {
           </div>
         </div>
       )}
+      </div>
+      {confirmDelete && draft?.originalId && (() => {
+        const saved = providers.find((provider) => provider.id === draft.originalId);
+        return (
+          <Dialog
+            title="Delete Provider"
+            confirmLabel="Delete Provider"
+            tone="danger"
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => {
+              setConfirmDelete(false);
+              void removeProvider();
+            }}
+          >
+            <p>
+              This deletes {saved?.name ?? draft.originalId} and its stored API
+              key from this machine.
+            </p>
+            <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
+              <dt>Base URL</dt>
+              <dd className="break-all font-mono text-foreground">{saved?.baseUrl ?? "—"}</dd>
+              <dt>Models</dt>
+              <dd className="text-foreground">{saved?.models.length ?? 0}</dd>
+            </dl>
+          </Dialog>
+        );
+      })()}
       {pendingSwitch !== null && (
         <Dialog
           title="Discard unsaved changes?"
           confirmLabel="Discard changes"
-          destructive
+          tone="warning"
           onCancel={() => setPendingSwitch(null)}
           onConfirm={() => {
             const target = pendingSwitch;
