@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateSuccessResult } from "@pideck/protocol";
 import type { HandlerContext } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { IdentityState } from "./identity.js";
@@ -71,6 +72,74 @@ describe("session.list runtime metadata", () => {
         }),
       ],
     });
+  });
+});
+
+describe("session.getTree", () => {
+  it("emits wire-valid nodes even when SDK labels are undefined-keyed", async () => {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const serviceGraphLock = new TryMutex();
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock }),
+      checkIdentity: () => null,
+      getGraph: () => ({
+        sessionManager: {
+          // Mirrors SDK getTree(): unlabeled nodes still carry the keys.
+          getTree: () => [
+            {
+              entry: {
+                id: "u1",
+                type: "message",
+                parentId: null,
+                timestamp: "2026-01-01T00:00:01.000Z",
+                message: { role: "user", content: "first ask" },
+              },
+              children: [
+                {
+                  entry: {
+                    id: "a1",
+                    type: "message",
+                    parentId: "u1",
+                    timestamp: "2026-01-01T00:00:02.000Z",
+                    message: { role: "assistant", content: [] },
+                  },
+                  children: [],
+                  label: "experiment",
+                  labelTimestamp: "2026-01-01T00:00:03.000Z",
+                },
+              ],
+              label: undefined,
+              labelTimestamp: undefined,
+            },
+          ],
+          getLeafId: () => "a1",
+        },
+      }),
+    } as unknown as WorkspaceGraphFactory;
+    const handler = createSessionHandlers(factory)["session.getTree"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.getTree",
+      params: null,
+      context: {},
+    } as HandlerContext);
+
+    expect(response).toHaveProperty("result");
+    if (!("result" in response)) return;
+    expect(validateSuccessResult("session.getTree", response.result)).toMatchObject({
+      ok: true,
+    });
+    const tree = (response.result as { tree: Record<string, unknown>[] }).tree;
+    expect("label" in tree[0]!).toBe(false);
+    expect("labelTimestamp" in tree[0]!).toBe(false);
+    expect(
+      (tree[0]!.children as Record<string, unknown>[])[0]!.label,
+    ).toBe("experiment");
   });
 });
 

@@ -1,7 +1,29 @@
-import { createHostError, toJsonValue } from "@pideck/protocol";
+import { createHostError, toJsonValue, type JsonValue } from "@pideck/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
+
+type SdkSessionTreeNode = {
+  entry: unknown;
+  children: SdkSessionTreeNode[];
+  label?: string;
+  labelTimestamp?: string;
+};
+
+/**
+ * SDK tree nodes carry `label: undefined` keys; toJsonValue would turn those
+ * into nulls, which the wire contract rejects — optional keys must be absent.
+ */
+function toWireTreeNode(node: SdkSessionTreeNode): JsonValue {
+  return {
+    entry: toJsonValue(node.entry),
+    children: node.children.map(toWireTreeNode),
+    ...(node.label !== undefined ? { label: node.label } : {}),
+    ...(node.labelTimestamp !== undefined
+      ? { labelTimestamp: node.labelTimestamp }
+      : {}),
+  };
+}
 
 export function createSessionHandlers(
   factory: WorkspaceGraphFactory,
@@ -251,7 +273,9 @@ export function createSessionHandlers(
           const g = factory.getGraph();
           if (!g?.sessionManager) throw new Error("No active session");
           return {
-            tree: toJsonValue(g.sessionManager.getTree()),
+            tree: (g.sessionManager.getTree() as SdkSessionTreeNode[]).map(
+              toWireTreeNode,
+            ),
             leafId: g.sessionManager.getLeafId(),
           };
         },
