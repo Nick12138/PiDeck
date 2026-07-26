@@ -24,6 +24,11 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     name: "fork",
     description: "Create a new fork from a previous user message",
   },
+  {
+    name: "export",
+    description: "Export session to a file (HTML default)",
+    argumentHint: "[html|jsonl]",
+  },
 ];
 
 export type BuiltinCommandMatch = { name: string; args?: string };

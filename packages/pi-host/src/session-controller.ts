@@ -395,6 +395,40 @@ export function createSessionHandlers(
       };
     },
 
+    "session.export": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, {
+        requireWorkspace: true,
+        requireSession: true,
+      });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      const server = factory.getServer();
+      if (!g?.agentSession || !server) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
+      }
+      if (
+        !g.agentSession.isIdle ||
+        factory.getSessionOperationLock(g.agentSession).isHeld()
+      ) {
+        return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
+      }
+      const params = ctx.params as { format: "html" | "jsonl"; path?: string };
+      try {
+        const path =
+          params.format === "html"
+            ? await g.agentSession.exportToHtml(params.path)
+            : g.agentSession.exportToJsonl(params.path);
+        return { result: { path } };
+      } catch (err) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            err instanceof Error ? err.message : "Export failed",
+          ),
+        };
+      }
+    },
+
     "session.usageReport": async (ctx) => {
       const server = factory.getServer();
       if (!server) {

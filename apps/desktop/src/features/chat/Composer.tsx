@@ -33,6 +33,7 @@ import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
 import { requestTreePanel } from "../../lib/dock-tree";
+import { requestExport } from "../../lib/export-actions";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -485,6 +486,17 @@ export function Composer({
       setSessionDraft(session.sessionId, "");
       setCompletion(null);
       setForkOpen(true);
+      return;
+    }
+    if (builtin?.name === "export") {
+      const arg = builtin.args?.trim().toLowerCase();
+      if (arg && arg !== "html" && arg !== "jsonl") {
+        pushNotification("Usage: /export [html|jsonl]", "error");
+        return;
+      }
+      setSessionDraft(session.sessionId, "");
+      setCompletion(null);
+      void requestExport(arg === "jsonl" ? "jsonl" : "html");
       return;
     }
     if (builtin?.name === "compact") {

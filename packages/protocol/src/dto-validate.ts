@@ -1090,6 +1090,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.selectedText === undefined || isString(result.selectedText))
         ? null
         : "invalid session.fork result";
+    case "session.export":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["path"]) &&
+        isString(result.path) &&
+        result.path.length > 0
+        ? null
+        : "invalid session.export result";
     case "agent.setQueue":
       return isQueueSnapshot(result) ? null : "invalid agent.setQueue result";
     case "agent.runNow":

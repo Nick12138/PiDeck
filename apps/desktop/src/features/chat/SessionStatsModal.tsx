@@ -9,6 +9,7 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { requestExport, type ExportFormat } from "../../lib/export-actions";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -37,6 +38,7 @@ export function SessionStatsModal({
   const session = useAppStore((s) => s.session);
   const [stats, setStats] = useState<SessionStatsSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   const hostInstanceId = host?.hostInstanceId;
   const workspaceId = workspace?.id;
@@ -181,6 +183,30 @@ export function SessionStatsModal({
             </p>
           </div>
         )}
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground/85 transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={exporting !== null || !session?.isIdle}
+            onClick={() => {
+              setExporting("jsonl");
+              void requestExport("jsonl").finally(() => setExporting(null));
+            }}
+          >
+            {exporting === "jsonl" ? "Exporting…" : "Export JSONL"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={exporting !== null || !session?.isIdle}
+            onClick={() => {
+              setExporting("html");
+              void requestExport("html").finally(() => setExporting(null));
+            }}
+          >
+            {exporting === "html" ? "Exporting…" : "Export HTML"}
+          </button>
+        </div>
       </div>
     </div>
   );

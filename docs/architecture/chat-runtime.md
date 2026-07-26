@@ -30,6 +30,7 @@
 | `/session` stats dialog | `session.getStats` |
 | `/tree` dock panel | `session.getTree` / `agent.navigateTree` |
 | `/fork` selector or tree fork button | `session.getForkPoints` / `session.fork` |
+| `/export [html\|jsonl]` or stats-dialog buttons | `session.export` |
 | Tools panel | `agent.getTools` / `agent.setActiveTools` |
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
@@ -37,7 +38,7 @@ Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no cl
 The Composer's `/` completion merges `session.getCommands` (prompt templates,
 extension commands, skills) with PiDeck's built-in commands
 (`features/chat/builtin-commands.ts`, currently `/compact`, `/session`,
-`/tree`, and `/fork`). A
+`/tree`, `/fork`, and `/export`). A
 draft matching a built-in command runs locally instead of being sent to the
 model; unknown `/name` text still goes to the model unchanged. Manual
 compaction requires an idle agent and shares the per-session operation lock
@@ -76,7 +77,11 @@ target is the run's last entry; branch points break the run. Turns render as
 a commit graph: filled dots are user turns, hollow dots assistant turns, the
 current path is a continuous accent rail, and each concurrent branch gets its
 own lane so fork connectors never overlap another branch's chain
-(`flattenSessionTree` returns the lane layout). Unlike the CLI,
+(`flattenSessionTree` returns the lane layout). `/export` (idle-only) picks a
+target through the native save dialog, `session.export` runs the SDK's
+`exportToHtml` / `exportToJsonl`, and the desktop reveals the written file via
+`desktop_open_path`; the Host advertises this as the `sessionExport`
+capability. Unlike the CLI,
 PiDeck does not emit `session_before_fork` to extensions, and the forked
 session starts through the normal open path rather than a `session_start`
 with reason `fork`. Forking before the first message is not supported.

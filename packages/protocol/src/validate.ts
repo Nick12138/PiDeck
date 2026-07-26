@@ -340,6 +340,13 @@ export function validateRequestParams<M extends HostMethod>(
           params.position === "at")
         ? ok(params)
         : fail("invalid session.fork params", { method });
+    case "session.export":
+      return exactObject(params, ["format"], ["path"]) &&
+        (params.format === "html" || params.format === "jsonl") &&
+        (params.path === undefined ||
+          (isString(params.path) && params.path.length > 0))
+        ? ok(params)
+        : fail("invalid session.export params", { method });
     case "agent.setAutoCompaction":
     case "agent.setAutoRetry":
       return exactObject(params, ["enabled"]) && isBoolean(params.enabled)

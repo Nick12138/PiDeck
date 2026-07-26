@@ -143,6 +143,61 @@ describe("session.getTree", () => {
   });
 });
 
+describe("session.export", () => {
+  function exportFixture(isIdle: boolean) {
+    const identity = new IdentityState();
+    identity.workspaceId = WORKSPACE_ID;
+    identity.workspaceRevision = 1;
+    identity.sessionId = ACTIVE_SESSION_ID;
+    identity.sessionRevision = 5;
+    const agentSession = {
+      isIdle,
+      exportToHtml: async (path?: string) => path ?? "/exports/default.html",
+      exportToJsonl: (path?: string) => path ?? "/exports/default.jsonl",
+    };
+    const factory = {
+      getServer: () => ({ identity, serviceGraphLock: new TryMutex() }),
+      checkIdentity: () => null,
+      getGraph: () => ({ agentSession }),
+      getSessionOperationLock: () => ({ isHeld: () => false }),
+    } as unknown as WorkspaceGraphFactory;
+    return factory;
+  }
+
+  it("exports html and jsonl to the requested path", async () => {
+    const handler = createSessionHandlers(exportFixture(true))["session.export"]!;
+
+    const html = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.export",
+      params: { format: "html", path: "/tmp/out.html" },
+      context: {},
+    } as HandlerContext);
+    expect(html).toEqual({ result: { path: "/tmp/out.html" } });
+
+    const jsonl = await handler({
+      id: "55555555-5555-4555-8555-555555555556",
+      method: "session.export",
+      params: { format: "jsonl" },
+      context: {},
+    } as HandlerContext);
+    expect(jsonl).toEqual({ result: { path: "/exports/default.jsonl" } });
+  });
+
+  it("rejects while the agent is busy", async () => {
+    const handler = createSessionHandlers(exportFixture(false))["session.export"]!;
+
+    const response = await handler({
+      id: "55555555-5555-4555-8555-555555555555",
+      method: "session.export",
+      params: { format: "html" },
+      context: {},
+    } as HandlerContext);
+
+    expect("error" in response && response.error.code).toBe("AGENT_BUSY");
+  });
+});
+
 describe("session.getForkPoints", () => {
   it("lists the session's user messages for the fork selector", async () => {
     const identity = new IdentityState();

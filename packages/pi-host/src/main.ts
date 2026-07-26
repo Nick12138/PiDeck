@@ -187,7 +187,7 @@ async function main(): Promise<void> {
   const capabilities: HostCapabilities = {
     packageUpdateCheck,
     extensionUi: true,
-    sessionExport: false,
+    sessionExport: true,
   };
 
   const graphFactory = new WorkspaceGraphFactory({

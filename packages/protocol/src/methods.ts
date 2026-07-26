@@ -25,6 +25,7 @@ export const HOST_METHODS = [
   "session.getStats",
   "session.getForkPoints",
   "session.fork",
+  "session.export",
   "session.usageReport",
   "session.getCommands",
   "agent.prompt",
@@ -146,6 +147,7 @@ export type ActiveSessionMethod =
   | "session.getStats"
   | "session.getForkPoints"
   | "session.fork"
+  | "session.export"
   | "session.getCommands"
   | "agent.prompt"
   | "agent.steer"
@@ -236,6 +238,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.getStats": "activeSession",
   "session.getForkPoints": "activeSession",
   "session.fork": "activeSession",
+  "session.export": "activeSession",
   "session.usageReport": "workspace",
   "session.getCommands": "activeSession",
   "agent.prompt": "activeSession",
