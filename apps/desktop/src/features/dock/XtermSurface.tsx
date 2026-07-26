@@ -49,6 +49,7 @@ export function XtermSurface({
     let cancelled = false;
     let connectionCleanup: Cleanup | undefined;
     let observer: ResizeObserver | undefined;
+    let themeObserver: MutationObserver | undefined;
     let terminal: Terminal | undefined;
 
     void Promise.all([
@@ -87,6 +88,16 @@ export function XtermSurface({
       observer.observe(container);
       fitRef.current();
 
+      // The theme is read from CSS variables at creation time; follow the
+      // light/dark class toggled on <html> so open terminals recolor live.
+      themeObserver = new MutationObserver(() => {
+        if (terminal) terminal.options.theme = xtermTheme();
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+
       try {
         const cleanup = await connectRef.current(terminal);
         if (cancelled) {
@@ -105,6 +116,7 @@ export function XtermSurface({
     return () => {
       cancelled = true;
       observer?.disconnect();
+      themeObserver?.disconnect();
       fitRef.current = null;
       terminalRef.current = null;
       void connectionCleanup?.();
