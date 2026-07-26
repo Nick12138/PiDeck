@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Bot,
-  CircleDot,
-  GitBranch,
-  GitFork,
-  LoaderCircle,
-  RefreshCw,
-  UserRound,
-} from "lucide-react";
+import { GitBranch, GitFork, LoaderCircle, RefreshCw } from "lucide-react";
 import type { SerializableSessionTreeNode } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
@@ -18,13 +10,84 @@ import {
 import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
-import { flattenSessionTree, type TreeRowKind } from "./tree-model";
+import { flattenSessionTree, type TreeRow } from "./tree-model";
 
-const KIND_ICON: Record<TreeRowKind, typeof UserRound> = {
-  user: UserRound,
-  assistant: Bot,
-  other: CircleDot,
-};
+const ROW_H = 28;
+const LANE_W = 14;
+const ACCENT = "var(--color-accent)";
+const BASE = "var(--color-border)";
+
+function laneX(lane: number): number {
+  return lane * LANE_W + 7;
+}
+
+/** Commit-graph gutter for one fixed-height row. */
+function RowRail({ row, laneCount }: { row: TreeRow; laneCount: number }) {
+  const x = laneX(row.lane);
+  const mid = ROW_H / 2;
+  const stroke = (accent: boolean) => (accent ? ACCENT : BASE);
+  return (
+    <svg
+      width={laneCount * LANE_W + 2}
+      height={ROW_H}
+      className="shrink-0"
+      aria-hidden="true"
+    >
+      {row.passes.map((pass) => (
+        <line
+          key={`pass:${pass.lane}`}
+          x1={laneX(pass.lane)}
+          y1={0}
+          x2={laneX(pass.lane)}
+          y2={ROW_H}
+          stroke={stroke(pass.accent)}
+          strokeWidth={1.5}
+        />
+      ))}
+      {row.linkUp && (
+        <line
+          x1={x}
+          y1={0}
+          x2={x}
+          y2={mid}
+          stroke={stroke(row.linkUpAccent)}
+          strokeWidth={1.5}
+        />
+      )}
+      {row.linkDown && (
+        <line
+          x1={x}
+          y1={mid}
+          x2={x}
+          y2={ROW_H}
+          stroke={stroke(row.linkDownAccent)}
+          strokeWidth={1.5}
+        />
+      )}
+      {row.forks.map((fork) => (
+        <path
+          key={`fork:${fork.lane}`}
+          d={`M ${x} ${mid} C ${x} ${ROW_H}, ${laneX(fork.lane)} ${mid}, ${laneX(fork.lane)} ${ROW_H}`}
+          fill="none"
+          stroke={stroke(fork.accent)}
+          strokeWidth={1.5}
+        />
+      ))}
+      {row.kind === "user" ? (
+        <circle cx={x} cy={mid} r={4} fill={row.onPath ? ACCENT : "var(--color-muted)"} />
+      ) : (
+        <circle
+          cx={x}
+          cy={mid}
+          r={3.5}
+          fill="var(--color-sidebar)"
+          stroke={row.onPath ? ACCENT : "var(--color-muted)"}
+          strokeWidth={1.5}
+        />
+      )}
+    </svg>
+  );
+}
 
 export function TreePanel({ visible }: { visible: boolean }) {
   const session = useAppStore((state) => state.session);
@@ -166,7 +229,9 @@ export function TreePanel({ visible }: { visible: boolean }) {
     );
   }
 
-  const rows = nodes ? flattenSessionTree(nodes, leafId) : [];
+  const { rows, laneCount } = nodes
+    ? flattenSessionTree(nodes, leafId)
+    : { rows: [], laneCount: 1 };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -198,44 +263,27 @@ export function TreePanel({ visible }: { visible: boolean }) {
           <p className="px-3 py-2 text-xs text-muted">No entries yet.</p>
         ) : (
           rows.map((row) => {
-            const Icon = KIND_ICON[row.kind];
             const actionLocked = busy || navigating !== null || forking !== null;
             return (
               <div
                 key={row.id}
-                className={`group flex items-stretch pl-3 ${
+                className={`group flex h-7 items-stretch pl-2 ${
                   row.isCurrent ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
                 }`}
               >
-                {Array.from({ length: row.depth }, (_, level) => (
-                  <span key={level} className="relative w-4 shrink-0">
-                    {row.branchStart && level === row.depth - 1 ? (
-                      <>
-                        <span className="absolute left-1.5 top-0 h-1/2 w-px bg-border" />
-                        <span className="absolute left-1.5 right-0.5 top-1/2 h-px bg-border" />
-                      </>
-                    ) : (
-                      <span className="absolute inset-y-0 left-1.5 w-px bg-border" />
-                    )}
-                  </span>
-                ))}
+                <RowRail row={row} laneCount={laneCount} />
                 <button
                   type="button"
                   disabled={actionLocked || row.isCurrent}
                   aria-current={row.isCurrent ? "true" : undefined}
                   title={row.excerpt}
-                  className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs ${
+                  className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 text-left text-xs ${
                     row.onPath ? "text-foreground" : "text-muted"
                   } disabled:cursor-default`}
                   onClick={() => void navigate(row.id)}
                 >
-                  {navigating === row.id || forking === row.id ? (
+                  {(navigating === row.id || forking === row.id) && (
                     <LoaderCircle size={12} className="shrink-0 animate-spin" />
-                  ) : (
-                    <Icon
-                      size={12}
-                      className={`shrink-0 ${row.onPath ? "text-accent" : ""}`}
-                    />
                   )}
                   <span
                     className={`min-w-0 flex-1 truncate ${

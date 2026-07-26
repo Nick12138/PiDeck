@@ -134,8 +134,8 @@ describe("assistant turn merging", () => {
         ]),
       ]),
     ];
-    const rows = flattenSessionTree(tree, "u2");
-    expect(rows.map(({ id, kind, depth }) => [id, kind, depth])).toEqual([
+    const { rows } = flattenSessionTree(tree, "u2");
+    expect(rows.map(({ id, kind, lane }) => [id, kind, lane])).toEqual([
       ["u1", "user", 0],
       ["a3", "assistant", 0],
       ["u2", "user", 0],
@@ -146,7 +146,7 @@ describe("assistant turn merging", () => {
 
   it("uses the first segment with text when the run starts without text", () => {
     const tree = [assistantNode("a1", "", [assistantNode("a2", "real answer")])];
-    const rows = flattenSessionTree(tree, null);
+    const { rows } = flattenSessionTree(tree, null);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.id).toBe("a2");
     expect(rows[0]!.excerpt).toBe("real answer");
@@ -156,7 +156,7 @@ describe("assistant turn merging", () => {
     const tree = [
       userNode("u1", "ask", [assistantNode("a1", "one", [assistantNode("a2", "two")])]),
     ];
-    const rows = flattenSessionTree(tree, "a1");
+    const { rows } = flattenSessionTree(tree, "a1");
     expect(rows.find((row) => row.id === "a2")?.isCurrent).toBe(true);
   });
 
@@ -167,29 +167,88 @@ describe("assistant turn merging", () => {
         assistantNode("a3", "right"),
       ]),
     ];
-    const rows = flattenSessionTree(tree, null);
-    expect(rows.map(({ id, depth, branchStart }) => [id, depth, branchStart])).toEqual([
-      ["a1", 0, false],
-      ["a2", 0, false],
-      ["a3", 1, true],
+    const { rows, laneCount } = flattenSessionTree(tree, null);
+    expect(rows.map(({ id, lane }) => [id, lane])).toEqual([
+      ["a1", 0],
+      ["a2", 0],
+      ["a3", 1],
+    ]);
+    expect(laneCount).toBe(2);
+    expect(rows[0]!.forks).toEqual([{ lane: 1, accent: false }]);
+    expect(rows[0]!.linkDown).toBe(true);
+    expect(rows[2]!.linkUp).toBe(true);
+  });
+});
+
+describe("rail layout", () => {
+  it("routes a branch connector through intervening rows", () => {
+    // TREE: fork at a1; u2's subtree sits between the fork and u3's row.
+    const { rows } = flattenSessionTree(TREE, "tr1");
+    const a1 = rows.find((row) => row.id === "a1")!;
+    const u2 = rows.find((row) => row.id === "u2")!;
+    const u3 = rows.find((row) => row.id === "u3")!;
+    expect(a1.forks).toEqual([{ lane: 1, accent: false }]);
+    expect(u2.passes).toEqual([{ lane: 1, accent: false }]);
+    expect(u3.lane).toBe(1);
+    expect(u3.linkUp).toBe(true);
+  });
+
+  it("paints the accent rail along the current path only", () => {
+    const { rows } = flattenSessionTree(TREE, "u3");
+    const u1 = rows.find((row) => row.id === "u1")!;
+    const a1 = rows.find((row) => row.id === "a1")!;
+    const u2 = rows.find((row) => row.id === "u2")!;
+    const u3 = rows.find((row) => row.id === "u3")!;
+    expect(u1.linkDownAccent).toBe(true);
+    // The trunk continues to u2, which is off-path once the leaf moved to u3.
+    expect(a1.linkDownAccent).toBe(false);
+    expect(a1.forks).toEqual([{ lane: 1, accent: true }]);
+    expect(u2.passes).toEqual([{ lane: 1, accent: true }]);
+    expect(u3.linkUpAccent).toBe(true);
+  });
+
+  it("gives each concurrent branch its own lane", () => {
+    const tree = [
+      userNode("p", "root", [
+        assistantNode("c1", "first"),
+        assistantNode("c2", "second"),
+        assistantNode("c3", "third"),
+      ]),
+    ];
+    const { rows, laneCount } = flattenSessionTree(tree, null);
+    expect(rows.map(({ id, lane }) => [id, lane])).toEqual([
+      ["p", 0],
+      ["c1", 0],
+      ["c2", 1],
+      ["c3", 2],
+    ]);
+    expect(laneCount).toBe(3);
+    // c3's connector must pass c2's row on its own lane.
+    expect(rows.find((row) => row.id === "c2")!.passes).toEqual([
+      { lane: 2, accent: false },
+    ]);
+    expect(rows.find((row) => row.id === "p")!.forks).toEqual([
+      { lane: 1, accent: false },
+      { lane: 2, accent: false },
     ]);
   });
 });
 
 describe("flattenSessionTree", () => {
-  it("keeps the trunk at depth 0 and pushes later siblings deeper", () => {
-    const rows = flattenSessionTree(TREE, "tr1");
-    expect(rows.map(({ id, depth }) => [id, depth])).toEqual([
+  it("keeps the trunk on lane 0 and gives branches their own lanes", () => {
+    const { rows, laneCount } = flattenSessionTree(TREE, "tr1");
+    expect(rows.map(({ id, lane }) => [id, lane])).toEqual([
       ["u1", 0],
       ["a1", 0],
       ["u2", 0],
       ["u3", 1],
     ]);
+    expect(laneCount).toBe(2);
     expect(rows.find((row) => row.id === "u3")?.label).toBe("experiment");
   });
 
   it("marks the current path and puts the marker on the deepest visible row", () => {
-    const rows = flattenSessionTree(TREE, "tr1");
+    const { rows } = flattenSessionTree(TREE, "tr1");
     expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
       "u1",
       "a1",
@@ -199,7 +258,7 @@ describe("flattenSessionTree", () => {
   });
 
   it("follows the marker when the leaf moves to another branch", () => {
-    const rows = flattenSessionTree(TREE, "u3");
+    const { rows } = flattenSessionTree(TREE, "u3");
     expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
       "u1",
       "a1",
@@ -210,6 +269,6 @@ describe("flattenSessionTree", () => {
 
   it("marks nothing without a leaf", () => {
     expect(currentPathIds(TREE, null).size).toBe(0);
-    expect(flattenSessionTree(TREE, null).some((row) => row.isCurrent)).toBe(false);
+    expect(flattenSessionTree(TREE, null).rows.some((row) => row.isCurrent)).toBe(false);
   });
 });

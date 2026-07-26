@@ -72,7 +72,11 @@ button (left of Copy) targeting the turn's last persisted entry
 `appendSessionInfo`); unnamed sources stay unnamed so automatic titling
 still runs. The tree panel groups a linear run of
 assistant entries (tool-call segments) into one turn row whose navigation
-target is the run's last entry; branch points break the run. Unlike the CLI,
+target is the run's last entry; branch points break the run. Turns render as
+a commit graph: filled dots are user turns, hollow dots assistant turns, the
+current path is a continuous accent rail, and each concurrent branch gets its
+own lane so fork connectors never overlap another branch's chain
+(`flattenSessionTree` returns the lane layout). Unlike the CLI,
 PiDeck does not emit `session_before_fork` to extensions, and the forked
 session starts through the normal open path rather than a `session_start`
 with reason `fork`. Forking before the first message is not supported.

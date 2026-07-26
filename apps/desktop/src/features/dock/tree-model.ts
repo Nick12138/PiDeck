@@ -2,10 +2,10 @@ import type { JsonValue, SerializableSessionTreeNode } from "@pideck/protocol";
 
 export type TreeRowKind = "user" | "assistant" | "other";
 
+export type TreeRailMark = { lane: number; accent: boolean };
+
 export type TreeRow = {
   id: string;
-  /** Branch depth: siblings after the first start a deeper branch. */
-  depth: number;
   kind: TreeRowKind;
   excerpt: string;
   /** Branch label recorded on the node, if any. */
@@ -14,9 +14,21 @@ export type TreeRow = {
   onPath: boolean;
   /** Deepest visible row on the current leaf path. */
   isCurrent: boolean;
-  /** True when the row is the first of a new branch (a later sibling). */
-  branchStart: boolean;
+  /** Rail lane of the node dot; the trunk is lane 0. */
+  lane: number;
+  /** Upper half-link at the node's lane (from the parent or a fork connector). */
+  linkUp: boolean;
+  linkUpAccent: boolean;
+  /** Lower half-link at the node's lane (to the chain child on the next row). */
+  linkDown: boolean;
+  linkDownAccent: boolean;
+  /** Fork curves leaving this row's node toward a branch lane. */
+  forks: TreeRailMark[];
+  /** Branch connectors passing vertically through this row. */
+  passes: TreeRailMark[];
 };
+
+export type SessionTreeLayout = { rows: TreeRow[]; laneCount: number };
 
 const EXCERPT_LIMIT = 96;
 const ASSISTANT_PLACEHOLDER = "(assistant message)";
@@ -152,37 +164,76 @@ export function buildConversationTurns(
 }
 
 /**
- * DFS flatten of the conversation turns. The first child continues its
- * parent's depth (trunk); each additional child starts a new branch one level
- * deeper. The current marker lands on the deepest visible turn along the leaf
- * path — the actual leaf entry may be a collapsed one (e.g. a tool result).
+ * Commit-graph layout of the conversation turns, DFS order. The trunk (first
+ * child chain) keeps its parent's lane; every later sibling gets a fresh lane
+ * that stays free from its fork row down to its first row, so connectors
+ * never overlap another branch's chain. The current path is a continuous
+ * accent rail; the current marker lands on the deepest visible turn along the
+ * leaf path — the actual leaf entry may be a collapsed one (e.g. a tool
+ * result).
  */
 export function flattenSessionTree(
   nodes: SerializableSessionTreeNode[],
   leafId: string | null,
-): TreeRow[] {
+): SessionTreeLayout {
   const path = currentPathIds(nodes, leafId);
   const rows: TreeRow[] = [];
   const members: string[][] = [];
-  const visit = (turn: TurnNode, depth: number, branchStart: boolean) => {
+  let laneCount = 1;
+
+  // Returns the maximum lane used inside the subtree, so a later sibling can
+  // pick the first lane that is free across every row its connector spans.
+  const visit = (
+    turn: TurnNode,
+    lane: number,
+    parentIndex: number | null,
+    isBranch: boolean,
+  ): number => {
+    const index = rows.length;
+    const onPath = turn.ids.some((id) => path.has(id));
     rows.push({
       id: turn.ids[turn.ids.length - 1]!,
-      depth,
       kind: turn.kind,
       excerpt: turn.excerpt,
       ...(turn.label ? { label: turn.label } : {}),
-      onPath: turn.ids.some((id) => path.has(id)),
+      onPath,
       isCurrent: false,
-      branchStart,
+      lane,
+      linkUp: false,
+      linkUpAccent: false,
+      linkDown: false,
+      linkDownAccent: false,
+      forks: [],
+      passes: [],
     });
     members.push(turn.ids);
-    turn.children.forEach((child, index) => {
-      visit(child, index === 0 ? depth : depth + 1, index > 0);
+    if (parentIndex !== null) {
+      if (isBranch) {
+        rows[parentIndex]!.forks.push({ lane, accent: onPath });
+        for (let i = parentIndex + 1; i < index; i += 1) {
+          rows[i]!.passes.push({ lane, accent: onPath });
+        }
+      } else {
+        rows[parentIndex]!.linkDown = true;
+        rows[parentIndex]!.linkDownAccent = onPath;
+      }
+      rows[index]!.linkUp = true;
+      rows[index]!.linkUpAccent = onPath;
+    }
+    let maxLane = lane;
+    turn.children.forEach((child, childIndex) => {
+      const childLane = childIndex === 0 ? lane : maxLane + 1;
+      maxLane = Math.max(maxLane, visit(child, childLane, index, childIndex > 0));
     });
+    laneCount = Math.max(laneCount, maxLane + 1);
+    return maxLane;
   };
-  buildConversationTurns(nodes).forEach((turn, index) =>
-    visit(turn, index === 0 ? 0 : 1, index > 0),
-  );
+
+  let rootMax = -1;
+  buildConversationTurns(nodes).forEach((turn, index) => {
+    rootMax = Math.max(rootMax, visit(turn, index === 0 ? 0 : rootMax + 1, null, false));
+  });
+
   const rowIndexByMember = new Map<string, number>();
   members.forEach((ids, index) => {
     for (const id of ids) rowIndexByMember.set(id, index);
@@ -194,5 +245,5 @@ export function flattenSessionTree(
       break;
     }
   }
-  return rows;
+  return { rows, laneCount };
 }
