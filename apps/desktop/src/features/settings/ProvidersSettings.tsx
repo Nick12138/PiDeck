@@ -37,6 +37,8 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
+import type { MessageKey } from "../../lib/i18n";
+import { useT, type Translate } from "../../lib/i18n/use-t";
 
 type DraftState = ProviderDraft & { originalId?: string };
 
@@ -175,13 +177,14 @@ function isHttpUrl(value: string): boolean {
 
 export function validateProviderDraft(draft: ProviderDraft): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (!draft.name.trim()) errors.name = "Display name is required";
-  if (!draft.id.trim()) errors.id = "Provider ID is required";
+  // Values are i18n message keys; render sites translate them with t(key).
+  if (!draft.name.trim()) errors.name = "providersErrorNameRequired";
+  if (!draft.id.trim()) errors.id = "providersErrorIdRequired";
   const baseUrl = draft.baseUrl.trim();
-  if (!baseUrl) errors.baseUrl = "Base URL is required";
-  else if (!isHttpUrl(baseUrl)) errors.baseUrl = "Must be an http(s) URL";
+  if (!baseUrl) errors.baseUrl = "providersErrorBaseUrlRequired";
+  else if (!isHttpUrl(baseUrl)) errors.baseUrl = "providersErrorUrlFormat";
   const modelsUrl = draft.modelsUrl?.trim();
-  if (modelsUrl && !isHttpUrl(modelsUrl)) errors.modelsUrl = "Must be an http(s) URL";
+  if (modelsUrl && !isHttpUrl(modelsUrl)) errors.modelsUrl = "providersErrorUrlFormat";
   return errors;
 }
 
@@ -227,20 +230,20 @@ function thinkingMode(model: DiscoveredProviderModel): "auto" | "custom" | "disa
     : "auto";
 }
 
-function thinkingSourceLabel(model: DiscoveredProviderModel): string {
+function thinkingSourceLabel(t: Translate, model: DiscoveredProviderModel): string {
   switch (model.thinkingSource) {
     case "provider":
-      return "Provider metadata";
+      return t("providersThinkingProvider");
     case "profile":
-      return "Known model profile";
+      return t("providersThinkingProfile");
     case "inferred":
-      return "Inferred from model ID";
+      return t("providersThinkingInferred");
     case "manual":
-      return "Manual override";
+      return t("providersThinkingManual");
     case "configured":
-      return "Existing configuration";
+      return t("providersThinkingConfigured");
     default:
-      return model.reasoning ? "Automatic defaults" : "No reasoning detected";
+      return model.reasoning ? t("providersThinkingAutoDefaults") : t("providersThinkingNone");
   }
 }
 
@@ -307,14 +310,17 @@ function NumberField({
   );
 }
 
-function authLabel(provider: ProviderSnapshot | undefined): string {
+function authLabel(t: Translate, provider: ProviderSnapshot | undefined): string {
   if (!provider?.auth.configured) {
-    return provider?.auth.label ? `Available via ${provider.auth.label}` : "No stored API key";
+    return provider?.auth.label
+      ? t("providersKeyAvailableVia", { label: provider.auth.label })
+      : t("providersKeyNone");
   }
-  return provider.auth.source === "stored" ? "API key stored" : "Authentication configured";
+  return provider.auth.source === "stored" ? t("providersKeyStored") : t("providersKeyConfigured");
 }
 
 export function ProvidersSettings() {
+  const t = useT();
   const host = useAppStore((state) => state.host);
   const pushNotification = useAppStore((state) => state.pushNotification);
   const refreshProviderConfig = useAppStore((state) => state.refreshProviderConfig);
@@ -379,7 +385,7 @@ export function ProvidersSettings() {
       .then((response) => {
         if (cancelled) return;
         if (!response.ok) {
-          pushNotification(response.error?.message ?? "Could not load Providers", "error");
+          pushNotification(response.error?.message ?? t("notifProviderLoadFailed"), "error");
           return;
         }
         setProviders(response.result.providers);
@@ -412,7 +418,7 @@ export function ProvidersSettings() {
       })
       .catch((error) => {
         if (!cancelled) {
-          pushNotification(error instanceof Error ? error.message : "Could not load Providers", "error");
+          pushNotification(error instanceof Error ? error.message : t("notifProviderLoadFailed"), "error");
         }
       })
       .finally(() => {
@@ -507,7 +513,7 @@ export function ProvidersSettings() {
     const errors = validateProviderDraft(draft);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      pushNotification("Fix the highlighted Provider fields before saving", "error");
+      pushNotification(t("notifProvidersFixFields"), "error");
       return null;
     }
     const removeStoredKey = clearApiKey && includeKeyRemoval;
@@ -531,7 +537,7 @@ export function ProvidersSettings() {
         },
       );
       if (!response.ok) {
-        const message = response.error?.message ?? "Could not save Provider";
+        const message = response.error?.message ?? t("notifProviderSaveFailed");
         pushNotification(providerSaveFailureMessage(message, provider), "error");
         return null;
       }
@@ -563,10 +569,10 @@ export function ProvidersSettings() {
         setApiKey("");
         if (removeStoredKey) setClearApiKey(false);
       }
-      if (notify) pushNotification("Provider saved");
+      if (notify) pushNotification(t("notifProviderSaved"));
       return saved;
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Could not save Provider", "error");
+      pushNotification(error instanceof Error ? error.message : t("notifProviderSaveFailed"), "error");
       return null;
     } finally {
       setSaving(false);
@@ -587,7 +593,7 @@ export function ProvidersSettings() {
         20_000,
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Could not fetch models", "error");
+        pushNotification(response.error?.message ?? t("notifFetchModelsFailed"), "error");
         return;
       }
       // The user may have switched to another Provider while the fetch was in
@@ -602,9 +608,9 @@ export function ProvidersSettings() {
             }
           : current,
       );
-      pushNotification(`Found ${response.result.models.length} models`);
+      pushNotification(t("notifFoundModels", { count: response.result.models.length }));
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Could not fetch models", "error");
+      pushNotification(error instanceof Error ? error.message : t("notifFetchModelsFailed"), "error");
     } finally {
       setFetching(false);
     }
@@ -617,7 +623,7 @@ export function ProvidersSettings() {
     if (!saved) return;
     const modelId = saved.models[0]?.id;
     if (!modelId) {
-      pushNotification("Add and enable at least one model before testing", "error");
+      pushNotification(t("notifNeedModelToTest"), "error");
       return;
     }
     setTesting(true);
@@ -630,15 +636,15 @@ export function ProvidersSettings() {
         25_000,
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Could not test Provider", "error");
+        pushNotification(response.error?.message ?? t("notifProviderTestFailed"), "error");
         return;
       }
       // Never render a result banner for a Provider the user switched away from.
       if (epoch !== draftEpochRef.current) return;
       setConnectionResult(response.result);
-      if (response.result.ok) pushNotification(`Provider responded in ${response.result.latencyMs} ms`);
+      if (response.result.ok) pushNotification(t("notifProviderResponded", { ms: response.result.latencyMs }));
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Could not test Provider", "error");
+      pushNotification(error instanceof Error ? error.message : t("notifProviderTestFailed"), "error");
     } finally {
       setTesting(false);
     }
@@ -666,7 +672,7 @@ export function ProvidersSettings() {
         { providerId: provider.id, enabled },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Could not update Provider", "error");
+        pushNotification(response.error?.message ?? t("notifProviderUpdateFailed"), "error");
         return;
       }
       setProviders((current) =>
@@ -675,9 +681,13 @@ export function ProvidersSettings() {
           : item),
       );
       refreshProviderConfig();
-      pushNotification(`${provider.name} ${enabled ? "enabled" : "disabled"}`);
+      pushNotification(
+        enabled
+          ? t("notifProviderEnabled", { name: provider.name })
+          : t("notifProviderDisabled", { name: provider.name }),
+      );
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Could not update Provider", "error");
+      pushNotification(error instanceof Error ? error.message : t("notifProviderUpdateFailed"), "error");
     } finally {
       setUpdatingProviderId(null);
     }
@@ -693,7 +703,7 @@ export function ProvidersSettings() {
         { providerId: draft.originalId },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Could not delete Provider", "error");
+        pushNotification(response.error?.message ?? t("notifProviderDeleteFailed"), "error");
         return;
       }
       const listResponse = await hostClient.request("provider.list", hostContext(host), null);
@@ -709,9 +719,9 @@ export function ProvidersSettings() {
         setCatalog([]);
       }
       refreshProviderConfig();
-      pushNotification("Provider deleted");
+      pushNotification(t("notifProviderDeleted"));
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Could not delete Provider", "error");
+      pushNotification(error instanceof Error ? error.message : t("notifProviderDeleteFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -756,10 +766,7 @@ export function ProvidersSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader
-        title="Providers"
-        subtitle="Model endpoints, credentials, and the chat model list"
-      />
+      <SectionHeader title={t("navProviders")} subtitle={t("providersSubtitle")} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface-raised/40">
         <div className="flex items-center gap-2 border-b border-border p-3">
@@ -767,7 +774,7 @@ export function ProvidersSettings() {
             <Search className="absolute left-2 top-2 text-muted" size={14} />
             <input
               className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
-              placeholder="Search Providers"
+              placeholder={t("providersSearch")}
               value={providerSearch}
               onChange={(event) => setProviderSearch(event.target.value)}
             />
@@ -775,7 +782,7 @@ export function ProvidersSettings() {
           <button
             type="button"
             className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
-            title="Add Provider"
+            title={t("providersAdd")}
             onClick={() => (dirty ? setPendingSwitch({ kind: "new" }) : startNewProvider())}
           >
             <Plus size={15} />
@@ -783,9 +790,9 @@ export function ProvidersSettings() {
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
           {loading ? (
-            <p className="p-3 text-xs text-muted">Loading Providers...</p>
+            <p className="p-3 text-xs text-muted">{t("providersLoading")}</p>
           ) : filteredProviders.length === 0 ? (
-            <p className="p-3 text-xs text-muted">No configured Providers</p>
+            <p className="p-3 text-xs text-muted">{t("providersNone")}</p>
           ) : (
             filteredProviders.map((provider) => (
               <div
@@ -814,7 +821,9 @@ export function ProvidersSettings() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{provider.name}</span>
                     <span className="block truncate text-[11px]">
-                      {provider.models.length} models{provider.enabled ? " - Enabled" : ""}
+                      {provider.enabled
+                        ? t("providersModelsCountEnabled", { count: provider.models.length })
+                        : t("providersModelsCount", { count: provider.models.length })}
                     </span>
                   </span>
                 </button>
@@ -840,17 +849,17 @@ export function ProvidersSettings() {
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted">
           {providers.length === 0 && !loading ? (
             <>
-              <p>No Providers configured yet.</p>
+              <p>{t("providersEmptyTitle")}</p>
               <button
                 type="button"
                 className={secondaryButton}
                 onClick={startNewProvider}
               >
-                <Plus size={14} /> Add Provider
+                <Plus size={14} /> {t("providersAdd")}
               </button>
             </>
           ) : (
-            "Select or add a Provider"
+            t("providersSelectHint")
           )}
         </div>
       ) : (
@@ -858,24 +867,24 @@ export function ProvidersSettings() {
           <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
             <header className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-lg font-semibold">{draft.originalId ? "Edit Provider" : "Add Provider"}</h1>
-                <p className="mt-1 text-xs text-muted">{draft.originalId ?? "Custom Provider"}</p>
+                <h1 className="text-lg font-semibold">{draft.originalId ? t("providersEditTitle") : t("providersAddTitle")}</h1>
+                <p className="mt-1 text-xs text-muted">{draft.originalId ?? t("providersCustom")}</p>
               </div>
               <div className="flex items-center gap-2">
                 {dirty && (
                   <span className="flex items-center gap-1 text-[11px] text-warning">
-                    <AlertTriangle size={12} /> Unsaved changes
+                    <AlertTriangle size={12} /> {t("providersUnsaved")}
                   </span>
                 )}
                 <button
                   type="button"
                   className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
                   disabled={saving || fetching || testing || draft.models.length === 0}
-                  title="Saves the Provider, then sends a minimal request through the configured model API"
+                  title={t("providersSaveAndTestTitle")}
                   onClick={() => void testConnection()}
                 >
                   <Activity className={testing ? "animate-pulse" : ""} size={14} />
-                  {testing ? "Testing" : "Save & test"}
+                  {testing ? t("providersTesting") : t("providersSaveAndTest")}
                 </button>
                 {draft.originalId && (
                   <button
@@ -884,7 +893,7 @@ export function ProvidersSettings() {
                     disabled={saving || fetching || testing}
                     onClick={() => setConfirmDelete(true)}
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={14} /> {t("commonDelete")}
                   </button>
                 )}
                 <button
@@ -894,7 +903,7 @@ export function ProvidersSettings() {
                   onClick={() => void persistDraft()}
                 >
                   {saving ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
-                  Save
+                  {t("commonSave")}
                 </button>
               </div>
             </header>
@@ -916,7 +925,7 @@ export function ProvidersSettings() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-medium">
-                        {connectionResult.ok ? "Generation check passed" : connectionResult.category.replace("_", " ")}
+                        {connectionResult.ok ? t("providersConnectionOk") : connectionResult.category.replace("_", " ")}
                       </span>
                       <span className="font-mono text-[11px] text-muted">
                         {connectionResult.modelId} · {connectionResult.latencyMs} ms
@@ -935,7 +944,7 @@ export function ProvidersSettings() {
                                   className="font-medium text-accent hover:underline"
                                   onClick={() => updateCompatibility("supportsDeveloperRole", false)}
                                 >
-                                  Use system role
+                                  {t("providersUseSystemRole")}
                                 </button>
                               )}
                               {draft.compat?.supportsReasoningEffort !== false && (
@@ -944,7 +953,7 @@ export function ProvidersSettings() {
                                   className="font-medium text-accent hover:underline"
                                   onClick={() => updateCompatibility("supportsReasoningEffort", false)}
                                 >
-                                  Omit reasoning_effort
+                                  {t("providersOmitReasoningEffort")}
                                 </button>
                               )}
                             </>
@@ -958,7 +967,7 @@ export function ProvidersSettings() {
 
             <section className="grid grid-cols-2 gap-4">
               <label className="flex flex-col gap-1.5 text-xs text-muted">
-                <span>Display name <span className="text-danger">*</span></span>
+                <span>{t("providersDisplayName")} <span className="text-danger">*</span></span>
                 <input
                   className={`h-8 rounded-md border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent ${
                     fieldErrors.name ? "border-danger" : "border-border"
@@ -967,11 +976,11 @@ export function ProvidersSettings() {
                   onChange={(event) => updateDraft({ name: event.target.value })}
                 />
                 {fieldErrors.name && (
-                  <span className="text-[11px] text-danger">{fieldErrors.name}</span>
+                  <span className="text-[11px] text-danger">{t(fieldErrors.name as MessageKey)}</span>
                 )}
               </label>
               <label className="flex flex-col gap-1.5 text-xs text-muted">
-                <span>Provider ID <span className="text-danger">*</span></span>
+                <span>{t("providersId")} <span className="text-danger">*</span></span>
                 <input
                   className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
                     fieldErrors.id ? "border-danger" : "border-border"
@@ -980,11 +989,11 @@ export function ProvidersSettings() {
                   onChange={(event) => updateDraft({ id: event.target.value })}
                 />
                 {fieldErrors.id && (
-                  <span className="text-[11px] text-danger">{fieldErrors.id}</span>
+                  <span className="text-[11px] text-danger">{t(fieldErrors.id as MessageKey)}</span>
                 )}
               </label>
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
-                <span>Base URL <span className="text-danger">*</span></span>
+                <span>{t("providersBaseUrl")} <span className="text-danger">*</span></span>
                 <input
                   className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
                     fieldErrors.baseUrl ? "border-danger" : "border-border"
@@ -997,11 +1006,11 @@ export function ProvidersSettings() {
                   onBlur={() => validateUrlField("baseUrl")}
                 />
                 {fieldErrors.baseUrl && (
-                  <span className="text-[11px] text-danger">{fieldErrors.baseUrl}</span>
+                  <span className="text-[11px] text-danger">{t(fieldErrors.baseUrl as MessageKey)}</span>
                 )}
               </label>
               <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
-                API protocol
+                {t("providersApiProtocol")}
                 <select
                   className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                   value={draft.api}
@@ -1019,29 +1028,29 @@ export function ProvidersSettings() {
               >
                 <summary className="flex h-8 cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
                   <ChevronRight className="transition-transform group-open:rotate-90" size={14} />
-                  Advanced endpoint
+                  {t("providersAdvancedEndpoint")}
                 </summary>
                 <label className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
-                  <span>Models URL <span className="font-normal text-muted">(optional)</span></span>
+                  <span>{t("providersModelsUrl")} <span className="font-normal text-muted">{t("providersOptional")}</span></span>
                   <input
                     className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
                       fieldErrors.modelsUrl ? "border-danger" : "border-border"
                     }`}
-                    placeholder="Auto-detect from Base URL"
+                    placeholder={t("providersModelsUrlPlaceholder")}
                     value={draft.modelsUrl ?? ""}
                     onChange={(event) => updateDraft({ modelsUrl: event.target.value })}
                     onBlur={() => validateUrlField("modelsUrl")}
                   />
                   {fieldErrors.modelsUrl && (
-                    <span className="text-[11px] text-danger">{fieldErrors.modelsUrl}</span>
+                    <span className="text-[11px] text-danger">{t(fieldErrors.modelsUrl as MessageKey)}</span>
                   )}
                 </label>
               </details>
               {draft.api === "openai-completions" && (
                 <div className="col-span-2 grid grid-cols-2 gap-4">
-                  <h2 className="col-span-2 text-sm font-medium">OpenAI compatibility</h2>
+                  <h2 className="col-span-2 text-sm font-medium">{t("providersCompatGroup")}</h2>
                   <label className="flex flex-col gap-1.5 text-xs text-muted">
-                    System instruction role
+                    {t("providersCompatSystemRole")}
                     <select
                       className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                       value={compatibilityChoice(draft.compat?.supportsDeveloperRole)}
@@ -1050,13 +1059,13 @@ export function ProvidersSettings() {
                         event.target.value === "auto" ? null : event.target.value === "enabled",
                       )}
                     >
-                      <option value="auto">Auto</option>
-                      <option value="enabled">Developer</option>
-                      <option value="disabled">System</option>
+                      <option value="auto">{t("commonAuto")}</option>
+                      <option value="enabled">{t("providersCompatDeveloper")}</option>
+                      <option value="disabled">{t("commonSystem")}</option>
                     </select>
                   </label>
                   <label className="flex flex-col gap-1.5 text-xs text-muted">
-                    Reasoning effort field
+                    {t("providersCompatReasoningEffort")}
                     <select
                       className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
                       value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
@@ -1065,9 +1074,9 @@ export function ProvidersSettings() {
                         event.target.value === "auto" ? null : event.target.value === "enabled",
                       )}
                     >
-                      <option value="auto">Auto</option>
-                      <option value="enabled">Send</option>
-                      <option value="disabled">Omit</option>
+                      <option value="auto">{t("commonAuto")}</option>
+                      <option value="enabled">{t("providersCompatSend")}</option>
+                      <option value="disabled">{t("providersCompatOmit")}</option>
                     </select>
                   </label>
                 </div>
@@ -1077,13 +1086,13 @@ export function ProvidersSettings() {
             <section>
               <div className="mb-2 flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-medium">API key</h2>
+                  <h2 className="text-sm font-medium">{t("providersApiKey")}</h2>
                   {clearApiKey ? (
                     <p className="flex items-center gap-1 text-[11px] text-danger">
-                      <AlertTriangle size={12} /> Stored key will be removed when you save
+                      <AlertTriangle size={12} /> {t("providersKeyWillBeRemoved")}
                     </p>
                   ) : (
-                    <p className="text-[11px] text-muted">{authLabel(selectedProvider)}</p>
+                    <p className="text-[11px] text-muted">{authLabel(t, selectedProvider)}</p>
                   )}
                 </div>
                 {selectedProvider?.auth.configured && (
@@ -1095,7 +1104,7 @@ export function ProvidersSettings() {
                       setApiKey("");
                     }}
                   >
-                    {clearApiKey ? "Keep stored key" : "Remove stored key"}
+                    {clearApiKey ? t("providersKeyKeep") : t("providersKeyRemove")}
                   </button>
                 )}
               </div>
@@ -1103,7 +1112,7 @@ export function ProvidersSettings() {
                 <input
                   type={showApiKey ? "text" : "password"}
                   className="h-8 w-full rounded-md border border-border bg-surface px-3 pr-10 font-mono text-xs outline-none focus:border-accent"
-                  placeholder={selectedProvider?.auth.configured ? "Leave blank to keep current key" : "Enter API key"}
+                  placeholder={selectedProvider?.auth.configured ? t("providersKeyPlaceholderKeep") : t("providersKeyPlaceholderEnter")}
                   value={apiKey}
                   onChange={(event) => {
                     setApiKey(event.target.value);
@@ -1114,7 +1123,7 @@ export function ProvidersSettings() {
                 <button
                   type="button"
                   className="absolute right-1 top-1 flex size-7 items-center justify-center text-muted hover:text-foreground"
-                  title={showApiKey ? "Hide API key" : "Show API key"}
+                  title={showApiKey ? t("providersKeyHide") : t("providersKeyShow")}
                   onClick={() => setShowApiKey((current) => !current)}
                 >
                   {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -1125,8 +1134,8 @@ export function ProvidersSettings() {
             <section>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-medium">Models</h2>
-                  <p className="text-[11px] text-muted">{draft.models.length} enabled in the chat model selector</p>
+                  <h2 className="text-sm font-medium">{t("providersModelsGroup")}</h2>
+                  <p className="text-[11px] text-muted">{t("providersModelsEnabledIn", { count: draft.models.length })}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -1138,12 +1147,12 @@ export function ProvidersSettings() {
                       syncModels(catalog.map((model) => ({ ...model, enabled: enable })));
                     }}
                   >
-                    {catalog.length > 0 && catalog.every((model) => model.enabled) ? "Select none" : "Select all"}
+                    {catalog.length > 0 && catalog.every((model) => model.enabled) ? t("providersSelectNone") : t("providersSelectAll")}
                   </button>
                   <button
                     type="button"
                     className="flex size-8 items-center justify-center rounded-md hover:bg-surface-overlay disabled:opacity-50"
-                    title="Save the Provider and fetch its model list"
+                    title={t("providersFetchModels")}
                     disabled={fetching || saving || testing}
                     onClick={() => void fetchModels()}
                   >
@@ -1152,7 +1161,7 @@ export function ProvidersSettings() {
                   <button
                     type="button"
                     className="flex size-8 items-center justify-center rounded-md hover:bg-surface-overlay"
-                    title="Add model manually"
+                    title={t("providersAddModel")}
                     onClick={() => setManualOpen((current) => !current)}
                   >
                     <Plus size={15} />
@@ -1163,7 +1172,7 @@ export function ProvidersSettings() {
                 <Search className="absolute left-2.5 top-2.5 text-muted" size={14} />
                 <input
                   className="h-8 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent"
-                  placeholder="Search models"
+                  placeholder={t("providersSearchModels")}
                   value={modelSearch}
                   onChange={(event) => setModelSearch(event.target.value)}
                 />
@@ -1172,7 +1181,7 @@ export function ProvidersSettings() {
                 <div className="mb-2 flex gap-2">
                   <input
                     className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-xs outline-none focus:border-accent"
-                    placeholder="Model ID"
+                    placeholder={t("providersModelId")}
                     value={manualId}
                     onChange={(event) => setManualId(event.target.value)}
                     onKeyDown={(event) => {
@@ -1182,7 +1191,7 @@ export function ProvidersSettings() {
                   <button
                     type="button"
                     className="flex size-8 items-center justify-center rounded-md bg-accent text-white"
-                    title="Add model"
+                    title={t("providersAddModelConfirm")}
                     onClick={addManualModel}
                   >
                     <Check size={14} />
@@ -1191,7 +1200,7 @@ export function ProvidersSettings() {
               )}
               <div className="max-h-96 overflow-auto rounded-md border border-border">
                 {filteredModels.length === 0 ? (
-                  <p className="p-4 text-center text-xs text-muted">Fetch or add models to configure visibility</p>
+                  <p className="p-4 text-center text-xs text-muted">{t("providersModelsEmpty")}</p>
                 ) : (
                   filteredModels.map((model) => (
                     <div key={model.id} className="border-b border-border last:border-b-0">
@@ -1199,13 +1208,13 @@ export function ProvidersSettings() {
                         <input
                           type="checkbox"
                           checked={model.enabled}
-                          aria-label={`Show ${model.name} in chat`}
+                          aria-label={t("providersShowInChat", { name: model.name })}
                           onChange={(event) => updateModel(model.id, { enabled: event.target.checked })}
                         />
                         <span className="min-w-0 flex-1 truncate text-sm" title={model.id}>{model.name}</span>
                         {model.reasoning && (
-                          <span className="text-[11px] text-muted" title={thinkingSourceLabel(model)}>
-                            reasoning
+                          <span className="text-[11px] text-muted" title={thinkingSourceLabel(t, model)}>
+                            {t("providersReasoningBadge")}
                           </span>
                         )}
                         <button
@@ -1215,7 +1224,7 @@ export function ProvidersSettings() {
                               ? "bg-accent/15 text-accent"
                               : "text-muted hover:text-foreground"
                           }`}
-                          title="Model settings"
+                          title={t("providersModelSettings")}
                           aria-expanded={editingModelId === model.id}
                           onClick={() => setEditingModelId((current) => (current === model.id ? null : model.id))}
                         >
@@ -1229,15 +1238,15 @@ export function ProvidersSettings() {
                             <button
                               type="button"
                               className="text-muted hover:text-foreground"
-                              title="Close model settings"
-                              aria-label="Close model settings"
+                              title={t("providersCloseModelSettings")}
+                              aria-label={t("providersCloseModelSettings")}
                               onClick={() => setEditingModelId(null)}
                             >
                               <X size={14} />
                             </button>
                           </div>
                           <label className="flex flex-col gap-1 text-[11px] text-muted">
-                            Display name
+                            {t("providersDisplayName")}
                             <input
                               className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
                               value={model.name}
@@ -1246,18 +1255,18 @@ export function ProvidersSettings() {
                           </label>
                           <NumberField
                             key={`${model.id}:contextWindow`}
-                            label="Context window"
+                            label={t("providersContextWindow")}
                             value={model.contextWindow}
                             onCommit={(next) => updateModel(model.id, { contextWindow: next })}
                           />
                           <NumberField
                             key={`${model.id}:maxTokens`}
-                            label="Max output tokens"
+                            label={t("providersMaxTokens")}
                             value={model.maxTokens}
                             onCommit={(next) => updateModel(model.id, { maxTokens: next })}
                           />
                           <label className="flex flex-col gap-1 text-[11px] text-muted">
-                            Thinking support
+                            {t("providersThinkingSupport")}
                             <select
                               className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
                               value={thinkingMode(model)}
@@ -1282,9 +1291,9 @@ export function ProvidersSettings() {
                                 updateModel(model.id, automaticThinkingConfig(model.id));
                               }}
                             >
-                              <option value="auto">Auto</option>
-                              <option value="custom">Custom</option>
-                              <option value="disabled">Disabled</option>
+                              <option value="auto">{t("commonAuto")}</option>
+                              <option value="custom">{t("commonCustom")}</option>
+                              <option value="disabled">{t("commonDisabled")}</option>
                             </select>
                           </label>
                           <div className="flex items-end gap-4 pb-1 text-xs">
@@ -1295,11 +1304,11 @@ export function ProvidersSettings() {
                                 onChange={(event) =>
                                   updateModel(model.id, { input: event.target.checked ? ["text", "image"] : ["text"] })
                                 }
-                              /> Images
+                              /> {t("providersImages")}
                             </label>
                           </div>
                           <p className="col-span-2 text-[11px] text-muted">
-                            {thinkingSourceLabel(model)}
+                            {thinkingSourceLabel(t, model)}
                           </p>
                           {thinkingMode(model) === "custom" && (
                             <div className="col-span-2 grid grid-cols-4 gap-2 border-t border-border pt-2">
@@ -1340,7 +1349,7 @@ export function ProvidersSettings() {
             </section>
 
             <details className="border-t border-border pt-4">
-              <summary className="cursor-pointer text-sm font-medium">Custom headers</summary>
+              <summary className="cursor-pointer text-sm font-medium">{t("providersHeadersGroup")}</summary>
               <div className="mt-3 flex flex-col gap-2">
                 {Object.entries(draft.headers).map(([key, value]) => (
                   <div key={key} className="grid grid-cols-[1fr_1.5fr_32px] gap-2">
@@ -1357,7 +1366,7 @@ export function ProvidersSettings() {
                     <button
                       type="button"
                       className="flex size-8 items-center justify-center text-muted hover:text-danger"
-                      title="Remove header"
+                      title={t("providersHeaderRemove")}
                       onClick={() => updateHeader(key, "", "")}
                     >
                       <Trash2 size={14} />
@@ -1374,7 +1383,7 @@ export function ProvidersSettings() {
                     updateDraft({ headers: { ...draft.headers, [key]: "" } });
                   }}
                 >
-                  <Plus size={13} /> Add header
+                  <Plus size={13} /> {t("providersHeaderAdd")}
                 </button>
               </div>
             </details>
@@ -1386,8 +1395,8 @@ export function ProvidersSettings() {
         const saved = providers.find((provider) => provider.id === draft.originalId);
         return (
           <Dialog
-            title="Delete Provider"
-            confirmLabel="Delete Provider"
+            title={t("providersDeleteTitle")}
+            confirmLabel={t("providersDeleteTitle")}
             tone="danger"
             onCancel={() => setConfirmDelete(false)}
             onConfirm={() => {
@@ -1395,14 +1404,11 @@ export function ProvidersSettings() {
               void removeProvider();
             }}
           >
-            <p>
-              This deletes {saved?.name ?? draft.originalId} and its stored API
-              key from this machine.
-            </p>
+            <p>{t("providersDeleteBody", { name: saved?.name ?? draft.originalId ?? "" })}</p>
             <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
-              <dt>Base URL</dt>
+              <dt>{t("providersBaseUrl")}</dt>
               <dd className="break-all font-mono text-foreground">{saved?.baseUrl ?? "—"}</dd>
-              <dt>Models</dt>
+              <dt>{t("providersDeleteModels")}</dt>
               <dd className="text-foreground">{saved?.models.length ?? 0}</dd>
             </dl>
           </Dialog>
@@ -1410,8 +1416,8 @@ export function ProvidersSettings() {
       })()}
       {pendingSwitch !== null && (
         <Dialog
-          title="Discard unsaved changes?"
-          confirmLabel="Discard changes"
+          title={t("providersSwitchTitle")}
+          confirmLabel={t("settingsDiscardConfirm")}
           tone="warning"
           onCancel={() => setPendingSwitch(null)}
           onConfirm={() => {
@@ -1427,10 +1433,7 @@ export function ProvidersSettings() {
             if (live) selectProvider(live);
           }}
         >
-          <p>
-            Edits to {draft?.name?.trim() || "this Provider"} have not been
-            saved. Switching away will discard them.
-          </p>
+          <p>{t("providersSwitchBody", { name: draft?.name?.trim() || t("providersThisProvider") })}</p>
         </Dialog>
       )}
     </div>

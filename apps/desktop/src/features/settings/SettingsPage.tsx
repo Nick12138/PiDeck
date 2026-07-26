@@ -14,6 +14,8 @@ import type { TerminalProfileId } from "@pideck/protocol";
 import { Dialog } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
+import { useT } from "../../lib/i18n/use-t";
+import type { MessageKey } from "../../lib/i18n";
 import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
@@ -31,6 +33,7 @@ type ShellProfileCatalog = {
 };
 
 function GeneralSettings() {
+  const t = useT();
   const desktopSettings = useAppStore((s) => s.desktopSettings);
   const setDesktopSettings = useAppStore((s) => s.setDesktopSettings);
   const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
@@ -73,21 +76,16 @@ function GeneralSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SectionHeader
-        title="General"
-        subtitle="Desktop behavior and Pi Host configuration"
-      />
+      <SectionHeader title={t("navGeneral")} subtitle={t("generalSubtitle")} />
       <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
         <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">Appearance &amp; startup</h2>
+          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAppearanceGroup")}</h2>
           <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
             <label className="flex items-center justify-between gap-4">
               <span className="min-w-0">
-                <span className="block text-sm">Theme</span>
-                <span className="block text-xs text-muted">
-                  Follow the system appearance or force light / dark.
-                </span>
+                <span className="block text-sm">{t("generalTheme")}</span>
+                <span className="block text-xs text-muted">{t("generalThemeDesc")}</span>
               </span>
               <select
                 className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
@@ -98,35 +96,49 @@ function GeneralSettings() {
                   })
                 }
               >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
+                <option value="system">{t("commonSystem")}</option>
+                <option value="light">{t("generalThemeLight")}</option>
+                <option value="dark">{t("generalThemeDark")}</option>
+              </select>
+            </label>
+            <label className="flex items-center justify-between gap-4">
+              <span className="min-w-0">
+                <span className="block text-sm">{t("generalLanguage")}</span>
+                <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
+              </span>
+              <select
+                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+                value={desktopSettings?.language ?? "system"}
+                onChange={(e) =>
+                  void patchDesktop({
+                    language: e.target.value as "system" | "en" | "zh",
+                  })
+                }
+              >
+                <option value="system">{t("commonSystem")}</option>
+                <option value="en">English</option>
+                <option value="zh">中文</option>
               </select>
             </label>
             <div className="flex items-center justify-between gap-4">
               <span className="min-w-0">
-                <span className="block text-sm">Restore last session</span>
-                <span className="block text-xs text-muted">
-                  Reopen your last workspace and conversation when PiDeck starts.
-                </span>
+                <span className="block text-sm">{t("generalRestoreSession")}</span>
+                <span className="block text-xs text-muted">{t("generalRestoreSessionDesc")}</span>
               </span>
               <Switch
                 checked={desktopSettings?.restoreLastSession ?? true}
-                label="Restore last session"
+                label={t("generalRestoreSession")}
                 onChange={(next) => void patchDesktop({ restoreLastSession: next })}
               />
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="min-w-0">
-                <span className="block text-sm">Auto-restart Pi Host</span>
-                <span className="block text-xs text-muted">
-                  If the host process crashes, restart it once automatically
-                  before showing an error.
-                </span>
+                <span className="block text-sm">{t("generalAutoRestart")}</span>
+                <span className="block text-xs text-muted">{t("generalAutoRestartDesc")}</span>
               </span>
               <Switch
                 checked={desktopSettings?.autoRestartHostOnce ?? true}
-                label="Auto-restart Pi Host"
+                label={t("generalAutoRestart")}
                 onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
               />
             </div>
@@ -134,14 +146,12 @@ function GeneralSettings() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">Terminal</h2>
+          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalTerminalGroup")}</h2>
           <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
             <div className="flex items-center justify-between gap-4">
               <label htmlFor="default-shell" className="min-w-0 text-sm">
-                <span className="block">Default shell</span>
-                <span className="block text-xs text-muted">
-                  Shell used by terminals in the right dock.
-                </span>
+                <span className="block">{t("generalDefaultShell")}</span>
+                <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
               </label>
               <div className="flex min-w-0 items-center gap-1.5">
                 <select
@@ -156,7 +166,7 @@ function GeneralSettings() {
                   }
                 >
                   <option value="auto">
-                    Automatic
+                    {t("generalShellAutomatic")}
                     {shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""}
                   </option>
                   {shellCatalog?.profiles.map((profile) => (
@@ -170,14 +180,14 @@ function GeneralSettings() {
                       (profile) => profile.id === desktopSettings.terminalProfile,
                     ) && (
                       <option value={desktopSettings.terminalProfile} disabled>
-                        {desktopSettings.terminalProfile} (unavailable)
+                        {t("generalShellUnavailable", { id: desktopSettings.terminalProfile })}
                       </option>
                     )}
                 </select>
                 <button
                   type="button"
-                  title="Detect shells again"
-                  aria-label="Detect shells again"
+                  title={t("generalDetectShells")}
+                  aria-label={t("generalDetectShells")}
                   disabled={shellCatalogLoading}
                   className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
                   onClick={() => void loadShellProfiles()}
@@ -214,14 +224,14 @@ export type SettingsSection = "general" | "providers" | "packages" | "usage" | "
 
 const SETTINGS_NAV: Array<{
   id: SettingsSection;
-  label: string;
+  label: MessageKey;
   icon: typeof Settings2;
 }> = [
-  { id: "general", label: "General", icon: Settings2 },
-  { id: "providers", label: "Providers", icon: KeyRound },
-  { id: "packages", label: "Packages", icon: Package },
-  { id: "usage", label: "Usage", icon: ChartColumn },
-  { id: "host", label: "Host", icon: ServerCog },
+  { id: "general", label: "navGeneral", icon: Settings2 },
+  { id: "providers", label: "navProviders", icon: KeyRound },
+  { id: "packages", label: "navPackages", icon: Package },
+  { id: "usage", label: "navUsage", icon: ChartColumn },
+  { id: "host", label: "navHost", icon: ServerCog },
 ];
 
 export function SettingsPage({
@@ -231,6 +241,7 @@ export function SettingsPage({
   initialSection?: SettingsSection;
   onClose?: () => void;
 }) {
+  const t = useT();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const providersDirty = useAppStore((s) => s.providersDirty);
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
@@ -258,14 +269,14 @@ export function SettingsPage({
           type="button"
           onClick={onClose}
           className="mr-3 flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-          title="Back to conversation"
-          aria-label="Back to conversation"
+          title={t("settingsBack")}
+          aria-label={t("settingsBack")}
         >
           <ArrowLeft size={18} />
         </button>
         <div className="pointer-events-none">
-          <h1 className="text-sm font-semibold">Settings</h1>
-          <p className="text-[11px] text-muted">Configure PiDeck and its runtime</p>
+          <h1 className="text-sm font-semibold">{t("settingsTitle")}</h1>
+          <p className="text-[11px] text-muted">{t("settingsSubtitle")}</p>
         </div>
       </header>
 
@@ -285,7 +296,7 @@ export function SettingsPage({
               onClick={() => requestSection(id)}
             >
               <Icon size={16} />
-              {label}
+              {t(label)}
             </button>
           ))}
         </nav>
@@ -305,8 +316,8 @@ export function SettingsPage({
       </div>
       {pendingSection && (
         <Dialog
-          title="Discard unsaved Provider changes?"
-          confirmLabel="Discard changes"
+          title={t("settingsDiscardTitle")}
+          confirmLabel={t("settingsDiscardConfirm")}
           tone="warning"
           onCancel={() => setPendingSection(null)}
           onConfirm={() => {
@@ -314,10 +325,7 @@ export function SettingsPage({
             setPendingSection(null);
           }}
         >
-          <p>
-            The Provider form has edits that were not saved. Leaving this
-            section will discard them.
-          </p>
+          <p>{t("settingsDiscardNavBody")}</p>
         </Dialog>
       )}
     </div>

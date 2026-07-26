@@ -24,6 +24,8 @@ pub struct DesktopSettings {
     pub agent_dir: Option<String>,
     pub auto_restart_host_once: bool,
     pub terminal_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
 }
@@ -39,6 +41,7 @@ impl Default for DesktopSettings {
             agent_dir: None,
             auto_restart_host_once: true,
             terminal_profile: "auto".into(),
+            language: None,
             known_workspaces: Vec::new(),
         }
     }
@@ -270,6 +273,23 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pideck-settings-{name}-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn persists_the_language_preference_across_reloads() {
+        let dir = test_dir("language");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store
+            .patch(serde_json::json!({ "language": "zh" }))
+            .unwrap();
+        assert_eq!(store.settings.language.as_deref(), Some("zh"));
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.language.as_deref(), Some("zh"));
+
+        let mut cleared = reloaded;
+        cleared.patch(serde_json::json!({ "language": null })).unwrap();
+        assert_eq!(cleared.settings.language, None);
     }
 
     #[test]

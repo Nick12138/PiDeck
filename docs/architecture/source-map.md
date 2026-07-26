@@ -50,6 +50,7 @@ the current Windows development-candidate boundary follow
 | Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
 | Shared confirm dialog | `apps/desktop/src/components/Dialog.tsx` (tones: default/warning/danger) | `Dialog.dom.test.tsx` (Escape containment, focus) |
 | Shared UI controls | `apps/desktop/src/components/Switch.tsx`, `SectionHeader.tsx` | via settings/packages DOM tests |
+| i18n (en/zh catalogs, language setting) | `apps/desktop/src/lib/i18n/` | `i18n.test.ts` (locale resolution, interpolation, zh coverage); language switch in `SettingsPage.dom.test.tsx` |
 | Global notification/error center | `apps/desktop/src/components/NotificationCenter.tsx` | `NotificationCenter.test.tsx` |
 
 ## Rust

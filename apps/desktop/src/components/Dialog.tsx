@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, PackageOpen } from "lucide-react";
+import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
@@ -35,6 +36,7 @@ export function Dialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Callers pass inline handlers; route through a ref so the effect stays
   // mount-stable and parent re-renders cannot re-run the initial focus().
@@ -96,7 +98,7 @@ export function Dialog({
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className={secondaryButton} onClick={onCancel}>Cancel</button>
+          <button type="button" className={secondaryButton} onClick={onCancel}>{t("commonCancel")}</button>
           <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
             {confirmLabel}
           </button>

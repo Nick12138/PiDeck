@@ -16,8 +16,8 @@ describe("NotificationPanel", () => {
     );
 
     expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-label="Notification center"');
-    expect(html).toContain('aria-label="Clear all notifications"');
+    expect(html).toContain('aria-label="Notifications"');
+    expect(html).toContain('aria-label="Clear all"');
     expect(html).toContain('aria-label="Dismiss notification"');
     expect(html).toContain("Settings backup created");
     expect(html).toContain("Provider unavailable");
@@ -31,6 +31,6 @@ describe("NotificationPanel", () => {
       <NotificationPanel notifications={[]} onDismiss={vi.fn()} onClear={vi.fn()} />,
     );
     expect(html).toContain("No notifications");
-    expect(html).not.toContain('aria-label="Clear all notifications"');
+    expect(html).not.toContain('aria-label="Clear all"');
   });
 });

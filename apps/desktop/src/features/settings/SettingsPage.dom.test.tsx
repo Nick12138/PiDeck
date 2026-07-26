@@ -9,11 +9,18 @@ import { SettingsPage } from "./SettingsPage";
 beforeEach(() => {
   useAppStore.getState().setHost(null);
   useAppStore.getState().setProvidersDirty(false);
+  useAppStore.getState().setDesktopSettings({
+    theme: "system",
+    restoreLastSession: true,
+    autoRestartHostOnce: true,
+    terminalProfile: "auto",
+  });
 });
 
 afterEach(() => {
   cleanup();
   useAppStore.getState().setProvidersDirty(false);
+  useAppStore.getState().setDesktopSettings(null);
   vi.restoreAllMocks();
 });
 
@@ -57,6 +64,20 @@ describe("SettingsPage navigation guard", () => {
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
+  });
+
+  it("switches the interface to Chinese from the General language select", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/Language/), "zh");
+
+    expect(screen.getByRole("button", { name: "通用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "主机" })).toBeInTheDocument();
+    expect(screen.getByText("外观与启动")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "General" })).not.toBeInTheDocument();
   });
 
   it("guards the close button while dirty and closes once confirmed via the overlay owner", async () => {

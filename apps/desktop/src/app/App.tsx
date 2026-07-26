@@ -23,6 +23,8 @@ import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-co
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
+import { applyLanguage } from "../lib/i18n";
+import { useT } from "../lib/i18n/use-t";
 import {
   persistDesktopSettings,
   persistRecentDesktopLocation,
@@ -35,6 +37,7 @@ import {
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
 
 function SettingsOverlay({ section }: { section: "general" | "packages" }) {
+  const t = useT();
   const setPage = useAppStore((s) => s.setPage);
   const [active, setActive] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -76,8 +79,8 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
       <SettingsPage initialSection={section} onClose={requestClose} />
       {confirmDiscard && (
         <Dialog
-          title="Discard unsaved Provider changes?"
-          confirmLabel="Discard changes"
+          title={t("settingsDiscardTitle")}
+          confirmLabel={t("settingsDiscardConfirm")}
           tone="warning"
           onCancel={() => setConfirmDiscard(false)}
           onConfirm={() => {
@@ -85,10 +88,7 @@ function SettingsOverlay({ section }: { section: "general" | "packages" }) {
             setActive(false);
           }}
         >
-          <p>
-            The Provider form has edits that were not saved. Closing Settings
-            will discard them.
-          </p>
+          <p>{t("settingsDiscardCloseBody")}</p>
         </Dialog>
       )}
     </div>
@@ -822,6 +822,10 @@ export function App() {
   useEffect(() => {
     if (desktopSettings?.theme) applyTheme(desktopSettings.theme);
   }, [desktopSettings?.theme]);
+
+  useEffect(() => {
+    applyLanguage(desktopSettings?.language);
+  }, [desktopSettings?.language]);
 
   useEffect(() => {
     if (

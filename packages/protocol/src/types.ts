@@ -555,6 +555,8 @@ export type DesktopSettings = {
   agentDir?: string;
   autoRestartHostOnce: boolean;
   terminalProfile: TerminalProfileId;
+  /** UI language; "system" (or absent) follows the OS locale. */
+  language?: "system" | "en" | "zh";
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
 };

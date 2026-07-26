@@ -1,6 +1,7 @@
 import type { HostResponseEnvelope, SessionUsageReport } from "@pideck/protocol";
 import { Archive, RefreshCw } from "lucide-react";
 import { SectionHeader } from "../../components/SectionHeader";
+import { useT } from "../../lib/i18n/use-t";
 import { useEffect, useState } from "react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
@@ -103,19 +104,20 @@ function useSessionUsageReport() {
 }
 
 export function UsageSettings() {
+  const t = useT();
   const { report, error, loading, refresh } = useSessionUsageReport();
   const usage = report?.totals.usage;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader title="Usage" subtitle="Token and cost totals for this workspace">
+      <SectionHeader title={t("navUsage")} subtitle={t("usageSubtitle")}>
         <button
           type="button"
           onClick={refresh}
           disabled={loading}
           className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-50"
-          title="Refresh usage report"
-          aria-label="Refresh usage report"
+          title={t("usageRefresh")}
+          aria-label={t("usageRefresh")}
         >
           <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
         </button>
@@ -123,21 +125,21 @@ export function UsageSettings() {
 
       <div className="grid shrink-0 grid-cols-3 border-b border-border">
         <div className="border-r border-border px-6 py-4">
-          <p className="text-[11px] text-muted">Total tokens</p>
+          <p className="text-[11px] text-muted">{t("usageTotalTokens")}</p>
           <p className="mt-1 text-base font-semibold tabular-nums">
             {usage ? formatTokenCount(usage.totalTokens) : "--"}
           </p>
           {usage && (
             <dl className="mt-2 grid max-w-52 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px] text-muted">
-              <dt>Input</dt>
+              <dt>{t("usageInput")}</dt>
               <dd className="text-right tabular-nums">{formatTokenCount(usage.input)}</dd>
-              <dt>Output</dt>
+              <dt>{t("usageOutput")}</dt>
               <dd className="text-right tabular-nums">{formatTokenCount(usage.output)}</dd>
-              <dt>Cache read</dt>
+              <dt>{t("usageCacheRead")}</dt>
               <dd className="text-right tabular-nums">{formatTokenCount(usage.cacheRead)}</dd>
-              <dt>Cache write</dt>
+              <dt>{t("usageCacheWrite")}</dt>
               <dd className="text-right tabular-nums">{formatTokenCount(usage.cacheWrite)}</dd>
-              <dt>Reasoning</dt>
+              <dt>{t("usageReasoning")}</dt>
               <dd className="text-right tabular-nums">
                 {usage.reasoning === undefined ? "—" : formatTokenCount(usage.reasoning)}
               </dd>
@@ -145,13 +147,13 @@ export function UsageSettings() {
           )}
         </div>
         <div className="border-r border-border px-6 py-4">
-          <p className="text-[11px] text-muted">Total cost</p>
+          <p className="text-[11px] text-muted">{t("usageTotalCost")}</p>
           <p className="mt-1 text-base font-semibold tabular-nums">
             {usage ? formatCost(usage.cost.total) : "--"}
           </p>
         </div>
         <div className="px-6 py-4">
-          <p className="text-[11px] text-muted">Sessions</p>
+          <p className="text-[11px] text-muted">{t("usageSessions")}</p>
           <p className="mt-1 text-base font-semibold tabular-nums">
             {report ? report.totals.sessionCount.toLocaleString() : "--"}
           </p>
@@ -165,20 +167,20 @@ export function UsageSettings() {
           </div>
         ) : !report && loading ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted">
-            Loading usage...
+            {t("usageLoading")}
           </div>
         ) : report?.sessions.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted">
-            No session usage found.
+            {t("usageEmpty")}
           </div>
         ) : (
           <table className="w-full table-fixed border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 bg-surface-raised text-[11px] text-muted">
               <tr className="border-b border-border">
-                <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">Session</th>
-                <th scope="col" className="w-[24%] px-3 py-2.5 font-medium">Updated</th>
-                <th scope="col" className="w-[18%] px-3 py-2.5 text-right font-medium">Tokens</th>
-                <th scope="col" className="w-[16%] px-6 py-2.5 text-right font-medium">Cost</th>
+                <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">{t("usageColSession")}</th>
+                <th scope="col" className="w-[24%] px-3 py-2.5 font-medium">{t("usageColUpdated")}</th>
+                <th scope="col" className="w-[18%] px-3 py-2.5 text-right font-medium">{t("usageColTokens")}</th>
+                <th scope="col" className="w-[16%] px-6 py-2.5 text-right font-medium">{t("usageColCost")}</th>
               </tr>
             </thead>
             <tbody>
@@ -189,15 +191,15 @@ export function UsageSettings() {
                       {session.archived && (
                         <>
                           <Archive size={13} className="shrink-0 text-muted" aria-hidden />
-                          <span className="sr-only">Archived</span>
+                          <span className="sr-only">{t("usageArchived")}</span>
                         </>
                       )}
                       <span className="truncate font-medium" title={session.sessionPath}>
-                        {session.name ?? "Untitled session"}
+                        {session.name ?? t("usageUntitledSession")}
                       </span>
                     </div>
                     <p className="mt-0.5 truncate text-[10px] text-muted">
-                      {session.messageCount.toLocaleString()} messages
+                      {t("usageMessages", { count: session.messageCount.toLocaleString() })}
                     </p>
                   </td>
                   <td className="px-3 py-3 text-muted">

@@ -8,6 +8,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useT } from "../lib/i18n/use-t";
 import { useAppStore, type AppNotification } from "../lib/stores/app-store";
 
 function levelStyle(level: string) {
@@ -40,19 +41,20 @@ export function NotificationPanel({
   onDismiss: (id: string) => void;
   onClear: () => void;
 }) {
+  const t = useT();
   return (
     <section
       role="dialog"
-      aria-label="Notification center"
+      aria-label={t("notifCenterTitle")}
       className="fixed left-3 top-14 z-[70] flex max-h-[min(32rem,calc(100vh-4.25rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">Notifications</h2>
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("notifCenterTitle")}</h2>
         {notifications.length > 0 && (
           <button
             type="button"
-            title="Clear all notifications"
-            aria-label="Clear all notifications"
+            title={t("notifCenterClearAll")}
+            aria-label={t("notifCenterClearAll")}
             onClick={onClear}
             className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
           >
@@ -62,7 +64,7 @@ export function NotificationPanel({
       </header>
       {notifications.length === 0 ? (
         <div className="flex min-h-28 items-center justify-center px-4 text-sm text-muted">
-          No notifications
+          {t("notifCenterEmpty")}
         </div>
       ) : (
         <ol className="min-h-0 overflow-y-auto">
@@ -92,8 +94,8 @@ export function NotificationPanel({
                 </div>
                 <button
                   type="button"
-                  title="Dismiss notification"
-                  aria-label="Dismiss notification"
+                  title={t("notifCenterDismiss")}
+                  aria-label={t("notifCenterDismiss")}
                   onClick={() => onDismiss(notification.id)}
                   className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
                 >
@@ -109,6 +111,7 @@ export function NotificationPanel({
 }
 
 export function NotificationCenter() {
+  const t = useT();
   const notifications = useAppStore((state) => state.notifications);
   const dismissNotification = useAppStore((state) => state.dismissNotification);
   const clearNotifications = useAppStore((state) => state.clearNotifications);
@@ -155,8 +158,8 @@ export function NotificationCenter() {
     <div ref={rootRef} className="relative z-30">
       <button
         type="button"
-        title="Notifications"
-        aria-label={`Notifications (${notifications.length})`}
+        title={t("notifCenterTitle")}
+        aria-label={t("notifCenterLabel", { count: notifications.length })}
         aria-expanded={open}
         onClick={() => {
           setOpen((value) => !value);
@@ -202,7 +205,7 @@ export function NotificationCenter() {
           <span className="min-w-0 flex-1 break-words text-sm leading-5">{toast.message}</span>
           <X
             size={14}
-            aria-label="Dismiss notification preview"
+            aria-label={t("notifCenterDismissPreview")}
             className="mt-0.5 shrink-0 text-muted"
             onClick={(event) => {
               event.stopPropagation();
