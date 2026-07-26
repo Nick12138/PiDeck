@@ -237,6 +237,13 @@ bash_execution_update
 
 `event-normalize.ts` 是显式白名单，未列入的事件会被规约为 `{ type: "unknown" }`。因此这四个事件在 PR-4 之前不会跨越 Host/Desktop 边界，PR-3 也不需要为它们改协议。
 
+PR-4 已对这四个事件做出决定：
+
+- **三个 `summarization_retry_*` 事件：接入。** 它们由 `AgentSession._summarizationRetryCallbacks()` 在 compaction 或 branch-summary 的摘要 LLM 调用重试时发出（`dist/core/agent-session.js`）。桌面端此前在 branch-summary 重试退避期间没有任何状态信号，表头会显示 "Working" 且无从区分卡死与退避。现在白名单放行审阅过的字段（`attempt`/`maxAttempts`/`delayMs`/`errorMessage`/`source`/`reason`），`transcript-reducer.ts` 把它们映射到既有的 `isRetrying` 状态；compaction 期间 `isCompacting` 在表头优先级更高，用户继续看到 "Compacting"，语义仍然真实。协议无需改动——`SerializableAgentSessionEvent` 本就是 `{ type: string }` 加 JSON 值的宽松类型。
+- **`bash_execution_update`：不接入。** 它唯一的发射点是 `AgentSession.executeBash()`（TUI `!` 命令 / direct RPC bash），PiDeck 的 Host 与桌面端都不调用该方法，扩展 API 也不直接暴露它。即便未来某扩展间接触发，结果仍会以 `bashExecution` 会话消息落入 session 历史并经快照渲染，丢掉 delta 流不损失任何持久数据。`event-normalize.test.ts` 用一条显式回归测试把该事件钉在 `{ type: "unknown" }` 上，使这成为有记录的决定而非遗漏。
+
+另注意：协议中的 `agent.compactionChanged` / `agent.retryChanged` 事件通道自定义以来 Host 从未发射（桌面端 `App.tsx` 有处理分支但收不到），compaction/retry 状态实际全部经 `agent.event` → transcript-reducer 传递。新事件沿用这条活路径，不复活死通道。
+
 ## 10. 由此得出的待决项
 
 1. ~~Host 启动路径必须适配 `ModelRuntime.create()` 的异步性~~ —— 已完成，启动改为 `await ModelRuntime.create()` 并显式 await 首次本地 refresh。
@@ -248,3 +255,33 @@ bash_execution_update
 7. ~~§6.7 的真实子进程 abort 行为测试仍未编写~~ —— 已完成，`sdk-package-cancellation.test.ts` 起真实长运行子进程、abort、并用 `process.kill(pid, 0)` 断言进程确实被回收，覆盖 inherit 与 capture 两类 spawn。把 patch 的 signal 注入去掉后三条测试都会红，证明它们不是空转。
 
    注意 capture 那条的断言顺序：`runCommandCapture` 自带 10s 网络超时，如果先 await 操作再检查子进程，超时早已把子进程收掉，测试在没有 patch 时也会绿。必须在 await 之前用远小于 10s 的期限断言。
+
+## 11. Extension provider 泄漏与 ownership 层（PR-4）
+
+0.82.1 的 `ModelRuntime` 把扩展注册的 provider 存进进程级实例字段 `extensionProviders` / `nativeExtensionProviders`（`dist/core/model-runtime.js`），key 是裸 provider id，无任何 workspace/session 命名空间；`AgentSession.dispose()` 不注销，SDK 与 PiDeck 全仓也没有任何 `unregisterProvider` 调用方。上游一进程一工作区所以无碍；PiDeck 的 Host 先后服务多个工作区，泄漏路径完整：
+
+- 扩展 `pi.registerProvider` 加载期入 loader 私有队列（`ExtensionRuntimeState.pendingProviderRegistrations`），在 `createAgentSession` → `ExtensionRunner.bindCore` 冲入共享 runtime；bind 之后的注册（Path B，agent turn 中途）经 `providerActions` 直达 `session._modelRuntime`——PiDeck 注入的正是全局唯一 runtime。
+- 重复注册按「defined 值合并覆盖」语义（`registerProvider` 保留旧字段），A、B 同 id 会互相污染。
+- `retainedGraphFingerprint` 覆盖 `models.json` 但不含内存中的 extensionProviders，所以 retained 图带泄漏重激活。
+
+**证据**：`extension-provider-isolation.test.ts` 第一组用例对未包装 runtime 复现——session dispose 后 provider（含 config 内 apiKey）仍在注册表。满足交接文档「只有隔离测试证明泄漏才建 owner/ref-count」的门槛。
+
+**ownership 层**（`extension-provider-ownership.ts`）：对 runtime 实例做方法级包装（ModelRegistry facade、ExtensionRunner 兜底 facade、providerActions 全部经同一实例方法，一处拦截全覆盖）。规则：
+
+- 归属：`AsyncLocalStorage` 绑定 workspace 构建/绑定窗口 → 显式 owner；无窗口时回退到激活图；再无则永久 host owner（faux provider、启动注册）。
+- `runNeutral`：`applyKnownThinkingProfiles` 的维护性 re-register 不获得所有权——否则每次 `refreshModelHealth` 都会把候选图变成他图 provider 的共有者，retention 永远无法注销。
+- suspend（`retainGraph`）：独占 provider 注销并保存 **effective config**（含 thinking-profile 合并），共有 provider 保留；resume（`tryReactivateRetainedGraph`，fingerprint 匹配后）重注册；release（`disposeGraph`）不保存。
+- owner 集合即引用计数：跨图共有（如 agentDir 级用户扩展在 A、B 都注册同 id）时最后一个 owner 离开才注销。
+- 隔离粒度刻意停在 workspace：同 Workspace 的 retained/background Session 共享 workspace 扩展，per-session 注销会误杀并行 Session 正在使用的 provider。
+
+**验收**：`workspace-package.integration.test.ts` 真实 Host A→B→A——A 的 `.pi` 扩展 provider 经 `model.list` 在 A 可见、在 B 不可见、回 A 恢复。破坏验证：注释 `retainGraph` 的 suspend 后，B 断言即红（`expected ['pideck-iso-provider'] to not include ...`）。
+
+另注意 `unregisterProvider` 同步清两个 map 并重组模型集合，但 `snapshot.configuredProviders` 的清理依赖其后异步 `void refresh({allowNetwork:false})`；对 `getRegisteredProviderIds` / `find` 的断言是同步可靠的，对 `getAvailable` 的断言需在 refresh 后。
+
+## 12. Auth 解析要点（PR-4 测试对应）
+
+- oauth 刷新的唯一写路径是 `credentials.modify()`（pi-ai `auth/resolve.js` `resolveStoredOAuth` 与 `models.js` `resolveRefreshCredential` 两处），回调内锁下二次校验：非 oauth → undefined、未过期 → undefined（= 保持现状，绝不能当删除）。PiDeck store 的「undefined = unchanged」契约正是这两处依赖的；跨进程竞争由 proper-lockfile 串行化，输者在锁下看到新 token 后跳过刷新。
+- api_key 凭证 SDK 端**不解析** `$VAR`/`!cmd` 模板（`envApiKeyAuth` 直接用 `credential.key`），模板解析是 PiDeck store `read()` 的职责；models.json 里 provider 级 `apiKey`/`headers` 的模板则由 provider-composer 的 `resolveConfigValueOrThrow` 解析，null 值在此层直接抛错。
+- null 头哨兵（「删除继承头」）只在 `Model.headers` 携带时到达请求边界，由 `getApiKeyAndHeaders` / `withoutDeletedHeaders` 过滤。
+- header-only provider 存在 compat/stream 分歧：`getApiKeyAndHeaders` 走 `getCompatibilityRequestConfig` 兜底返回 `{ok:true, headers}`，而 `getAuth` 返回 undefined → `prepareRequest` 抛「Provider is not configured」。连接检查通过≠请求可用，`auth-compatibility.test.ts` 已钉住。
+- compaction / branch-summary 经 `_getSummarizationRequestAuth` 取 auth，失败被吞成 `{}`；但 streamFn 是 SDK 构建的 `modelRuntime.streamSimple`，`prepareRequest` 会二次解析兜底。`summarization-auth.test.ts` 在 provider `streamSimple`（wire 边界）断言两类摘要请求都实际携带 key/headers。

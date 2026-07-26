@@ -111,6 +111,27 @@ the restore cannot complete, the entry is kept and `modelConfigHealth` reports
 know whether provider configuration and credentials still agree. That state is
 sticky for the process lifetime: only a restart that finds no journal clears it.
 
+## Extension provider ownership
+
+Extensions register model providers into the one shared `ModelRuntime`, whose
+registry is process-wide, id-keyed, and never unregistered by the SDK — fine
+for the upstream one-workspace CLI, a cross-workspace leak in a Host that
+serves many. `extension-provider-ownership.ts` wraps the runtime's
+registration methods and attributes every registration to an owner: the
+workspace graph being built or bound (AsyncLocalStorage window), else the
+active graph, else a permanent host owner.
+
+Parking a workspace (`retainGraph`) suspends its solely-owned providers —
+unregistered, effective configs saved on the graph; reactivation re-registers
+them; disposal drops them. Providers registered by several live workspaces
+stay until the last owner departs. Two rules matter when touching this code:
+maintenance re-registration (`applyKnownThinkingProfiles`) must run inside
+`runNeutral` so it never becomes a co-owner, and ownership is deliberately
+workspace-granular — sessions within a workspace share its extensions, so a
+per-session release would break parallel sessions. The leak proof and the
+semantics live in `extension-provider-isolation.test.ts`; the end-to-end
+A→B→A acceptance runs in `workspace-package.integration.test.ts`.
+
 ## Commands
 
 | Command | Purpose |
