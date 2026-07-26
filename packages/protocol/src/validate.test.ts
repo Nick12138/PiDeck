@@ -512,3 +512,64 @@ describe("toJsonValue", () => {
     expect(isJsonValue(v)).toBe(true);
   });
 });
+
+describe("ModelConfigHealth degraded state", () => {
+  const status = (modelConfigHealth: unknown) => ({
+    ...hostStatus,
+    modelConfigHealth,
+  });
+
+  it("accepts a degraded status carrying journal recovery detail", () => {
+    const result = validateSuccessResult(
+      "system.getStatus",
+      status({
+        state: "degraded",
+        source: "provider.journal",
+        message: "Could not fully roll back provider.save",
+        recovery: { journalId: "j-1", stage: "committed", restored: false },
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("still accepts the ordinary ok status", () => {
+    expect(
+      validateSuccessResult(
+        "system.getStatus",
+        status({ state: "ok", source: "ModelRegistry.getError" }),
+      ),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("rejects an unknown health state", () => {
+    expect(
+      validateSuccessResult(
+        "system.getStatus",
+        status({ state: "unknown", source: "provider.journal" }),
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("rejects a malformed recovery block", () => {
+    expect(
+      validateSuccessResult(
+        "system.getStatus",
+        status({
+          state: "degraded",
+          source: "provider.journal",
+          recovery: { journalId: "j-1", stage: "unknown-stage", restored: false },
+        }),
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      validateSuccessResult(
+        "system.getStatus",
+        status({
+          state: "degraded",
+          source: "provider.journal",
+          recovery: { journalId: "j-1", stage: "prepared" },
+        }),
+      ),
+    ).toMatchObject({ ok: false });
+  });
+});

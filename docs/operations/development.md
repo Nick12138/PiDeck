@@ -97,6 +97,20 @@ whole mechanism.
 If the backup cannot be written, startup fails. Migrating user data that cannot
 be rolled back is worse than refusing to start.
 
+## Provider mutation journal
+
+A provider change writes `models.json` and `auth.json`, which no single rename
+can cover together. Before committing either, the pre-mutation bytes of both go
+to `<agentDir>/provider-journal/<journalId>/`. The entry is removed only after
+the whole mutation, including the local refresh and reconciliation, succeeds —
+so an entry found at startup means exactly one thing: a mutation did not finish.
+
+Startup restores both files from that entry before the runtime reads them. If
+the restore cannot complete, the entry is kept and `modelConfigHealth` reports
+`degraded` with the journal id and stage, because the Host genuinely does not
+know whether provider configuration and credentials still agree. That state is
+sticky for the process lifetime: only a restart that finds no journal clears it.
+
 ## Commands
 
 | Command | Purpose |

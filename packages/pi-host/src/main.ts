@@ -20,7 +20,8 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import { createHostError, type HostCapabilities } from "@pideck/protocol";
-import { buildModelConfigHealth } from "./model-health.js";
+import { buildDegradedModelConfigHealth, buildModelConfigHealth } from "./model-health.js";
+import { recoverProviderJournals } from "./provider-journal.js";
 import { logger } from "./logger.js";
 import { PiHostServer } from "./server.js";
 import { createWorkspaceHandlers } from "./workspace-controller.js";
@@ -141,6 +142,11 @@ async function main(): Promise<void> {
   // Cwd-independent services (PROJECT_SPEC §8.1)
   const credentialStore = FileCredentialStore.forAgentDir(agentDir);
 
+  // Resolve any provider mutation the previous run did not finish, before the
+  // runtime reads models.json or auth.json. An unresolved journal means the two
+  // files may disagree, which no amount of refreshing can detect.
+  const unresolvedRecovery = await recoverProviderJournals(agentDir, credentialStore);
+
   // The single authoritative runtime. `allowModelNetwork: false` keeps startup
   // offline; only an explicit user refresh may reach the network later.
   const modelRuntime = await ModelRuntime.create({
@@ -158,7 +164,14 @@ async function main(): Promise<void> {
   await refreshModelsLocal(modelRuntime);
   await migrationBackup?.recordMilestone("localRefresh");
   applyKnownThinkingProfiles(modelRegistry);
-  let modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
+  // Degraded outranks a parse check and is sticky: the Host cannot re-derive
+  // whether the configuration became coherent, so it stops claiming health
+  // until a restart finds no journal.
+  const resolveModelConfigHealth = () =>
+    unresolvedRecovery
+      ? buildDegradedModelConfigHealth(unresolvedRecovery)
+      : buildModelConfigHealth(modelRuntime.getError());
+  let modelConfigHealth = resolveModelConfigHealth();
 
   // Capability detection — check prototype without constructing full PackageManager
   const packageUpdateCheck =
@@ -182,7 +195,7 @@ async function main(): Promise<void> {
       // authorised call; it must never be triggered by a health refresh.
       await refreshModelsLocal(modelRuntime, { signal });
       applyKnownThinkingProfiles(modelRegistry);
-      modelConfigHealth = buildModelConfigHealth(modelRuntime.getError());
+      modelConfigHealth = resolveModelConfigHealth();
       return modelConfigHealth;
     },
     ...(migrationBackup

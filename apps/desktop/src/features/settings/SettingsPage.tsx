@@ -243,15 +243,22 @@ function GeneralSettings() {
               <span className="text-muted">Model config</span>
               <span
                 className={
-                  host?.modelConfigHealth?.state === "error"
-                    ? "text-warning"
-                    : "text-success"
+                  host?.modelConfigHealth?.state === "ok"
+                    ? "text-success"
+                    : "text-warning"
                 }
                 title={host?.modelConfigHealth?.message}
               >
                 {host?.modelConfigHealth?.state ?? "—"}
               </span>
             </div>
+            {host?.modelConfigHealth?.state === "degraded" && (
+              <p className="text-xs text-warning">
+                A Provider change did not finish and could not be rolled back.
+                Provider settings and credentials may disagree until this is
+                resolved.
+              </p>
+            )}
             {host?.modelConfigHealth?.migrationHint && (
               <p className="text-xs text-warning">
                 {host.modelConfigHealth.migrationHint.message}

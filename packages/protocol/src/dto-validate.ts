@@ -88,17 +88,31 @@ function isHostIdentity(value: Record<string, unknown>): boolean {
   );
 }
 
+function isModelConfigRecovery(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["journalId", "stage", "restored"]) &&
+    isString(value.journalId) &&
+    (value.stage === "prepared" || value.stage === "committed") &&
+    typeof value.restored === "boolean"
+  );
+}
+
 function isModelConfigHealth(value: unknown): boolean {
-  if (!isPlainObject(value) || !hasExactKeys(value, ["state", "source"], ["message", "migrationHint"])) {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["state", "source"], ["message", "migrationHint", "recovery"])
+  ) {
     return false;
   }
   if (
-    (value.state !== "ok" && value.state !== "error") ||
-    value.source !== "ModelRegistry.getError" ||
+    (value.state !== "ok" && value.state !== "error" && value.state !== "degraded") ||
+    (value.source !== "ModelRegistry.getError" && value.source !== "provider.journal") ||
     !isOptionalString(value.message)
   ) {
     return false;
   }
+  if (value.recovery !== undefined && !isModelConfigRecovery(value.recovery)) return false;
   if (value.migrationHint === undefined) return true;
   return (
     isPlainObject(value.migrationHint) &&

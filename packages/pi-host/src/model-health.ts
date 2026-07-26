@@ -1,4 +1,5 @@
 import type { ModelConfigHealth } from "@pideck/protocol";
+import type { JournalRecovery } from "./provider-journal.js";
 
 const MIGRATION_HINT = {
   code: "SESSION_AFFINITY_FORMAT_REQUIRED" as const,
@@ -31,6 +32,26 @@ export function buildModelConfigHealth(errorMessage: string | null | undefined):
   }
 
   return health;
+}
+
+/**
+ * Health for an interrupted provider mutation that could not be rolled back.
+ *
+ * This outranks `ModelRegistry.getError`: the configuration may parse cleanly
+ * and still be incoherent, because models.json and auth.json were written by
+ * different halves of a failed transaction.
+ */
+export function buildDegradedModelConfigHealth(recovery: JournalRecovery): ModelConfigHealth {
+  return {
+    state: "degraded",
+    source: "provider.journal",
+    message: sanitizeModelError(recovery.message),
+    recovery: {
+      journalId: recovery.journalId,
+      stage: recovery.stage,
+      restored: recovery.restored,
+    },
+  };
 }
 
 function sanitizeModelError(message: string): string {

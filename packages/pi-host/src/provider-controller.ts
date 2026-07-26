@@ -35,6 +35,7 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
+import { ProviderMutationJournal } from "./provider-journal.js";
 
 type JsonObject = Record<string, unknown>;
 type ModelsConfig = { root: JsonObject; providers: JsonObject; original: string | null };
@@ -1117,9 +1118,17 @@ export function createProviderHandlers(
             const credentialStore = factory.deps.credentialStore;
             // Raw, not resolved: a renamed provider must carry its stored form.
             const oldSourceCredential = await credentialStore.readRaw(originalId);
-            // One snapshot of the whole file rolls every credential change back
-            // together, instead of replaying individual writes in reverse.
-            const credentialSnapshot = await credentialStore.snapshot();
+            // Durable pre-mutation copies. models.json and auth.json cannot be
+            // written atomically together, so a crash between them is only
+            // detectable if the original bytes survive on disk.
+            const journal = await ProviderMutationJournal.begin({
+              agentDir: factory.deps.agentDir,
+              operation: "provider.save",
+              providerId: draft.id,
+              modelsPath,
+              modelsBytes: config.original,
+              credentialStore,
+            });
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
               const newApiKey = params.apiKey;
@@ -1134,6 +1143,8 @@ export function createProviderHandlers(
                 await credentialStore.modify(draft.id, async () => oldSourceCredential);
               }
               if (draft.id !== originalId) await credentialStore.delete(originalId);
+              // Both durable writes landed; only reconciliation is left.
+              await journal.markCommitted();
               await refreshRegistry(factory, true);
               const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
               const targetProvider = currentProvider && enabledAfter.includes(currentProvider)
@@ -1143,11 +1154,14 @@ export function createProviderHandlers(
                 ? draft.models.map((model) => model.id)
                 : []);
             } catch (error) {
-              await restoreModelsConfig(modelsPath, config.original);
-              await credentialStore.restore(credentialSnapshot);
+              // Restores both files from the journal copies. A journal that
+              // survives this means recovery failed and startup will report
+              // degraded configuration health.
+              await journal.rollback();
               await refreshRegistry(factory, true);
               throw error;
             }
+            await journal.finish();
             const enabledProviders = new Set(resolveEnabledProviders(config));
             return {
               result: {
@@ -1199,17 +1213,25 @@ export function createProviderHandlers(
             delete config.providers[providerId];
             config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-            const credentialSnapshot = await factory.deps.credentialStore.snapshot();
+            const journal = await ProviderMutationJournal.begin({
+              agentDir: factory.deps.agentDir,
+              operation: "provider.remove",
+              providerId,
+              modelsPath,
+              modelsBytes: config.original,
+              credentialStore: factory.deps.credentialStore,
+            });
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
               await factory.deps.credentialStore.delete(providerId);
+              await journal.markCommitted();
               await refreshRegistry(factory, true);
             } catch (error) {
-              await restoreModelsConfig(modelsPath, config.original);
-              await factory.deps.credentialStore.restore(credentialSnapshot);
+              await journal.rollback();
               await refreshRegistry(factory, true);
               throw error;
             }
+            await journal.finish();
             return { result: { providerId, removed: true as const } };
           } catch (error) {
             return {

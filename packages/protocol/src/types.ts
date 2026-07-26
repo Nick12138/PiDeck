@@ -15,13 +15,28 @@ export type HostCapabilities = {
   sessionExport: boolean;
 };
 
+/** Stage an interrupted provider mutation had reached. */
+export type ProviderMutationStage = "prepared" | "committed";
+
 export type ModelConfigHealth = {
-  state: "ok" | "error";
-  source: "ModelRegistry.getError";
+  /**
+   * `degraded` means an interrupted provider mutation could not be fully
+   * rolled back. The configuration may mix old and new state, so the Host must
+   * not claim it is healthy.
+   */
+  state: "ok" | "error" | "degraded";
+  source: "ModelRegistry.getError" | "provider.journal";
   message?: string;
   migrationHint?: {
     code: "SESSION_AFFINITY_FORMAT_REQUIRED";
     message: string;
+  };
+  /** Present only while a provider mutation journal is unresolved. */
+  recovery?: {
+    journalId: string;
+    stage: ProviderMutationStage;
+    /** False when models.json or the credential file could not be restored. */
+    restored: boolean;
   };
 };
 
