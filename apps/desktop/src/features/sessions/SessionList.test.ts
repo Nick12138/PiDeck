@@ -2,15 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionSnapshot } from "@pideck/protocol";
 import {
   includeActiveSession,
+  canArchiveSession,
   canDeleteSession,
   canReloadSession,
   canRenameSession,
   filterSessionItems,
-  requestSessionListWithRetry,
+  requestSessionRpcWithRetry,
   sessionDisplayName,
   sessionRuntimeLabel,
   sessionStatusDotClass,
-  shouldRetrySessionList,
+  shouldRetrySessionRpc,
   shouldClearLastSessionPath,
 } from "./SessionList";
 
@@ -167,36 +168,61 @@ describe("canDeleteSession", () => {
     runtimeState: "inactive" as const,
   };
 
-  it("allows inactive and archived Sessions", () => {
+  it("allows inactive, archived, and idle Sessions", () => {
     expect(canDeleteSession(item, active)).toBe(true);
     expect(canDeleteSession({ ...item, archived: true }, active)).toBe(true);
+    expect(canDeleteSession({ ...item, runtimeState: "idle" }, active)).toBe(true);
+    expect(canDeleteSession({ ...item, runtimeState: "error" }, active)).toBe(true);
   });
 
-  it("blocks the currently viewed Session even when it is idle", () => {
+  it("allows the currently viewed Session while it is idle", () => {
     expect(
       canDeleteSession(
         { ...item, sessionId: active.sessionId, runtimeState: "idle" },
         active,
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("blocks Sessions whose Runtime is busy", () => {
+    expect(canDeleteSession({ ...item, runtimeState: "starting" }, active)).toBe(false);
+    expect(canDeleteSession({ ...item, runtimeState: "running" }, active)).toBe(false);
+    expect(canDeleteSession({ ...item, runtimeState: "queued" }, active)).toBe(false);
     expect(
       canDeleteSession(
-        {
-          ...item,
-          sessionId: active.sessionId,
-          runtimeState: "inactive",
-          archived: true,
-        },
-        active,
+        { ...item, sessionId: active.sessionId, runtimeState: "running" },
+        { ...active, isIdle: false },
       ),
     ).toBe(false);
   });
+});
 
-  it("blocks running and retained Runtime Sessions", () => {
-    expect(canDeleteSession({ ...item, runtimeState: "running" }, active)).toBe(false);
-    expect(canDeleteSession({ ...item, runtimeState: "idle" }, active)).toBe(false);
+describe("canArchiveSession", () => {
+  const item = {
+    sessionId: "inactive-session",
+    sessionPath: "C:/sessions/inactive.jsonl",
+    cwd: "C:/workspace",
+    updatedAt: 1,
+    runtimeState: "inactive" as const,
+  };
+
+  it("allows idle Sessions including the currently viewed one", () => {
+    expect(canArchiveSession(item, active)).toBe(true);
+    expect(canArchiveSession({ ...item, runtimeState: "idle" }, active)).toBe(true);
     expect(
-      canDeleteSession(
+      canArchiveSession(
+        { ...item, sessionId: active.sessionId, runtimeState: "idle" },
+        active,
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks archived files and busy Runtimes", () => {
+    expect(canArchiveSession({ ...item, archived: true }, active)).toBe(false);
+    expect(canArchiveSession({ ...item, runtimeState: "running" }, active)).toBe(false);
+    expect(canArchiveSession({ ...item, runtimeState: "queued" }, active)).toBe(false);
+    expect(
+      canArchiveSession(
         { ...item, sessionId: active.sessionId, runtimeState: "running" },
         { ...active, isIdle: false },
       ),
@@ -247,15 +273,15 @@ describe("filterSessionItems", () => {
   });
 });
 
-describe("shouldRetrySessionList", () => {
+describe("shouldRetrySessionRpc", () => {
   it("retries only transient graph-lock contention", () => {
     expect(
-      shouldRetrySessionList({ code: "SERVICE_GRAPH_BUSY", retryable: true }),
+      shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: true }),
     ).toBe(true);
     expect(
-      shouldRetrySessionList({ code: "SERVICE_GRAPH_BUSY", retryable: false }),
+      shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: false }),
     ).toBe(false);
-    expect(shouldRetrySessionList({ code: "STALE_REVISION", retryable: true })).toBe(
+    expect(shouldRetrySessionRpc({ code: "STALE_REVISION", retryable: true })).toBe(
       false,
     );
   });
@@ -274,7 +300,7 @@ describe("shouldRetrySessionList", () => {
       .mockResolvedValueOnce({ ok: true as const, result: { items: ["old-session"] } });
     const wait = vi.fn(async () => {});
 
-    const result = await requestSessionListWithRetry(request, wait);
+    const result = await requestSessionRpcWithRetry(request, wait);
 
     expect(result).toEqual({ ok: true, result: { items: ["old-session"] } });
     expect(request).toHaveBeenCalledTimes(3);

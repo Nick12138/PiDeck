@@ -127,13 +127,27 @@ export function canRenameSession(
   return item.runtimeState === "inactive" || item.runtimeState === "error";
 }
 
+/** Busy states cover a run that is active or about to start; everything else is safe to mutate. */
+export function isSessionRuntimeBusy(state: SessionRuntimeState): boolean {
+  return state === "starting" || state === "running" || state === "queued";
+}
+
+export function canArchiveSession(
+  item: SessionCatalogEntry,
+  session: SessionSnapshot | null,
+): boolean {
+  if (item.archived) return false;
+  if (session?.sessionId === item.sessionId) return session.isIdle;
+  return !isSessionRuntimeBusy(item.runtimeState);
+}
+
 export function canDeleteSession(
   item: SessionCatalogEntry,
   session: SessionSnapshot | null,
 ): boolean {
-  if (session?.sessionId === item.sessionId) return false;
   if (item.archived) return true;
-  return item.runtimeState === "inactive" || item.runtimeState === "error";
+  if (session?.sessionId === item.sessionId) return session.isIdle;
+  return !isSessionRuntimeBusy(item.runtimeState);
 }
 
 export function shouldClearLastSessionPath(
@@ -143,14 +157,15 @@ export function shouldClearLastSessionPath(
   return lastSessionPath === removedSessionPath;
 }
 
-export function shouldRetrySessionList(error: {
+export function shouldRetrySessionRpc(error: {
   code?: string;
   retryable?: boolean;
 }): boolean {
   return error.code === "SERVICE_GRAPH_BUSY" && error.retryable === true;
 }
 
-export async function requestSessionListWithRetry<
+/** Short-lived sdk.read locks make SERVICE_GRAPH_BUSY transient; retry briefly. */
+export async function requestSessionRpcWithRetry<
   T extends
     | { ok: true }
     | { ok: false; error: { code?: string; retryable?: boolean } },
@@ -161,7 +176,7 @@ export async function requestSessionListWithRetry<
 ): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     const response = await request();
-    if (response.ok || !shouldRetrySessionList(response.error) || attempt === 4) {
+    if (response.ok || !shouldRetrySessionRpc(response.error) || attempt === 4) {
       return response;
     }
     await wait(80 * (attempt + 1));
@@ -257,7 +272,7 @@ export function SessionList({
     const expectedWorkspaceId = currentWorkspace.id;
     const expectedWorkspaceRevision = currentWorkspace.revision;
     try {
-      const res = await requestSessionListWithRetry(() =>
+      const res = await requestSessionRpcWithRetry(() =>
         hostClient.request(
           "session.list",
           workspaceContext(currentHost, currentWorkspace),
@@ -342,35 +357,45 @@ export function SessionList({
   async function createSession() {
     if (!host || !workspace || sessionMutationBlocked) return;
     const request = ++mutationRequest.current;
-    const generation = captureRequestGeneration(host);
     setSessionMutationPending(true);
     try {
-      const res = await hostClient.request(
-        "session.create",
-        nullableSessionContext(host, workspace),
-        {},
-      );
-      if (
-        request !== mutationRequest.current ||
-        !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
-          session: true,
-        })
-      ) {
-        return;
-      }
-      if (!res.ok) {
-        pushNotification(res.error?.message ?? t("notifCreateSessionFailed"), "error");
-        return;
-      }
-      setSession(res.result);
-      const currentHost = useAppStore.getState().host;
-      if (currentHost) {
-        const nextHost = mergeHostIdentity(currentHost, res);
-        if (nextHost) useAppStore.getState().setHost(nextHost);
-      }
+      await requestFreshSession(request);
     } finally {
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
+  }
+
+  /** Create and adopt a fresh session; false when it failed or the request was superseded. */
+  async function requestFreshSession(request: number): Promise<boolean> {
+    const { host: startHost, workspace: startWorkspace } = useAppStore.getState();
+    if (!startHost || !startWorkspace) return false;
+    const generation = captureRequestGeneration(startHost);
+    const res = await requestSessionRpcWithRetry(() =>
+      hostClient.request(
+        "session.create",
+        nullableSessionContext(startHost, startWorkspace),
+        {},
+      ),
+    );
+    // The create's own session.snapshot push may advance the session generation
+    // before this response resolves, so only host and workspace are validated here.
+    if (
+      request !== mutationRequest.current ||
+      !isCurrentRequestGeneration(useAppStore.getState().host, generation)
+    ) {
+      return false;
+    }
+    if (!res.ok) {
+      pushNotification(res.error?.message ?? t("notifCreateSessionFailed"), "error");
+      return false;
+    }
+    setSession(res.result);
+    const currentHost = useAppStore.getState().host;
+    if (currentHost) {
+      const nextHost = mergeHostIdentity(currentHost, res);
+      if (nextHost) useAppStore.getState().setHost(nextHost);
+    }
+    return true;
   }
 
   function openSession(path: string) {
@@ -559,15 +584,36 @@ export function SessionList({
     item: SessionCatalogEntry,
   ) {
     if (!host || !workspace || sessionMutationBlocked) return;
+    const currentSession = useAppStore.getState().session;
+    if (method === "session.archive" && !canArchiveSession(item, currentSession)) {
+      pushNotification(t("sessionsArchiveWait"), "warning");
+      setMenuSessionId(null);
+      return;
+    }
     const request = ++mutationRequest.current;
-    const generation = captureRequestGeneration(host);
     setSessionMutationPending(true);
     setMenuSessionId(null);
     try {
-      const res = await hostClient.request(method, workspaceContext(host, workspace), {
-        sessionId: item.sessionId,
-        sessionPath: item.sessionPath,
-      });
+      if (
+        method === "session.archive" &&
+        currentSession?.sessionId === item.sessionId &&
+        !(await requestFreshSession(request))
+      ) {
+        return;
+      }
+      const { host: latestHost, workspace: latestWorkspace } = useAppStore.getState();
+      if (!latestHost || !latestWorkspace) return;
+      const generation = captureRequestGeneration(latestHost);
+      const res = await requestSessionRpcWithRetry(() =>
+        hostClient.request(
+          method,
+          workspaceContext(latestHost, latestWorkspace),
+          {
+            sessionId: item.sessionId,
+            sessionPath: item.sessionPath,
+          },
+        ),
+      );
       if (
         request !== mutationRequest.current ||
         !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
@@ -613,25 +659,31 @@ export function SessionList({
     if (!host || !workspace || sessionMutationBlocked) return;
     const currentSession = useAppStore.getState().session;
     if (!canDeleteSession(item, currentSession)) {
-      pushNotification(
-        currentSession?.sessionId === item.sessionId
-          ? t("sessionsDeleteSwitch")
-          : t("sessionsDeleteWait"),
-        "warning",
-      );
+      pushNotification(t("sessionsDeleteWait"), "warning");
       setConfirmAction(null);
       return;
     }
 
     const request = ++mutationRequest.current;
-    const generation = captureRequestGeneration(host);
     setSessionMutationPending(true);
     setMenuSessionId(null);
     try {
-      const deleted = await hostClient.request(
-        "session.delete",
-        workspaceContext(host, workspace),
-        { sessionId: item.sessionId, sessionPath: item.sessionPath },
+      if (
+        !item.archived &&
+        currentSession?.sessionId === item.sessionId &&
+        !(await requestFreshSession(request))
+      ) {
+        return;
+      }
+      const { host: latestHost, workspace: latestWorkspace } = useAppStore.getState();
+      if (!latestHost || !latestWorkspace) return;
+      const generation = captureRequestGeneration(latestHost);
+      const deleted = await requestSessionRpcWithRetry(() =>
+        hostClient.request(
+          "session.delete",
+          workspaceContext(latestHost, latestWorkspace),
+          { sessionId: item.sessionId, sessionPath: item.sessionPath },
+        ),
       );
       if (
         request !== mutationRequest.current ||
@@ -900,9 +952,7 @@ export function SessionList({
           const canRename = canRenameSession(item, session);
           const canDelete = canDeleteSession(item, session);
           const canReload = canReloadSession(item, session);
-          const canArchive =
-            !item.archived &&
-            (item.runtimeState === "inactive" || item.runtimeState === "error");
+          const canArchive = canArchiveSession(item, session);
           const statusDot = item.archived
             ? null
             : sessionStatusDotClass(item.runtimeState);
@@ -1087,9 +1137,7 @@ export function SessionList({
                               ? t("sessionsRestoreTitle")
                               : canArchive
                                 ? t("sessionsArchiveTitle")
-                                : active
-                                  ? t("sessionsArchiveSwitchAway")
-                                  : t("sessionsArchiveWait")
+                                : t("sessionsArchiveWait")
                           }
                           disabled={!item.archived && !canArchive}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
@@ -1109,13 +1157,7 @@ export function SessionList({
                         </button>
                         <button
                           type="button"
-                          title={
-                            canDelete
-                              ? t("sessionsDeleteTitle")
-                              : active
-                                ? t("sessionsDeleteSwitch")
-                                : t("sessionsDeleteWait")
-                          }
+                          title={canDelete ? t("sessionsDeleteTitle") : t("sessionsDeleteWait")}
                           disabled={!canDelete}
                           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-danger hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={() => {
