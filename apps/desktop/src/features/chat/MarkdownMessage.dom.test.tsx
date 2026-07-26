@@ -191,7 +191,15 @@ describe("MarkdownMessage Mermaid rendering", () => {
       <MarkdownMessage content={"```mermaid\nthis is not valid\n```"} mode="streaming" />,
     );
 
-    await waitFor(() => expect(view.container.querySelector('[role="alert"]')).toHaveTextContent("updated syntax error"));
+    // Streaming mode debounces Mermaid re-renders; slow CI runners can exceed
+    // the default waitFor window before the error node appears.
+    await waitFor(
+      () =>
+        expect(view.container.querySelector('[role="alert"]')).toHaveTextContent(
+          "updated syntax error",
+        ),
+      { timeout: 5_000 },
+    );
   });
 
   it("exposes Mermaid controls without a download action", async () => {
