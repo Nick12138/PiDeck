@@ -28,13 +28,15 @@
 | `/compact [instructions]` or Compact now | `agent.compact` |
 | Auto-compaction switch | `agent.setAutoCompaction` |
 | `/session` stats dialog | `session.getStats` |
+| `/tree` dock panel | `session.getTree` / `agent.navigateTree` |
 | Tools panel | `agent.getTools` / `agent.setActiveTools` |
 
 Tool Result `addedToolNames` → Host publishes full `agent.toolsChanged` (no client-side tool schema invention).
 
 The Composer's `/` completion merges `session.getCommands` (prompt templates,
 extension commands, skills) with PiDeck's built-in commands
-(`features/chat/builtin-commands.ts`, currently `/compact` and `/session`). A
+(`features/chat/builtin-commands.ts`, currently `/compact`, `/session`, and
+`/tree`). A
 draft matching a built-in command runs locally instead of being sent to the
 model; unknown `/name` text still goes to the model unchanged. Manual
 compaction requires an idle agent and shares the per-session operation lock
@@ -42,7 +44,12 @@ with `agent.prompt`. The context-usage ring in the Composer opens a panel with
 the usage breakdown, a Compact now action, and the auto-compaction switch.
 `/session` opens a dialog with message, token, and cost aggregates from
 `session.getStats`, which the Host builds from `AgentSession.getSessionStats()`
-(whole-history aggregates, including compacted-away entries).
+(whole-history aggregates, including compacted-away entries). `/tree` opens the
+Tree page in the right dock: it renders `session.getTree` with the current
+leaf path highlighted, and clicking an entry calls `agent.navigateTree`
+(always `summarize: false` — navigation is local, no LLM call), which shares
+the per-session operation lock, requires an idle agent, and returns the
+rebuilt snapshot plus optional `editorText` restored into the Composer draft.
 
 ## Queue transactions
 

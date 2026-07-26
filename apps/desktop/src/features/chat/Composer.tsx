@@ -31,6 +31,7 @@ import { subscribeComposerInsert } from "../../lib/composer-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
+import { requestTreePanel } from "../../lib/dock-tree";
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -469,6 +470,12 @@ export function Composer({
       setSessionDraft(session.sessionId, "");
       setCompletion(null);
       setStatsOpen(true);
+      return;
+    }
+    if (builtin?.name === "tree") {
+      setSessionDraft(session.sessionId, "");
+      setCompletion(null);
+      requestTreePanel();
       return;
     }
     if (builtin?.name === "compact") {

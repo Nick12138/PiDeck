@@ -662,3 +662,76 @@ describe("agent.compact concurrency", () => {
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
   });
 });
+
+describe("agent.navigateTree", () => {
+  function navigateFixture(isIdle: boolean) {
+    const gate = deferred();
+    const fixture = stableHandlerFixture(gate.promise);
+    (fixture.session as unknown as { isIdle: boolean }).isIdle = isIdle;
+    (fixture.session as unknown as { navigateTree: unknown }).navigateTree = vi.fn(
+      async () => ({ cancelled: false, editorText: "picked user text" }),
+    );
+    return { ...fixture, gate };
+  }
+
+  function navigateMock(fixture: ReturnType<typeof navigateFixture>) {
+    return (fixture.session as unknown as { navigateTree: ReturnType<typeof vi.fn> })
+      .navigateTree;
+  }
+
+  it("rejects while the session is busy", async () => {
+    const fixture = navigateFixture(false);
+    const handler = createAgentHandlers(fixture.factory)["agent.navigateTree"]!;
+
+    const outcome = await handler({
+      id: "navigate-1",
+      context: {},
+      params: { targetId: "entry-1" },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("AGENT_BUSY");
+    expect(navigateMock(fixture)).not.toHaveBeenCalled();
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+  });
+
+  it("navigates without summarization and returns the rebuilt snapshot", async () => {
+    const fixture = navigateFixture(true);
+    const handler = createAgentHandlers(fixture.factory)["agent.navigateTree"]!;
+
+    const outcome = await handler({
+      id: "navigate-2",
+      context: {},
+      params: { targetId: "entry-1" },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    if (!("result" in outcome)) return;
+    expect(navigateMock(fixture)).toHaveBeenCalledExactlyOnceWith("entry-1", {
+      summarize: false,
+    });
+    const result = outcome.result as {
+      session: unknown;
+      cancelled: boolean;
+      editorText?: string;
+    };
+    expect(result.cancelled).toBe(false);
+    expect(result.editorText).toBe("picked user text");
+    expect(result.session).toBeTruthy();
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+  });
+
+  it("shares the per-session operation lock with agent.prompt", async () => {
+    const fixture = navigateFixture(true);
+    const handler = createAgentHandlers(fixture.factory)["agent.navigateTree"]!;
+
+    expect(fixture.sessionOperationLock.tryAcquire("in-flight-prompt")).toBe(true);
+    const busy = await handler({
+      id: "navigate-3",
+      context: {},
+      params: { targetId: "entry-1" },
+    } as never);
+    expect("error" in busy && busy.error.code).toBe("AGENT_BUSY");
+    expect(navigateMock(fixture)).not.toHaveBeenCalled();
+    fixture.sessionOperationLock.release("in-flight-prompt");
+  });
+});

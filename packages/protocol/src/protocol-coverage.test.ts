@@ -111,6 +111,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "agent.runNow": { expectedRevision: 0, followUpIndex: 0 },
   "agent.compact": null,
   "agent.abortCompaction": null,
+  "agent.navigateTree": { targetId: "55555555-5555-4555-8555-555555555555" },
   "agent.setAutoCompaction": { enabled: true },
   "agent.setAutoRetry": { enabled: false },
   "agent.abortRetry": null,
@@ -259,6 +260,8 @@ function invalidParams(method: HostMethod): unknown {
       return { steering: "x", followUp: [] };
     case "agent.compact":
       return "x";
+    case "agent.navigateTree":
+      return { targetId: "" };
     case "agent.setAutoCompaction":
     case "agent.setAutoRetry":
       return { enabled: "yes" };

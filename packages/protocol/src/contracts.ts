@@ -85,6 +85,7 @@ export type HostContextMap = {
   "agent.runNow": ActiveSessionContext;
   "agent.compact": ActiveSessionContext;
   "agent.abortCompaction": ActiveSessionContext;
+  "agent.navigateTree": ActiveSessionContext;
   "agent.setAutoCompaction": ActiveSessionContext;
   "agent.setAutoRetry": ActiveSessionContext;
   "agent.abortRetry": ActiveSessionContext;
@@ -162,6 +163,7 @@ export type HostRequestParams = {
   "agent.runNow": { expectedRevision: number; followUpIndex: number };
   "agent.compact": { instructions?: string } | null;
   "agent.abortCompaction": null;
+  "agent.navigateTree": { targetId: string };
   "agent.setAutoCompaction": { enabled: boolean };
   "agent.setAutoRetry": { enabled: boolean };
   "agent.abortRetry": null;
@@ -268,6 +270,11 @@ export type HostResultMap = {
   };
   "agent.compact": { result: SerializableCompactionResult; session: SessionSnapshot };
   "agent.abortCompaction": { accepted: true };
+  "agent.navigateTree": {
+    session: SessionSnapshot;
+    editorText?: string;
+    cancelled: boolean;
+  };
   "agent.setAutoCompaction": SessionSnapshot;
   "agent.setAutoRetry": SessionSnapshot;
   "agent.abortRetry": { accepted: true };

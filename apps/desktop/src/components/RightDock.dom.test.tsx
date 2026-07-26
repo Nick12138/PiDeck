@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import type { DesktopSettings, WorkspaceSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
+import { clearPendingTreePanelForTest, requestTreePanel } from "../lib/dock-tree";
 
 vi.mock("../features/dock/ShellTerminal", () => ({
   ShellTerminal: ({ profileId, visible }: { profileId: string; visible: boolean }) => (
@@ -47,6 +48,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  clearPendingTreePanelForTest();
 });
 
 async function openAddMenu(user: ReturnType<typeof userEvent.setup>) {
@@ -170,10 +172,27 @@ describe("RightDock pages", () => {
     await openAddMenu(user);
     await waitFor(() => expect(screen.getByRole("menuitem", { name: "Files" })).toHaveFocus());
     await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Session tree" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "New dock page" })).toHaveFocus();
+  });
+
+  it("opens the Tree page as a singleton via requestTreePanel", async () => {
+    useAppStore.setState({ dockOpen: false });
+    render(<RightDock />);
+
+    act(() => requestTreePanel());
+    expect(await screen.findByRole("tab", { name: "Tree" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(useAppStore.getState().dockOpen).toBe(true);
+
+    act(() => requestTreePanel());
+    expect(screen.getAllByRole("tab", { name: "Tree" })).toHaveLength(1);
   });
 });

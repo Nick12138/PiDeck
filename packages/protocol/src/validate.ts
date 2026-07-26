@@ -324,6 +324,12 @@ export function validateRequestParams<M extends HostMethod>(
           (params.instructions === undefined || isString(params.instructions)))
         ? ok(params)
         : fail("invalid agent.compact params", { method });
+    case "agent.navigateTree":
+      return exactObject(params, ["targetId"]) &&
+        isString(params.targetId) &&
+        params.targetId.length > 0
+        ? ok(params)
+        : fail("invalid agent.navigateTree params", { method });
     case "agent.setAutoCompaction":
     case "agent.setAutoRetry":
       return exactObject(params, ["enabled"]) && isBoolean(params.enabled)

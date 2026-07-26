@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderTree,
+  GitBranch,
   Globe2,
   LoaderCircle,
   Plus,
@@ -26,9 +27,12 @@ import {
 } from "../features/dock/ShellTerminal";
 import { FilesPanel } from "../features/dock/FilesPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
+import { TreePanel } from "../features/dock/TreePanel";
+import { subscribeTreePanel } from "../lib/dock-tree";
 
 export type DockTabId =
   | "files"
+  | "tree"
   | `browser:${number}`
   | `shell:${number}`
   | `extension:${string}`;
@@ -246,6 +250,28 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
+  const createTree = () => {
+    setTabOrder((current) => (current.includes("tree") ? current : [...current, "tree"]));
+    setActiveTab("tree");
+    setAddMenuOpen(false);
+  };
+
+  useEffect(
+    () =>
+      subscribeTreePanel(() => {
+        createTree();
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("pideck.dock.open", true);
+        }
+        return true;
+      }),
+    // createTree/setDockOpen are stable within a mount; resubscribing per
+    // render would drop queued open requests.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const createBrowser = () => {
     if (browserTabs.length >= MAX_BROWSER_TABS) return;
     const id = nextBrowserId.current++;
@@ -312,7 +338,7 @@ export function RightDock() {
   };
 
   const closeTab = (tabId: DockTabId) => {
-    if (tabId === "files") {
+    if (tabId === "files" || tabId === "tree") {
       closeOrderTab(tabId);
       return;
     }
@@ -329,6 +355,7 @@ export function RightDock() {
 
   const tabInfo = (tabId: DockTabId) => {
     if (tabId === "files") return { label: "Files", Icon: FolderTree };
+    if (tabId === "tree") return { label: "Tree", Icon: GitBranch };
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
@@ -610,6 +637,15 @@ export function RightDock() {
                 <button
                   type="button"
                   role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground"
+                  onClick={createTree}
+                >
+                  <GitBranch size={14} />
+                  Session tree
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
                   disabled={browserTabs.length >= MAX_BROWSER_TABS}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
                   onClick={createBrowser}
@@ -642,6 +678,16 @@ export function RightDock() {
             className={`min-h-0 flex-1 ${activeTab === "files" ? "flex" : "hidden"}`}
           >
             <FilesPanel visible={activeTab === "files" && dockOpen} />
+          </div>
+        )}
+        {tabOrder.includes("tree") && (
+          <div
+            role="tabpanel"
+            id="dock-panel-tree"
+            aria-labelledby="dock-tab-tree"
+            className={`min-h-0 flex-1 ${activeTab === "tree" ? "flex" : "hidden"}`}
+          >
+            <TreePanel visible={activeTab === "tree" && dockOpen} />
           </div>
         )}
         {browserTabs.map((tab) => (
@@ -701,6 +747,15 @@ export function RightDock() {
                 >
                   <FolderTree size={17} className="shrink-0" />
                   <span>Files</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Open Session tree"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  onClick={createTree}
+                >
+                  <GitBranch size={17} className="shrink-0" />
+                  <span>Session tree</span>
                 </button>
                 <button
                   type="button"

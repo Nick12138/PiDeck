@@ -16,6 +16,10 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     name: "session",
     description: "Show session info and stats",
   },
+  {
+    name: "tree",
+    description: "Navigate session tree (switch branches)",
+  },
 ];
 
 export type BuiltinCommandMatch = { name: string; args?: string };

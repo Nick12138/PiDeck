@@ -34,6 +34,7 @@ export const HOST_METHODS = [
   "agent.runNow",
   "agent.compact",
   "agent.abortCompaction",
+  "agent.navigateTree",
   "agent.setAutoCompaction",
   "agent.setAutoRetry",
   "agent.abortRetry",
@@ -151,6 +152,7 @@ export type ActiveSessionMethod =
   | "agent.runNow"
   | "agent.compact"
   | "agent.abortCompaction"
+  | "agent.navigateTree"
   | "agent.setAutoCompaction"
   | "agent.setAutoRetry"
   | "agent.abortRetry"
@@ -239,6 +241,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "agent.runNow": "activeSession",
   "agent.compact": "activeSession",
   "agent.abortCompaction": "activeSession",
+  "agent.navigateTree": "activeSession",
   "agent.setAutoCompaction": "activeSession",
   "agent.setAutoRetry": "activeSession",
   "agent.abortRetry": "activeSession",

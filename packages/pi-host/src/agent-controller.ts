@@ -839,6 +839,77 @@ export function createAgentHandlers(
       }
     },
 
+    "agent.navigateTree": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, {
+        requireWorkspace: true,
+        requireSession: true,
+      });
+      if (stale) return { error: stale };
+      const g = factory.getGraph();
+      const server = factory.getServer();
+      if (!g?.agentSession || !g.sessionManager || !server) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
+      }
+      if (server.serviceGraphLock.isHeld()) {
+        return {
+          error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+            retryable: true,
+          }),
+        };
+      }
+      if (!g.agentSession.isIdle) {
+        return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
+      }
+      // Same per-session lock as agent.prompt — tree navigation rewires the
+      // session leaf and must not race a run.
+      const operationLock = factory.getSessionOperationLock(g.agentSession);
+      if (!operationLock.tryAcquire(ctx.id)) {
+        return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
+      }
+      try {
+        if (server.serviceGraphLock.isHeld()) {
+          return {
+            error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {
+              retryable: true,
+            }),
+          };
+        }
+        const staleAfterLock = factory.checkIdentity(ctx.context, {
+          requireWorkspace: true,
+          requireSession: true,
+        });
+        if (staleAfterLock) return { error: staleAfterLock };
+
+        const params = ctx.params as { targetId: string };
+        // summarize:false keeps navigation local — no LLM call, no abort path.
+        const outcome = await g.agentSession.navigateTree(params.targetId, {
+          summarize: false,
+        });
+        const identity = server.getIdentity();
+        const snap = buildSessionSnapshot({
+          session: g.agentSession,
+          sessionManager: g.sessionManager,
+          cwd: g.canonicalCwd,
+          sessionId: identity.sessionId ?? "",
+          revision: identity.sessionRevision,
+          workspaceId: g.workspaceId,
+          toolRevision: g.toolRevision,
+        });
+        g.sessionSnapshot = snap;
+        return {
+          result: {
+            session: snap,
+            cancelled: outcome.cancelled,
+            ...(outcome.editorText !== undefined
+              ? { editorText: outcome.editorText }
+              : {}),
+          },
+        };
+      } finally {
+        operationLock.release(ctx.id);
+      }
+    },
+
     "agent.abortCompaction": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, {
         requireWorkspace: true,

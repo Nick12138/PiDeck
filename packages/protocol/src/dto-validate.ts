@@ -1137,6 +1137,14 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isSessionSnapshot(result.session)
         ? null
         : "invalid compact result";
+    case "agent.navigateTree":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["session", "cancelled"], ["editorText"]) &&
+        isSessionSnapshot(result.session) &&
+        isBoolean(result.cancelled) &&
+        (result.editorText === undefined || isString(result.editorText))
+        ? null
+        : "invalid agent.navigateTree result";
     case "agent.getTools":
     case "agent.setActiveTools":
       return isToolSnapshot(result) ? null : "invalid ToolSnapshot";
