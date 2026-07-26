@@ -1,0 +1,80 @@
+diff --git a/dist/core/package-manager.d.ts b/dist/core/package-manager.d.ts
+index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634f9dd2e21 100644
+--- a/dist/core/package-manager.d.ts
++++ b/dist/core/package-manager.d.ts
+@@ -63,6 +63,12 @@ export interface PackageManager {
+         local?: boolean;
+     }): boolean;
+     setProgressCallback(callback: ProgressCallback | undefined): void;
++    /**
++     * PiDeck patch: required so callers cannot silently skip cancellation.
++     * Applies to the async npm/git spawn paths; `runCommandSync` can only
++     * refuse to start after abort.
++     */
++    setOperationSignal(signal: AbortSignal | undefined): void;
+     getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
+ }
+ interface PackageManagerOptions {
+@@ -79,8 +85,10 @@ export declare class DefaultPackageManager implements PackageManager {
+     private globalNpmRoot;
+     private globalNpmRootCommandKey;
+     private progressCallback;
++    private operationSignal;
+     constructor(options: PackageManagerOptions);
+     setProgressCallback(callback: ProgressCallback | undefined): void;
++    setOperationSignal(signal: AbortSignal | undefined): void;
+     addSourceToSettings(source: string, options?: {
+         local?: boolean;
+     }): boolean;
+diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
+index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241bd57d7fb 100644
+--- a/dist/core/package-manager.js
++++ b/dist/core/package-manager.js
+@@ -603,6 +603,7 @@ export class DefaultPackageManager {
+     globalNpmRoot;
+     globalNpmRootCommandKey;
+     progressCallback;
++    operationSignal;
+     constructor(options) {
+         this.cwd = resolvePath(options.cwd);
+         this.agentDir = resolvePath(options.agentDir);
+@@ -611,6 +612,12 @@ export class DefaultPackageManager {
+     setProgressCallback(callback) {
+         this.progressCallback = callback;
+     }
++    // PiDeck patch: let the Host cancel npm/git children. Upstream spawns them
++    // with no signal, so an aborted package operation leaves the child running
++    // and holds the graph lock until it finishes on its own.
++    setOperationSignal(signal) {
++        this.operationSignal = signal;
++    }
+     addSourceToSettings(source, options) {
+         const scope = options?.local ? "project" : "user";
+         const currentSettings = scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
+@@ -2055,6 +2062,7 @@ export class DefaultPackageManager {
+             cwd: options?.cwd,
+             stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
+             env,
++            signal: this.operationSignal,
+         });
+     }
+     spawnCaptureCommand(command, args, options) {
+@@ -2064,6 +2072,7 @@ export class DefaultPackageManager {
+             cwd: options?.cwd,
+             stdio: ["ignore", "pipe", "pipe"],
+             env,
++            signal: this.operationSignal,
+         });
+     }
+     runCommandCapture(command, args, options) {
+@@ -2120,6 +2129,10 @@ export class DefaultPackageManager {
+         });
+     }
+     runCommandSync(command, args) {
++        // PiDeck patch: spawnSync cannot be interrupted, so an in-flight sync
++        // child still runs to completion. Refusing to start a new one after
++        // abort is the only cancellation this path can honour.
++        this.operationSignal?.throwIfAborted();
+         const env = getEnv();
+         const result = spawnProcessSync(command, args, {
+             stdio: ["ignore", "pipe", "pipe"],

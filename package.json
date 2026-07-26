@@ -37,7 +37,7 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "@earendil-works/pi-coding-agent@0.80.7": "patches/@earendil-works__pi-coding-agent@0.80.7.patch"
+      "@earendil-works/pi-coding-agent@0.82.1": "patches/@earendil-works__pi-coding-agent@0.82.1.patch"
     }
   }
 }
