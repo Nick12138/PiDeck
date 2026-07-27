@@ -95,7 +95,7 @@ describe("reuseStableRows", () => {
     expect(tool?.kind === "tool" && tool.tool.status).toBe("done");
   });
 
-  it("keeps the live row key when the same message is persisted as an entry", () => {
+  it("switches to the durable entry key when a live message is persisted", () => {
     const messages: SerializableAgentMessage[] = [
       { role: "assistant", content: [{ type: "text", text: "Done" }] },
     ];
@@ -119,7 +119,7 @@ describe("reuseStableRows", () => {
     );
 
     expect(live[0]?.key).toBe("assistant:stream:0");
-    expect(persisted[0]?.key).toBe(live[0]?.key);
+    expect(persisted[0]?.key).toBe("assistant:entry-1");
     expect(persisted[0]?.sourceId).toBe("entry-1");
 
     const refreshed = reuseStableRows(
@@ -136,7 +136,101 @@ describe("reuseStableRows", () => {
         ],
       }),
     );
-    expect(refreshed[0]?.key).toBe(live[0]?.key);
+    expect(refreshed[0]).toBe(persisted[0]);
+  });
+
+  it("keeps row keys unique when compaction reuses a live message index", () => {
+    const retainedMessage: SerializableAgentMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Retained answer" }],
+    };
+    const initialEntries = [
+      {
+        id: "before-user",
+        parentId: null,
+        type: "message",
+        message: { role: "user", content: "Before" },
+      },
+      {
+        id: "before-assistant",
+        parentId: "before-user",
+        type: "message",
+        message: { role: "assistant", content: "Earlier answer" },
+      },
+      {
+        id: "last-prompt",
+        parentId: "before-assistant",
+        type: "message",
+        message: { role: "user", content: "Keep this" },
+      },
+    ];
+    const initialMessages: SerializableAgentMessage[] = [
+      { role: "user", content: "Before" },
+      { role: "assistant", content: "Earlier answer" },
+      { role: "user", content: "Keep this" },
+      retainedMessage,
+    ];
+    const live = reuseStableRows(
+      null,
+      buildTranscriptRows(initialMessages, { entries: initialEntries as never }),
+    );
+    expect(live.at(-1)?.key).toBe("assistant:stream:3");
+
+    const persistedEntries = [
+      ...initialEntries,
+      {
+        id: "retained-answer",
+        parentId: "last-prompt",
+        type: "message",
+        message: retainedMessage,
+      },
+    ];
+    const persisted = reuseStableRows(
+      live,
+      buildTranscriptRows(initialMessages, { entries: persistedEntries as never }),
+    );
+
+    const compactedEntries = [
+      {
+        id: "compaction-1",
+        parentId: null,
+        type: "compaction",
+        summary: "Earlier context",
+        tokensBefore: 12_000,
+      },
+      {
+        id: "retained-answer",
+        parentId: "compaction-1",
+        type: "message",
+        message: retainedMessage,
+      },
+      {
+        id: "next-prompt",
+        parentId: "retained-answer",
+        type: "message",
+        message: { role: "user", content: "Continue" },
+      },
+    ];
+    const compactedMessages: SerializableAgentMessage[] = [
+      {
+        role: "compactionSummary",
+        content: "",
+        summary: "Earlier context",
+        tokensBefore: 12_000,
+      },
+      retainedMessage,
+      { role: "user", content: "Continue" },
+      { role: "assistant", content: "New live answer" },
+    ];
+    const afterCompaction = reuseStableRows(
+      persisted,
+      buildTranscriptRows(compactedMessages, { entries: compactedEntries as never }),
+    );
+    const keys = afterCompaction.map((row) => row.key);
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain("assistant:retained-answer");
+    expect(keys).toContain("assistant:stream:3");
   });
 });
 

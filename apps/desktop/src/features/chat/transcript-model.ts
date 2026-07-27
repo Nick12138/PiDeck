@@ -1098,62 +1098,6 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
   return true;
 }
 
-function isLivePersistenceHandoff(
-  previous: TranscriptRow,
-  next: TranscriptRow,
-): boolean {
-  if (
-    previous.sourceId !== undefined ||
-    next.sourceId === undefined ||
-    previous.role !== next.role ||
-    !previous.key.includes("stream:")
-  ) {
-    return false;
-  }
-
-  if (previous.role !== "assistant") {
-    return previous.copyText === next.copyText;
-  }
-
-  const previousToolIds = previous.blocks
-    .filter((block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool")
-    .map((block) => block.tool.id);
-  const nextToolIds = new Set(
-    next.blocks
-      .filter((block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool")
-      .map((block) => block.tool.id),
-  );
-  if (previousToolIds.some((id) => nextToolIds.has(id))) return true;
-
-  if (previous.copyText && next.copyText) {
-    return (
-      previous.copyText === next.copyText ||
-      previous.copyText.startsWith(next.copyText) ||
-      next.copyText.startsWith(previous.copyText)
-    );
-  }
-  if (previous.copyText || next.copyText) return false;
-
-  const previousThinking = previous.blocks
-    .filter((block): block is Extract<TranscriptBlock, { kind: "thinking" }> => block.kind === "thinking")
-    .map((block) => block.text)
-    .join("\n");
-  const nextThinking = next.blocks
-    .filter((block): block is Extract<TranscriptBlock, { kind: "thinking" }> => block.kind === "thinking")
-    .map((block) => block.text)
-    .join("\n");
-  if (previousThinking && nextThinking) {
-    return (
-      previousThinking === nextThinking ||
-      previousThinking.startsWith(nextThinking) ||
-      nextThinking.startsWith(previousThinking)
-    );
-  }
-  if (previousThinking || nextThinking) return false;
-
-  return blockListEquivalent(previous.blocks, next.blocks);
-}
-
 /**
  * Text-file attachments travel inside the prompt text as tagged blocks so any
  * model (and the CLI) sees them; the transcript folds them back into chips.
@@ -1186,7 +1130,9 @@ export function parseUserAttachments(raw: string): ParsedUserText {
  * so every derived row is a fresh object even when its content is unchanged.
  * Substituting the previous row object for content-equivalent rows lets a
  * memoized row component skip re-rendering the stable transcript prefix —
- * only the actively streaming row reconciles per frame.
+ * only the actively streaming row reconciles per frame. Row keys remain the
+ * identity boundary: this optimization must never alias a live key to a
+ * persisted row or rewrite a persisted key.
  */
 export function reuseStableRows(
   previous: TranscriptRow[] | null,
@@ -1194,32 +1140,15 @@ export function reuseStableRows(
 ): TranscriptRow[] {
   if (!previous || previous.length === 0) return next;
   const byKey = new Map(previous.map((row) => [row.key, row]));
-  const bySourceId = new Map(
-    previous
-      .filter((row): row is TranscriptRow & { sourceId: string } => Boolean(row.sourceId))
-      .map((row) => [row.sourceId, row]),
-  );
   let reusedAll = previous.length === next.length;
   const merged = next.map((row, index) => {
-    let stabilized = row;
-    let prior = byKey.get(row.key);
-    if (!prior && row.sourceId) {
-      prior = bySourceId.get(row.sourceId);
-      if (prior && prior.key !== row.key) stabilized = { ...row, key: prior.key };
-    }
-    if (!prior) {
-      const indexedPrior = previous[index];
-      if (indexedPrior && isLivePersistenceHandoff(indexedPrior, row)) {
-        prior = indexedPrior;
-        stabilized = { ...row, key: indexedPrior.key };
-      }
-    }
-    if (prior && rowEquivalent(prior, stabilized)) {
+    const prior = byKey.get(row.key);
+    if (prior && rowEquivalent(prior, row)) {
       if (reusedAll && previous[index] !== prior) reusedAll = false;
       return prior;
     }
     reusedAll = false;
-    return stabilized;
+    return row;
   });
   return reusedAll ? previous : merged;
 }
