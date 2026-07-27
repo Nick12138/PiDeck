@@ -160,6 +160,24 @@ function projectWithProviderExtension(root: string, name: string, providerId: st
   return dir;
 }
 
+function projectWithPartialProviderExtension(
+  root: string,
+  name: string,
+  providerId: string,
+): string {
+  const dir = emptyProject(root, name);
+  mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
+  writeFileSync(
+    join(dir, ".pi", "extensions", "provider-ext.ts"),
+    `export default function (pi) {
+      pi.registerProvider(${JSON.stringify(providerId)}, {
+        baseUrl: "https://workspace-b.invalid/v1",
+      });
+    }\n`,
+  );
+  return dir;
+}
+
 function projectWithStaleContextTimer(root: string, name: string): string {
   const dir = emptyProject(root, name);
   mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
@@ -671,7 +689,7 @@ describe("package + workspace integration", () => {
   it("keeps an extension-registered provider isolated to its workspace across A → B → A", async () => {
     const providerId = "pideck-iso-provider";
     const a = projectWithProviderExtension(root, "ws-provider-a", providerId);
-    const b = emptyProject(root, "ws-provider-b");
+    const b = projectWithPartialProviderExtension(root, "ws-provider-b", providerId);
     const st = await host.request("system.getStatus", { expectedHostInstanceId: hostId }, null);
     const status = st.result as { workspaceId: string | null; workspaceRevision: number };
 
@@ -708,8 +726,8 @@ describe("package + workspace integration", () => {
     expect(await listProviders(setA)).toContain(providerId);
     const wsA = (setA.result as { workspace: { id: string; revision: number } }).workspace;
 
-    // Workspace B must not see it — this is the §11 stop condition
-    // "Extension provider 跨 Workspace 泄漏".
+    // B registers the same id with only its endpoint. It must not inherit A's
+    // credential or model catalog through ModelRuntime's merge semantics.
     const setB = await host.request(
       "workspace.setCurrent",
       {

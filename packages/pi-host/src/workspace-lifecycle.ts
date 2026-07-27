@@ -127,6 +127,22 @@ export class WorkspaceLifecycle {
     };
   }
 
+  private suspendGraphProviders(graph: WorkspaceGraph): void {
+    if (!graph.providerOwner || graph.suspendedProviders !== undefined) return;
+    graph.suspendedProviders = this.context.deps.providerOwnership.suspendOwner(
+      graph.providerOwner,
+    );
+  }
+
+  private resumeGraphProviders(graph: WorkspaceGraph): void {
+    if (!graph.providerOwner || graph.suspendedProviders === undefined) return;
+    this.context.deps.providerOwnership.resumeOwner(
+      graph.providerOwner,
+      graph.suspendedProviders,
+    );
+    graph.suspendedProviders = undefined;
+  }
+
   async disposeGraph(graph: WorkspaceGraph): Promise<void> {
     await this.sessionRuntimeCache.disposeGraphSessionRuntimes(graph);
     if (graph.providerOwner) {
@@ -197,6 +213,7 @@ export class WorkspaceLifecycle {
       };
     }
 
+    let previousGraph: WorkspaceGraph | null = null;
     try {
       operation.signal.throwIfAborted();
       if (this.sessionRuntimeCache.hasBusySessions()) {
@@ -222,7 +239,7 @@ export class WorkspaceLifecycle {
         };
       }
 
-      const previousGraph = this.context.getGraph();
+      previousGraph = this.context.getGraph();
       const workspaceId = randomUUID();
       const revision = server.identity.workspaceRevision + 1;
       const invalidatedSessionRevision =
@@ -240,6 +257,7 @@ export class WorkspaceLifecycle {
       });
       if (reactivated) return reactivated;
 
+      if (previousGraph) this.suspendGraphProviders(previousGraph);
       const built = await this.buildServices({
         workspaceId,
         cwd,
@@ -286,6 +304,7 @@ export class WorkspaceLifecycle {
         if (previousGraph) {
           this.context.setGraph(previousGraph);
           this.restoreIdentity(server, previousIdentity);
+          this.resumeGraphProviders(previousGraph);
           server.setPhase("ready");
           server.setLastError(undefined);
           return { error };
@@ -314,6 +333,9 @@ export class WorkspaceLifecycle {
         ...(built.graph.sessionSnapshot ? { session: built.graph.sessionSnapshot } : {}),
       };
     } catch (err) {
+      if (previousGraph && this.context.getGraph() === previousGraph) {
+        this.resumeGraphProviders(previousGraph);
+      }
       return {
         error: createHostError(
           "WORKSPACE_SWITCH_FAILED",
@@ -390,13 +412,9 @@ export class WorkspaceLifecycle {
     }
     graph.extensionUiCleanup = null;
     graph.extensionUiUpdateIdentity = null;
-    // Park this workspace's extension providers: without this the next
-    // workspace would see (and could use) them through the shared runtime.
-    if (graph.providerOwner) {
-      graph.suspendedProviders = this.context.deps.providerOwnership.suspendOwner(
-        graph.providerOwner,
-      );
-    }
+    // The switch path may already have parked this owner before building the
+    // incoming graph. Preserve that pre-merge snapshot when retention finishes.
+    this.suspendGraphProviders(graph);
     graph.retainedFingerprint = await this.retainedGraphFingerprint(graph);
 
     const key = this.retainedGraphKey(graph.canonicalCwd);
@@ -476,18 +494,6 @@ export class WorkspaceLifecycle {
       return null;
     }
 
-    // The fingerprint matched, so the parked extension providers are still
-    // the ones this workspace's configuration would produce; restore them
-    // before extensions re-bind. A later failure path disposes the graph,
-    // which releases the owner and unregisters them again.
-    if (graph.providerOwner && graph.suspendedProviders) {
-      this.context.deps.providerOwnership.resumeOwner(
-        graph.providerOwner,
-        graph.suspendedProviders,
-      );
-      graph.suspendedProviders = undefined;
-    }
-
     const session = graph.agentSession;
     const sessionManager = graph.sessionManager;
     const sessionId =
@@ -496,6 +502,11 @@ export class WorkspaceLifecycle {
       await this.disposeGraph(graph);
       return null;
     }
+
+    // The incoming owner must never re-register while the outgoing owner is
+    // still present: ModelRuntime merges same-id extension Provider configs.
+    if (args.previousGraph) this.suspendGraphProviders(args.previousGraph);
+    this.resumeGraphProviders(graph);
     const candidateIdentity: HostIdentity = {
       hostInstanceId: server.identity.hostInstanceId,
       workspaceId: graph.workspaceId,

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, type AgentSession } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
 import type { PiHostServer } from "./server.js";
 import { TryMutex } from "./locks.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
+import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import {
   WorkspaceGraphFactory,
   type BackgroundSessionRuntime,
@@ -18,6 +20,25 @@ const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const ACTIVE_SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const BACKGROUND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+
+function workspaceProviderConfig(baseUrl: string, apiKey: string) {
+  return {
+    baseUrl,
+    apiKey,
+    api: "openai-completions" as const,
+    models: [
+      {
+        id: "workspace-model",
+        name: "Workspace Model",
+        reasoning: false,
+        input: ["text" as const],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 16_384,
+      },
+    ],
+  };
+}
 
 function fakeSession(isIdle: boolean, sessionId = "session"): AgentSession {
   return {
@@ -755,7 +776,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
 });
 
 describe("WorkspaceGraphFactory retained Workspace recovery", () => {
-  function setup() {
+  function setup(providerOwnership?: ExtensionProviderOwnership) {
     const root = mkdtempSync(join(tmpdir(), "pideck-retained-workspace-"));
     const agentDir = join(root, "agent");
     const currentDir = join(root, "current");
@@ -763,6 +784,8 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     mkdirSync(agentDir, { recursive: true });
     mkdirSync(currentDir, { recursive: true });
     mkdirSync(retainedDir, { recursive: true });
+    const canonicalCurrentDir = realpathSync(currentDir);
+    const canonicalRetainedDir = realpathSync(retainedDir);
 
     const identity: HostIdentity = {
       hostInstanceId: HOST_ID,
@@ -785,11 +808,12 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     const factory = new WorkspaceGraphFactory({
       agentDir,
       packageUpdateCheck: false,
+      ...(providerOwnership ? { providerOwnership } : {}),
     } as GraphFactoryDeps);
     factory.bindServer(server);
 
     const previous = fakeWorkspaceGraph(
-      currentDir,
+      canonicalCurrentDir,
       WORKSPACE_ID,
       fakeSession(true, ACTIVE_SESSION_ID),
     );
@@ -821,7 +845,7 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     return {
       root,
       agentDir,
-      retainedDir,
+      retainedDir: canonicalRetainedDir,
       identity,
       server,
       factory,
@@ -897,15 +921,134 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 
-  it("cancels a supervised Workspace before candidate commit", async () => {
-    const state = setup();
+  it("does not merge same-id Provider state across fresh and retained Workspace switches", async () => {
+    const runtime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      allowModelNetwork: false,
+    });
+    const ownership = new ExtensionProviderOwnership(runtime);
+    const state = setup(ownership);
     try {
+      const providerId = "workspace-shared-provider";
+      const ownerA = ownership.createOwner("workspace:A");
+      const ownerB = ownership.createOwner("workspace:B");
+      const configA = workspaceProviderConfig(
+        "https://workspace-a.invalid/v1",
+        "test-workspace-a-key",
+      );
+      const configB = { baseUrl: "https://workspace-b.invalid/v1" };
+      ownership.runAsOwner(ownerA, () => runtime.registerProvider(providerId, configA));
+      state.previous.providerOwner = ownerA;
+
+      const candidate = fakeWorkspaceGraph(
+        state.retainedDir,
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        fakeSession(true, BACKGROUND_SESSION_ID),
+      );
+      candidate.providerOwner = ownerB;
+      const buildServices = vi.spyOn(state.internal, "buildServices").mockImplementation(
+        async () => {
+          ownership.runAsOwner(ownerB, () => runtime.registerProvider(providerId, configB));
+          return { graph: candidate };
+        },
+      );
+
+      const selectedB = await state.factory.setCurrent(state.retainedDir, "switch-to-b");
+
+      expect("error" in selectedB).toBe(false);
+      expect(runtime.getRegisteredProviderConfig(providerId)).toEqual(configB);
+      expect(ownership.ownersOf(providerId)).toEqual(["workspace:B"]);
+
+      const selectedA = await state.factory.setCurrent(
+        state.previous.canonicalCwd,
+        "switch-back-to-a",
+      );
+
+      expect("error" in selectedA).toBe(false);
+      expect(buildServices).toHaveBeenCalledTimes(1);
+      expect(runtime.getRegisteredProviderConfig(providerId)).toEqual(configA);
+      expect(ownership.ownersOf(providerId)).toEqual(["workspace:A"]);
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("restores the outgoing Provider owner when candidate activation fails", async () => {
+    const runtime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      allowModelNetwork: false,
+    });
+    const ownership = new ExtensionProviderOwnership(runtime);
+    const state = setup(ownership);
+    try {
+      const providerId = "workspace-rollback-provider";
+      const ownerA = ownership.createOwner("workspace:A");
+      const ownerB = ownership.createOwner("workspace:B");
+      const configA = workspaceProviderConfig(
+        "https://workspace-a.invalid/v1",
+        "test-workspace-a-key",
+      );
+      ownership.runAsOwner(ownerA, () => runtime.registerProvider(providerId, configA));
+      state.previous.providerOwner = ownerA;
+
+      const candidate = fakeWorkspaceGraph(
+        state.retainedDir,
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        fakeSession(true, BACKGROUND_SESSION_ID),
+      );
+      candidate.providerOwner = ownerB;
+      candidate.extensionUiActivate = async () => {
+        throw new Error("extension activation failed");
+      };
+      vi.spyOn(state.internal, "buildServices").mockImplementation(async () => {
+        ownership.runAsOwner(ownerB, () =>
+          runtime.registerProvider(providerId, {
+            baseUrl: "https://workspace-b.invalid/v1",
+          }),
+        );
+        return { graph: candidate };
+      });
+
+      const result = await state.factory.setCurrent(state.retainedDir, "switch-rollback-owner");
+
+      expect("error" in result && result.error.code).toBe("WORKSPACE_SWITCH_FAILED");
+      expect(state.factory.getGraph()).toBe(state.previous);
+      expect(runtime.getRegisteredProviderConfig(providerId)).toEqual(configA);
+      expect(ownership.ownersOf(providerId)).toEqual(["workspace:A"]);
+      expect(state.previous.suspendedProviders).toBeUndefined();
+    } finally {
+      rmSync(state.root, { recursive: true, force: true });
+    }
+  });
+
+  it("cancels a supervised Workspace before candidate commit", async () => {
+    const runtime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+      allowModelNetwork: false,
+    });
+    const ownership = new ExtensionProviderOwnership(runtime);
+    const state = setup(ownership);
+    try {
+      const providerId = "workspace-cancel-provider";
+      const ownerA = ownership.createOwner("workspace:A");
+      const ownerB = ownership.createOwner("workspace:B");
+      const configA = workspaceProviderConfig(
+        "https://workspace-a.invalid/v1",
+        "test-workspace-a-key",
+      );
+      ownership.runAsOwner(ownerA, () => runtime.registerProvider(providerId, configA));
+      state.previous.providerOwner = ownerA;
+      const resumeOwner = vi.spyOn(ownership, "resumeOwner");
       const candidateSession = fakeSession(true, BACKGROUND_SESSION_ID);
       const candidate = fakeWorkspaceGraph(
         state.retainedDir,
         "99999999-9999-4999-8999-999999999999",
         candidateSession,
       );
+      candidate.providerOwner = ownerB;
       let resolveBuild!: (value: { graph: WorkspaceGraph }) => void;
       const buildServices = vi
         .spyOn(
@@ -936,6 +1079,10 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
       });
       expect(state.factory.getGraph()).toBe(state.previous);
       expect(state.identity).toEqual(originalIdentity);
+      expect(resumeOwner).toHaveBeenCalledTimes(1);
+      expect(runtime.getRegisteredProviderConfig(providerId)).toEqual(configA);
+      expect(ownership.ownersOf(providerId)).toEqual(["workspace:A"]);
+      expect(state.previous.suspendedProviders).toBeUndefined();
       expect(candidateSession.dispose).toHaveBeenCalledTimes(1);
       expect(state.server.serviceGraphLock.isHeld()).toBe(false);
       expect(state.server.graphOperations.getActive()).toBeNull();
