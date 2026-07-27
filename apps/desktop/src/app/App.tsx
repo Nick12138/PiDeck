@@ -616,12 +616,18 @@ export function App() {
               hostClient.rejectAllPending(reason);
 
               let lastError: unknown;
+              // Restoring lastSessionPath is startup/restart semantics: only a
+              // pass that found the Host without a workspace (fresh boot or
+              // watchdog restart) may re-open it. A recovery against a live
+              // Host keeps that Host's current session authoritative.
+              let sessionRestoreEligible = false;
               for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
                 try {
                   const status = await hostClient.hello("pideck", await getAppVersion());
                   if (expectedHostId !== "bootstrap" && status.hostInstanceId !== expectedHostId) {
                     throw new Error("Host generation changed during hello");
                   }
+                  if (!status.workspaceId) sessionRestoreEligible = true;
                   useAppStore.getState().beginHostEpoch(status);
                   const configuredSettings = useAppStore.getState().desktopSettings;
                   const configuredWorkspace =
@@ -665,6 +671,7 @@ export function App() {
                   const hydrated = useAppStore.getState();
                   if (
                     sessionPathToRestore &&
+                    (sessionRestoreEligible || !hydrated.session) &&
                     hydrated.host &&
                     hydrated.workspace?.servicesReady &&
                     hydrated.session?.sessionPath !== sessionPathToRestore
@@ -688,11 +695,19 @@ export function App() {
                           !cancelled &&
                           current.host?.hostInstanceId === restoreContext.expectedHostInstanceId &&
                           current.workspace?.id === restoreContext.expectedWorkspaceId &&
-                          current.workspace?.revision === restoreContext.expectedWorkspaceRevision
+                          current.workspace?.revision === restoreContext.expectedWorkspaceRevision &&
+                          // The restore decision was made against this session
+                          // generation; once it moves, re-evaluate instead of
+                          // re-sending a context the Host must reject.
+                          current.host?.sessionId === restoreContext.expectedSessionId &&
+                          current.host?.sessionRevision === restoreContext.expectedSessionRevision
                         );
                       },
                     );
-                    if (!restored) continue;
+                    if (!restored) {
+                      lastError = new Error("Session restore was superseded during recovery");
+                      continue;
+                    }
                     if (restored.ok) {
                       const currentHost = useAppStore.getState().host;
                       if (currentHost) {
@@ -713,6 +728,15 @@ export function App() {
                       }
                     } else if (restored.error.code === "SESSION_NOT_FOUND") {
                       await persistDesktopSettings({ lastSessionPath: null });
+                    } else if (restored.error.code === "STALE_REVISION") {
+                      // Another mutation committed between the rehydrate
+                      // snapshot and this open (e.g. an orphaned session.open
+                      // from the pre-recovery epoch). Re-run the attempt
+                      // against fresh Host state instead of surfacing it.
+                      lastError = new Error(
+                        `Session restore raced a newer session change: ${restored.error.message}`,
+                      );
+                      continue;
                     } else {
                       useAppStore.getState().pushNotification(
                         `Could not restore the last session: ${restored.error.message}`,

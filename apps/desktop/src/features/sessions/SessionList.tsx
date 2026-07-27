@@ -324,6 +324,13 @@ export function SessionList({
   }, []);
 
   useEffect(() => {
+    // A recovery epoch (connecting/desynchronized/fatal) invalidates queued
+    // intents and supersedes the running open, so its busy retries cannot
+    // outlive the epoch and land on the Host after the recovery rehydrate.
+    if (sessionOpenBlocked) sessionOpenQueue.current?.clearPending();
+  }, [sessionOpenBlocked]);
+
+  useEffect(() => {
     sessionOpenQueue.current?.clearPending();
     setPinnedSessionIds(readPinnedSessionIds(workspace?.id));
     setEditingSessionId(null);
@@ -440,23 +447,37 @@ export function SessionList({
     );
     const startedAt = performance.now();
     try {
-      const openContext = nullableSessionContext(currentHost, currentWorkspace);
+      const authorization = {
+        expectedHostInstanceId: currentHost.hostInstanceId,
+        expectedWorkspaceId: currentWorkspace.id,
+        expectedWorkspaceRevision: currentWorkspace.revision,
+      };
       const res = await requestSessionOpenWithRetry(
-        () =>
-          hostClient.request(
+        () => {
+          // The intent is "open this path"; the session generation is only an
+          // optimistic-concurrency ticket. Re-read it each attempt so a busy
+          // retry that follows another mutation's commit is not rejected as a
+          // stale revision.
+          const latest = useAppStore.getState().host;
+          return hostClient.request(
             "session.open",
-            openContext,
+            {
+              ...authorization,
+              expectedSessionId: latest?.sessionId ?? null,
+              expectedSessionRevision: latest?.sessionRevision ?? 0,
+            },
             { sessionPath: path },
             SESSION_OPEN_TIMEOUT_MS,
-          ),
+          );
+        },
         undefined,
         () => {
           const current = useAppStore.getState();
           return (
             !isSuperseded() &&
-            current.host?.hostInstanceId === openContext.expectedHostInstanceId &&
-            current.workspace?.id === openContext.expectedWorkspaceId &&
-            current.workspace?.revision === openContext.expectedWorkspaceRevision
+            current.host?.hostInstanceId === authorization.expectedHostInstanceId &&
+            current.workspace?.id === authorization.expectedWorkspaceId &&
+            current.workspace?.revision === authorization.expectedWorkspaceRevision
           );
         },
       );
