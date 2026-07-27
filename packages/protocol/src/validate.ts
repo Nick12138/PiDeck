@@ -1,4 +1,5 @@
 import type { HostContextMap, HostRequestParams } from "./contracts.js";
+import { MAX_AGENT_IMAGE_BYTES, MAX_AGENT_REQUEST_IMAGES } from "./limits.js";
 import {
   hasExactKeys,
   isHostErrorRecord,
@@ -75,13 +76,41 @@ function validateImages(value: unknown): boolean {
   return (
     value === undefined ||
     (Array.isArray(value) &&
+      value.length <= MAX_AGENT_REQUEST_IMAGES &&
       value.every(
         (image) =>
           exactObject(image, ["mediaType", "data"]) &&
           isNonEmptyString(image.mediaType) &&
-          isNonEmptyString(image.data),
+          isNonEmptyString(image.data) &&
+          validateBase64ImageData(image.data),
       ))
   );
+}
+
+function validateBase64ImageData(data: string): boolean {
+  const decodedBytes = base64DecodedByteLength(data);
+  return decodedBytes !== null && decodedBytes <= MAX_AGENT_IMAGE_BYTES;
+}
+
+function base64DecodedByteLength(data: string): number | null {
+  const maxEncodedCharacters = Math.ceil(MAX_AGENT_IMAGE_BYTES / 3) * 4;
+  if (data.length > maxEncodedCharacters) return null;
+
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  const contentLength = data.length - padding;
+  if (contentLength % 4 === 1 || (padding > 0 && data.length % 4 !== 0)) return null;
+
+  for (let index = 0; index < contentLength; index += 1) {
+    const code = data.charCodeAt(index);
+    const isBase64Character =
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122) ||
+      (code >= 48 && code <= 57) ||
+      code === 43 ||
+      code === 47;
+    if (!isBase64Character) return null;
+  }
+  return Math.floor((contentLength * 3) / 4);
 }
 
 function isResourcePreferenceUpdate(value: unknown): boolean {

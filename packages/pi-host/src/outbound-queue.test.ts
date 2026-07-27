@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HostIdentity } from "@pideck/protocol";
+import { parseHostResponse, type HostIdentity } from "@pideck/protocol";
 import { OutboundWriter, type WritableLike } from "./outbound-queue.js";
 
 const identity: HostIdentity = {
@@ -39,7 +39,7 @@ function fakeStream(options?: { stalled?: boolean }) {
 
 function writer(
   stream: WritableLike,
-  options?: { softWatermark?: number; hardCap?: number },
+  options?: { softWatermark?: number; hardCap?: number; maxFrameBytes?: number },
 ) {
   let sequence = 0;
   const out = new OutboundWriter({
@@ -359,6 +359,102 @@ describe("OutboundWriter", () => {
     expect(fake.parsed().some((message) => message.event === "session.runtimeChanged")).toBe(false);
     const written = fake.parsed().filter((message) => typeof message.sequence === "number").length;
     expect(lastSequence()).toBeGreaterThan(written);
+  });
+
+  it("replaces an oversized response with a bounded correlated failure", async () => {
+    const fake = fakeStream();
+    const { out } = writer(fake.stream, { maxFrameBytes: 1024 });
+
+    out.enqueueResponse({
+      protocolVersion: 1,
+      ...identity,
+      id: "44444444-4444-4444-8444-444444444444",
+      method: "session.getSnapshot",
+      ok: true,
+      result: { snapshot: "x".repeat(2_000) },
+    });
+    await out.drain();
+
+    expect(fake.lines).toHaveLength(1);
+    expect(Buffer.byteLength(fake.lines[0]!, "utf8")).toBeLessThanOrEqual(1024);
+    expect(fake.parsed()[0]).toMatchObject({
+      hostInstanceId: identity.hostInstanceId,
+      workspaceId: identity.workspaceId,
+      sessionId: identity.sessionId,
+      id: "44444444-4444-4444-8444-444444444444",
+      method: "session.getSnapshot",
+      ok: false,
+      error: { code: "INTERNAL_ERROR" },
+    });
+    expect(parseHostResponse(fake.parsed()[0])).toMatchObject({ ok: true });
+  });
+
+  it("uses UTF-8 bytes rather than JavaScript string length for the frame limit", async () => {
+    const fake = fakeStream();
+    const { out } = writer(fake.stream, { maxFrameBytes: 1024 });
+    const body = {
+      protocolVersion: 1,
+      ...identity,
+      id: "44444444-4444-4444-8444-444444444444",
+      method: "session.getSnapshot",
+      ok: true,
+      result: { snapshot: "界".repeat(300) },
+    };
+    const originalLine = `${JSON.stringify(body)}\n`;
+    expect(originalLine.length).toBeLessThanOrEqual(1024);
+    expect(Buffer.byteLength(originalLine, "utf8")).toBeGreaterThan(1024);
+
+    out.enqueueResponse(body);
+    await out.drain();
+
+    expect(fake.parsed()[0]).toMatchObject({
+      id: body.id,
+      method: body.method,
+      ok: false,
+      error: { code: "INTERNAL_ERROR" },
+    });
+    expect(Buffer.byteLength(fake.lines[0]!, "utf8")).toBeLessThanOrEqual(1024);
+  });
+
+  it("drops an oversized event after consuming its sequence", async () => {
+    const fake = fakeStream();
+    const { out, lastSequence } = writer(fake.stream, { maxFrameBytes: 1024 });
+
+    out.enqueueEvent(identity, "extensionUi.notification", {
+      message: "x".repeat(2_000),
+      level: "info",
+    });
+    out.enqueueEvent(identity, "extensionUi.notification", {
+      message: "kept",
+      level: "info",
+    });
+    await out.drain();
+
+    expect(fake.parsed()).toHaveLength(1);
+    expect(fake.parsed()[0]).toMatchObject({
+      event: "extensionUi.notification",
+      sequence: 2,
+      payload: { message: "kept" },
+    });
+    expect(lastSequence()).toBe(2);
+  });
+
+  it("does not burn a sequence when only a retained response exceeds the queue cap", async () => {
+    const fake = fakeStream();
+    const { out, lastSequence } = writer(fake.stream, { hardCap: 200 });
+
+    out.enqueueResponse({
+      protocolVersion: 1,
+      ...identity,
+      id: "44444444-4444-4444-8444-444444444444",
+      method: "session.getSnapshot",
+      ok: true,
+      result: { snapshot: "x".repeat(400) },
+    });
+    await out.drain();
+
+    expect(fake.lines).toHaveLength(1);
+    expect(lastSequence()).toBe(0);
   });
 
   it("drain resolves immediately when idle", async () => {

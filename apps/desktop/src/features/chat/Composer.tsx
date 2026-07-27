@@ -13,7 +13,11 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import type { SerializableImage } from "@pideck/protocol";
+import {
+  MAX_AGENT_IMAGE_BYTES,
+  MAX_AGENT_REQUEST_IMAGES,
+  type SerializableImage,
+} from "@pideck/protocol";
 import { buildAttachedFileBlock } from "./transcript-model";
 import { ContextUsageRing, ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
@@ -36,8 +40,6 @@ import { requestTreePanel } from "../../lib/dock-tree";
 import { requestExport } from "../../lib/export-actions";
 import { useImeComposition } from "../../lib/use-ime-composition";
 
-const MAX_IMAGES = 4;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
 
@@ -403,9 +405,9 @@ export function Composer({
     const textFiles: File[] = [];
     for (const file of incoming) {
       if (file.type.startsWith("image/")) {
-        if (file.size > MAX_IMAGE_BYTES) {
+        if (file.size > MAX_AGENT_IMAGE_BYTES) {
           pushNotification(
-            `Image too large (max ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB)`,
+            `Image too large (max ${Math.round(MAX_AGENT_IMAGE_BYTES / 1024 / 1024)} MB)`,
             "warning",
           );
           continue;
@@ -429,10 +431,13 @@ export function Composer({
       );
       setImages((current) => {
         const next = [...current, ...loaded];
-        if (next.length > MAX_IMAGES) {
-          pushNotification(`Up to ${MAX_IMAGES} images per message`, "warning");
+        if (next.length > MAX_AGENT_REQUEST_IMAGES) {
+          pushNotification(
+            `Up to ${MAX_AGENT_REQUEST_IMAGES} images per message`,
+            "warning",
+          );
         }
-        return next.slice(0, MAX_IMAGES);
+        return next.slice(0, MAX_AGENT_REQUEST_IMAGES);
       });
     }
 
@@ -811,7 +816,10 @@ export function Composer({
             title="Attach image or text file"
             aria-label="Attach image or text file"
             className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-            disabled={disabled || (images.length >= MAX_IMAGES && files.length >= MAX_FILES)}
+            disabled={
+              disabled ||
+              (images.length >= MAX_AGENT_REQUEST_IMAGES && files.length >= MAX_FILES)
+            }
             onClick={() => fileInputRef.current?.click()}
           >
             <Plus size={16} />

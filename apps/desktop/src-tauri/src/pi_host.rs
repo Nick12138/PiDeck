@@ -27,6 +27,44 @@ pub(crate) const MAX_HOST_STDOUT_LINE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_HOST_STDERR_LINE_BYTES: usize = 1024 * 1024;
 const HOST_STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug)]
+struct HostStdoutLineTooLong {
+    max_bytes: usize,
+}
+
+impl std::fmt::Display for HostStdoutLineTooLong {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "line exceeds {} byte limit", self.max_bytes)
+    }
+}
+
+impl std::error::Error for HostStdoutLineTooLong {}
+
+fn is_host_stdout_line_too_long(error: &std::io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<HostStdoutLineTooLong>())
+        .is_some()
+}
+
+async fn discard_through_newline<R>(reader: &mut R) -> std::io::Result<()>
+where
+    R: AsyncBufRead + Unpin,
+{
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            return Ok(());
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        reader.consume(consumed);
+        if newline.is_some() {
+            return Ok(());
+        }
+    }
+}
+
 pub(crate) async fn write_host_stdin<W>(
     writer: &mut W,
     payload: &[u8],
@@ -65,15 +103,29 @@ pub(crate) async fn read_bounded_utf8_line<R>(
 where
     R: AsyncBufRead + Unpin,
 {
-    buffer.clear();
-    let mut limited = reader.take((max_bytes as u64).saturating_add(1));
-    let bytes_read = limited.read_line(buffer).await?;
+    // Reuse the caller's allocation. `take(max + 1)` bounds this buffer; only
+    // the remainder of an oversized line is discarded without allocation.
+    let mut bytes = std::mem::take(buffer).into_bytes();
+    bytes.clear();
+    let bytes_read = {
+        let mut limited = (&mut *reader).take((max_bytes as u64).saturating_add(1));
+        limited.read_until(b'\n', &mut bytes).await?
+    };
     if bytes_read > max_bytes {
+        if bytes.last() != Some(&b'\n') {
+            discard_through_newline(reader).await?;
+        }
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("line exceeds {max_bytes} byte limit"),
+            HostStdoutLineTooLong { max_bytes },
         ));
     }
+    *buffer = String::from_utf8(bytes).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("line is not valid UTF-8: {error}"),
+        )
+    })?;
     Ok(bytes_read)
 }
 
@@ -998,6 +1050,12 @@ impl PiHostManager {
                                 }
                             }
                             let _ = app_out.emit("pi-host-stdout", payload);
+                        }
+                        Err(error) if is_host_stdout_line_too_long(&error) => {
+                            let message = format!("Pi Host stdout frame dropped: {error}");
+                            eprintln!("[pideck] {message}");
+                            let _ = app_out.emit("pi-host-stderr", message);
+                            continue;
                         }
                         Err(error) => {
                             let message = format!("Pi Host stdout transport read failed: {error}");

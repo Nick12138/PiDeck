@@ -233,7 +233,10 @@ rl.on('line', (line) => {
         let (mut writer, reader) = tokio::io::duplex(128);
         let write_task = tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
-            writer.write_all(b"12345678\n123456789").await.unwrap();
+            writer
+                .write_all(b"12345678\n123456789\nok\n")
+                .await
+                .unwrap();
         });
         let mut reader = tokio::io::BufReader::new(reader);
         let mut line = String::new();
@@ -251,6 +254,14 @@ rl.on('line', (line) => {
             .expect_err("oversize JSONL line must fail");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("8 byte limit"));
+
+        assert_eq!(
+            read_bounded_utf8_line(&mut reader, &mut line, 8)
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(line, "ok\n");
         write_task.await.unwrap();
     }
 

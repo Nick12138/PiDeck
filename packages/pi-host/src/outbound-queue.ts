@@ -21,7 +21,11 @@
  *   queued events are dropped; responses are always kept.
  */
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
-import { createEvent } from "@pideck/protocol";
+import {
+  createEvent,
+  createHostError,
+  MAX_HOST_JSONL_FRAME_BYTES,
+} from "@pideck/protocol";
 import { logger } from "./logger.js";
 
 export type WritableLike = {
@@ -51,6 +55,35 @@ type Entry = EventEntry | ResponseEntry;
 
 export const OUTBOUND_SOFT_WATERMARK_BYTES = 1024 * 1024;
 export const OUTBOUND_HARD_CAP_BYTES = 16 * 1024 * 1024;
+
+function jsonLine(value: unknown): { line: string; bytes: number } {
+  const line = `${JSON.stringify(value)}\n`;
+  return { line, bytes: Buffer.byteLength(line, "utf8") };
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
+}
+
+function oversizedResponseFailure(body: unknown): unknown {
+  const response =
+    typeof body === "object" && body !== null
+      ? (body as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  return {
+    protocolVersion: 1,
+    hostInstanceId: response.hostInstanceId,
+    workspaceId: response.workspaceId,
+    workspaceRevision: response.workspaceRevision,
+    sessionId: response.sessionId,
+    sessionRevision: response.sessionRevision,
+    packageRevision: response.packageRevision,
+    id: response.id,
+    method: response.method,
+    ok: false,
+    error: createHostError("INTERNAL_ERROR", "Host response exceeded transport frame limit"),
+  };
+}
 
 /** Latest-wins or mergeable event classes — safe to collapse under pressure. */
 function sessionScope(identity: HostIdentity): string {
@@ -96,6 +129,7 @@ export class OutboundWriter {
   private readonly allocateSequence: () => number;
   private readonly softWatermark: number;
   private readonly hardCap: number;
+  private readonly maxFrameBytes: number;
   private readonly queue: Entry[] = [];
   private readonly coalesceIndex = new Map<string, EventEntry>();
   private pendingBytes = 0;
@@ -109,21 +143,46 @@ export class OutboundWriter {
     allocateSequence: () => number;
     softWatermark?: number;
     hardCap?: number;
+    maxFrameBytes?: number;
   }) {
     this.stream = options.stream;
     this.allocateSequence = options.allocateSequence;
     this.softWatermark = options.softWatermark ?? OUTBOUND_SOFT_WATERMARK_BYTES;
     this.hardCap = options.hardCap ?? OUTBOUND_HARD_CAP_BYTES;
+    this.maxFrameBytes = options.maxFrameBytes ?? MAX_HOST_JSONL_FRAME_BYTES;
   }
 
   get queuedBytes(): number {
     return this.pendingBytes;
   }
 
-  /** Responses are never coalesced or dropped. */
+  /** Responses are never coalesced; oversized bodies become correlated failures. */
   enqueueResponse(body: unknown): void {
-    const line = JSON.stringify(body) + "\n";
-    this.push({ kind: "response", line, bytes: line.length });
+    let serialized = jsonLine(body);
+    if (serialized.bytes > this.maxFrameBytes) {
+      const fallback = jsonLine(oversizedResponseFailure(body));
+      logger.error("Outbound response exceeded frame limit; returning bounded failure", {
+        id:
+          typeof body === "object" && body !== null
+            ? (body as Record<string, unknown>).id
+            : undefined,
+        method:
+          typeof body === "object" && body !== null
+            ? (body as Record<string, unknown>).method
+            : undefined,
+        frameBytes: serialized.bytes,
+        maxFrameBytes: this.maxFrameBytes,
+      });
+      if (fallback.bytes > this.maxFrameBytes) {
+        logger.error("Correlated oversized-response failure exceeded frame limit", {
+          fallbackBytes: fallback.bytes,
+          maxFrameBytes: this.maxFrameBytes,
+        });
+        return;
+      }
+      serialized = fallback;
+    }
+    this.push({ kind: "response", ...serialized });
   }
 
   /**
@@ -142,7 +201,7 @@ export class OutboundWriter {
   }
 
   enqueueEvent(identity: HostIdentity, event: HostEventName, payload: unknown): void {
-    const bytes = JSON.stringify(payload)?.length ?? 0;
+    const bytes = jsonBytes(payload);
     const coalesceKey = coalesceKeyFor(identity, event, payload);
 
     if (event === "extensionUi.widgetAttentionRequested") {
@@ -238,12 +297,18 @@ export class OutboundWriter {
           this.pendingBytes -= entry.bytes;
         }
       }
-      if (shed === 0) this.nextSequence();
-      logger.error("Outbound queue exceeded hard cap; events dropped, sequence gap forced", {
-        shedBytes: shed,
-        droppedEvents,
-        pendingBytes: this.pendingBytes,
-      });
+      if (droppedEvents > 0 && shed === 0) this.nextSequence();
+      if (droppedEvents > 0 || shed > 0) {
+        logger.error("Outbound queue exceeded hard cap; events dropped, sequence gap forced", {
+          shedBytes: shed,
+          droppedEvents,
+          pendingBytes: this.pendingBytes,
+        });
+      } else {
+        logger.warn("Outbound queue exceeded hard cap with retained responses only", {
+          pendingBytes: this.pendingBytes,
+        });
+      }
       return;
     }
 
@@ -288,13 +353,24 @@ export class OutboundWriter {
         if (entry.kind === "response") {
           line = entry.line;
         } else {
+          const sequence = entry.sequence ?? this.nextSequence();
           const envelope = createEvent(
             entry.identity,
             entry.event,
-            entry.sequence ?? this.nextSequence(),
+            sequence,
             entry.payload as never,
           );
-          line = JSON.stringify(envelope) + "\n";
+          const serialized = jsonLine(envelope);
+          if (serialized.bytes > this.maxFrameBytes) {
+            logger.error("Outbound event exceeded frame limit; event dropped", {
+              event: entry.event,
+              sequence,
+              frameBytes: serialized.bytes,
+              maxFrameBytes: this.maxFrameBytes,
+            });
+            continue;
+          }
+          line = serialized.line;
         }
 
         if (!this.stream.write(line)) {

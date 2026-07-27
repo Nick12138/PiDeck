@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { validateSuccessResult } from "@pideck/protocol";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 
-function sessionFixture(): AgentSession {
+function sessionFixture(
+  messages: unknown[] = [],
+  overrides: Record<string, unknown> = {},
+): AgentSession {
   return {
     sessionId: SESSION_ID,
     sessionFile: undefined,
@@ -15,7 +19,7 @@ function sessionFixture(): AgentSession {
     isCompacting: false,
     isRetrying: false,
     model: undefined,
-    messages: [],
+    messages,
     thinkingLevel: "off",
     autoCompactionEnabled: true,
     autoRetryEnabled: true,
@@ -25,6 +29,7 @@ function sessionFixture(): AgentSession {
     getFollowUpMessages: () => [],
     getAllTools: () => [],
     getActiveToolNames: () => [],
+    ...overrides,
   } as unknown as AgentSession;
 }
 
@@ -92,5 +97,133 @@ describe("buildSessionSnapshot entry projection", () => {
 
     expect(snapshot).not.toHaveProperty("entries");
     expect(snapshot).not.toHaveProperty("leafId");
+  });
+
+  it("omits duplicate entries and image data to stay within its projection budget", () => {
+    const session = sessionFixture([
+      {
+        role: "user",
+        content: [{ type: "image", mimeType: "image/png", data: "i".repeat(1_000) }],
+      },
+      { role: "assistant", content: [{ type: "text", text: "recent answer" }] },
+    ]);
+    const sessionManager = {
+      buildContextEntries: vi.fn(() => [
+        {
+          id: "message-1",
+          type: "message",
+          parentId: null,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          message: { role: "user", content: "e".repeat(1_000) },
+        },
+      ]),
+      getLeafId: vi.fn(() => "message-1"),
+    } as unknown as SessionManager;
+    const maxSnapshotBytes = 1_400;
+
+    const snapshot = buildSessionSnapshot({
+      session,
+      sessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 4,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 2,
+      maxSnapshotBytes,
+    });
+
+    expect(Buffer.byteLength(JSON.stringify(snapshot), "utf8")).toBeLessThanOrEqual(
+      maxSnapshotBytes,
+    );
+    expect(snapshot).not.toHaveProperty("entries");
+    expect(snapshot).not.toHaveProperty("leafId");
+    expect(sessionManager.buildContextEntries).not.toHaveBeenCalled();
+    expect(sessionManager.getLeafId).not.toHaveBeenCalled();
+    expect(snapshot.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "[Image omitted from desktop snapshot: size limit]",
+          },
+        ],
+      },
+      { role: "assistant", content: [{ type: "text", text: "recent answer" }] },
+    ]);
+    expect((session.messages[0] as { content: unknown[] }).content[0]).toMatchObject({
+      type: "image",
+      data: expect.any(String),
+    });
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
+  it("retains only a recent message suffix when text alone exceeds the budget", () => {
+    const messages = [
+      { role: "user", content: "old-1".repeat(100) },
+      { role: "assistant", content: "old-2".repeat(100) },
+      { role: "user", content: "newest".repeat(100) },
+    ];
+    const sessionManager = {} as SessionManager;
+    const common = {
+      sessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 1,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 1,
+    };
+    const emptySnapshot = buildSessionSnapshot({
+      ...common,
+      session: sessionFixture(),
+    });
+    const maxSnapshotBytes =
+      Buffer.byteLength(JSON.stringify(emptySnapshot), "utf8") +
+      Buffer.byteLength(JSON.stringify(messages.at(-1)), "utf8");
+
+    const snapshot = buildSessionSnapshot({
+      ...common,
+      session: sessionFixture(messages),
+      maxSnapshotBytes,
+    });
+
+    expect(snapshot.messages).toEqual([messages.at(-1)]);
+    expect(Buffer.byteLength(JSON.stringify(snapshot), "utf8")).toBeLessThanOrEqual(
+      maxSnapshotBytes,
+    );
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
+  it("falls back to minimal queue and tool projections when metadata exceeds the budget", () => {
+    const queuedText = "q".repeat(2_000);
+    const toolDescription = "d".repeat(2_000);
+    const session = sessionFixture([], {
+      getSteeringMessages: () => [queuedText],
+      getAllTools: () => [{ name: "large-tool", description: toolDescription }],
+      getActiveToolNames: () => ["large-tool"],
+    });
+    const maxSnapshotBytes = 900;
+
+    const snapshot = buildSessionSnapshot({
+      session,
+      sessionManager: {} as SessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 3,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 2,
+      maxSnapshotBytes,
+    });
+
+    expect(Buffer.byteLength(JSON.stringify(snapshot), "utf8")).toBeLessThanOrEqual(
+      maxSnapshotBytes,
+    );
+    expect(snapshot.pending).toEqual({ revision: 0, steering: [], followUp: [] });
+    expect(snapshot.tools).toMatchObject({ revision: 2, tools: [], active: [] });
+    expect(session.getSteeringMessages()).toEqual([queuedText]);
+    expect(session.getAllTools()).toEqual([
+      expect.objectContaining({ name: "large-tool", description: toolDescription }),
+    ]);
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
   });
 });

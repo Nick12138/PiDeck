@@ -2,7 +2,15 @@
 
 Transport: **JSONL** over stdin (requests) / stdout (responses + events). UTF-8. One JSON object per line. stderr = logs only.
 
-Outbound backpressure (`packages/pi-host/src/outbound-queue.ts`): all output flows through one bounded queue that honors stream drain. Event sequences are normally allocated at write time; above a 1MB soft watermark, latest-wins events coalesce and terminal frames merge; above a 16MB hard cap, droppable events are shed and — in the extreme — a sequence gap is forced deliberately so the client's gap detection triggers its standard rehydrate recovery. Responses are never dropped. The atomic recovery barrier is the one exception to write-time allocation: it seals all earlier live events with sequence numbers and prevents coalescing across the barrier before it captures the response watermark.
+Outbound backpressure (`packages/pi-host/src/outbound-queue.ts`): all output flows through one bounded queue that honors stream drain. Event sequences are normally allocated at write time; above a 1MB soft watermark, latest-wins events coalesce and terminal frames merge; above a 16MB hard cap, droppable events are shed and a sequence gap is forced deliberately so the client's gap detection triggers its standard rehydrate recovery. Responses are retained under queue pressure. The atomic recovery barrier is the one exception to write-time allocation: it seals all earlier live events with sequence numbers and prevents coalescing across the barrier before it captures the response watermark.
+
+## Frame size contract
+
+- `MAX_HOST_JSONL_FRAME_BYTES` is 32 MiB. It is the maximum UTF-8 byte length of one Host stdout JSON object **including its trailing newline**; JavaScript string length is not a valid substitute. Rust's `MAX_HOST_STDOUT_LINE_BYTES` mirrors this value.
+- One `agent.prompt`, `agent.steer`, or `agent.followUp` request accepts at most four images and at most 5 MiB decoded-equivalent base64 data per image. These protocol constants are also used by Composer.
+- A desktop Session projection is limited to 12 MiB, leaving room for the repeated top-level tool projection and other `system.rehydrate` state. When necessary the Host first omits the optional persisted `entries`/`leafId` copy, then replaces image blocks with text placeholders, then retains only a recent message suffix. If queue or tool metadata alone still exceeds the budget, it emits a minimal identity/revision projection with empty queue/tool details. The live SDK Session is never modified.
+- Before writing, the Host replaces an oversized response body with a small `INTERNAL_ERROR` response carrying the original identity, request `id`, and `method`. An oversized event consumes its sequence and is dropped, so the next delivered event creates the normal rehydrate gap.
+- Rust treats a still-oversized or version-skewed stdout line as a dropped frame: it drains through that line's newline with bounded memory and continues reading. It does not kill or restart a healthy Host for this condition.
 
 ## Identity & revisions
 

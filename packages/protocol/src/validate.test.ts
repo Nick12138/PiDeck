@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HOST_METHODS, METHOD_CONTEXT_SCOPE } from "./methods.js";
+import { MAX_AGENT_IMAGE_BYTES, MAX_AGENT_REQUEST_IMAGES } from "./limits.js";
 import {
   isJsonValue,
   parseHostEvent,
@@ -53,6 +54,14 @@ describe("METHOD_CONTEXT_SCOPE coverage", () => {
 });
 
 describe("parseHostRequest", () => {
+  const activeSessionContext = {
+    expectedHostInstanceId: HOST_ID,
+    expectedWorkspaceId: WORKSPACE_ID,
+    expectedWorkspaceRevision: 1,
+    expectedSessionId: SESSION_ID,
+    expectedSessionRevision: 1,
+  };
+
   it("accepts system.hello with empty context", () => {
     const result = parseHostRequest({
       protocolVersion: 1,
@@ -139,6 +148,96 @@ describe("parseHostRequest", () => {
       params: {},
     });
     expect(result.ok).toBe(false);
+  });
+
+  it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
+    "rejects a fifth image for %s",
+    (method) => {
+      const result = parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method,
+        context: activeSessionContext,
+        params: {
+          text: "images",
+          images: Array.from({ length: MAX_AGENT_REQUEST_IMAGES + 1 }, () => ({
+            mediaType: "image/png",
+            data: "AA==",
+          })),
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+    },
+  );
+
+  it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
+    "rejects image data larger than the five MiB decoded-equivalent limit for %s",
+    (method) => {
+      const maximumBase64Chars = Math.ceil(MAX_AGENT_IMAGE_BYTES / 3) * 4;
+      const result = parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method,
+        context: activeSessionContext,
+        params: {
+          text: "oversized image",
+          images: [
+            {
+              mediaType: "image/png",
+              data: "A".repeat(maximumBase64Chars + 4),
+            },
+          ],
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+    },
+  );
+
+  it("accepts image data exactly at the five MiB decoded-equivalent limit", () => {
+    const maximumBase64Chars = Math.ceil(MAX_AGENT_IMAGE_BYTES / 3) * 4;
+    const result = parseHostRequest({
+      protocolVersion: 1,
+      id: REQUEST_ID,
+      method: "agent.prompt",
+      context: activeSessionContext,
+      params: {
+        text: "boundary image",
+        images: [
+          {
+            mediaType: "image/png",
+            data: `${"A".repeat(maximumBase64Chars - 1)}=`,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects non-base64 image data instead of accepting multibyte size bypasses", () => {
+    const result = parseHostRequest({
+      protocolVersion: 1,
+      id: REQUEST_ID,
+      method: "agent.prompt",
+      context: activeSessionContext,
+      params: {
+        text: "invalid image",
+        images: [{ mediaType: "image/png", data: "界界界界" }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
   });
 });
 
