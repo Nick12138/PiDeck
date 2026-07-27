@@ -37,7 +37,7 @@ export class TryMutex {
   private waiters: Array<{
     owner: Omit<LockOwner, "startedAt">;
     resolve: (acquired: boolean) => void;
-    timer: ReturnType<typeof setTimeout>;
+    timer?: ReturnType<typeof setTimeout>;
   }> = [];
 
   tryAcquire(owner: Omit<LockOwner, "startedAt">): boolean {
@@ -65,13 +65,23 @@ export class TryMutex {
     });
   }
 
+  acquireUnbounded(owner: Omit<LockOwner, "startedAt">): Promise<void> {
+    if (this.tryAcquire(owner)) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.waiters.push({
+        owner,
+        resolve: () => resolve(),
+      });
+    });
+  }
+
   release(requestId?: string): void {
     if (!this.owner) return;
     if (requestId && this.owner.requestId !== requestId) return;
     this.owner = null;
     const waiter = this.waiters.shift();
     if (!waiter) return;
-    clearTimeout(waiter.timer);
+    if (waiter.timer !== undefined) clearTimeout(waiter.timer);
     this.owner = { ...waiter.owner, startedAt: Date.now() };
     waiter.resolve(true);
   }

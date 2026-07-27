@@ -750,7 +750,7 @@ export class SessionRuntimeCache {
       background.sessionSnapshot = lifecycleSnapshot;
       if (eventType === "agent_settled") {
         setTimeout(() => {
-          void this.disposeBackgroundRuntime(graph, background).then(() => {
+          void this.disposeSettledBackgroundRuntime(graph, background).then(() => {
             if (
               this.context.getGraph() === graph &&
               server.getPhase() === "agentBusy" &&
@@ -843,6 +843,24 @@ export class SessionRuntimeCache {
       /* ignore */
     }
     await this.disposeAgentSessionOnly(runtime.agentSession);
+  }
+
+  private async disposeSettledBackgroundRuntime(
+    graph: WorkspaceGraph,
+    runtime: BackgroundSessionRuntime,
+  ): Promise<void> {
+    const server = this.context.getServer();
+    if (!server) return;
+    const requestId = `background-settle:${runtime.sessionId}`;
+    await server.serviceGraphLock.acquireUnbounded({
+      operationKind: "session.cleanup",
+      requestId,
+    });
+    try {
+      await this.disposeBackgroundRuntime(graph, runtime);
+    } finally {
+      server.serviceGraphLock.release(requestId);
+    }
   }
 
   private publishRuntimeState(

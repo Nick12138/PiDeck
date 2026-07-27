@@ -357,6 +357,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
   it("disposes a background session only after agent_settled", async () => {
     vi.useFakeTimers();
     try {
+      const serviceGraphLock = new TryMutex();
       const identity: HostIdentity = {
         hostInstanceId: HOST_ID,
         workspaceId: WORKSPACE_ID,
@@ -370,6 +371,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         getPhase: vi.fn(() => "agentBusy"),
         emitForIdentity: vi.fn(),
         setPhase: vi.fn(),
+        serviceGraphLock,
       } as unknown as PiHostServer;
       const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
       factory.bindServer(server);
@@ -409,10 +411,21 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       expect(background.sessionSnapshot).toMatchObject({ isIdle: false, isStreaming: true });
       expect(server.setPhase).not.toHaveBeenCalled();
 
+      expect(
+        serviceGraphLock.tryAcquire({
+          operationKind: "session.create",
+          requestId: "candidate-session",
+        }),
+      ).toBe(true);
       Reflect.set(backgroundSession, "isIdle", true);
       internal.handleAgentEvent(graph, backgroundSession, { type: "agent_settled" });
       expect(graph.backgroundSessions.get(BACKGROUND_SESSION_ID)).toBe(background);
 
+      await vi.runAllTimersAsync();
+
+      expect(graph.backgroundSessions.get(BACKGROUND_SESSION_ID)).toBe(background);
+      expect(backgroundSession.dispose).not.toHaveBeenCalled();
+      serviceGraphLock.release("candidate-session");
       await vi.runAllTimersAsync();
 
       expect(graph.backgroundSessions.has(BACKGROUND_SESSION_ID)).toBe(false);
