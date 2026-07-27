@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use tauri::ipc::Channel;
 use uuid::Uuid;
@@ -64,9 +64,55 @@ struct ResolvedShell {
     label: String,
 }
 
+type ShellTerminalWriteCompletion = tokio::sync::oneshot::Receiver<Result<(), String>>;
+
+struct ShellTerminalWriteRequest {
+    data: String,
+    completed: tokio::sync::oneshot::Sender<Result<(), String>>,
+}
+
+struct ShellTerminalWriter {
+    requests: mpsc::Sender<ShellTerminalWriteRequest>,
+}
+
+impl ShellTerminalWriter {
+    fn new(mut writer: Box<dyn Write + Send>) -> Result<Self, String> {
+        let (requests, receiver) = mpsc::channel::<ShellTerminalWriteRequest>();
+        // Never join this worker during close: the PTY syscall itself may be blocked.
+        std::thread::Builder::new()
+            .name("pideck-shell-writer".into())
+            .spawn(move || {
+                while let Ok(request) = receiver.recv() {
+                    let result = writer
+                        .write_all(request.data.as_bytes())
+                        .map_err(|error| format!("write PTY: {error}"))
+                        .and_then(|_| {
+                            writer
+                                .flush()
+                                .map_err(|error| format!("flush PTY: {error}"))
+                        });
+                    let _ = request.completed.send(result);
+                }
+            })
+            .map_err(|error| format!("start PTY writer: {error}"))?;
+        Ok(Self { requests })
+    }
+
+    fn enqueue_write(&self, data: String) -> Result<ShellTerminalWriteCompletion, String> {
+        if data.len() > MAX_INPUT_BYTES {
+            return Err(format!("terminal input exceeds {MAX_INPUT_BYTES} bytes"));
+        }
+        let (completed, completion) = tokio::sync::oneshot::channel();
+        self.requests
+            .send(ShellTerminalWriteRequest { data, completed })
+            .map_err(|_| "terminal writer is unavailable".to_string())?;
+        Ok(completion)
+    }
+}
+
 struct ShellTerminalSession {
     master: Box<dyn MasterPty + Send>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    writer: ShellTerminalWriter,
     child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
     stopping: Arc<AtomicBool>,
     reader_thread: Option<JoinHandle<()>>,
@@ -129,6 +175,13 @@ impl ShellTerminalSession {
                 return Err(format!("take PTY writer: {error}"));
             }
         };
+        let writer = match ShellTerminalWriter::new(writer) {
+            Ok(writer) => writer,
+            Err(error) => {
+                let _ = child.kill();
+                return Err(error);
+            }
+        };
         let child = Arc::new(Mutex::new(child));
         let stopping = Arc::new(AtomicBool::new(false));
         let reader_child = Arc::clone(&child);
@@ -178,7 +231,7 @@ impl ShellTerminalSession {
         Ok((
             Self {
                 master: pair.master,
-                writer: Mutex::new(writer),
+                writer,
                 child,
                 stopping,
                 reader_thread: Some(reader_thread),
@@ -192,20 +245,8 @@ impl ShellTerminalSession {
         ))
     }
 
-    fn write(&self, data: &str) -> Result<(), String> {
-        if data.len() > MAX_INPUT_BYTES {
-            return Err(format!("terminal input exceeds {MAX_INPUT_BYTES} bytes"));
-        }
-        let mut writer = self
-            .writer
-            .lock()
-            .map_err(|_| "terminal writer lock poisoned".to_string())?;
-        writer
-            .write_all(data.as_bytes())
-            .map_err(|error| format!("write PTY: {error}"))?;
-        writer
-            .flush()
-            .map_err(|error| format!("flush PTY: {error}"))
+    fn enqueue_write(&self, data: String) -> Result<ShellTerminalWriteCompletion, String> {
+        self.writer.enqueue_write(data)
     }
 
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -273,11 +314,15 @@ impl ShellTerminalManager {
         })
     }
 
-    pub fn write(&self, terminal_id: &str, data: &str) -> Result<(), String> {
+    pub fn enqueue_write(
+        &self,
+        terminal_id: &str,
+        data: String,
+    ) -> Result<ShellTerminalWriteCompletion, String> {
         self.sessions
             .get(terminal_id)
             .ok_or_else(|| "unknown shell terminal".to_string())?
-            .write(data)
+            .enqueue_write(data)
     }
 
     pub fn resize(&self, terminal_id: &str, cols: u16, rows: u16) -> Result<(), String> {
@@ -655,6 +700,101 @@ use std::os::windows::io::AsRawHandle;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    struct BlockingWriter {
+        started: Option<std::sync::mpsc::Sender<()>>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl Write for BlockingWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            if let Some(started) = self.started.take() {
+                let _ = started.send(());
+                let _ = self.release.recv();
+            }
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("lock writes").extend_from_slice(data);
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn blocked_pty_write_does_not_hold_manager_lock() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let writer = Arc::new(
+            ShellTerminalWriter::new(Box::new(BlockingWriter {
+                started: Some(started_tx),
+                release: release_rx,
+            }))
+            .expect("create terminal writer"),
+        );
+        let manager_lock = Arc::new(Mutex::new(()));
+        let write_thread = {
+            let writer = Arc::clone(&writer);
+            let manager_lock = Arc::clone(&manager_lock);
+            std::thread::spawn(move || {
+                let _manager = manager_lock.lock().expect("lock manager");
+                let _ = writer.enqueue_write("blocked input".into());
+            })
+        };
+
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("writer should start");
+        let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+        let progress_thread = {
+            let manager_lock = Arc::clone(&manager_lock);
+            std::thread::spawn(move || {
+                let _manager = manager_lock.lock().expect("lock manager for recovery");
+                let _ = progress_tx.send(());
+            })
+        };
+        let manager_progressed = progress_rx.recv_timeout(Duration::from_millis(500)).is_ok();
+        release_tx.send(()).expect("release writer");
+        write_thread.join().expect("join write caller");
+        progress_thread.join().expect("join manager caller");
+
+        assert!(
+            manager_progressed,
+            "the manager lock must be released before PTY I/O completes"
+        );
+    }
+
+    #[test]
+    fn terminal_writer_preserves_request_order() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let writer = ShellTerminalWriter::new(Box::new(RecordingWriter(Arc::clone(&writes))))
+            .expect("create terminal writer");
+
+        let first = writer.enqueue_write("first".into()).expect("enqueue first");
+        let second = writer
+            .enqueue_write("-second".into())
+            .expect("enqueue second");
+
+        assert_eq!(first.blocking_recv().expect("receive first"), Ok(()));
+        assert_eq!(second.blocking_recv().expect("receive second"), Ok(()));
+        assert_eq!(
+            writes.lock().expect("lock recorded writes").as_slice(),
+            b"first-second"
+        );
+    }
 
     #[test]
     fn clamps_pty_dimensions() {

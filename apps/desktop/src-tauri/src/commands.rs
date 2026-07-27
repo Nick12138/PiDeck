@@ -1,5 +1,5 @@
-use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
 use crate::browser_surface::{BrowserSurfaceBounds, BrowserSurfaceSnapshot};
+use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
 use crate::shell_terminal::{
     shell_profile_catalog, ShellProfileCatalog, ShellTerminalCreateResult, ShellTerminalEvent,
 };
@@ -79,8 +79,14 @@ pub async fn shell_terminal_write(
     terminal_id: String,
     data: String,
 ) -> Result<(), String> {
-    let terminals = state.terminals.lock().await;
-    terminals.write(&terminal_id, &data)
+    // A completion may wait on PTY capacity; only enqueue while holding the manager lock.
+    let completion = {
+        let terminals = state.terminals.lock().await;
+        terminals.enqueue_write(&terminal_id, data)?
+    };
+    completion
+        .await
+        .map_err(|_| "terminal writer stopped before completing input".to_string())?
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkTerminalInput, shellTerminalLabel } from "./ShellTerminal";
+import { closeShellTerminal, chunkTerminalInput, shellTerminalLabel } from "./ShellTerminal";
 
 describe("chunkTerminalInput", () => {
   it("preserves input order while bounding chunks", () => {
@@ -21,5 +21,25 @@ describe("shellTerminalLabel", () => {
   it("uses the final workspace directory on Windows and Unix", () => {
     expect(shellTerminalLabel("C:\\work\\PiDesktop")).toBe("PiDesktop");
     expect(shellTerminalLabel("/work/PiDesktop/")).toBe("PiDesktop");
+  });
+});
+
+describe("closeShellTerminal", () => {
+  it("dispatches close before an in-flight write settles", async () => {
+    let releaseWrite!: () => void;
+    const pendingWrite = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const commands: string[] = [];
+    const closing = closeShellTerminal("terminal-1", pendingWrite, async (command) => {
+      commands.push(command);
+    });
+
+    await Promise.resolve();
+    const commandsBeforeWriteSettled = [...commands];
+    releaseWrite();
+    await closing;
+
+    expect(commandsBeforeWriteSettled).toEqual(["shell_terminal_close"]);
   });
 });

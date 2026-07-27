@@ -52,6 +52,22 @@ export type ShellTerminalProps = {
   onWarning?: (message: string) => void;
 };
 
+type TerminalCommandInvoker = (
+  command: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>;
+
+export async function closeShellTerminal(
+  terminalId: string | undefined,
+  pendingWrites: Promise<unknown>,
+  invokeCommand: TerminalCommandInvoker = invoke,
+): Promise<void> {
+  void pendingWrites.catch(() => {});
+  if (terminalId) {
+    await invokeCommand("shell_terminal_close", { terminalId }).catch(() => false);
+  }
+}
+
 function cwdName(cwd: string): string {
   const parts = cwd.replace(/[\\/]+$/, "").split(/[\\/]/);
   return parts.at(-1) || cwd;
@@ -161,11 +177,8 @@ async function attachShell(
     resizeSubscription.dispose();
     if (resizeTimer) clearTimeout(resizeTimer);
     if (inputTimer) clearTimeout(inputTimer);
-    flushInput();
-    await inputChain.catch(() => {});
-    if (terminalId) {
-      await invoke("shell_terminal_close", { terminalId }).catch(() => false);
-    }
+    inputBuffer = "";
+    await closeShellTerminal(terminalId, inputChain);
   };
 }
 
