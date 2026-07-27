@@ -1352,16 +1352,23 @@ describe("Provider login", () => {
   });
 
   it("logs out a stored credential and removes the Provider from the enabled list", async () => {
-    const { layout, credentialStore, handlers } = await setup({
+    const { layout, credentialStore, modelRuntime, handlers } = await setup({
       pideckEnabledProviders: ["anthropic"],
       providers: {},
     });
     await putApiKey(credentialStore, "anthropic", "sk-test");
+    const deleteCredential = vi.spyOn(credentialStore, "delete");
+    const sdkLogout = vi.spyOn(modelRuntime, "logout");
+    const refresh = vi.spyOn(modelRuntime, "refresh");
     const outcome = await handlers["provider.logout"]!({
       id: "logout-anthropic",
       params: { providerId: "anthropic" },
     } as never);
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(deleteCredential).toHaveBeenCalledWith("anthropic");
+    expect(sdkLogout).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
+    expect(refresh.mock.calls.every(([options]) => options?.allowNetwork === false)).toBe(true);
     expect(await credentialStore.readRaw("anthropic")).toBeUndefined();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.pideckEnabledProviders ?? []).not.toContain("anthropic");

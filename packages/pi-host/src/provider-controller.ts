@@ -1943,7 +1943,7 @@ export function createProviderHandlers(
             });
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
-              await factory.deps.modelRuntime.logout(providerId);
+              await factory.deps.credentialStore.delete(providerId);
               await journal.markCommitted();
               await refreshRegistry(factory, true);
             } catch (error) {
