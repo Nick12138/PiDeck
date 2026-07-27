@@ -18,9 +18,6 @@
     "core:window:allow-scale-factor",
     "core:window:allow-current-monitor",
     "dialog:default",
-    {
-      "identifier": "shell:allow-open",
-      "allow": [{ "url": "https://**" }, { "url": "http://**" }]
-    }
+    "shell:allow-open"
   ]
 }

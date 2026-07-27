@@ -52,5 +52,9 @@
       "resources/git"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "shell": {
+      "open": "https?://\\S+"
+    }
+  }
 }
