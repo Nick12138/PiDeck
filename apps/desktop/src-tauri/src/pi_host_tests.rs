@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use crate::pi_host::unix_child_exited_without_reaping;
     #[cfg(windows)]
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
@@ -107,6 +109,20 @@ setInterval(() => {}, 1000);
             std::thread::sleep(Duration::from_millis(20));
         }
         !unix_process_exists(pid)
+    }
+
+    #[cfg(unix)]
+    fn wait_for_unix_child_exit_without_reaping(pid: libc::pid_t, timeout: Duration) -> bool {
+        let child_id = u32::try_from(pid).expect("positive child PID");
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            match unix_child_exited_without_reaping(Some(child_id)) {
+                Ok(true) => return true,
+                Ok(false) => std::thread::sleep(Duration::from_millis(20)),
+                Err(error) => panic!("probe child {pid} without reaping: {error}"),
+            }
+        }
+        unix_child_exited_without_reaping(Some(child_id)).expect("final non-reaping child probe")
     }
 
     fn fixture_script() -> String {
@@ -430,6 +446,79 @@ rl.on('line', (line) => {
             wait_for_unix_process_exit(descendant_pid, Duration::from_secs(2)),
             "Host descendant {descendant_pid} survived force cleanup"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_exit_probe_preserves_group_leader_until_cleanup() {
+        let mut session =
+            HostChildSession::spawn_node_script(&unix_descendant_fixture(true), false)
+                .expect("spawn");
+        let (host_pid, descendant_pid) = read_unix_fixture_pids(&mut session);
+        let _guard = UnixPidGuard(vec![host_pid, descendant_pid]);
+
+        assert!(
+            wait_for_unix_child_exit_without_reaping(host_pid, Duration::from_secs(2)),
+            "Host fixture {host_pid} did not exit"
+        );
+        assert!(
+            unix_process_exists(host_pid),
+            "non-reaping exit observation released Host PID {host_pid}"
+        );
+        assert!(
+            unix_child_exited_without_reaping(Some(
+                u32::try_from(host_pid).expect("positive Host PID")
+            ))
+            .expect("repeat non-reaping child probe"),
+            "Host exit must remain observable until explicit reap"
+        );
+        assert_eq!(
+            unsafe { libc::kill(-host_pid, 0) },
+            0,
+            "Host process-group target must still exist before cleanup"
+        );
+
+        session.kill_and_reap().expect("cleanup and reap Host");
+        assert!(
+            wait_for_unix_process_exit(descendant_pid, Duration::from_secs(2)),
+            "Host descendant {descendant_pid} survived cleanup"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_reap_waits_for_claimed_group_cleanup_signal() {
+        let mut session =
+            HostChildSession::spawn_node_script("setInterval(()=>{}, 1000)", false).expect("spawn");
+        let cleanup = session
+            .claim_unix_group_cleanup_for_test()
+            .expect("claim Unix group cleanup");
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let reap_thread = std::thread::spawn(move || {
+            started_tx.send(()).expect("announce reaper start");
+            result_tx
+                .send(session.kill_and_reap())
+                .expect("publish reap result");
+        });
+
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaper started");
+        assert!(
+            matches!(
+                result_rx.recv_timeout(Duration::from_millis(100)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "reaper proceeded before the cleanup owner signaled the group"
+        );
+
+        drop(cleanup);
+        result_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("reaper resumed after group signal")
+            .expect("reap Host fixture");
+        reap_thread.join().expect("join reaper");
     }
 
     #[cfg(unix)]

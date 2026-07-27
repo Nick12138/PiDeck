@@ -16,6 +16,8 @@ use tokio::task::JoinHandle;
 use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+#[cfg(unix)]
+use std::sync::atomic::AtomicU8;
 #[cfg(windows)]
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
@@ -206,17 +208,24 @@ impl WindowsHostJob {
 
 #[cfg(unix)]
 const UNIX_HOST_GROUP_TERM_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+#[cfg(unix)]
+const UNIX_HOST_GROUP_CLEANUP_UNCLAIMED: u8 = 0;
+#[cfg(unix)]
+const UNIX_HOST_GROUP_CLEANUP_CLAIMED: u8 = 1;
+#[cfg(unix)]
+const UNIX_HOST_GROUP_CLEANUP_SIGNALED: u8 = 2;
 
 #[cfg(unix)]
 #[derive(Clone)]
 pub(crate) struct UnixHostProcessGroup {
     id: libc::pid_t,
-    cleanup_claimed: Arc<AtomicBool>,
+    cleanup_state: Arc<AtomicU8>,
 }
 
 #[cfg(unix)]
 pub(crate) struct UnixHostGroupCleanup {
     id: libc::pid_t,
+    cleanup_state: Arc<AtomicU8>,
     finished: bool,
 }
 
@@ -231,23 +240,49 @@ impl UnixHostProcessGroup {
         }
         Ok(Self {
             id,
-            cleanup_claimed: Arc::new(AtomicBool::new(false)),
+            cleanup_state: Arc::new(AtomicU8::new(UNIX_HOST_GROUP_CLEANUP_UNCLAIMED)),
         })
     }
 
     fn claim_cleanup(&self) -> Option<UnixHostGroupCleanup> {
-        self.cleanup_claimed
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        self.cleanup_state
+            .compare_exchange(
+                UNIX_HOST_GROUP_CLEANUP_UNCLAIMED,
+                UNIX_HOST_GROUP_CLEANUP_CLAIMED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
             .ok()
             .map(|_| UnixHostGroupCleanup {
                 id: self.id,
+                cleanup_state: Arc::clone(&self.cleanup_state),
                 finished: false,
             })
+    }
+
+    // A successful claim is not enough for a reaper: the owner must publish
+    // that its final group signal has returned before the leader PID is freed.
+    async fn wait_until_cleanup_signaled(&self) {
+        while self.cleanup_state.load(Ordering::Acquire) != UNIX_HOST_GROUP_CLEANUP_SIGNALED {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+    }
+
+    fn wait_until_cleanup_signaled_blocking(&self) {
+        while self.cleanup_state.load(Ordering::Acquire) != UNIX_HOST_GROUP_CLEANUP_SIGNALED {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 }
 
 #[cfg(unix)]
 impl UnixHostGroupCleanup {
+    fn finish(&mut self) {
+        self.finished = true;
+        self.cleanup_state
+            .store(UNIX_HOST_GROUP_CLEANUP_SIGNALED, Ordering::Release);
+    }
+
     fn signal(&self, signal: libc::c_int) -> Result<(), String> {
         if unsafe { libc::kill(-self.id, signal) } == 0 {
             return Ok(());
@@ -271,7 +306,7 @@ impl UnixHostGroupCleanup {
 
     fn force_kill(&mut self) {
         let _ = self.signal(libc::SIGKILL);
-        self.finished = true;
+        self.finish();
     }
 
     #[allow(dead_code)] // synchronous HostChildSession test harness
@@ -280,7 +315,7 @@ impl UnixHostGroupCleanup {
         let deadline = std::time::Instant::now() + UNIX_HOST_GROUP_TERM_GRACE;
         while std::time::Instant::now() < deadline {
             if !self.exists() {
-                self.finished = true;
+                self.finish();
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -294,13 +329,9 @@ impl Drop for UnixHostGroupCleanup {
     fn drop(&mut self) {
         if !self.finished {
             let _ = self.signal(libc::SIGKILL);
+            self.finish();
         }
     }
-}
-
-#[cfg(unix)]
-fn claim_unix_host_group(slot: &mut Option<UnixHostProcessGroup>) -> Option<UnixHostGroupCleanup> {
-    slot.take().and_then(|group| group.claim_cleanup())
 }
 
 #[cfg(unix)]
@@ -311,9 +342,26 @@ fn force_cleanup_unix_host_group(group: &UnixHostProcessGroup) {
 }
 
 #[cfg(unix)]
-fn force_cleanup_unix_host_group_slot(slot: &mut Option<UnixHostProcessGroup>) {
+async fn force_cleanup_unix_host_group_slot_before_reap(slot: &mut Option<UnixHostProcessGroup>) {
     if let Some(group) = slot.take() {
-        force_cleanup_unix_host_group(&group);
+        if let Some(mut cleanup) = group.claim_cleanup() {
+            cleanup.force_kill();
+        } else {
+            group.wait_until_cleanup_signaled().await;
+        }
+    }
+}
+
+#[cfg(unix)]
+fn force_cleanup_unix_host_group_slot_before_reap_blocking(
+    slot: &mut Option<UnixHostProcessGroup>,
+) {
+    if let Some(group) = slot.take() {
+        if let Some(mut cleanup) = group.claim_cleanup() {
+            cleanup.force_kill();
+        } else {
+            group.wait_until_cleanup_signaled_blocking();
+        }
     }
 }
 
@@ -323,7 +371,7 @@ async fn terminate_unix_host_group(cleanup: &mut UnixHostGroupCleanup) {
     let deadline = tokio::time::Instant::now() + UNIX_HOST_GROUP_TERM_GRACE;
     while tokio::time::Instant::now() < deadline {
         if !cleanup.exists() {
-            cleanup.finished = true;
+            cleanup.finish();
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -340,6 +388,61 @@ fn configure_unix_host_command(command: &mut std::process::Command) {
             }
             Ok(())
         });
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn unix_child_exited_without_reaping(child_id: Option<u32>) -> Result<bool, String> {
+    let child_id = child_id.ok_or_else(|| "Host exited before PID observation".to_string())?;
+    let pid = libc::pid_t::try_from(child_id)
+        .map_err(|_| format!("Host PID {child_id} exceeds Unix pid_t"))?;
+    if pid <= 0 {
+        return Err(format!("Host returned invalid Unix PID {pid}"));
+    }
+    let id =
+        libc::id_t::try_from(pid).map_err(|_| format!("Host PID {child_id} exceeds Unix id_t"))?;
+
+    loop {
+        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        // WNOWAIT retains an exited group leader as a zombie, preventing PID
+        // reuse until its process group has been signaled and Child::wait reaps it.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                id,
+                info.as_mut_ptr(),
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result == 0 {
+            let info = unsafe { info.assume_init() };
+            let observed_pid = unsafe { info.si_pid() };
+            return Ok(observed_pid == pid);
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            continue;
+        }
+        return Err(format!(
+            "observe Host PID {child_id} without reaping: {error}"
+        ));
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_unix_child_exit_without_reaping(
+    child_id: Option<u32>,
+    timeout: std::time::Duration,
+) -> Result<bool, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if unix_child_exited_without_reaping(child_id)? {
+            return Ok(true);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(false);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 }
 
@@ -582,7 +685,11 @@ impl HostChildSession {
             .unwrap_or_else(|| "unknown".into());
         let line = build_shutdown_line(&host_id, "shutdown");
         #[cfg(unix)]
-        let mut group_cleanup = claim_unix_host_group(&mut self.unix_process_group);
+        let unix_process_group = self.unix_process_group.take();
+        #[cfg(unix)]
+        let mut group_cleanup = unix_process_group
+            .as_ref()
+            .and_then(UnixHostProcessGroup::claim_cleanup);
         let send_error = self.send_line(&line).err();
         let mut wait_error = None;
         if let Some(mut child) = self.child.take() {
@@ -590,15 +697,22 @@ impl HostChildSession {
             let mut needs_force = send_error.is_some();
             if !needs_force {
                 loop {
-                    match child.try_wait() {
-                        Ok(Some(_)) => break,
-                        Ok(None) if start.elapsed() > std::time::Duration::from_secs(5) => {
+                    #[cfg(unix)]
+                    let exit_probe = unix_child_exited_without_reaping(Some(child.id()));
+                    #[cfg(not(unix))]
+                    let exit_probe = child
+                        .try_wait()
+                        .map(|status| status.is_some())
+                        .map_err(|error| format!("wait: {error}"));
+                    match exit_probe {
+                        Ok(true) => break,
+                        Ok(false) if start.elapsed() > std::time::Duration::from_secs(5) => {
                             needs_force = true;
                             break;
                         }
-                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+                        Ok(false) => std::thread::sleep(std::time::Duration::from_millis(20)),
                         Err(error) => {
-                            wait_error = Some(format!("wait: {error}"));
+                            wait_error = Some(error);
                             needs_force = true;
                             break;
                         }
@@ -608,15 +722,21 @@ impl HostChildSession {
             #[cfg(unix)]
             if let Some(cleanup) = group_cleanup.as_mut() {
                 cleanup.terminate_blocking();
+            } else if let Some(group) = unix_process_group.as_ref() {
+                group.wait_until_cleanup_signaled_blocking();
             }
             if needs_force {
                 let _ = child.kill();
-                let _ = child.wait();
+            }
+            if let Err(error) = child.wait() {
+                wait_error.get_or_insert_with(|| format!("wait: {error}"));
             }
         } else {
             #[cfg(unix)]
             if let Some(cleanup) = group_cleanup.as_mut() {
                 cleanup.terminate_blocking();
+            } else if let Some(group) = unix_process_group.as_ref() {
+                group.wait_until_cleanup_signaled_blocking();
             }
         }
         self.stdin = None;
@@ -629,7 +749,7 @@ impl HostChildSession {
 
     pub fn kill_and_reap(&mut self) -> Result<std::process::ExitStatus, String> {
         #[cfg(unix)]
-        force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
+        force_cleanup_unix_host_group_slot_before_reap_blocking(&mut self.unix_process_group);
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             child.wait().map_err(|e| format!("reap: {e}"))
@@ -644,19 +764,24 @@ impl HostChildSession {
             return false;
         }
         #[cfg(unix)]
-        force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
+        force_cleanup_unix_host_group_slot_before_reap_blocking(&mut self.unix_process_group);
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
         self.restart.on_unexpected_exit()
     }
+
+    #[cfg(all(test, unix))]
+    pub(crate) fn claim_unix_group_cleanup_for_test(&self) -> Option<UnixHostGroupCleanup> {
+        self.unix_process_group.as_ref()?.claim_cleanup()
+    }
 }
 
 impl Drop for HostChildSession {
     fn drop(&mut self) {
         #[cfg(unix)]
-        force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
+        force_cleanup_unix_host_group_slot_before_reap_blocking(&mut self.unix_process_group);
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -1223,7 +1348,7 @@ impl PiHostManager {
         self.shutting_down.store(true, Ordering::SeqCst);
         self.child_generation.fetch_add(1, Ordering::SeqCst);
         #[cfg(unix)]
-        force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
+        force_cleanup_unix_host_group_slot_before_reap(&mut self.unix_process_group).await;
         if let Some(mut child) = self.child.take() {
             let _ = child.kill().await;
             let _ = child.wait().await;
@@ -1238,11 +1363,36 @@ impl PiHostManager {
 
     pub async fn send_line(&mut self, line: String) -> Result<(), String> {
         // Detect dead child before write
+        #[cfg(unix)]
+        if let Some(child) = self.child.as_ref() {
+            let exited = unix_child_exited_without_reaping(child.id())
+                .map_err(|error| format!("host wait error: {error}"))?;
+            if exited {
+                force_cleanup_unix_host_group_slot_before_reap(&mut self.unix_process_group).await;
+                let status = self
+                    .child
+                    .as_mut()
+                    .expect("Host child exists after exit observation")
+                    .wait()
+                    .await
+                    .map_err(|error| format!("host wait error: {error}"))?;
+                self.stdin = None;
+                self.child = None;
+                let detail = {
+                    let logs = self.last_stderr.lock().await;
+                    if logs.is_empty() {
+                        "(empty — run pnpm build and check packages/pi-host/dist)".to_string()
+                    } else {
+                        logs.join(" | ")
+                    }
+                };
+                return Err(format!("Pi Host exited ({status}). stderr: {detail}"));
+            }
+        }
+        #[cfg(not(unix))]
         if let Some(child) = self.child.as_mut() {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    #[cfg(unix)]
-                    force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
                     self.stdin = None;
                     self.child = None;
                     #[cfg(windows)]
@@ -1285,8 +1435,6 @@ impl PiHostManager {
     pub async fn shutdown(&mut self) {
         self.shutting_down.store(true, Ordering::SeqCst);
         self.child_generation.fetch_add(1, Ordering::SeqCst);
-        #[cfg(unix)]
-        let mut group_cleanup = claim_unix_host_group(&mut self.unix_process_group);
         if self.stdin.is_some() {
             let host_id = self
                 .host_instance_id
@@ -1301,21 +1449,53 @@ impl PiHostManager {
             let _ = self.send_line(line).await;
         }
 
+        #[cfg(unix)]
+        let unix_process_group = self.unix_process_group.take();
+        #[cfg(unix)]
+        let mut group_cleanup = unix_process_group
+            .as_ref()
+            .and_then(UnixHostProcessGroup::claim_cleanup);
         if let Some(mut child) = self.child.take() {
-            let wait = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await;
-            let needs_force = !matches!(wait, Ok(Ok(_)));
+            #[cfg(unix)]
+            // Child::wait reaps on Unix, so graceful exit must be observed
+            // without releasing the PID needed for process-group cleanup.
+            let needs_force = !matches!(
+                wait_for_unix_child_exit_without_reaping(
+                    child.id(),
+                    std::time::Duration::from_secs(10),
+                )
+                .await,
+                Ok(true)
+            );
+            #[cfg(not(unix))]
+            let needs_force = {
+                let wait =
+                    tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await;
+                !matches!(wait, Ok(Ok(_)))
+            };
             #[cfg(unix)]
             if let Some(cleanup) = group_cleanup.as_mut() {
                 terminate_unix_host_group(cleanup).await;
+            } else if let Some(group) = unix_process_group.as_ref() {
+                group.wait_until_cleanup_signaled().await;
             }
             if needs_force {
                 let _ = child.kill().await;
+                #[cfg(not(unix))]
+                {
+                    let _ = child.wait().await;
+                }
+            }
+            #[cfg(unix)]
+            {
                 let _ = child.wait().await;
             }
         } else {
             #[cfg(unix)]
             if let Some(cleanup) = group_cleanup.as_mut() {
                 terminate_unix_host_group(cleanup).await;
+            } else if let Some(group) = unix_process_group.as_ref() {
+                group.wait_until_cleanup_signaled().await;
             }
         }
         self.stdin = None;
@@ -1352,11 +1532,30 @@ impl PiHostManager {
     }
 
     pub fn is_running(&mut self) -> bool {
+        #[cfg(unix)]
+        if let Some(child) = self.child.as_ref() {
+            match unix_child_exited_without_reaping(child.id()) {
+                Ok(true) => {
+                    force_cleanup_unix_host_group_slot_before_reap_blocking(
+                        &mut self.unix_process_group,
+                    );
+                    if let Some(child) = self.child.as_mut() {
+                        let _ = child.try_wait();
+                    }
+                    self.child = None;
+                    self.stdin = None;
+                    false
+                }
+                Ok(false) => true,
+                Err(_) => false,
+            }
+        } else {
+            false
+        }
+        #[cfg(not(unix))]
         if let Some(child) = self.child.as_mut() {
             match child.try_wait() {
                 Ok(Some(_)) => {
-                    #[cfg(unix)]
-                    force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
                     self.child = None;
                     self.stdin = None;
                     #[cfg(windows)]
@@ -1377,7 +1576,7 @@ impl PiHostManager {
 impl Drop for PiHostManager {
     fn drop(&mut self) {
         #[cfg(unix)]
-        force_cleanup_unix_host_group_slot(&mut self.unix_process_group);
+        force_cleanup_unix_host_group_slot_before_reap_blocking(&mut self.unix_process_group);
         if let Some(child) = self.child.as_mut() {
             let _ = child.start_kill();
         }
