@@ -183,16 +183,16 @@ pub async fn browser_surface_close(
 /// What the file manager should do with a validated local path.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OpenTarget {
-    /// Open the directory itself.
+    /// Reveal (select) the directory in the platform file manager.
     Directory(PathBuf),
-    /// Reveal (select) the file in its parent directory — never executes it.
+    /// Reveal (select) the file in its parent directory.
     Reveal(PathBuf),
 }
 
 /// The webview may only point the file manager at an existing local
 /// directory or file. Anything else — relative paths, UNC/network paths,
-/// non-existent paths — is rejected so a compromised renderer cannot use
-/// this command to launch arbitrary programs.
+/// non-existent paths — is rejected before the path is passed as an argument
+/// to the platform file manager.
 pub fn validate_open_path(raw: &str) -> Result<OpenTarget, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -225,6 +225,18 @@ pub fn validate_open_path(raw: &str) -> Result<OpenTarget, String> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn macos_open_args(target: &OpenTarget) -> Vec<std::ffi::OsString> {
+    let path = match target {
+        OpenTarget::Directory(dir) => dir,
+        OpenTarget::Reveal(file) => file,
+    };
+    vec![
+        std::ffi::OsString::from("-R"),
+        path.as_os_str().to_os_string(),
+    ]
+}
+
 fn open_in_file_manager(target: OpenTarget) -> Result<(), String> {
     use std::process::Command;
 
@@ -246,14 +258,7 @@ fn open_in_file_manager(target: OpenTarget) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let mut cmd = Command::new("open");
-        match &target {
-            OpenTarget::Directory(dir) => {
-                cmd.arg(dir);
-            }
-            OpenTarget::Reveal(file) => {
-                cmd.arg("-R").arg(file);
-            }
-        }
+        cmd.args(macos_open_args(&target));
         cmd.spawn().map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -317,5 +322,20 @@ mod tests {
         }
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn macos_reveals_directories_and_files() {
+        let app = PathBuf::from("/Applications/Example.app");
+        assert_eq!(
+            macos_open_args(&OpenTarget::Directory(app.clone())),
+            vec![std::ffi::OsString::from("-R"), app.into_os_string()],
+        );
+
+        let file = PathBuf::from("/tmp/example.txt");
+        assert_eq!(
+            macos_open_args(&OpenTarget::Reveal(file.clone())),
+            vec![std::ffi::OsString::from("-R"), file.into_os_string()],
+        );
     }
 }
