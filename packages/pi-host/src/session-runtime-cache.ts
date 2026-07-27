@@ -453,22 +453,20 @@ export class SessionRuntimeCache {
   }
 
   announceRetainedRuntime(runtime: BackgroundSessionRuntime): void {
+    const graph = this.context.getGraph();
     const server = this.context.getServer();
-    if (!server) return;
-    server.emitForIdentity(
-      {
-        ...server.getIdentity(),
-        sessionId: runtime.sessionId,
-        sessionRevision: runtime.sessionRevision,
-      },
-      "session.runtimeChanged",
-      {
-        sessionId: runtime.sessionId,
-        sessionRevision: runtime.sessionRevision,
-        state: "running",
-        updatedAt: Date.now(),
-      },
-    );
+    if (
+      !graph ||
+      !server ||
+      graph.backgroundSessions.get(runtime.sessionId) !== runtime
+    ) {
+      return;
+    }
+    this.publishRuntimeState(runtime.agentSession, {
+      ...server.getIdentity(),
+      sessionId: runtime.sessionId,
+      sessionRevision: runtime.sessionRevision,
+    });
   }
 
   async promoteBackgroundRuntime(
@@ -923,8 +921,8 @@ export class SessionRuntimeCache {
   private publishRuntimeState(
     session: AgentSession,
     identity: HostIdentity,
-    eventType: string,
-    serializedEvent: Record<string, unknown>,
+    eventType = "",
+    serializedEvent: Record<string, unknown> = {},
   ): void {
     const server = this.context.getServer();
     if (!server || !identity.sessionId) return;

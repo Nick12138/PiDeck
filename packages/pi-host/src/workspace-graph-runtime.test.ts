@@ -629,6 +629,160 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     factory.getSessionOperationLock(backgroundSession).release("in-flight-prompt");
   });
 
+  it("announces a current busy runtime but ignores it after removal", () => {
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: BACKGROUND_SESSION_ID,
+      sessionRevision: 6,
+      packageRevision: 1,
+    };
+    const emitForIdentity = vi.fn();
+    const server = {
+      getIdentity: () => ({ ...identity }),
+      emitForIdentity,
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    const runtime = {
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      agentSession: fakeSession(false, ACTIVE_SESSION_ID),
+    } as unknown as BackgroundSessionRuntime;
+    const graph = {
+      backgroundSessions: new Map([[ACTIVE_SESSION_ID, runtime]]),
+    } as unknown as WorkspaceGraph;
+    Reflect.set(factory, "graph", graph);
+
+    factory.announceRetainedRuntime(runtime);
+
+    expect(emitForIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: ACTIVE_SESSION_ID, sessionRevision: 5 }),
+      "session.runtimeChanged",
+      expect.objectContaining({
+        sessionId: ACTIVE_SESSION_ID,
+        sessionRevision: 5,
+        state: "running",
+      }),
+    );
+
+    emitForIdentity.mockClear();
+    graph.backgroundSessions.delete(ACTIVE_SESSION_ID);
+    factory.announceRetainedRuntime(runtime);
+
+    expect(emitForIdentity).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite idle when the previous Session settles during retained activation", async () => {
+    vi.useFakeTimers();
+    try {
+      const identity: HostIdentity = {
+        hostInstanceId: HOST_ID,
+        workspaceId: WORKSPACE_ID,
+        workspaceRevision: 1,
+        sessionId: ACTIVE_SESSION_ID,
+        sessionRevision: 5,
+        packageRevision: 1,
+      };
+      const runtimeEvents: Array<{ identity: HostIdentity; payload: unknown }> = [];
+      const server = {
+        identity,
+        getIdentity: () => ({ ...identity }),
+        emit: vi.fn(),
+        emitForIdentity: vi.fn(
+          (eventIdentity: HostIdentity, event: HostEventName, payload: unknown) => {
+            if (event === "session.runtimeChanged") {
+              runtimeEvents.push({ identity: eventIdentity, payload });
+            }
+          },
+        ),
+        setPhase: vi.fn(),
+      } as unknown as PiHostServer;
+      const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+      factory.bindServer(server);
+
+      const active = fakeSession(false, ACTIVE_SESSION_ID);
+      const retained = fakeSession(true, BACKGROUND_SESSION_ID);
+      const graph = {
+        workspaceId: WORKSPACE_ID,
+        canonicalCwd: "C:/workspace",
+        agentSession: active,
+        sessionManager: {},
+        sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 5, false),
+        resourceLoader: {},
+        extensionsResult: null,
+        toolRevision: 1,
+        extensionUiActivate: null,
+        extensionUiCleanup: null,
+        extensionUiUpdateIdentity: null,
+        unsubscribeAgent: vi.fn(),
+        backgroundSessions: new Map(),
+        retainedSessions: new Map(),
+      } as unknown as WorkspaceGraph;
+      Reflect.set(factory, "graph", graph);
+      const internal = factory as unknown as {
+        handleAgentEvent: (
+          graph: WorkspaceGraph,
+          session: AgentSession,
+          event: unknown,
+        ) => void;
+      };
+      let releaseBinding: () => void = () => {
+        throw new Error("retained binding did not start");
+      };
+      Reflect.set(
+        retained,
+        "bindExtensions",
+        vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              releaseBinding = resolve;
+            }),
+        ),
+      );
+      const runtime = await factory.retainIdleSession(graph, {
+        sessionId: BACKGROUND_SESSION_ID,
+        sessionRevision: 3,
+        sessionManager: {} as never,
+        agentSession: retained,
+        resourceLoader: {} as never,
+        extensionsResult: null,
+        toolRevision: 2,
+        sessionSnapshot: fakeSessionSnapshot(BACKGROUND_SESSION_ID, 3, true),
+        unsubscribeAgent: vi.fn(),
+        extensionUiActivate: null,
+        extensionUiCleanup: vi.fn(),
+        extensionUiUpdateIdentity: null,
+      });
+      expect(runtime).not.toBeNull();
+
+      const promotion = factory.promoteRetainedSessionRuntime(graph, runtime!);
+      for (
+        let attempt = 0;
+        attempt < 10 && !graph.backgroundSessions.has(ACTIVE_SESSION_ID);
+        attempt += 1
+      ) {
+        await Promise.resolve();
+      }
+      expect(graph.backgroundSessions.has(ACTIVE_SESSION_ID)).toBe(true);
+      Reflect.set(active, "isIdle", true);
+      internal.handleAgentEvent(graph, active, { type: "agent_settled" });
+      releaseBinding();
+      const result = await promotion;
+
+      expect(result).toMatchObject({ sessionId: BACKGROUND_SESSION_ID, revision: 6 });
+      expect(
+        runtimeEvents
+          .filter((event) => event.identity.sessionId === ACTIVE_SESSION_ID)
+          .map((event) => (event.payload as { state: string }).state),
+      ).toEqual(["idle"]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("reactivates a retained idle Session and parks the previous one", async () => {
     const identity: HostIdentity = {
       hostInstanceId: HOST_ID,
