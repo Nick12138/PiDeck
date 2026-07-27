@@ -1,16 +1,32 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
 import { SettingsPage } from "./SettingsPage";
 
+const tauriMocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isTauri: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: tauriMocks.invoke,
+  isTauri: tauriMocks.isTauri,
+}));
+
 beforeEach(() => {
+  tauriMocks.invoke.mockReset();
+  tauriMocks.invoke.mockRejectedValue(new Error("Tauri unavailable"));
+  tauriMocks.isTauri.mockReset();
+  tauriMocks.isTauri.mockReturnValue(false);
   useAppStore.getState().setHost(null);
   useAppStore.getState().setProvidersDirty(false);
+  useAppStore.getState().clearNotifications();
   useAppStore.getState().setDesktopSettings({
     theme: "system",
+    language: "en",
     restoreLastSession: true,
     autoRestartHostOnce: true,
     terminalProfile: "auto",
@@ -78,6 +94,35 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByRole("button", { name: "主机" })).toBeInTheDocument();
     expect(screen.getByText("外观与启动")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "General" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous setting and reports a rejected desktop patch", async () => {
+    const user = userEvent.setup();
+    tauriMocks.isTauri.mockReturnValue(true);
+    tauriMocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "shell_terminal_profiles") {
+        return {
+          profiles: [],
+          automaticProfile: { id: "auto", label: "Automatic", path: "/bin/sh" },
+        };
+      }
+      throw new Error("disk full");
+    });
+    render(<SettingsPage initialSection="general" />);
+
+    await user.selectOptions(screen.getByLabelText(/Theme/), "light");
+
+    await waitFor(() =>
+      expect(tauriMocks.invoke).toHaveBeenCalledWith("desktop_settings_patch", {
+        patch: { theme: "light" },
+      }),
+    );
+    expect(useAppStore.getState().desktopSettings?.theme).toBe("system");
+    expect(
+      useAppStore
+        .getState()
+        .notifications.some((notification) => notification.message.includes("disk full")),
+    ).toBe(true);
   });
 
   it("guards the close button while dirty and closes once confirmed via the overlay owner", async () => {

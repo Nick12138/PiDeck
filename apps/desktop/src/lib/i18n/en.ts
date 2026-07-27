@@ -552,6 +552,7 @@ export const en = {
   notifExported: "Exported to {path}",
   notifExportFailed: "Export failed",
   notifSaveDialogUnavailable: "Save dialog unavailable",
+  notifDesktopSettingsSaveFailed: "Desktop settings could not be saved",
 
   // Notification center
   notifCenterLabel: "Notifications ({count})",

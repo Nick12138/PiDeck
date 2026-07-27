@@ -2,7 +2,10 @@ import { ChevronDown, Folder, FolderPlus, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { persistDesktopSettings } from "../../lib/desktop-settings";
+import {
+  notifyDesktopSettingsSaveFailure,
+  persistDesktopSettings,
+} from "../../lib/desktop-settings";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
 import { useT } from "../../lib/i18n/use-t";
 import {
@@ -85,7 +88,7 @@ export function WorkspacePicker() {
     }
     void persistDesktopSettings({
       knownWorkspaces: next,
-    });
+    }).catch(notifyDesktopSettingsSaveFailure);
   }, [currentCwd, knownWorkspaces, requestedCwd]);
 
   async function switchTo(cwd: string) {
@@ -155,7 +158,7 @@ export function WorkspacePicker() {
   function removeFromList(path: string) {
     void persistDesktopSettings({
       knownWorkspaces: removeKnownWorkspace(knownWorkspaces, path),
-    });
+    }).catch(notifyDesktopSettingsSaveFailure);
   }
 
   // Render the active workspace even before self-heal persists it.

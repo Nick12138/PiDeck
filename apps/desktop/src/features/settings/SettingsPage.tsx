@@ -16,6 +16,11 @@ import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
+import {
+  notifyDesktopSettingsSaveFailure,
+  persistDesktopSettings,
+  type DesktopSettingsUpdate,
+} from "../../lib/desktop-settings";
 import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
@@ -35,7 +40,6 @@ type ShellProfileCatalog = {
 function GeneralSettings() {
   const t = useT();
   const desktopSettings = useAppStore((s) => s.desktopSettings);
-  const setDesktopSettings = useAppStore((s) => s.setDesktopSettings);
   const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
@@ -57,19 +61,15 @@ function GeneralSettings() {
     void loadShellProfiles();
   }, []);
 
-  async function patchDesktop(patch: Record<string, unknown>) {
+  async function patchDesktop(patch: DesktopSettingsUpdate) {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const next = await invoke<typeof desktopSettings>("desktop_settings_patch", { patch });
-      setDesktopSettings(next);
-      if (patch.theme && next) applyTheme(next.theme);
-    } catch {
-      // Browser mock
-      if (desktopSettings) {
-        const next = { ...desktopSettings, ...patch } as typeof desktopSettings;
-        setDesktopSettings(next);
-        if (patch.theme) applyTheme(next!.theme);
+      await persistDesktopSettings(patch);
+      if (patch.theme) {
+        const next = useAppStore.getState().desktopSettings;
+        if (next) applyTheme(next.theme);
       }
+    } catch (error) {
+      notifyDesktopSettingsSaveFailure(error);
     }
   }
 

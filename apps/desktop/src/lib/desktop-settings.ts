@@ -1,4 +1,5 @@
 import type { DesktopSettings } from "@pideck/protocol";
+import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
 export type DesktopSettingsSnapshot = {
@@ -42,19 +43,33 @@ function applyLocalPatch(
   return next as DesktopSettings;
 }
 
+export function notifyDesktopSettingsSaveFailure(error: unknown): void {
+  const summary = tCurrent("notifDesktopSettingsSaveFailed");
+  const detail =
+    error instanceof Error
+      ? error.message.trim()
+      : typeof error === "string"
+        ? error.trim()
+        : "";
+  useAppStore
+    .getState()
+    .pushNotification(detail ? `${summary}: ${detail}` : summary, "error");
+}
+
 async function writeDesktopSettings(patch: DesktopSettingsUpdate): Promise<void> {
   const current = useAppStore.getState().desktopSettings;
   if (!current) return;
   const nextLocal = applyLocalPatch(current, patch);
   if (JSON.stringify(nextLocal) === JSON.stringify(current)) return;
 
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const next = await invoke<DesktopSettings>("desktop_settings_patch", { patch });
-    useAppStore.getState().setDesktopSettings(next);
-  } catch {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) {
     useAppStore.getState().setDesktopSettings(nextLocal);
+    return;
   }
+
+  const next = await invoke<DesktopSettings>("desktop_settings_patch", { patch });
+  useAppStore.getState().setDesktopSettings(next);
 }
 
 export function persistDesktopSettings(patch: DesktopSettingsUpdate): Promise<void> {

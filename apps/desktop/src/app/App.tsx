@@ -26,6 +26,7 @@ import { getAppVersion } from "../lib/app-version";
 import { applyLanguage } from "../lib/i18n";
 import { useT } from "../lib/i18n/use-t";
 import {
+  notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
   persistRecentDesktopLocation,
   type DesktopSettingsSnapshot,
@@ -866,7 +867,9 @@ export function App() {
     ) {
       return;
     }
-    void persistRecentDesktopLocation(workspacePath, activeSessionPath ?? null);
+    void persistRecentDesktopLocation(workspacePath, activeSessionPath ?? null).catch(
+      notifyDesktopSettingsSaveFailure,
+    );
   }, [
     connecting,
     rehydrating,

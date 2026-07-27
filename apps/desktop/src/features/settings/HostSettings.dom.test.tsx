@@ -12,6 +12,7 @@ const openMock = vi.fn<() => Promise<string | null>>();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...(args as [])),
+  isTauri: () => true,
 }));
 vi.mock("@tauri-apps/api/app", () => ({
   getVersion: async () => "9.9.9",
