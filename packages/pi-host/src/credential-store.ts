@@ -20,7 +20,7 @@
  * Storage failures reject with `CredentialStoreError`; pi-ai wraps those in a
  * `ModelsError` with code "auth" rather than silently degrading.
  */
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -330,7 +330,6 @@ export class FileCredentialStore implements CredentialStore {
     mkdirSync(dirname(this.authPath), { recursive: true, mode: DIR_MODE });
     const fd = openSync(this.authPath, "wx", FILE_MODE);
     closeSync(fd);
-    writeFileSync(this.authPath, "{}", { encoding: "utf8", mode: FILE_MODE });
   }
 
   private withLock<T>(fn: () => Promise<T>): Promise<T> {

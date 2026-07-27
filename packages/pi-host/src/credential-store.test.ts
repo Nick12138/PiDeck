@@ -253,6 +253,20 @@ describe("FileCredentialStore oauth refresh (resolveStoredOAuth contract)", () =
 });
 
 describe("FileCredentialStore durability and permissions", () => {
+  it("leaves a newly created credential file empty until the first mutation", async () => {
+    const snapshot = await store.snapshot();
+
+    expect(snapshot.content).toBe("");
+    expect(readFileSync(authPath, "utf8")).toBe("");
+    expect(await store.list()).toEqual([]);
+    if (process.platform !== "win32") {
+      expect(statSync(authPath).mode & 0o777).toBe(0o600);
+    }
+
+    await store.modify("p", async () => ({ type: "api_key", key: "k" }));
+    expect(readAuth()).toEqual({ p: { type: "api_key", key: "k" } });
+  });
+
   it("creates the agent directory 0700 and the credential file 0600", async () => {
     // Windows does not honour POSIX mode bits; the store's permission promise
     // is scoped to platforms that do.
@@ -424,9 +438,9 @@ describe("FileCredentialStore snapshot and restore", () => {
     expect(await store.read("b")).toBeUndefined();
   });
 
-  it("restoring a snapshot taken before the file existed removes it again", async () => {
+  it("restores an empty first-run snapshot after a credential is added", async () => {
     const snapshot = await store.snapshot();
-    expect(snapshot.content).toBe("{}");
+    expect(snapshot.content).toBe("");
 
     await store.modify("a", async () => ({ type: "api_key", key: "one" }));
     await store.restore(snapshot);
