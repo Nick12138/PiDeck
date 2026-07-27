@@ -67,80 +67,95 @@ function startDetachedPrompt(args: {
   images?: ImageContent[];
   streamingBehavior?: "steer" | "followUp";
 }): string {
-  const runId = randomUUID();
-  const runIdentity = args.server.getIdentity();
-  args.factory.currentRunId = runId;
-  args.factory.setSessionRunId(args.session, runId);
-  args.server.setPhase("agentBusy");
-  const provisionalTitle =
-    args.session.sessionName?.trim() || !args.text.trim()
-      ? null
-      : createProvisionalSessionTitle(args.text);
-  const titleSessionId = args.server.identity.sessionId;
-  const extensionCommandInvocation = resolveExtensionCommandInvocation(
-    args.session,
-    args.text,
-  );
-  if (provisionalTitle) args.factory.setActiveSessionName(provisionalTitle);
-
-  void (async () => {
-    let completed = false;
-    try {
-      const runPrompt = () =>
-        args.session.prompt(args.text, {
-          streamingBehavior: args.streamingBehavior,
-          ...(args.images ? { images: args.images } : {}),
-        });
-      if (extensionCommandInvocation) {
-        await withExtensionCommandOrigin(
-          args.session,
-          runId,
-          extensionCommandInvocation,
-          runPrompt,
-        );
-      } else {
-        await runPrompt();
-      }
-      completed = true;
-    } catch (err) {
-      args.server.emitForIdentity(runIdentity, "agent.event", {
-        runId,
-        event: {
-          type: "error",
-          message: err instanceof Error ? err.message : String(err),
-        },
-      });
-      args.server.emitForIdentity(runIdentity, "session.runtimeChanged", {
-        sessionId: runIdentity.sessionId!,
-        sessionRevision: runIdentity.sessionRevision,
-        state: "error",
-        updatedAt: Date.now(),
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      args.operationLock.release(args.requestId);
+  let runStatePublished = false;
+  let detachedTaskStarted = false;
+  const cleanup = () => {
+    args.operationLock.release(args.requestId);
+    if (runStatePublished) {
       args.factory.clearSessionRunId(args.session);
       if (args.server.getPhase() === "agentBusy" && !args.factory.hasBusySessions()) {
         args.server.setPhase("ready");
       }
       args.factory.currentRunId = null;
     }
-    if (completed && provisionalTitle && titleSessionId) {
-      await args.factory.refineActiveSessionName({
-        session: args.session,
-        sessionId: titleSessionId,
-        provisionalTitle,
-        userPrompt: args.text,
-      });
-    }
-  })().catch((err: unknown) => {
-    logger.error("Detached agent prompt task failed", {
-      runId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  };
 
-  return runId;
+  try {
+    const runId = randomUUID();
+    const runIdentity = args.server.getIdentity();
+    const provisionalTitle =
+      args.session.sessionName?.trim() || !args.text.trim()
+        ? null
+        : createProvisionalSessionTitle(args.text);
+    const titleSessionId = args.server.identity.sessionId;
+    const extensionCommandInvocation = resolveExtensionCommandInvocation(
+      args.session,
+      args.text,
+    );
+
+    runStatePublished = true;
+    args.factory.currentRunId = runId;
+    args.factory.setSessionRunId(args.session, runId);
+    args.server.setPhase("agentBusy");
+    if (provisionalTitle) args.factory.setActiveSessionName(provisionalTitle);
+
+    void (async () => {
+      let completed = false;
+      try {
+        const runPrompt = () =>
+          args.session.prompt(args.text, {
+            streamingBehavior: args.streamingBehavior,
+            ...(args.images ? { images: args.images } : {}),
+          });
+        if (extensionCommandInvocation) {
+          await withExtensionCommandOrigin(
+            args.session,
+            runId,
+            extensionCommandInvocation,
+            runPrompt,
+          );
+        } else {
+          await runPrompt();
+        }
+        completed = true;
+      } catch (err) {
+        args.server.emitForIdentity(runIdentity, "agent.event", {
+          runId,
+          event: {
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        });
+        args.server.emitForIdentity(runIdentity, "session.runtimeChanged", {
+          sessionId: runIdentity.sessionId!,
+          sessionRevision: runIdentity.sessionRevision,
+          state: "error",
+          updatedAt: Date.now(),
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        cleanup();
+      }
+      if (completed && provisionalTitle && titleSessionId) {
+        await args.factory.refineActiveSessionName({
+          session: args.session,
+          sessionId: titleSessionId,
+          provisionalTitle,
+          userPrompt: args.text,
+        });
+      }
+    })().catch((err: unknown) => {
+      logger.error("Detached agent prompt task failed", {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    detachedTaskStarted = true;
+    return runId;
+  } finally {
+    if (!detachedTaskStarted) cleanup();
+  }
 }
 
 type QueueTexts = Pick<QueueSnapshot, "steering" | "followUp">;

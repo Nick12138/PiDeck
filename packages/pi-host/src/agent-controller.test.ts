@@ -223,6 +223,35 @@ describe("session-bound agent handlers", () => {
   });
 });
 
+describe("agent.prompt startup", () => {
+  it("releases operation state when provisional title persistence throws", async () => {
+    const gate = deferred();
+    gate.resolve();
+    const fixture = stableHandlerFixture(gate.promise);
+    (fixture.session as unknown as { sessionName?: string }).sessionName = undefined;
+    vi.mocked(fixture.factory.setActiveSessionName).mockImplementation(() => {
+      throw new Error("session title persistence failed");
+    });
+    const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+    await expect(
+      handler({
+        id: "prompt-title-failure",
+        context: {},
+        params: { text: "name this session" },
+      } as never),
+    ).rejects.toThrow("session title persistence failed");
+
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+    expect(fixture.factory.clearSessionRunId).toHaveBeenCalledExactlyOnceWith(
+      fixture.session,
+    );
+    expect(fixture.factory.currentRunId).toBeNull();
+    expect(fixture.server.getPhase()).toBe("ready");
+    expect(fixture.session.prompt).not.toHaveBeenCalled();
+  });
+});
+
 describe("agent.prompt extension command provenance", () => {
   it("scopes the accepted run id and invocation to the registered command handler", async () => {
     const gate = deferred();

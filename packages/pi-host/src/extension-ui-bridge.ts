@@ -789,6 +789,8 @@ export async function bindExtensionUi(
     .then(() => {
       logger.info("Extension UI bound via bindExtensions({ uiContext, mode: rpc })");
     });
+  // Candidate activation may be delayed or skipped; activation still awaits the original promise.
+  void ready.catch(() => undefined);
 
   return {
     activate: async () => {

@@ -354,6 +354,35 @@ describe("extension-ui-bridge", () => {
     binding.cleanup();
   });
 
+  it("handles bind failure before delayed activation", async () => {
+    let rejectBind!: (reason: unknown) => void;
+    const bindReady = new Promise<void>((_resolve, reject) => {
+      rejectBind = reject;
+    });
+    const session = {
+      bindExtensions: () => bindReady,
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => {},
+      getIdentity: () => id,
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const failure = new Error("bind failed before activation");
+      rejectBind(failure);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      await expect(binding.activate()).rejects.toBe(failure);
+      expect(unhandled).not.toContain(failure);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      binding.cleanup();
+    }
+  });
+
   it("buffers non-blocking events until the candidate generation is published", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const session = {
