@@ -5,7 +5,10 @@ import { createAgentHandlers, summarizeModel } from "./agent-controller.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import type { PiHostServer } from "./server.js";
-import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import type {
+  BackgroundSessionRuntime,
+  WorkspaceGraphFactory,
+} from "./workspace-graph-factory.js";
 import { getActiveExtensionCommandOrigin } from "./extension-command-context.js";
 import {
   beginQueueTransaction,
@@ -133,6 +136,7 @@ function stableHandlerFixture(wait: Promise<void>) {
     canonicalCwd: "C:/workspace",
     workspaceId: identity.workspaceId,
     toolRevision: 1,
+    backgroundSessions: new Map<string, BackgroundSessionRuntime>(),
   };
   const serviceGraphLock = new TryMutex();
   const sessionOperationLock = new AgentOperationLock();
@@ -154,6 +158,9 @@ function stableHandlerFixture(wait: Promise<void>) {
     getGraph: () => graph,
     getServer: () => server,
     getSessionOperationLock: () => sessionOperationLock,
+    isSessionBusy: (target: AgentSession) =>
+      !target.isIdle || sessionOperationLock.isHeld(),
+    disposeSettledBackgroundRuntime: vi.fn(async () => {}),
     beginQueueTransaction,
     finishQueueTransaction: (target: AgentSession) => {
       const result = finishQueueTransaction(target);
@@ -363,6 +370,30 @@ describe("agent.abort with queued messages", () => {
     expect("error" in outcome).toBe(false);
     expect(session.clearQueue).not.toHaveBeenCalled();
     expect(session.abort).not.toHaveBeenCalled();
+  });
+
+  it("aborts a committed operation before the SDK reports the session running", async () => {
+    const gate = deferred();
+    gate.resolve();
+    const fixture = stableHandlerFixture(gate.promise);
+    const session = fixture.session as unknown as Record<string, unknown>;
+    session.isIdle = true;
+    expect(fixture.sessionOperationLock.tryAcquire("in-flight-prompt")).toBe(true);
+    const handler = createAgentHandlers(fixture.factory)["agent.abort"]!;
+
+    const outcome = await handler({
+      id: "abort-pre-run",
+      context: {},
+      params: null,
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect("result" in outcome && outcome.result).toMatchObject({
+      aborted: true,
+      settled: true,
+    });
+    fixture.sessionOperationLock.release("in-flight-prompt");
   });
 });
 
@@ -646,12 +677,15 @@ describe("agent.runNow transaction", () => {
 });
 
 describe("agent.compact concurrency", () => {
-  function compactFixture(isIdle: boolean) {
+  function compactFixture(isIdle: boolean, compactWait = Promise.resolve()) {
     const gate = deferred();
     const fixture = stableHandlerFixture(gate.promise);
     (fixture.session as unknown as { isIdle: boolean }).isIdle = isIdle;
     (fixture.session as unknown as { compact: unknown }).compact = vi.fn(
-      async () => ({ tokensBefore: 10, tokensAfter: 5 }),
+      async () => {
+        await compactWait;
+        return { tokensBefore: 10, tokensAfter: 5 };
+      },
     );
     return { ...fixture, gate };
   }
@@ -689,6 +723,128 @@ describe("agent.compact concurrency", () => {
       (fixture.session as unknown as { compact: ReturnType<typeof vi.fn> }).compact,
     ).toHaveBeenCalledTimes(1);
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+  });
+
+  it("keeps delayed completion bound to the compacted session after replacement", async () => {
+    const compactGate = deferred();
+    const fixture = compactFixture(true, compactGate.promise);
+    const handler = createAgentHandlers(fixture.factory)["agent.compact"]!;
+    const originalIdentity = fixture.server.getIdentity();
+    const replacementSessionId = "55555555-5555-4555-8555-555555555555";
+
+    const pending = handler({
+      id: "compact-replaced",
+      context: {},
+      params: {},
+    } as never);
+    await vi.waitFor(() => {
+      expect(
+        (fixture.session as unknown as { compact: ReturnType<typeof vi.fn> }).compact,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    const replacementSession = {
+      ...(fixture.session as unknown as Record<string, unknown>),
+      sessionId: replacementSessionId,
+      sessionFile: `C:/sessions/${replacementSessionId}.jsonl`,
+      sessionName: "Replacement",
+    } as unknown as AgentSession;
+    const replacementSnapshot = {
+      sessionId: replacementSessionId,
+      revision: 2,
+    };
+    Reflect.set(fixture.graph, "agentSession", replacementSession);
+    Reflect.set(fixture.graph, "sessionManager", { replacement: true });
+    Reflect.set(fixture.graph, "sessionSnapshot", replacementSnapshot);
+    fixture.server.identity.sessionId = replacementSessionId;
+    fixture.server.identity.sessionRevision = 2;
+
+    compactGate.resolve();
+    const outcome = await pending;
+
+    expect("error" in outcome).toBe(false);
+    expect(outcome.identity).toEqual(originalIdentity);
+    expect(fixture.graph.sessionSnapshot).toBe(replacementSnapshot);
+    expect("result" in outcome && outcome.result).toMatchObject({
+      session: {
+        sessionId: originalIdentity.sessionId,
+        revision: originalIdentity.sessionRevision,
+      },
+    });
+  });
+
+  it("updates the originating background runtime after a delayed compact", async () => {
+    const compactGate = deferred();
+    const fixture = compactFixture(true, compactGate.promise);
+    const handler = createAgentHandlers(fixture.factory)["agent.compact"]!;
+    const originalIdentity = fixture.server.getIdentity();
+    const originalSnapshot = {
+      sessionId: originalIdentity.sessionId!,
+      sessionPath: fixture.session.sessionFile!,
+      revision: originalIdentity.sessionRevision,
+    } as BackgroundSessionRuntime["sessionSnapshot"];
+
+    const pending = handler({
+      id: "compact-background",
+      context: {},
+      params: {},
+    } as never);
+    await vi.waitFor(() => {
+      expect(
+        (fixture.session as unknown as { compact: ReturnType<typeof vi.fn> }).compact,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    const background = {
+      sessionId: originalIdentity.sessionId!,
+      sessionRevision: originalIdentity.sessionRevision,
+      sessionManager: fixture.graph.sessionManager,
+      agentSession: fixture.session,
+      resourceLoader: {},
+      extensionsResult: null,
+      toolRevision: fixture.graph.toolRevision,
+      sessionSnapshot: originalSnapshot,
+      unsubscribeAgent: null,
+      extensionUiActivate: null,
+      extensionUiCleanup: null,
+      extensionUiUpdateIdentity: null,
+    } as BackgroundSessionRuntime;
+    fixture.graph.backgroundSessions.set(background.sessionId, background);
+
+    const replacementSessionId = "66666666-6666-4666-8666-666666666666";
+    const replacementSession = {
+      ...(fixture.session as unknown as Record<string, unknown>),
+      sessionId: replacementSessionId,
+      sessionFile: `C:/sessions/${replacementSessionId}.jsonl`,
+      sessionName: "Replacement",
+    } as unknown as AgentSession;
+    const replacementSnapshot = {
+      sessionId: replacementSessionId,
+      revision: 2,
+    };
+    Reflect.set(fixture.graph, "agentSession", replacementSession);
+    Reflect.set(fixture.graph, "sessionManager", { replacement: true });
+    Reflect.set(fixture.graph, "sessionSnapshot", replacementSnapshot);
+    fixture.server.identity.sessionId = replacementSessionId;
+    fixture.server.identity.sessionRevision = 2;
+
+    compactGate.resolve();
+    const outcome = await pending;
+
+    expect("error" in outcome).toBe(false);
+    expect(outcome.identity).toEqual(originalIdentity);
+    expect(fixture.graph.sessionSnapshot).toBe(replacementSnapshot);
+    expect(background.sessionSnapshot).not.toBe(originalSnapshot);
+    expect(background.sessionSnapshot).toMatchObject({
+      sessionId: originalIdentity.sessionId,
+      revision: originalIdentity.sessionRevision,
+    });
+    await vi.waitFor(() => {
+      expect(fixture.factory.disposeSettledBackgroundRuntime).toHaveBeenCalledWith(
+        fixture.graph,
+        background,
+      );
+    });
   });
 });
 

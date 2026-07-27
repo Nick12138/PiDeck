@@ -86,6 +86,10 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.getSessionOperationLock(session);
   }
 
+  isSessionBusy(session: AgentSession): boolean {
+    return this.sessionRuntimeCache.isSessionBusy(session);
+  }
+
   beginQueueTransaction(session: AgentSession) {
     return this.sessionRuntimeCache.beginQueueTransaction(session);
   }
@@ -190,6 +194,13 @@ export class WorkspaceGraphFactory {
       sessionId,
       sessionPath,
     );
+  }
+
+  async disposeSettledBackgroundRuntime(
+    graph: WorkspaceGraph,
+    runtime: BackgroundSessionRuntime,
+  ): Promise<void> {
+    return this.sessionRuntimeCache.disposeSettledBackgroundRuntime(graph, runtime);
   }
 
   /** @internal — session-lifecycle module */

@@ -149,6 +149,85 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     expect(factory.getSessionOperationLock(first).tryAcquire("again")).toBe(false);
   });
 
+  it("reports an idle SDK session as busy while a Host operation owns it", () => {
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    const session = fakeSession(true, ACTIVE_SESSION_ID);
+    const graph = fakeWorkspaceGraph("C:/workspace", WORKSPACE_ID, session);
+    Reflect.set(factory, "graph", graph);
+
+    expect(factory.getSessionOperationLock(session).tryAcquire("in-flight-prompt")).toBe(
+      true,
+    );
+
+    expect(factory.hasBusySessions()).toBe(true);
+    factory.getSessionOperationLock(session).release("in-flight-prompt");
+  });
+
+  it("retains a lock-held idle session as a busy background runtime", () => {
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    const session = fakeSession(true, ACTIVE_SESSION_ID);
+    const graph = fakeWorkspaceGraph("C:/workspace", WORKSPACE_ID, session);
+    const unsubscribe = vi.fn();
+    const extensionUiCleanup = vi.fn();
+    expect(factory.getSessionOperationLock(session).tryAcquire("in-flight-prompt")).toBe(
+      true,
+    );
+
+    const runtime = factory.retainBusySession(graph, {
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 4,
+      sessionManager: {} as never,
+      agentSession: session,
+      resourceLoader: {} as never,
+      extensionsResult: null,
+      toolRevision: 2,
+      sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 4, true),
+      unsubscribeAgent: unsubscribe,
+      extensionUiActivate: null,
+      extensionUiCleanup,
+      extensionUiUpdateIdentity: null,
+    });
+
+    expect(runtime?.agentSession).toBe(session);
+    expect(graph.backgroundSessions.get(ACTIVE_SESSION_ID)).toBe(runtime);
+    expect(unsubscribe).not.toHaveBeenCalled();
+    expect(extensionUiCleanup).not.toHaveBeenCalled();
+    expect(session.dispose).not.toHaveBeenCalled();
+    factory.getSessionOperationLock(session).release("in-flight-prompt");
+  });
+
+  it("refuses to park a lock-held session as idle", async () => {
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    const session = fakeSession(true, ACTIVE_SESSION_ID);
+    const graph = fakeWorkspaceGraph("C:/workspace", WORKSPACE_ID, session);
+    const unsubscribe = vi.fn();
+    const extensionUiCleanup = vi.fn();
+    expect(factory.getSessionOperationLock(session).tryAcquire("in-flight-prompt")).toBe(
+      true,
+    );
+
+    const runtime = await factory.retainIdleSession(graph, {
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 4,
+      sessionManager: {} as never,
+      agentSession: session,
+      resourceLoader: {} as never,
+      extensionsResult: null,
+      toolRevision: 2,
+      sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 4, true),
+      unsubscribeAgent: unsubscribe,
+      extensionUiActivate: null,
+      extensionUiCleanup,
+      extensionUiUpdateIdentity: null,
+    });
+
+    expect(runtime).toBeNull();
+    expect(unsubscribe).not.toHaveBeenCalled();
+    expect(extensionUiCleanup).not.toHaveBeenCalled();
+    expect(graph.retainedSessions.size).toBe(0);
+    factory.getSessionOperationLock(session).release("in-flight-prompt");
+  });
+
   it("publishes one revisioned queue event for a multi-step transaction", () => {
     const identity: HostIdentity = {
       hostInstanceId: HOST_ID,
@@ -437,7 +516,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     }
   });
 
-  it("promotes a running background Runtime without reopening its Session file", async () => {
+  it("promotes a lock-held idle background Runtime without reporting it idle", async () => {
     const identity = {
       hostInstanceId: HOST_ID,
       workspaceId: WORKSPACE_ID,
@@ -457,7 +536,10 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     factory.bindServer(server);
 
     const foreground = fakeSession(true, ACTIVE_SESSION_ID);
-    const backgroundSession = fakeSession(false, BACKGROUND_SESSION_ID);
+    const backgroundSession = fakeSession(true, BACKGROUND_SESSION_ID);
+    expect(
+      factory.getSessionOperationLock(backgroundSession).tryAcquire("in-flight-prompt"),
+    ).toBe(true);
     const updateIdentity = vi.fn();
     const runtime = {
       sessionId: BACKGROUND_SESSION_ID,
@@ -519,6 +601,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       "agent.toolsChanged",
       "session.runtimeChanged",
     ]);
+    expect(server.emit).toHaveBeenLastCalledWith(
+      "session.runtimeChanged",
+      expect.objectContaining({ state: "running" }),
+    );
+    factory.getSessionOperationLock(backgroundSession).release("in-flight-prompt");
   });
 
   it("reactivates a retained idle Session and parks the previous one", async () => {

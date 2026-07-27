@@ -14,7 +14,10 @@ import {
 } from "@pideck/protocol";
 import type { AgentOperationLock } from "./locks.js";
 import type { MethodHandler, PiHostServer } from "./server.js";
-import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import type {
+  BackgroundSessionRuntime,
+  WorkspaceGraphFactory,
+} from "./workspace-graph-factory.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
 import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-controller.js";
@@ -431,7 +434,7 @@ export function createAgentHandlers(
           let queueRestored = true;
           let operationError: HostError | undefined;
           let queue = originalQueue;
-          if (!session.isIdle) {
+          if (factory.isSessionBusy(session)) {
             pruneQueuedImages(session, [
               ...originalQueue.steering,
               ...originalQueue.followUp,
@@ -815,12 +818,17 @@ export function createAgentHandlers(
       if (!g.agentSession.isIdle) {
         return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
       }
+      const session = g.agentSession;
+      const sessionManager = g.sessionManager;
+      const requestIdentity = server.getIdentity();
+      const originatingToolRevision = g.toolRevision;
       // Same per-session lock as agent.prompt — compaction and prompting are
       // mutually exclusive on one session.
-      const operationLock = factory.getSessionOperationLock(g.agentSession);
+      const operationLock = factory.getSessionOperationLock(session);
       if (!operationLock.tryAcquire(ctx.id)) {
         return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
       }
+      let backgroundAfterCompact: BackgroundSessionRuntime | undefined;
       try {
         if (server.serviceGraphLock.isHeld()) {
           return {
@@ -833,24 +841,49 @@ export function createAgentHandlers(
           requireWorkspace: true,
           requireSession: true,
         });
-        if (staleAfterLock) return { error: staleAfterLock };
+        if (staleAfterLock) return { error: staleAfterLock, identity: requestIdentity };
 
         const params = (ctx.params ?? {}) as { instructions?: string };
-        const result = await g.agentSession.compact(params.instructions);
-        const identity = server.getIdentity();
+        const result = await session.compact(params.instructions);
+        const stillCurrentGraph = factory.getGraph() === g;
+        const active = stillCurrentGraph && g.agentSession === session;
+        const background = stillCurrentGraph && !active
+          ? [...g.backgroundSessions.values()].find(
+              (runtime) => runtime.agentSession === session,
+            )
+          : undefined;
+        const projectionIdentity = active ? server.getIdentity() : requestIdentity;
+        backgroundAfterCompact = background;
         const snap = buildSessionSnapshot({
-          session: g.agentSession,
-          sessionManager: g.sessionManager,
+          session,
+          sessionManager: background?.sessionManager ?? sessionManager,
           cwd: g.canonicalCwd,
-          sessionId: identity.sessionId ?? "",
-          revision: identity.sessionRevision,
+          sessionId:
+            background?.sessionId ??
+            projectionIdentity.sessionId ??
+            session.sessionId ??
+            "",
+          revision:
+            background?.sessionRevision ?? projectionIdentity.sessionRevision,
           workspaceId: g.workspaceId,
-          toolRevision: g.toolRevision,
+          toolRevision:
+            background?.toolRevision ?? (active ? g.toolRevision : originatingToolRevision),
         });
-        g.sessionSnapshot = snap;
-        return { result: { result, session: snap } };
+        if (active) g.sessionSnapshot = snap;
+        else if (background) background.sessionSnapshot = snap;
+        return { result: { result, session: snap }, identity: requestIdentity };
       } finally {
         operationLock.release(ctx.id);
+        if (backgroundAfterCompact) {
+          void factory
+            .disposeSettledBackgroundRuntime(g, backgroundAfterCompact)
+            .catch((error: unknown) => {
+              logger.warn("Background Session cleanup after compaction failed", {
+                sessionId: backgroundAfterCompact?.sessionId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+        }
       }
     },
 

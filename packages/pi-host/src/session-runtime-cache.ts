@@ -115,6 +115,10 @@ export class SessionRuntimeCache {
     return lock;
   }
 
+  isSessionBusy(session: AgentSession): boolean {
+    return !session.isIdle || this.getSessionOperationLock(session).isHeld();
+  }
+
   setSessionRunId(session: AgentSession, runId: string): void {
     this.runIds.set(session, runId);
   }
@@ -149,7 +153,7 @@ export class SessionRuntimeCache {
   hasBusySessions(): boolean {
     const graph = this.context.getGraph();
     if (!graph) return false;
-    if (graph.agentSession && !graph.agentSession.isIdle) return true;
+    if (graph.agentSession && this.isSessionBusy(graph.agentSession)) return true;
     return graph.backgroundSessions.size > 0;
   }
 
@@ -273,7 +277,7 @@ export class SessionRuntimeCache {
       !previous.agentSession ||
       !previous.resourceLoader ||
       !previous.sessionSnapshot ||
-      previous.agentSession.isIdle
+      !this.isSessionBusy(previous.agentSession)
     ) {
       return null;
     }
@@ -305,7 +309,7 @@ export class SessionRuntimeCache {
       !previous.agentSession ||
       !previous.resourceLoader ||
       !previous.sessionSnapshot?.sessionPath ||
-      !previous.agentSession.isIdle
+      this.isSessionBusy(previous.agentSession)
     ) {
       return null;
     }
@@ -388,7 +392,7 @@ export class SessionRuntimeCache {
         this.context.sessionPathsEqual(candidate.sessionSnapshot.sessionPath, sessionPath),
     );
     if (!runtime) return "none";
-    if (!runtime.agentSession.isIdle || this.getSessionOperationLock(runtime.agentSession).isHeld()) {
+    if (this.isSessionBusy(runtime.agentSession)) {
       return "busy";
     }
     await this.disposeBackgroundRuntime(graph, runtime);
@@ -489,7 +493,7 @@ export class SessionRuntimeCache {
     server.emit("session.runtimeChanged", {
       sessionId: runtime.sessionId,
       sessionRevision,
-      state: runtime.agentSession.isIdle ? "idle" : "running",
+      state: this.isSessionBusy(runtime.agentSession) ? "running" : "idle",
       updatedAt: Date.now(),
     });
     return snapshot;
@@ -765,7 +769,7 @@ export class SessionRuntimeCache {
   }
 
   private runtimeStateForSession(session: AgentSession): SessionRuntimeState {
-    if (!session.isIdle) return "running";
+    if (this.isSessionBusy(session)) return "running";
     if (session.getSteeringMessages().length > 0 || session.getFollowUpMessages().length > 0) {
       return "queued";
     }
@@ -845,7 +849,7 @@ export class SessionRuntimeCache {
     await this.disposeAgentSessionOnly(runtime.agentSession);
   }
 
-  private async disposeSettledBackgroundRuntime(
+  async disposeSettledBackgroundRuntime(
     graph: WorkspaceGraph,
     runtime: BackgroundSessionRuntime,
   ): Promise<void> {
