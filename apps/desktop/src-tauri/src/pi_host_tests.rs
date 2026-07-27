@@ -7,8 +7,8 @@ mod tests {
     use crate::pi_host::{
         build_shutdown_line, drain_complete_lines, extract_host_instance_id, finish_monitor_task,
         is_current_child_generation, push_stderr_tail, read_bounded_lossy_line,
-        read_bounded_utf8_line, should_auto_restart, strip_verbatim_prefix, AutoRestartEpoch,
-        HostChildSession, MAX_HOST_STDOUT_LINE_BYTES,
+        read_bounded_utf8_line, should_auto_restart, strip_verbatim_prefix, write_host_stdin,
+        AutoRestartEpoch, HostChildSession, MAX_HOST_STDOUT_LINE_BYTES,
     };
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -282,6 +282,20 @@ rl.on('line', (line) => {
         );
         assert_eq!(line, "ok\n");
         write_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn host_stdin_write_enforces_its_own_deadline() {
+        let (mut writer, _idle_reader) = tokio::io::duplex(1);
+        let result = tokio::time::timeout(
+            Duration::from_millis(250),
+            write_host_stdin(&mut writer, b"blocked", Duration::from_millis(25)),
+        )
+        .await
+        .expect("Host stdin writer must enforce its own deadline");
+
+        let error = result.expect_err("stalled Host stdin must time out");
+        assert!(error.contains("timed out"), "unexpected error: {error}");
     }
 
     #[test]

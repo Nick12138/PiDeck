@@ -3,8 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{
+    AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
+};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -22,6 +25,37 @@ use windows_sys::Win32::System::JobObjects::{
 
 pub(crate) const MAX_HOST_STDOUT_LINE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_HOST_STDERR_LINE_BYTES: usize = 1024 * 1024;
+const HOST_STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(crate) async fn write_host_stdin<W>(
+    writer: &mut W,
+    payload: &[u8],
+    deadline: Duration,
+) -> Result<(), String>
+where
+    W: AsyncWrite + Unpin,
+{
+    match tokio::time::timeout(deadline, async {
+        writer
+            .write_all(payload)
+            .await
+            .map_err(|e| format!("write stdin: {e}"))?;
+        writer.flush().await.map_err(|e| {
+            format!(
+                "flush stdin: {e} — Host process likely crashed. Check Settings → Restart Host after `pnpm build`."
+            )
+        })?;
+        Ok(())
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(format!(
+            "write stdin timed out after {} ms — Host is not reading requests; use Settings → Restart Host",
+            deadline.as_millis()
+        )),
+    }
+}
 
 pub(crate) async fn read_bounded_utf8_line<R>(
     reader: &mut R,
@@ -1157,7 +1191,7 @@ impl PiHostManager {
             }
         }
 
-        let stdin = self.stdin.as_ref().ok_or_else(|| {
+        let stdin = self.stdin.as_ref().cloned().ok_or_else(|| {
             "host not running — use Settings → Restart Host (ensure `pnpm build` first)".to_string()
         })?;
         let mut guard = stdin.lock().await;
@@ -1166,19 +1200,13 @@ impl PiHostManager {
         } else {
             format!("{line}\n")
         };
-        guard
-            .write_all(payload.as_bytes())
-            .await
-            .map_err(|e| format!("write stdin: {e}"))?;
-        guard
-            .flush()
-            .await
-            .map_err(|e| {
-                format!(
-                    "flush stdin: {e} — Host process likely crashed. Check Settings → Restart Host after `pnpm build`."
-                )
-            })?;
-        Ok(())
+        let result =
+            write_host_stdin(&mut *guard, payload.as_bytes(), HOST_STDIN_WRITE_TIMEOUT).await;
+        drop(guard);
+        if result.is_err() {
+            self.stdin = None;
+        }
+        result
     }
 
     pub async fn shutdown(&mut self) {
