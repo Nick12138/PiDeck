@@ -200,6 +200,7 @@ export function BrowserPanel({
       if (!createdRef.current) return;
     }
     const url = normalizeBrowserInput(address);
+    setLoading(true);
     try {
       const normalized = await invoke<string>("browser_surface_navigate", {
         surfaceId,
@@ -207,9 +208,9 @@ export function BrowserPanel({
       });
       setCurrentUrl(normalized);
       setAddress(normalized === "about:blank" ? "" : normalized);
-      setLoading(true);
       setError(null);
     } catch (cause) {
+      setLoading(false);
       pushNotification(cause instanceof Error ? cause.message : String(cause), "warning");
     }
   };

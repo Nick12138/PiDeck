@@ -1,18 +1,31 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type TestBrowserEvent = {
+  payload: {
+    surfaceId: string;
+    kind: "load" | "title";
+    url?: string;
+    loading?: boolean;
+  };
+};
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   unlisten: vi.fn(),
+  listeners: [] as Array<(event: TestBrowserEvent) => void>,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async () => mocks.unlisten),
+  listen: vi.fn(async (_event: string, listener: (event: TestBrowserEvent) => void) => {
+    mocks.listeners.push(listener);
+    return mocks.unlisten;
+  }),
 }));
 
 import { BrowserPanel } from "./BrowserPanel";
@@ -22,7 +35,26 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+function emitBrowserEvent(payload: TestBrowserEvent["payload"]) {
+  const listener = mocks.listeners.at(-1);
+  if (!listener) throw new Error("browser event listener is not registered");
+  listener({ payload });
+}
+
 beforeEach(() => {
+  mocks.invoke.mockReset();
+  mocks.unlisten.mockReset();
+  mocks.listeners.length = 0;
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     value: {},
@@ -48,8 +80,9 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
@@ -101,5 +134,97 @@ describe("BrowserPanel native lifecycle", () => {
         surfaceId: "dock-browser-7",
       }),
     );
+  });
+
+  it("keeps Finished authoritative when navigate resolves afterward", async () => {
+    const user = userEvent.setup();
+    const navigate = deferred<string>();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "browser_surface_create") {
+        return { surfaceId: "dock-browser-7", url: "about:blank" };
+      }
+      if (command === "browser_surface_navigate") return navigate.promise;
+      return undefined;
+    });
+    render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "browser_surface_create",
+        expect.anything(),
+      ),
+    );
+    await waitFor(() => expect(mocks.listeners).toHaveLength(1));
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Browser address" }),
+      "example.com{Enter}",
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("browser_surface_navigate", {
+        surfaceId: "dock-browser-7",
+        url: "https://example.com",
+      }),
+    );
+
+    act(() => {
+      emitBrowserEvent({
+        surfaceId: "dock-browser-7",
+        kind: "load",
+        url: "https://example.com/",
+        loading: true,
+      });
+    });
+    expect(screen.getByRole("button", { name: "Stop loading" })).toBeInTheDocument();
+
+    act(() => {
+      emitBrowserEvent({
+        surfaceId: "dock-browser-7",
+        kind: "load",
+        url: "https://example.com/",
+        loading: false,
+      });
+    });
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+
+    await act(async () => {
+      navigate.resolve("https://example.com/");
+      await navigate.promise;
+    });
+
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  });
+
+  it("clears optimistic loading when navigate rejects", async () => {
+    const user = userEvent.setup();
+    const navigate = deferred<string>();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "browser_surface_create") {
+        return { surfaceId: "dock-browser-7", url: "about:blank" };
+      }
+      if (command === "browser_surface_navigate") return navigate.promise;
+      return undefined;
+    });
+    render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "browser_surface_create",
+        expect.anything(),
+      ),
+    );
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Browser address" }),
+      "example.com{Enter}",
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stop loading" })).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      navigate.reject(new Error("navigation failed"));
+      await navigate.promise.catch(() => undefined);
+    });
+
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
   });
 });
