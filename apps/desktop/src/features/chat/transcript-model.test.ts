@@ -769,6 +769,73 @@ describe("Pi extension and session entry messages", () => {
     expect(rows[2]?.summary).toMatchObject({ kind: "branch", fromId: "old-leaf" });
   });
 
+  it("keeps the live tail visible after an empty branch summary", () => {
+    const rows = buildTranscriptRows(
+      [{ role: "user", content: "Live prompt after branching" }],
+      {
+        entries: [
+          {
+            id: "empty-branch",
+            type: "branch_summary",
+            parentId: null,
+            fromId: "root",
+            summary: "",
+          },
+        ],
+      },
+    );
+
+    expect(rows.map((row) => row.role)).toEqual(["summary", "user"]);
+    expect(rows[0]?.summary).toMatchObject({ kind: "branch", text: "" });
+    expect(rows[1]?.copyText).toBe("Live prompt after branching");
+  });
+
+  it("counts a whitespace branch summary like the SDK projection", () => {
+    const rows = buildTranscriptRows(
+      [
+        { role: "branchSummary", content: "", summary: " ", fromId: "root" },
+        { role: "user", content: "Live prompt" },
+      ],
+      {
+        entries: [
+          {
+            id: "whitespace-branch",
+            type: "branch_summary",
+            parentId: null,
+            fromId: "root",
+            summary: " ",
+          },
+        ],
+      },
+    );
+
+    expect(rows.map((row) => row.role)).toEqual(["summary", "user"]);
+    expect(rows[0]?.summary).toMatchObject({ kind: "branch", text: " " });
+  });
+
+  it("counts an empty compaction summary like the SDK projection", () => {
+    const rows = buildTranscriptRows(
+      [
+        { role: "compactionSummary", content: "", summary: "", tokensBefore: 0 },
+        { role: "user", content: "Live prompt" },
+      ],
+      {
+        entries: [
+          {
+            id: "empty-compaction",
+            type: "compaction",
+            parentId: null,
+            summary: "",
+            tokensBefore: 0,
+          },
+        ],
+      },
+    );
+
+    expect(rows.map((row) => row.role)).toEqual(["summary", "user"]);
+    expect(rows[0]?.summary).toMatchObject({ kind: "compaction", text: "" });
+  });
+
   it("shows only the final model and thinking level before the next user message", () => {
     const entries = [
       {

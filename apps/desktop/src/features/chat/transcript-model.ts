@@ -722,13 +722,16 @@ function sourceMessages(
       continue;
     }
     if (type === "branch_summary") {
-      projectedMessageCount += 1;
+      const summary = typeof record.summary === "string" ? record.summary : "";
+      // Match Pi's sessionEntryToContextMessages(): an empty branch summary
+      // remains an entry but does not consume a position in session.messages.
+      if (summary) projectedMessageCount += 1;
       sources.push({
         kind: "message",
         message: {
           role: "branchSummary",
           content: "",
-          summary: typeof record.summary === "string" ? record.summary : "",
+          summary,
           fromId: record.fromId as string | undefined,
           details: record.details,
           fromHook: record.fromHook,
