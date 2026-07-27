@@ -100,6 +100,8 @@ export const zh: Record<MessageKey, string> = {
   providersSearch: "搜索模型服务",
   providersAdd: "添加模型服务",
   providersLoading: "正在加载…",
+  providersLoadFailed: "无法加载模型服务",
+  providersRetry: "重试",
   providersNone: "尚未配置模型服务",
   providersModelsCount: "{count} 个模型",
   providersModelsCountEnabled: "{count} 个模型 · 已启用",

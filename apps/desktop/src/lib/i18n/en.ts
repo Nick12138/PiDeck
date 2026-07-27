@@ -107,6 +107,8 @@ export const en = {
   providersSearch: "Search Providers",
   providersAdd: "Add Provider",
   providersLoading: "Loading Providers...",
+  providersLoadFailed: "Could not load Providers",
+  providersRetry: "Try again",
   providersNone: "No configured Providers",
   providersModelsCount: "{count} models",
   providersModelsCountEnabled: "{count} models · Enabled",

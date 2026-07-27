@@ -19,6 +19,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiscoveredProviderModel,
+  HostError,
   ProviderConnectionResult,
   ProviderCompatibilityDraft,
   ProviderDraft,
@@ -35,6 +36,7 @@ import {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
+import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
@@ -226,6 +228,22 @@ export function providerSaveFailureMessage(
   return message;
 }
 
+export function providerLoadFailureMessage(
+  error: HostError | undefined,
+  fallback: string,
+): string {
+  const message = error?.message ?? fallback;
+  const details = error?.details;
+  const operationKind =
+    details !== null &&
+    typeof details === "object" &&
+    !Array.isArray(details) &&
+    typeof details.operationKind === "string"
+      ? details.operationKind
+      : null;
+  return operationKind ? `${message} (${operationKind})` : message;
+}
+
 function thinkingMode(model: DiscoveredProviderModel): "auto" | "custom" | "disabled" {
   if (!model.reasoning) return "disabled";
   return model.thinkingSource === "manual" ||
@@ -338,6 +356,8 @@ export function ProvidersSettings() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [clearApiKey, setClearApiKey] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -379,6 +399,8 @@ export function ProvidersSettings() {
     if (!host) {
       setProviders([]);
       setDraft(null);
+      setLoading(false);
+      setLoadError(null);
       baselineRef.current = null;
       draftEpochRef.current += 1;
       setPendingSwitch(null);
@@ -387,12 +409,21 @@ export function ProvidersSettings() {
     }
     let cancelled = false;
     setLoading(true);
-    void hostClient
-      .request("provider.list", hostContext(host), null)
+    setLoadError(null);
+    void requestWithRetry(
+      () => hostClient.request("provider.list", hostContext(host), null),
+      undefined,
+      () => !cancelled,
+    )
       .then((response) => {
-        if (cancelled) return;
+        if (cancelled || !response) return;
         if (!response.ok) {
-          pushNotification(response.error?.message ?? t("notifProviderLoadFailed"), "error");
+          const message = providerLoadFailureMessage(
+            response.error,
+            t("notifProviderLoadFailed"),
+          );
+          setLoadError(message);
+          pushNotification(message, "error");
           return;
         }
         setProviders(response.result.providers);
@@ -425,7 +456,9 @@ export function ProvidersSettings() {
       })
       .catch((error) => {
         if (!cancelled) {
-          pushNotification(error instanceof Error ? error.message : t("notifProviderLoadFailed"), "error");
+          const message = error instanceof Error ? error.message : t("notifProviderLoadFailed");
+          setLoadError(message);
+          pushNotification(message, "error");
         }
       })
       .finally(() => {
@@ -434,7 +467,7 @@ export function ProvidersSettings() {
     return () => {
       cancelled = true;
     };
-  }, [host?.hostInstanceId, pushNotification]);
+  }, [host?.hostInstanceId, loadAttempt, pushNotification]);
 
   const filteredProviders = useMemo(() => {
     const query = providerSearch.trim().toLowerCase();
@@ -864,6 +897,11 @@ export function ProvidersSettings() {
         <div className="min-h-0 flex-1 overflow-auto p-2">
           {loading ? (
             <p className="p-3 text-xs text-muted">{t("providersLoading")}</p>
+          ) : loadError && providers.length === 0 ? (
+            <div className="flex items-start gap-2 p-3 text-xs text-danger">
+              <AlertTriangle className="mt-0.5 shrink-0" size={13} />
+              <span>{t("providersLoadFailed")}</span>
+            </div>
           ) : filteredProviders.length === 0 ? (
             <p className="p-3 text-xs text-muted">{t("providersNone")}</p>
           ) : (
@@ -940,7 +978,28 @@ export function ProvidersSettings() {
         <ProviderLoginPage onClose={() => setOauthOpen(false)} />
       ) : !draft ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted">
-          {providers.length === 0 && !loading ? (
+          {loading && providers.length === 0 ? (
+            <span role="status" className="flex items-center gap-2">
+              <RefreshCw className="animate-spin motion-reduce:animate-none" size={15} />
+              {t("providersLoading")}
+            </span>
+          ) : loadError && providers.length === 0 ? (
+            <div role="alert" className="flex max-w-sm flex-col items-center gap-3 text-center">
+              <AlertTriangle className="text-danger" size={20} />
+              <div>
+                <p className="font-medium text-foreground">{t("providersLoadFailed")}</p>
+                <p className="mt-1 break-words text-xs text-muted">{loadError}</p>
+              </div>
+              <button
+                type="button"
+                className={secondaryButton}
+                disabled={loading}
+                onClick={() => setLoadAttempt((current) => current + 1)}
+              >
+                <RefreshCw size={14} /> {t("providersRetry")}
+              </button>
+            </div>
+          ) : providers.length === 0 ? (
             <>
               <p>{t("providersEmptyTitle")}</p>
               <div className="flex items-center gap-2">

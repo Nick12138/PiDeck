@@ -90,6 +90,28 @@ function envelope(method: string, result: unknown) {
   };
 }
 
+function errorEnvelope(
+  method: string,
+  error: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    details?: Record<string, unknown>;
+  },
+) {
+  return {
+    protocolVersion: 1,
+    id: "test-request",
+    method,
+    hostInstanceId: HOST_ID,
+    workspaceId: WORKSPACE_ID,
+    workspaceRevision: 1,
+    packageRevision: 1,
+    ok: false,
+    error,
+  };
+}
+
 type RequestHandler = (params: unknown) => Promise<unknown> | unknown;
 
 function mockRequests(overrides: Record<string, RequestHandler> = {}) {
@@ -143,6 +165,80 @@ afterEach(() => {
   useAppStore.getState().setProvidersDirty(false);
   useAppStore.getState().setHost(null);
   vi.restoreAllMocks();
+});
+
+describe("ProvidersSettings loading", () => {
+  it("retries transient graph contention before showing Providers", async () => {
+    let requests = 0;
+    const spy = mockRequests({
+      "provider.list": () => {
+        requests += 1;
+        return requests === 1
+          ? errorEnvelope("provider.list", {
+              code: "SERVICE_GRAPH_BUSY",
+              message: "Service graph is busy",
+              retryable: true,
+            })
+          : envelope("provider.list", { providers: [providerA(), providerB()] });
+      },
+    });
+
+    render(<ProvidersSettings />);
+
+    expect(await screen.findByDisplayValue("Provider A")).toBeInTheDocument();
+    expect(callsFor(spy, "provider.list")).toHaveLength(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+  });
+
+  it("shows a recoverable error instead of an empty state after retries are exhausted", async () => {
+    let busy = true;
+    const spy = mockRequests({
+      "provider.list": () =>
+        busy
+          ? errorEnvelope("provider.list", {
+              code: "SERVICE_GRAPH_BUSY",
+              message: "Service graph is busy",
+              retryable: true,
+              details: { operationKind: "workspace.setCurrent" },
+            })
+          : envelope("provider.list", { providers: [providerA(), providerB()] }),
+    });
+    const user = userEvent.setup();
+
+    render(<ProvidersSettings />);
+
+    const alert = await screen.findByRole("alert", undefined, { timeout: 2_500 });
+    expect(alert).toHaveTextContent("Could not load Providers");
+    expect(alert).toHaveTextContent("Service graph is busy (workspace.setCurrent)");
+    expect(screen.queryByText("No Providers configured yet.")).not.toBeInTheDocument();
+    expect(callsFor(spy, "provider.list")).toHaveLength(5);
+
+    busy = false;
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByDisplayValue("Provider A")).toBeInTheDocument();
+    expect(callsFor(spy, "provider.list")).toHaveLength(6);
+  });
+
+  it("stops retrying after the page unmounts", async () => {
+    const spy = mockRequests({
+      "provider.list": () =>
+        errorEnvelope("provider.list", {
+          code: "SERVICE_GRAPH_BUSY",
+          message: "Service graph is busy",
+          retryable: true,
+        }),
+    });
+    const view = render(<ProvidersSettings />);
+    await waitFor(() => expect(callsFor(spy, "provider.list")).toHaveLength(1));
+
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(callsFor(spy, "provider.list")).toHaveLength(1);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+  });
 });
 
 describe("ProvidersSettings dirty tracking", () => {
