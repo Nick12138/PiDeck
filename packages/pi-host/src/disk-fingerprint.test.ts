@@ -47,6 +47,37 @@ describe("package disk fingerprint", () => {
     expect(changed).not.toBe(first);
   });
 
+  it("skips dependency and VCS internals while watching configured package files", async () => {
+    const { graph, agentDir } = fixture();
+    const installedPath = join(agentDir, "npm", "node_modules", "example-package");
+    const dependencyFile = join(installedPath, "node_modules", "dependency", "index.js");
+    const gitObject = join(installedPath, ".git", "objects", "test-object");
+    const manifest = join(installedPath, "package.json");
+    mkdirSync(join(installedPath, "node_modules", "dependency"), { recursive: true });
+    mkdirSync(join(installedPath, ".git", "objects"), { recursive: true });
+    writeFileSync(dependencyFile, "dependency-v1\n");
+    writeFileSync(gitObject, "object-v1\n");
+    writeFileSync(manifest, JSON.stringify({ name: "example-package", version: "1.0.0" }));
+    graph.packageManager!.listConfiguredPackages = () => [
+      {
+        source: "npm:example-package",
+        scope: "user",
+        filtered: false,
+        installedPath,
+      },
+    ];
+
+    const first = await capturePackageDiskFingerprint(graph, agentDir);
+    writeFileSync(dependencyFile, "dependency-v2-with-different-size\n");
+    writeFileSync(gitObject, "object-v2-with-different-size\n");
+    const internalsChanged = await capturePackageDiskFingerprint(graph, agentDir);
+    writeFileSync(manifest, JSON.stringify({ name: "example-package", version: "22.0.0" }));
+    const packageChanged = await capturePackageDiskFingerprint(graph, agentDir);
+
+    expect(internalsChanged).toBe(first);
+    expect(packageChanged).not.toBe(internalsChanged);
+  });
+
   it("yields to the event loop and observes cancellation", async () => {
     const { graph, agentDir, packagesDir } = fixture();
     for (let index = 0; index < 100; index += 1) {

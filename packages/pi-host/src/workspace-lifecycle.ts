@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
 import { join, resolve as pathResolve, win32 } from "node:path";
 import {
   createAgentSession,
@@ -20,6 +19,7 @@ import {
 } from "@pideck/protocol";
 import { activateOnce, bindForCandidate } from "./extension-ui-lifecycle.js";
 import type { ProviderOwnerToken } from "./extension-provider-ownership.js";
+import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
 import { logger } from "./logger.js";
 import { buildPackageSnapshot } from "./package-snapshot.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
@@ -280,6 +280,7 @@ export class WorkspaceLifecycle {
           sessionRevision: invalidatedSessionRevision,
           packageRevision: candidatePackageRevision,
           error: built.error,
+          signal: operation.signal,
         });
         return { error: built.error };
       }
@@ -322,7 +323,7 @@ export class WorkspaceLifecycle {
         return { error };
       }
 
-      if (previousGraph) await this.retainGraph(previousGraph);
+      if (previousGraph) await this.retainGraph(previousGraph, operation.signal);
       server.setPhase("ready");
       server.setLastError(undefined);
       const workspace = this.buildWorkspaceSnapshot(built.graph);
@@ -357,41 +358,35 @@ export class WorkspaceLifecycle {
     graph: WorkspaceGraph,
     signal?: AbortSignal,
   ): Promise<string> {
-    const hash = createHash("sha256");
-    const visit = async (path: string): Promise<void> => {
-      signal?.throwIfAborted();
-      try {
-        const stat = await lstat(path);
-        hash.update(`${path}|${stat.mode}|${stat.size}|${Math.trunc(stat.mtimeMs)}\n`);
-        if (!stat.isDirectory()) return;
-        const entries = await readdir(path, { withFileTypes: true });
-        for (const entry of entries.sort((a, b) =>
-          a.name.localeCompare(b.name),
-        )) {
-          await visit(join(path, entry.name));
-        }
-      } catch (err) {
-        signal?.throwIfAborted();
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          hash.update(`missing:${path}\n`);
-        } else {
-          hash.update(`error:${path}:${err instanceof Error ? err.message : String(err)}\n`);
-        }
-      }
-    };
-
-    await visit(join(graph.canonicalCwd, ".pi"));
-    await visit(join(this.context.deps.agentDir, "settings.json"));
-    await visit(join(this.context.deps.agentDir, "models.json"));
-    await visit(join(this.context.deps.agentDir, "models-store.json"));
-    await visit(join(this.context.deps.agentDir, "auth.json"));
+    const roots = new Set<string>([
+      join(graph.canonicalCwd, ".pi"),
+      join(this.context.deps.agentDir, "settings.json"),
+      join(this.context.deps.agentDir, "models.json"),
+      join(this.context.deps.agentDir, "models-store.json"),
+      join(this.context.deps.agentDir, "auth.json"),
+    ]);
     for (const directory of ["packages", "npm", "git"]) {
-      await visit(join(this.context.deps.agentDir, directory));
+      roots.add(join(this.context.deps.agentDir, directory));
     }
-    return hash.digest("hex");
+    const markers: string[] = [];
+    if (graph.packageManager) {
+      try {
+        for (const item of graph.packageManager.listConfiguredPackages()) {
+          const installedPath =
+            item.installedPath ??
+            graph.packageManager.getInstalledPath(item.source, item.scope);
+          if (installedPath) roots.add(installedPath);
+        }
+      } catch {
+        markers.push("configured:error");
+      }
+    } else {
+      markers.push("packageManager:null");
+    }
+    return captureFilesystemFingerprint({ roots, markers, signal });
   }
 
-  private async retainGraph(graph: WorkspaceGraph): Promise<void> {
+  private async retainGraph(graph: WorkspaceGraph, signal?: AbortSignal): Promise<void> {
     if (
       !graph.servicesReady ||
       !graph.agentSession ||
@@ -415,7 +410,13 @@ export class WorkspaceLifecycle {
     // The switch path may already have parked this owner before building the
     // incoming graph. Preserve that pre-merge snapshot when retention finishes.
     this.suspendGraphProviders(graph);
-    graph.retainedFingerprint = await this.retainedGraphFingerprint(graph);
+    try {
+      graph.retainedFingerprint = await this.retainedGraphFingerprint(graph, signal);
+    } catch (error) {
+      graph.retainedFingerprint = undefined;
+      if (this.context.getGraph() !== graph) await this.disposeGraph(graph);
+      throw error;
+    }
 
     const key = this.retainedGraphKey(graph.canonicalCwd);
     const existing = this.retainedGraphs.get(key);
@@ -591,7 +592,7 @@ export class WorkspaceLifecycle {
       return null;
     }
 
-    if (args.previousGraph) await this.retainGraph(args.previousGraph);
+    if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
     server.setPhase("ready");
     server.setLastError(undefined);
     const workspace = this.buildWorkspaceSnapshot(graph);
@@ -612,9 +613,10 @@ export class WorkspaceLifecycle {
     sessionRevision: number;
     packageRevision: number;
     error: HostError;
+    signal?: AbortSignal;
   }): Promise<WorkspaceSnapshot> {
     const server = this.context.getServer()!;
-    if (args.previousGraph) await this.retainGraph(args.previousGraph);
+    if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
     const failedGraph: WorkspaceGraph = {
       workspaceId: args.workspaceId,
       cwd: args.cwd,

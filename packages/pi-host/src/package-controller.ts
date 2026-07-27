@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join, relative } from "node:path";
 import {
   createHostError,
@@ -16,6 +15,7 @@ import {
   type ResourceIdMap,
 } from "./package-snapshot.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
+import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
 import {
   matchesResourcePattern,
   setPackageResourceFilter,
@@ -95,6 +95,7 @@ export async function capturePackageDiskFingerprint(
     join(g.canonicalCwd, ".pi", "npm"),
     join(g.canonicalCwd, ".pi", "git"),
   ]);
+  const markers: string[] = [];
   try {
     const configured = packageManager.listConfiguredPackages();
     for (const item of configured) {
@@ -103,42 +104,9 @@ export async function capturePackageDiskFingerprint(
       if (installedPath) roots.add(installedPath);
     }
   } catch {
-    roots.add("configured:error");
+    markers.push("configured:error");
   }
-
-  const hash = createHash("sha256");
-  const visit = async (root: string, path: string): Promise<void> => {
-    signal?.throwIfAborted();
-    const label = relative(root, path).replace(/\\/g, "/") || ".";
-    let stat: Awaited<ReturnType<typeof lstat>>;
-    try {
-      stat = await lstat(path);
-    } catch (err) {
-      signal?.throwIfAborted();
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        hash.update(`missing:${path}\n`);
-        return;
-      }
-      throw err;
-    }
-    hash.update(`${label}|${stat.mode}|${stat.size}|${Math.trunc(stat.mtimeMs)}\n`);
-    if (!stat.isDirectory()) return;
-    const entries = await readdir(path, { withFileTypes: true });
-    for (const entry of entries.sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )) {
-      await visit(root, join(path, entry.name));
-    }
-  };
-
-  for (const root of [...roots].sort()) {
-    if (root === "configured:error") {
-      hash.update("configured:error\n");
-    } else {
-      await visit(root, root);
-    }
-  }
-  return hash.digest("hex");
+  return captureFilesystemFingerprint({ roots, markers, signal });
 }
 
 /**
