@@ -26,6 +26,54 @@ import type {
   WorkspaceGraph,
 } from "./workspace-graph-types.js";
 
+export const SESSION_DISPOSAL_STEP_TIMEOUT_MS = 15_000;
+
+type DisposalStepResult =
+  | { status: "completed" }
+  | { status: "failed"; error: unknown }
+  | { status: "timed_out" };
+
+async function settleDisposalStep(
+  operation: () => Promise<unknown>,
+): Promise<DisposalStepResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const completed: Promise<DisposalStepResult> = Promise.resolve()
+    .then(operation)
+    .then(
+      () => ({ status: "completed" }),
+      (error: unknown) => ({ status: "failed", error }),
+    );
+  const timedOut = new Promise<DisposalStepResult>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ status: "timed_out" }),
+      SESSION_DISPOSAL_STEP_TIMEOUT_MS,
+    );
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([completed, timedOut]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function runDisposalStep(
+  description: string,
+  operation: () => Promise<unknown>,
+): Promise<void> {
+  const result = await settleDisposalStep(operation);
+  if (result.status === "completed") return;
+  if (result.status === "timed_out") {
+    logger.warn(`${description} timed out`, {
+      timeoutMs: SESSION_DISPOSAL_STEP_TIMEOUT_MS,
+    });
+    return;
+  }
+  logger.warn(`${description} failed`, {
+    error: result.error instanceof Error ? result.error.message : String(result.error),
+  });
+}
+
 type ActiveSessionSlots = Pick<
   WorkspaceGraph,
   | "sessionManager"
@@ -245,8 +293,11 @@ export class SessionRuntimeCache {
     if (this.disposedSessions.has(session)) return;
     this.disposedSessions.add(session);
     try {
-      if (session.extensionRunner?.hasHandlers("session_shutdown")) {
-        await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      const extensionRunner = session.extensionRunner;
+      if (extensionRunner?.hasHandlers("session_shutdown")) {
+        await runDisposalStep("Extension session_shutdown during dispose", () =>
+          extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
+        );
       }
     } catch (err) {
       logger.warn("Extension session_shutdown during dispose failed", {
@@ -254,7 +305,9 @@ export class SessionRuntimeCache {
       });
     }
     try {
-      if (!session.isIdle) await session.abort();
+      if (!session.isIdle) {
+        await runDisposalStep("abort during dispose", () => session.abort());
+      }
     } catch (err) {
       logger.warn("abort during dispose failed", {
         error: err instanceof Error ? err.message : String(err),

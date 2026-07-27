@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureActiveSessionState,
   commitActiveSessionState,
+  SESSION_DISPOSAL_STEP_TIMEOUT_MS,
+  SessionRuntimeCache,
   type ActiveSessionState,
 } from "./session-runtime-cache.js";
 import type { WorkspaceGraph } from "./workspace-graph-types.js";
@@ -37,6 +40,86 @@ function graphFrom(state: ActiveSessionState): WorkspaceGraph {
     unsubscribeAgent: state.unsubscribeAgent,
   } as WorkspaceGraph;
 }
+
+function disposalCache(): SessionRuntimeCache {
+  return new SessionRuntimeCache({
+    getGraph: () => null,
+    getServer: () => null,
+    getCurrentRunId: () => null,
+    sessionPathsEqual: () => false,
+  });
+}
+
+function disposalSession(options: {
+  emit?: () => Promise<void>;
+  abort?: () => Promise<void>;
+} = {}) {
+  const emit = vi.fn(options.emit ?? (async () => undefined));
+  const abort = vi.fn(options.abort ?? (async () => undefined));
+  const dispose = vi.fn();
+  const session = {
+    isIdle: false,
+    extensionRunner: {
+      hasHandlers: vi.fn(() => true),
+      emit,
+    },
+    abort,
+    dispose,
+  } as unknown as AgentSession;
+  return { session, emit, abort, dispose };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("session disposal bounds", () => {
+  it("continues through abort and dispose when session_shutdown never settles", async () => {
+    vi.useFakeTimers();
+    const cache = disposalCache();
+    const { session, emit, abort, dispose } = disposalSession({
+      emit: () => new Promise<void>(() => undefined),
+    });
+    let settled = false;
+
+    void cache.disposeAgentSessionOnly(session).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(emit).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(SESSION_DISPOSAL_STEP_TIMEOUT_MS);
+
+    expect(settled).toBe(true);
+    expect(abort).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("continues through dispose and handles a late abort rejection", async () => {
+    vi.useFakeTimers();
+    let rejectAbort: ((reason?: unknown) => void) | undefined;
+    const abortPromise = new Promise<void>((_resolve, reject) => {
+      rejectAbort = reject;
+    });
+    const cache = disposalCache();
+    const { session, abort, dispose } = disposalSession({
+      abort: () => abortPromise,
+    });
+    let settled = false;
+
+    void cache.disposeAgentSessionOnly(session).then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(SESSION_DISPOSAL_STEP_TIMEOUT_MS);
+
+    expect(settled).toBe(true);
+    expect(abort).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
+
+    rejectAbort?.(new Error("late abort failure"));
+    await Promise.resolve();
+  });
+});
 
 describe("active Session state", () => {
   it("captures all Session graph slots and both identity fields", () => {
