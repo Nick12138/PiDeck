@@ -104,6 +104,13 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
 
 describe("ContextUsageRing panel", () => {
   beforeEach(() => {
+    useAppStore.getState().setDesktopSettings({
+      theme: "system",
+      language: "en",
+      restoreLastSession: true,
+      autoRestartHostOnce: true,
+      terminalProfile: "auto",
+    });
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applySessionSnapshot(null);
@@ -116,6 +123,7 @@ describe("ContextUsageRing panel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     cleanup();
+    useAppStore.getState().setDesktopSettings(null);
   });
 
   it("opens on click and runs manual compaction", async () => {

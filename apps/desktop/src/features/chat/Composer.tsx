@@ -39,29 +39,30 @@ import { ForkModal } from "./ForkModal";
 import { requestTreePanel } from "../../lib/dock-tree";
 import { requestExport } from "../../lib/export-actions";
 import { useImeComposition } from "../../lib/use-ime-composition";
+import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
 
 const STARTER_PROMPTS = [
   {
-    label: "Explore the codebase",
-    prompt: "Explore this codebase and explain its structure.",
+    labelKey: "composerStarterExplore",
+    promptKey: "composerStarterExplorePrompt",
     icon: FolderSearch,
   },
   {
-    label: "Find an issue",
-    prompt: "Review this codebase and identify a meaningful issue to fix.",
+    labelKey: "composerStarterIssue",
+    promptKey: "composerStarterIssuePrompt",
     icon: Bug,
   },
   {
-    label: "Run tests",
-    prompt: "Run the relevant test suite and investigate any failures.",
+    labelKey: "composerStarterTests",
+    promptKey: "composerStarterTestsPrompt",
     icon: TestTube,
   },
   {
-    label: "Make a change",
-    prompt: "Help me make a change to this project.",
+    labelKey: "composerStarterChange",
+    promptKey: "composerStarterChangePrompt",
     icon: PencilLine,
   },
 ] as const;
@@ -119,13 +120,28 @@ function looksBinary(text: string): boolean {
 
 type CompletionItem = { insert: string; label: string; detail?: string };
 
-const BUILTIN_COMPLETION_ITEMS: CompletionItem[] = BUILTIN_COMMANDS.map((command) => ({
-  insert: `/${command.name} `,
-  label: `/${command.name}`,
-  detail: [command.argumentHint, command.description, "(built-in)"]
-    .filter(Boolean)
-    .join(" — "),
-}));
+function builtinCompletionItems(t: Translate): CompletionItem[] {
+  const descriptions = {
+    compact: "composerBuiltinCompact",
+    session: "composerBuiltinSession",
+    tree: "composerBuiltinTree",
+    fork: "composerBuiltinFork",
+    export: "composerBuiltinExport",
+  } as const;
+  return BUILTIN_COMMANDS.map((command) => ({
+    insert: `/${command.name} `,
+    label: `/${command.name}`,
+    detail: [
+      command.name === "compact"
+        ? t("composerBuiltinInstructionsHint")
+        : command.argumentHint,
+      t(descriptions[command.name as keyof typeof descriptions]),
+      `(${t("composerCommandKindBuiltin")})`,
+    ]
+      .filter(Boolean)
+      .join(" — "),
+  }));
+}
 type CompletionState = {
   kind: "command" | "file";
   /** Index in the draft where the trigger token (incl. `/` or `@`) starts. */
@@ -183,6 +199,8 @@ export function Composer({
   disabled?: boolean;
   welcomeWorkspaceName?: string;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -262,15 +280,20 @@ export function Composer({
 
   async function loadCommandItems(): Promise<CompletionItem[]> {
     if (!host || !workspace || !session) return [];
-    const key = `${session.sessionId}:${session.revision}`;
+    const key = `${locale}:${session.sessionId}:${session.revision}`;
     if (templatesRef.current?.key === key) return templatesRef.current.items;
     const res = await hostClient.request(
       "session.getCommands",
       activeSessionContext(host, workspace, session),
       null,
     );
-    if (!res.ok) return BUILTIN_COMPLETION_ITEMS;
-    const kindLabel = { template: "prompt", command: "extension", skill: "skill" } as const;
+    const builtins = builtinCompletionItems(t);
+    if (!res.ok) return builtins;
+    const kindLabel = {
+      template: t("composerCommandKindPrompt"),
+      command: t("composerCommandKindExtension"),
+      skill: t("composerCommandKindSkill"),
+    } as const;
     const items = [
       ...res.result.commands.map((command) => ({
         insert: `/${command.invocation} `,
@@ -279,7 +302,7 @@ export function Composer({
           .filter(Boolean)
           .join(" — "),
       })),
-      ...BUILTIN_COMPLETION_ITEMS,
+      ...builtins,
     ];
     templatesRef.current = { key, items };
     return items;
@@ -407,7 +430,9 @@ export function Composer({
       if (file.type.startsWith("image/")) {
         if (file.size > MAX_AGENT_IMAGE_BYTES) {
           pushNotification(
-            `Image too large (max ${Math.round(MAX_AGENT_IMAGE_BYTES / 1024 / 1024)} MB)`,
+            t("composerImageTooLarge", {
+              max: Math.round(MAX_AGENT_IMAGE_BYTES / 1024 / 1024),
+            }),
             "warning",
           );
           continue;
@@ -417,7 +442,10 @@ export function Composer({
       }
       if (file.size > MAX_FILE_BYTES) {
         pushNotification(
-          `${file.name}: file too large (max ${Math.round(MAX_FILE_BYTES / 1024)} KB)`,
+          t("composerFileTooLarge", {
+            name: file.name,
+            max: Math.round(MAX_FILE_BYTES / 1024),
+          }),
           "warning",
         );
         continue;
@@ -433,7 +461,7 @@ export function Composer({
         const next = [...current, ...loaded];
         if (next.length > MAX_AGENT_REQUEST_IMAGES) {
           pushNotification(
-            `Up to ${MAX_AGENT_REQUEST_IMAGES} images per message`,
+            t("composerImageLimit", { max: MAX_AGENT_REQUEST_IMAGES }),
             "warning",
           );
         }
@@ -447,7 +475,7 @@ export function Composer({
         try {
           const text = await file.text();
           if (looksBinary(text)) {
-            pushNotification(`${file.name}: binary files are not supported`, "warning");
+            pushNotification(t("composerBinaryUnsupported", { name: file.name }), "warning");
             continue;
           }
           loaded.push({
@@ -457,14 +485,14 @@ export function Composer({
             text,
           });
         } catch {
-          pushNotification(`${file.name}: could not read file`, "warning");
+          pushNotification(t("composerReadFileFailed", { name: file.name }), "warning");
         }
       }
       if (loaded.length > 0) {
         setFiles((current) => {
           const next = [...current, ...loaded];
           if (next.length > MAX_FILES) {
-            pushNotification(`Up to ${MAX_FILES} files per message`, "warning");
+            pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
           }
           return next.slice(0, MAX_FILES);
         });
@@ -498,7 +526,7 @@ export function Composer({
     if (builtin?.name === "export") {
       const arg = builtin.args?.trim().toLowerCase();
       if (arg && arg !== "html" && arg !== "jsonl") {
-        pushNotification("Usage: /export [html|jsonl]", "error");
+        pushNotification(t("composerExportUsage"), "error");
         return;
       }
       setSessionDraft(session.sessionId, "");
@@ -554,7 +582,7 @@ export function Composer({
           ...imageParams,
         });
         if (!res.ok) {
-          pushNotification(res.error?.message ?? "Send failed", "error");
+          pushNotification(res.error?.message ?? t("composerSendFailed"), "error");
           restoreDraft();
         }
         return;
@@ -567,11 +595,14 @@ export function Composer({
         null,
       );
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Prompt failed", "error");
+        pushNotification(res.error?.message ?? t("composerPromptFailed"), "error");
         restoreDraft();
       }
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : "Send failed", "error");
+      pushNotification(
+        error instanceof Error ? error.message : t("composerSendFailed"),
+        "error",
+      );
       restoreDraft();
     }
   }
@@ -592,7 +623,7 @@ export function Composer({
       return;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? "Abort failed", "error");
+      pushNotification(res.error?.message ?? t("composerAbortFailed"), "error");
       return;
     }
     setSession(res.result.session);
@@ -626,9 +657,9 @@ export function Composer({
         <div className="new-conversation-copy mx-auto mb-6 flex max-w-3xl flex-col items-center text-center">
           <PiMark className="mb-4 size-10" />
           <h2 className="max-w-full truncate text-xl font-medium text-foreground">
-            Start in {welcomeWorkspaceName}
+            {t("composerStartIn", { workspace: welcomeWorkspaceName })}
           </h2>
-          <p className="mt-2 text-sm text-muted">What would you like to work on?</p>
+          <p className="mt-2 text-sm text-muted">{t("composerQuestion")}</p>
         </div>
       )}
       <QueuePanel />
@@ -642,21 +673,21 @@ export function Composer({
           className={`rounded-xl border bg-surface-raised p-2 shadow-sm transition-colors ${
             dragOver ? "border-accent" : "border-border"
           }`}
-        onDragOver={(event) => {
-          if (disabled) return;
-          if ([...event.dataTransfer.items].some((item) => item.kind === "file")) {
+          onDragOver={(event) => {
+            if (disabled) return;
+            if ([...event.dataTransfer.items].some((item) => item.kind === "file")) {
+              event.preventDefault();
+              setDragOver(true);
+            }
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(event) => {
+            if (disabled) return;
             event.preventDefault();
-            setDragOver(true);
-          }
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(event) => {
-          if (disabled) return;
-          event.preventDefault();
-          setDragOver(false);
-          void addFiles(event.dataTransfer.files);
-        }}
-      >
+            setDragOver(false);
+            void addFiles(event.dataTransfer.files);
+          }}
+        >
         {files.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-2 pt-1.5">
             {files.map((file) => (
@@ -669,8 +700,8 @@ export function Composer({
                 <span className="max-w-40 truncate">{file.name}</span>
                 <button
                   type="button"
-                  title="Remove file"
-                  aria-label={`Remove ${file.name}`}
+                  title={t("composerRemoveFile")}
+                  aria-label={t("composerRemoveNamedFile", { name: file.name })}
                   className="text-muted hover:text-danger"
                   onClick={() =>
                     setFiles((current) => current.filter((it) => it.id !== file.id))
@@ -688,13 +719,13 @@ export function Composer({
               <div key={image.id} className="group relative">
                 <img
                   src={`data:${image.mediaType};base64,${image.data}`}
-                  alt="attachment"
+                  alt={t("transcriptAttachmentAlt")}
                   className="size-16 rounded-md border border-border object-cover"
                 />
                 <button
                   type="button"
-                  title="Remove image"
-                  aria-label="Remove image"
+                  title={t("composerRemoveImage")}
+                  aria-label={t("composerRemoveImage")}
                   className="absolute -right-1.5 -top-1.5 hidden size-5 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow group-hover:flex hover:text-danger"
                   onClick={() =>
                     setImages((current) => current.filter((it) => it.id !== image.id))
@@ -740,7 +771,7 @@ export function Composer({
           <textarea
             ref={textareaRef}
             className="chat-composer-input min-h-[60px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
-            placeholder={disabled ? "Chat unavailable" : "Message Pi  ( / commands · @ files )"}
+            placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
             value={text}
             disabled={disabled}
             onChange={(event) => {
@@ -813,8 +844,8 @@ export function Composer({
           />
           <button
             type="button"
-            title="Attach image or text file"
-            aria-label="Attach image or text file"
+            title={t("composerAttach")}
+            aria-label={t("composerAttach")}
             className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
             disabled={
               disabled ||
@@ -835,8 +866,8 @@ export function Composer({
               canSend ? (
                 <button
                   type="button"
-                  title="Queue message (Enter)"
-                  aria-label="Queue message"
+                  title={t("composerQueueMessageShortcut")}
+                  aria-label={t("composerQueueMessage")}
                   className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
                   onClick={() => void send()}
                 >
@@ -845,8 +876,8 @@ export function Composer({
               ) : (
                 <button
                   type="button"
-                  title={session?.isCompacting ? "Stop compaction" : "Stop"}
-                  aria-label={session?.isCompacting ? "Stop compaction" : "Stop"}
+                  title={session?.isCompacting ? t("composerStopCompaction") : t("composerStop")}
+                  aria-label={session?.isCompacting ? t("composerStopCompaction") : t("composerStop")}
                   className="flex size-8 items-center justify-center rounded-md bg-danger/15 text-danger hover:bg-danger/20"
                   onClick={() =>
                     void (session?.isCompacting ? abortCompaction() : abort())
@@ -858,8 +889,8 @@ export function Composer({
             ) : (
               <button
                 type="button"
-                title="Send"
-                aria-label="Send"
+                title={t("composerSend")}
+                aria-label={t("composerSend")}
                 className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
                 disabled={!canSend}
                 onClick={() => void send()}
@@ -885,18 +916,22 @@ export function Composer({
           }`}
           aria-hidden={canSend || undefined}
         >
-          {STARTER_PROMPTS.map(({ label, prompt, icon: Icon }) => (
-            <button
-              key={label}
-              type="button"
-              disabled={disabled}
-              className="flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => selectStarterPrompt(prompt)}
-            >
-              <Icon size={14} className="shrink-0" />
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
+          {STARTER_PROMPTS.map(({ labelKey, promptKey, icon: Icon }) => {
+            const label = t(labelKey);
+            const prompt = t(promptKey);
+            return (
+              <button
+                key={labelKey}
+                type="button"
+                disabled={disabled}
+                className="flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => selectStarterPrompt(prompt)}
+              >
+                <Icon size={14} className="shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

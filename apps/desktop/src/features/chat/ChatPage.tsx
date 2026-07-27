@@ -2,9 +2,12 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
 import { ChatHeader } from "./ChatHeader";
+import { InlineExtensionUiRequest } from "./InlineExtensionUiRequest";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
+import { useT } from "../../lib/i18n/use-t";
 
 export function ChatPage() {
+  const t = useT();
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
   const host = useAppStore((s) => s.host);
@@ -23,8 +26,8 @@ export function ChatPage() {
   if (!workspace) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted">
-        <p className="text-base text-foreground">Select a workspace to begin</p>
-        <p className="text-sm">Use the folder picker in the sidebar.</p>
+        <p className="text-base text-foreground">{t("chatSelectWorkspaceTitle")}</p>
+        <p className="text-sm">{t("chatSelectWorkspaceHint")}</p>
       </div>
     );
   }
@@ -32,7 +35,7 @@ export function ChatPage() {
   if (!workspace.servicesReady) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-muted">
-        Workspace services are not ready.
+        {t("chatWorkspaceServicesNotReady")}
         {host?.lastError?.message ? (
           <span className="ml-2 text-danger">{host.lastError.message}</span>
         ) : null}
@@ -45,32 +48,35 @@ export function ChatPage() {
       <ChatHeader />
       {authBlocked && (
         <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning">
-          Authentication required. Configure credentials in the Pi agent directory
-          ({host?.agentDir}). Chat is disabled; Packages and Settings remain available.
+          {t("chatAuthRequired", { agentDir: host?.agentDir ?? "" })}
         </div>
       )}
       {packageBlocked && (
         <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning">
           {reconcileBlocked
-            ? "Package state must be reconciled from the Packages page before chat can continue."
-            : "Package resources must be reloaded from the Packages page before chat can continue."}
+            ? t("chatPackageReconcileRequired")
+            : t("chatPackageReloadRequired")}
         </div>
       )}
       {session ? (
         isNewConversation ? (
-          <Composer
-            disabled={authBlocked || packageBlocked}
-            welcomeWorkspaceName={workspaceDisplayName(workspace.cwd)}
-          />
+          <>
+            <InlineExtensionUiRequest />
+            <Composer
+              disabled={authBlocked || packageBlocked}
+              welcomeWorkspaceName={workspaceDisplayName(workspace.cwd)}
+            />
+          </>
         ) : (
           <>
             <Transcript />
+            <InlineExtensionUiRequest />
             <Composer disabled={authBlocked || packageBlocked} />
           </>
         )
       ) : (
         <div className="flex flex-1 items-center justify-center text-sm text-muted">
-          Create or open a session from the sidebar.
+          {t("chatNoSession")}
         </div>
       )}
     </div>

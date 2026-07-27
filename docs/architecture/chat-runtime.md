@@ -114,6 +114,14 @@ Blocking: select / confirm / input / editor via `extensionUi.request` + `extensi
 Non-blocking: status, widget, notify.  
 Cancel / timeout / session dispose → `undefined` (or confirm false).
 
+Blocking requests remain modal unless an Extension opts into PiDeck's declarative
+`opts.pideck.presentation: "inline"` metadata. Custom transcript messages can
+declare Extension Presentation v1 under `details.presentation`; agent-audience
+coordination and other visible Extension activity join the assistant's execution
+trace instead of splitting the conversation. Opening the trace reveals a quiet
+Extension title row; opening that row reveals raw protocol and metadata. See
+[Extension presentation](./extension-presentation.md).
+
 Blocking requests and custom panels retain the Session identity captured by their
 Host event, so a running background Session remains interactive without becoming
 the RPC's active Session. Response, input, and resize RPCs use the `sessionTarget`

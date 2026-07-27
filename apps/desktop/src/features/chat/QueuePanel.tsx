@@ -5,6 +5,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { activeSessionContext } from "../../lib/bridge/host-context";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import type { ActiveSessionContext } from "@pideck/protocol";
+import { useT } from "../../lib/i18n/use-t";
 
 /**
  * Waiting queue above the composer. Backed by the SDK queue (visible to the
@@ -30,6 +31,7 @@ async function setQueueWithRetry(
 }
 
 export function QueuePanel() {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -58,7 +60,7 @@ export function QueuePanel() {
         },
       );
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Queue update failed", "error");
+        pushNotification(res.error?.message ?? t("queueUpdateFailed"), "error");
       }
     } finally {
       setBusyOp(false);
@@ -82,7 +84,7 @@ export function QueuePanel() {
         },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? "Run Now failed", "error");
+        pushNotification(response.error?.message ?? t("queueRunNowFailed"), "error");
         return;
       }
       const current = useAppStore.getState().session;
@@ -115,7 +117,7 @@ export function QueuePanel() {
         onClick={() => setCollapsed((c) => !c)}
         aria-expanded={!collapsed}
       >
-        <span className="font-medium">Waiting queue ({total})</span>
+        <span className="font-medium">{t("queueTitle", { count: total })}</span>
         <ChevronDown
           size={13}
           className={`ml-auto transition-transform ${collapsed ? "-rotate-90" : ""}`}
@@ -126,7 +128,7 @@ export function QueuePanel() {
           {steering.map((text, index) => (
             <li key={`steer:${index}`} className="group flex items-start gap-2 rounded px-1.5 py-1">
               <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] text-warning">
-                steer
+                {t("queueSteering")}
               </span>
               <span className="min-w-0 flex-1 truncate text-xs" title={text}>
                 {text}
@@ -134,7 +136,8 @@ export function QueuePanel() {
               <span className="shrink-0 opacity-0 group-hover:opacity-100">
                 <button
                   type="button"
-                  title="Remove"
+                  title={t("queueRemove")}
+                  aria-label={t("queueRemove")}
                   className={itemButton}
                   disabled={busyOp}
                   onClick={() =>
@@ -151,6 +154,7 @@ export function QueuePanel() {
               <li key={`edit:${index}`} className="flex items-start gap-1.5 rounded px-1.5 py-1">
                 <textarea
                   autoFocus
+                  aria-label={t("queueEditMessage")}
                   className="min-h-[52px] flex-1 rounded border border-accent bg-surface px-2 py-1 text-xs outline-none"
                   value={editing.text}
                   onChange={(event) => setEditing({ index, text: event.target.value })}
@@ -170,7 +174,8 @@ export function QueuePanel() {
                 />
                 <button
                   type="button"
-                  title="Save"
+                  title={t("queueSave")}
+                  aria-label={t("queueSave")}
                   className={itemButton}
                   onClick={() => {
                     const next = [...followUp];
@@ -183,7 +188,8 @@ export function QueuePanel() {
                 </button>
                 <button
                   type="button"
-                  title="Cancel"
+                  title={t("queueCancel")}
+                  aria-label={t("queueCancel")}
                   className={itemButton}
                   onClick={() => setEditing(null)}
                 >
@@ -199,7 +205,8 @@ export function QueuePanel() {
                 <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
-                    title="Move up"
+                    title={t("queueMoveUp")}
+                    aria-label={t("queueMoveUp")}
                     className={itemButton}
                     disabled={busyOp || index === 0}
                     onClick={() => {
@@ -212,7 +219,8 @@ export function QueuePanel() {
                   </button>
                   <button
                     type="button"
-                    title="Edit"
+                    title={t("queueEdit")}
+                    aria-label={t("queueEdit")}
                     className={itemButton}
                     disabled={busyOp}
                     onClick={() => setEditing({ index, text })}
@@ -221,7 +229,8 @@ export function QueuePanel() {
                   </button>
                   <button
                     type="button"
-                    title="Interrupt current run and run this now"
+                    title={t("queueRunNow")}
+                    aria-label={t("queueRunNow")}
                     className={itemButton}
                     disabled={busyOp}
                     onClick={() => void runNow(index)}
@@ -230,7 +239,8 @@ export function QueuePanel() {
                   </button>
                   <button
                     type="button"
-                    title="Remove"
+                    title={t("queueRemove")}
+                    aria-label={t("queueRemove")}
                     className={itemButton}
                     disabled={busyOp}
                     onClick={() =>

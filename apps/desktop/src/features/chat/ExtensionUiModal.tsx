@@ -1,77 +1,35 @@
-import type { JsonValue } from "@pideck/protocol";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
-import { hostClient } from "../../lib/bridge/host-client";
-import { latestSessionTargetContext } from "../../lib/bridge/host-context";
-import { useT } from "../../lib/i18n/use-t";
+import { ExtensionUiRequestContent } from "./ExtensionUiRequestContent";
+import { useExtensionUiResponse } from "./use-extension-ui-response";
 
 export function ExtensionUiModal() {
-  const t = useT();
-  const request = useAppStore((s) => s.extensionUiRequest);
-  const setRequest = useAppStore((s) => s.setExtensionUiRequest);
-  const pushNotification = useAppStore((s) => s.pushNotification);
-  const [input, setInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const activeRequest = useAppStore((state) => state.extensionUiRequest);
+  const request = activeRequest?.presentation === "inline" ? null : activeRequest;
+  const controller = useExtensionUiResponse(request);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   useEffect(() => {
     if (!request) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setInput(request.defaultValue ?? "");
-    setSubmitting(false);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       dialogRef.current
         ?.querySelector<HTMLElement>("button, textarea, input, select, [tabindex]:not([tabindex='-1'])")
         ?.focus();
     }, 0);
-    return () => previousFocus?.focus();
+    return () => {
+      window.clearTimeout(timer);
+      previousFocus?.focus();
+    };
   }, [request?.requestId]);
 
-  useEffect(() => {
-    if (!request?.expiresAt) return;
-    const delay = Math.max(0, request.expiresAt - Date.now());
-    const timer = window.setTimeout(() => {
-      pushNotification(t("extUiExpired"), "warning");
-      setRequest(null);
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [request?.requestId, request?.expiresAt, pushNotification, setRequest]);
-
   if (!request) return null;
-
-  async function respond(status: "resolved" | "cancelled", value?: JsonValue) {
-    if (!request || submitting) return;
-    setSubmitting(true);
-    try {
-      const state = useAppStore.getState();
-      const res = await hostClient.request(
-        "extensionUi.respond",
-        latestSessionTargetContext(
-          request.context,
-          state.host,
-          state.workspace,
-          state.session,
-        ),
-        { requestId: request.requestId, status, value },
-      );
-      if (!res.ok) {
-        pushNotification(res.error?.message ?? t("extUiRespondFailed"), "error");
-        return; // keep modal open on failure
-      }
-      setRequest(null);
-      setInput("");
-    } catch (err) {
-      pushNotification(err instanceof Error ? err.message : t("extUiRespondFailed"), "error");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
-      void respond("cancelled");
+      void controller.respond("cancelled");
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
@@ -98,88 +56,15 @@ export function ExtensionUiModal() {
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={handleDialogKeyDown}
-        className="w-full max-w-md rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+        data-extension-ui-surface="modal"
       >
-        <h2 id={titleId} className="mb-2 text-base font-semibold">
-          {request.title ?? t("extUiDefaultTitle")}
-        </h2>
-        {request.message && (
-          <p className="mb-3 text-sm text-muted">{request.message}</p>
-        )}
-
-        {request.kind === "confirm" && (
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-border px-3 py-1.5 text-sm"
-              onClick={() => void respond("cancelled")}
-            >
-              {t("commonCancel")}
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
-              onClick={() => void respond("resolved", true)}
-            >
-              {t("extUiConfirm")}
-            </button>
-          </div>
-        )}
-
-        {request.kind === "select" && (
-          <ul className="mb-3 max-h-60 overflow-auto">
-            {(request.options ?? []).map((opt) => (
-              <li key={opt.id}>
-                <button
-                  type="button"
-                  className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-surface-overlay"
-                  onClick={() => void respond("resolved", opt.id)}
-                >
-                  {opt.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {(request.kind === "input" || request.kind === "editor") && (
-          <div className="flex flex-col gap-2">
-            <textarea
-              key={request.requestId}
-              className={`w-full rounded-md border border-border bg-surface px-2 py-1.5 text-sm ${
-                request.kind === "editor" ? "min-h-[160px]" : "min-h-[40px]"
-              }`}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-border px-3 py-1.5 text-sm"
-                onClick={() => void respond("cancelled")}
-              >
-                {t("commonCancel")}
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
-                onClick={() => void respond("resolved", input)}
-              >
-                {t("extUiOk")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {request.kind === "select" && (
-          <button
-            type="button"
-            className="text-xs text-muted underline"
-            onClick={() => void respond("cancelled")}
-          >
-            {t("commonCancel")}
-          </button>
-        )}
+        <ExtensionUiRequestContent
+          request={request}
+          controller={controller}
+          titleId={titleId}
+          variant="modal"
+        />
       </div>
     </div>
   );

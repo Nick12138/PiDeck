@@ -1,17 +1,19 @@
 import { useAppStore } from "../../lib/stores/app-store";
+import { useT } from "../../lib/i18n/use-t";
 
 export function ChatHeader() {
+  const t = useT();
   const session = useAppStore((s) => s.session);
-  const sessionName = session?.name?.trim() || "New conversation";
+  const sessionName = session?.name?.trim() || t("chatNewConversation");
   const runtimeLabel = session?.isStreaming
-    ? "Streaming"
+    ? t("chatStatusStreaming")
     : session?.isCompacting
-      ? "Compacting"
+      ? t("chatStatusCompacting")
       : session?.isRetrying
-        ? "Retrying"
+        ? t("chatStatusRetrying")
         : session?.isIdle
-          ? "Ready"
-          : "Working";
+          ? t("chatStatusReady")
+          : t("chatStatusWorking");
 
   return (
     <div
@@ -29,10 +31,10 @@ export function ChatHeader() {
                 ? "bg-success"
                 : "bg-muted"
             }`}
-            title={session ? runtimeLabel : "No active session"}
+            title={session ? runtimeLabel : t("chatNoActiveSession")}
           />
           <span className="text-[11px] text-muted">
-            {session ? runtimeLabel : "No active session"}
+            {session ? runtimeLabel : t("chatNoActiveSession")}
           </span>
         </div>
       </div>

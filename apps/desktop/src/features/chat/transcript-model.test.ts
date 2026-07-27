@@ -95,6 +95,37 @@ describe("reuseStableRows", () => {
     expect(tool?.kind === "tool" && tool.tool.status).toBe("done");
   });
 
+  it("does not reuse an assistant row when its Extension presentation changes", () => {
+    const message = {
+      role: "custom",
+      customType: "worker-progress",
+      display: true,
+      content: "Working",
+      presentation: {
+        version: 1,
+        extensionId: "worker-extension",
+        audience: "user",
+        kind: "progress",
+        correlationId: "run-1",
+        status: "running",
+      },
+    } as const;
+    const first = buildTranscriptRows([message as SerializableAgentMessage]);
+    const changed = buildTranscriptRows([
+      {
+        ...message,
+        presentation: { ...message.presentation, status: "resolved" },
+      } as SerializableAgentMessage,
+    ]);
+    const second = reuseStableRows(first, changed);
+
+    expect(second[0]).not.toBe(first[0]);
+    const extension = second[0]?.blocks.find((block) => block.kind === "extension");
+    expect(extension?.kind === "extension" && extension.row.extensionPresentation?.status).toBe(
+      "resolved",
+    );
+  });
+
   it("switches to the durable entry key when a live message is persisted", () => {
     const messages: SerializableAgentMessage[] = [
       { role: "assistant", content: [{ type: "text", text: "Done" }] },
@@ -775,7 +806,7 @@ describe("messageText", () => {
 });
 
 describe("Pi extension and session entry messages", () => {
-  it("hides custom state messages and renders displayable custom messages separately", () => {
+  it("hides custom state messages and embeds displayable custom messages in an assistant turn", () => {
     const rows = buildTranscriptRows([
       {
         role: "custom",
@@ -797,11 +828,156 @@ describe("Pi extension and session entry messages", () => {
     ] as SerializableAgentMessage[]);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.role).toBe("custom");
-    expect(rows[0]?.customType).toBe("plan");
-    expect(rows[0]?.display).toBe(true);
-    expect(rows[0]?.details).toEqual({ status: "active" });
-    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual(["text", "image"]);
+    expect(rows[0]?.role).toBe("assistant");
+    const extension = rows[0]?.blocks[0];
+    expect(extension?.kind).toBe("extension");
+    if (extension?.kind === "extension") {
+      expect(extension.row.customType).toBe("plan");
+      expect(extension.row.display).toBe(true);
+      expect(extension.row.details).toEqual({ status: "active" });
+      expect(extension.row.blocks.map((block) => block.kind)).toEqual(["text", "image"]);
+    }
+  });
+
+  it("parses declarative Extension presentation from top-level and details metadata", () => {
+    const basePresentation = {
+      version: 1,
+      extensionId: "review-extension",
+      audience: "user",
+      kind: "decision",
+      correlationId: "review-1",
+      title: "Review requested",
+    } as const;
+    const rows = buildTranscriptRows([
+      {
+        role: "custom",
+        customType: "review",
+        display: true,
+        content: "top-level",
+        presentation: basePresentation,
+      },
+      {
+        role: "custom",
+        customType: "review",
+        display: true,
+        content: "nested",
+        details: {
+          presentation: { ...basePresentation, correlationId: "review-2", kind: "activity" },
+        },
+      },
+    ] as SerializableAgentMessage[]);
+
+    expect(rows).toHaveLength(1);
+    const extensions = rows[0]?.blocks.filter((block) => block.kind === "extension") ?? [];
+    expect(extensions[0]?.kind === "extension" && extensions[0].row.extensionPresentation).toEqual(
+      basePresentation,
+    );
+    expect(extensions[1]?.kind === "extension" && extensions[1].row.extensionPresentation).toMatchObject({
+      correlationId: "review-2",
+      kind: "activity",
+    });
+  });
+
+  it("adapts legacy supervisor requests to quiet agent activity without parsing content", () => {
+    const content = "Reply with: intercom({ action: 'respond' })";
+    const rows = buildTranscriptRows([
+      {
+        role: "custom",
+        customType: "subagent_supervisor_request",
+        display: true,
+        content,
+        details: { id: "request-1", expectsReply: true, agent: "researcher" },
+      },
+    ] as SerializableAgentMessage[]);
+
+    const extension = rows[0]?.blocks[0];
+    expect(extension?.kind).toBe("extension");
+    expect(extension?.kind === "extension" && extension.row.copyText).toBe(content);
+    expect(extension?.kind === "extension" && extension.row.extensionPresentation).toEqual({
+      version: 1,
+      extensionId: "pi-subagents",
+      sourceLabel: "Subagents",
+      audience: "agent",
+      kind: "activity",
+      correlationId: "request-1",
+      severity: "neutral",
+    });
+  });
+
+  it("keeps malformed presentation metadata in the neutral custom fallback", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "custom",
+        customType: "unsafe-extension",
+        display: true,
+        content: "Visible diagnostic",
+        presentation: {
+          version: 1,
+          extensionId: "unsafe-extension",
+          audience: "user",
+          kind: "html",
+          correlationId: "unsafe-1",
+        },
+      },
+    ] as SerializableAgentMessage[]);
+
+    const extension = rows[0]?.blocks[0];
+    expect(extension?.kind === "extension" && extension.row.extensionPresentation).toBeUndefined();
+    expect(extension?.kind === "extension" && extension.row.copyText).toBe("Visible diagnostic");
+  });
+
+  it("preserves top-level presentation on persisted custom message entries", () => {
+    const presentation = {
+      version: 1,
+      extensionId: "worker-extension",
+      audience: "user",
+      kind: "result",
+      correlationId: "worker-1",
+      status: "resolved",
+    } as const;
+    const rows = buildTranscriptRows([], {
+      entries: [
+        {
+          id: "custom-1",
+          parentId: null,
+          type: "custom_message",
+          timestamp: "2026-07-22T00:00:00.000Z",
+          customType: "worker-result",
+          display: true,
+          content: "Finished",
+          presentation,
+        } as never,
+      ],
+    });
+
+    const extension = rows[0]?.blocks[0];
+    expect(extension?.kind === "extension" && extension.row.extensionPresentation).toEqual(
+      presentation,
+    );
+  });
+
+  it("keeps assistant output around Agent coordination in one visual turn", () => {
+    const rows = buildTranscriptRows([
+      { role: "assistant", content: "First assistant phase" },
+      {
+        role: "custom",
+        customType: "subagent_supervisor_request",
+        display: true,
+        content: "Reply with the internal result",
+        details: { id: "request-between-phases" },
+      },
+      { role: "assistant", content: "Second assistant phase" },
+    ] as SerializableAgentMessage[]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.role).toBe("assistant");
+    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual([
+      "text",
+      "extension",
+      "text",
+    ]);
+    expect(rows[0]?.copyText).toBe("First assistant phase\n\nSecond assistant phase");
+    expect(rows[0]?.sections?.stepCount).toBe(1);
   });
 
   it("keeps unknown content parts as typed fallback blocks", () => {

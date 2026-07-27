@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "r
 import { createPortal } from "react-dom";
 import { PanelsTopLeft, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
+import { useT } from "../../lib/i18n/use-t";
 
 type WidgetPlacement = "aboveEditor" | "belowEditor";
 
@@ -212,7 +213,19 @@ export function WidgetPanel({
   position: WidgetPopoverPosition | null;
   onClose: () => void;
 }) {
+  const t = useT();
   if (entries.length === 0) return null;
+
+  const panelLabel = placementLabel === "above"
+    ? t("extWidgetsAboveEditor")
+    : placementLabel === "below"
+      ? t("extWidgetsBelowEditor")
+      : t("extWidgetsAroundEditor");
+  const closeLabel = placementLabel === "above"
+    ? t("extWidgetsCloseAboveEditor")
+    : placementLabel === "below"
+      ? t("extWidgetsCloseBelowEditor")
+      : t("extWidgetsCloseAroundEditor");
 
   const style: CSSProperties = position
     ? {
@@ -231,12 +244,12 @@ export function WidgetPanel({
       }`}
       style={style}
       data-widget-popover-side={position?.side}
-      aria-label={`Extension widgets ${placementLabel} editor`}
+      aria-label={panelLabel}
     >
       <button
         type="button"
-        aria-label={`Close extension widgets ${placementLabel} editor`}
-        title={`Close extension widgets ${placementLabel} editor`}
+        aria-label={closeLabel}
+        title={closeLabel}
         className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
         onClick={onClose}
       >
@@ -246,7 +259,7 @@ export function WidgetPanel({
         <section
           key={entry.key}
           className="py-1 pr-8"
-          aria-label={`Extension widget ${entry.key}`}
+          aria-label={t("extWidgetLabel", { key: entry.key })}
         >
           <div className="mb-1 text-[10px] font-medium uppercase text-muted">
             {entry.key}
@@ -319,6 +332,7 @@ export function ExtensionWidgetsButton({
   open: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   const widgets = useAppStore((state) => state.extensionWidgets);
   const entries = Object.values(widgets);
 
@@ -328,8 +342,10 @@ export function ExtensionWidgetsButton({
     <button
       type="button"
       aria-expanded={open}
-      aria-label="Toggle extension widgets"
-      title={`Extension widgets: ${entries.map((entry) => entry.key).join(", ")}`}
+      aria-label={t("extWidgetsToggle")}
+      title={t("extWidgetsTitle", {
+        names: entries.map((entry) => entry.key).join(", "),
+      })}
       className={`flex size-7 items-center justify-center rounded-md transition-colors ${
         open
           ? "bg-accent/15 text-accent"

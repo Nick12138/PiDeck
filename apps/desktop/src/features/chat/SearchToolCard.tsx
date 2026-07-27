@@ -9,6 +9,7 @@ import {
   useToolDisclosure,
   type ToolCardProps,
 } from "./ToolCard";
+import { useT } from "../../lib/i18n/use-t";
 
 export type SearchResultItem = {
   title: string;
@@ -150,14 +151,15 @@ export function isWebSearchTool(name: string): boolean {
   );
 }
 
-async function openSearchResult(url: string) {
-  if (!window.confirm(`Open external link?\n\n${url}`)) return;
+async function openSearchResult(url: string, confirmation: string) {
+  if (!window.confirm(confirmation)) return;
   await import("@tauri-apps/plugin-shell")
     .then(({ open }) => open(url))
     .catch(() => window.open(url, "_blank", "noopener,noreferrer"));
 }
 
 export function SearchToolCard(props: ToolCardProps) {
+  const t = useT();
   const results = useMemo(() => extractSearchResults(props.result), [props.result]);
   const [open, setOpen] = useToolDisclosure(props);
   const query = searchQuery(props.args);
@@ -188,7 +190,9 @@ export function SearchToolCard(props: ToolCardProps) {
         aria-expanded={canExpand ? open : undefined}
       >
         <Search size={14} className="shrink-0 text-muted" />
-        <span className="shrink-0 text-xs font-medium text-foreground/80">Search</span>
+        <span className="shrink-0 text-xs font-medium text-foreground/80">
+          {t("toolSearch")}
+        </span>
         <span className="min-w-0 flex-1 truncate text-xs text-foreground/75" title={query}>
           {query || props.name}
         </span>
@@ -196,7 +200,7 @@ export function SearchToolCard(props: ToolCardProps) {
           {formatDuration(props.startedAt, props.endedAt)}
         </span>
         <span className={`shrink-0 text-[10px] ${statusClass}`}>
-          {statusLabel(props.status)}
+          {statusLabel(props.status, t)}
         </span>
         {canExpand && (
           <ChevronRight
@@ -215,7 +219,10 @@ export function SearchToolCard(props: ToolCardProps) {
               title={result.url}
               onClick={(event) => {
                 event.preventDefault();
-                void openSearchResult(result.url);
+                void openSearchResult(
+                  result.url,
+                  t("markdownOpenExternalLink", { url: result.url }),
+                );
               }}
             >
               <div className="flex min-w-0 items-center gap-2">

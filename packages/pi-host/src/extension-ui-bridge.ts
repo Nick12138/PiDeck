@@ -125,6 +125,70 @@ function stripAnsi(text: string): string {
   return stripVTControlCharacters(text);
 }
 
+type PiDeckDialogOptionDetails = {
+  description?: string;
+  destructive?: boolean;
+};
+
+type NormalizedPiDeckDialogMetadata = {
+  presentation?: "inline" | "modal";
+  sourceLabel?: string;
+  correlationId?: string;
+  risk?: "normal" | "high";
+  allowFreeform?: boolean;
+  optionDetails: Map<string, PiDeckDialogOptionDetails>;
+};
+
+function plainRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function boundedSanitizedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const sanitized = stripAnsi(value).slice(0, maxLength);
+  return sanitized.trim() ? sanitized : undefined;
+}
+
+function piDeckMetadataFromDialogOptions(options: unknown): unknown {
+  return plainRecord(options)?.pideck;
+}
+
+function normalizePiDeckDialogMetadata(value: unknown): NormalizedPiDeckDialogMetadata {
+  const source = plainRecord(value);
+  const normalized: NormalizedPiDeckDialogMetadata = { optionDetails: new Map() };
+  if (!source) return normalized;
+
+  if (source.presentation === "inline" || source.presentation === "modal") {
+    normalized.presentation = source.presentation;
+  }
+  const sourceLabel = boundedSanitizedString(source.sourceLabel, 120);
+  if (sourceLabel) normalized.sourceLabel = sourceLabel;
+  const correlationId = boundedSanitizedString(source.correlationId, 256);
+  if (correlationId) normalized.correlationId = correlationId;
+  if (source.risk === "normal" || source.risk === "high") normalized.risk = source.risk;
+  if (typeof source.allowFreeform === "boolean") {
+    normalized.allowFreeform = source.allowFreeform;
+  }
+  if (Array.isArray(source.optionDetails)) {
+    for (const rawItem of source.optionDetails.slice(0, 100)) {
+      const item = plainRecord(rawItem);
+      if (!item) continue;
+      const id = boundedSanitizedString(item.id, 256);
+      if (!id) continue;
+      const description = boundedSanitizedString(item.description, 500);
+      const destructive = typeof item.destructive === "boolean" ? item.destructive : undefined;
+      if (description === undefined && destructive === undefined) continue;
+      normalized.optionDetails.set(id, {
+        ...(description ? { description } : {}),
+        ...(destructive !== undefined ? { destructive } : {}),
+      });
+    }
+  }
+  return normalized;
+}
+
 function sanitize(value: unknown, seen = new WeakSet<object>()): unknown {
   if (typeof value === "string") return stripAnsi(value);
   if (value === null || typeof value === "number" || typeof value === "boolean") return value;
@@ -360,12 +424,21 @@ export function createExtensionUiContext(
         timer,
       });
 
+      const { optionDetails, ...presentationMetadata } = normalizePiDeckDialogMetadata(
+        payload.pideck,
+      );
       const options = Array.isArray(payload.options)
         ? payload.options.map((option) => {
             const item = option as { id?: unknown; label?: unknown };
+            const id = stripAnsi(String(item.id ?? ""));
+            const details = optionDetails.get(id);
             return {
-              id: stripAnsi(String(item.id ?? "")),
+              id,
               label: stripAnsi(String(item.label ?? "")),
+              ...(details?.description ? { description: details.description } : {}),
+              ...(details?.destructive !== undefined
+                ? { destructive: details.destructive }
+                : {}),
             };
           })
         : undefined;
@@ -380,6 +453,7 @@ export function createExtensionUiContext(
             ? undefined
             : stripAnsi(String(payload.defaultValue)),
         timeoutMs,
+        ...presentationMetadata,
       });
     });
   };
@@ -389,7 +463,7 @@ export function createExtensionUiContext(
       const labels = options.map((o: string) => ({ id: o, label: o }));
       const value = await requestBlocking(
         "select",
-        { title, options: labels },
+        { title, options: labels, pideck: piDeckMetadataFromDialogOptions(dialogOpts) },
         dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
       );
       return typeof value === "string" ? value : undefined;
@@ -397,7 +471,7 @@ export function createExtensionUiContext(
     confirm: async (title, message, dialogOpts) => {
       const value = await requestBlocking(
         "confirm",
-        { title, message },
+        { title, message, pideck: piDeckMetadataFromDialogOptions(dialogOpts) },
         dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
       );
       return value === true;
@@ -405,7 +479,12 @@ export function createExtensionUiContext(
     input: async (title, placeholder, dialogOpts) => {
       const value = await requestBlocking(
         "input",
-        { title, message: placeholder, defaultValue: "" },
+        {
+          title,
+          message: placeholder,
+          defaultValue: "",
+          pideck: piDeckMetadataFromDialogOptions(dialogOpts),
+        },
         dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
       );
       return typeof value === "string" ? value : undefined;
@@ -683,11 +762,19 @@ export function createExtensionUiContext(
     pasteToEditor: () => {},
     setEditorText: () => {},
     getEditorText: () => "",
-    editor: async (title, prefill) => {
-      const value = await requestBlocking("editor", {
-        title,
-        defaultValue: prefill ?? "",
-      });
+    editor: async (title, prefill, ...rest: unknown[]) => {
+      const dialogOpts = rest[0];
+      const value = await requestBlocking(
+        "editor",
+        {
+          title,
+          defaultValue: prefill ?? "",
+          pideck: piDeckMetadataFromDialogOptions(dialogOpts),
+        },
+        plainRecord(dialogOpts)?.timeout
+          ? Number(plainRecord(dialogOpts)?.timeout)
+          : 120_000,
+      );
       return typeof value === "string" ? value : undefined;
     },
     addAutocompleteProvider: () => {},

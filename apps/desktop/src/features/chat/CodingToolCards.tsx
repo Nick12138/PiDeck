@@ -15,6 +15,7 @@ import {
   useToolDisclosure,
   type ToolCardProps,
 } from "./ToolCard";
+import { useT } from "../../lib/i18n/use-t";
 
 function parseJsonish(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -93,6 +94,7 @@ function ToolRow({
   props: ToolCardProps;
   children?: ReactNode;
 }) {
+  const t = useT();
   const [open, setOpen] = useToolDisclosure(props);
   const canExpand = children !== undefined;
 
@@ -117,7 +119,7 @@ function ToolRow({
           {formatDuration(props.startedAt, props.endedAt)}
         </span>
         <span className={`shrink-0 text-[10px] ${statusClass(props.status)}`}>
-          {statusLabel(props.status)}
+          {statusLabel(props.status, t)}
         </span>
         {canExpand && (
           <ChevronRight
@@ -157,6 +159,7 @@ export function isFileMutationTool(name: string): boolean {
 }
 
 export function FileReadToolCard(props: ToolCardProps) {
+  const t = useT();
   const args = toolRecord(props.args);
   const path = stringField(args, ["path", "filePath", "file_path"]);
   const content = toolResultText(props.result);
@@ -166,7 +169,7 @@ export function FileReadToolCard(props: ToolCardProps) {
   if (props.status === "error") return <ToolCard {...props} />;
 
   return (
-    <ToolRow icon={FileCode2} label="Read" summary={path || props.name} props={props}>
+    <ToolRow icon={FileCode2} label={t("toolRead")} summary={path || props.name} props={props}>
       <div className="max-h-72 overflow-auto rounded-md border border-border bg-surface-overlay/35">
         <pre className="min-w-max py-2 font-mono text-[11px] leading-5 text-foreground/80">
           {lines.map((line, index) => (
@@ -180,13 +183,16 @@ export function FileReadToolCard(props: ToolCardProps) {
         </pre>
       </div>
       {content.split("\n").length > lines.length && (
-        <div className="mt-1 text-[10px] text-muted">Preview limited to {lines.length} lines</div>
+        <div className="mt-1 text-[10px] text-muted">
+          {t("toolPreviewLines", { count: lines.length })}
+        </div>
       )}
     </ToolRow>
   );
 }
 
 export function ShellToolCard(props: ToolCardProps) {
+  const t = useT();
   const args = toolRecord(props.args);
   const command = stringField(args, ["command", "cmd", "script"]);
   const output = toolResultText(props.result);
@@ -195,7 +201,7 @@ export function ShellToolCard(props: ToolCardProps) {
   return (
     <ToolRow
       icon={Terminal}
-      label="Run"
+      label={t("toolRun")}
       summary={command.split("\n")[0] ?? command}
       props={props}
     >
@@ -205,7 +211,9 @@ export function ShellToolCard(props: ToolCardProps) {
           <span className="whitespace-pre-wrap break-words">{command}</span>
         </div>
         <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-5">
-          {output || (props.status === "running" ? "Running..." : "(no output)")}
+          {output || (
+            props.status === "running" ? t("toolRunningOutput") : t("toolNoOutput")
+          )}
         </pre>
       </div>
     </ToolRow>
@@ -252,6 +260,7 @@ function diffCounts(diff: string): { additions: number; deletions: number } {
 }
 
 export function FileMutationToolCard(props: ToolCardProps) {
+  const t = useT();
   const args = toolRecord(props.args);
   const path = stringField(args, ["path", "filePath", "file_path"]);
   const diff = useMemo(() => mutationDiff(props), [props]);
@@ -262,7 +271,7 @@ export function FileMutationToolCard(props: ToolCardProps) {
   return (
     <ToolRow
       icon={FilePenLine}
-      label={write ? "Write" : "Edit"}
+      label={write ? t("toolWrite") : t("toolEdit")}
       summary={path}
       props={props}
     >

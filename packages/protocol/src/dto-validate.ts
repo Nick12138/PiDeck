@@ -958,7 +958,22 @@ function isPiSettingsSnapshot(value: unknown): boolean {
 function isExtensionUiRequest(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["requestId", "kind"], ["title", "message", "options", "defaultValue", "timeoutMs"]) &&
+    hasExactKeys(
+      value,
+      ["requestId", "kind"],
+      [
+        "title",
+        "message",
+        "options",
+        "defaultValue",
+        "timeoutMs",
+        "sourceLabel",
+        "correlationId",
+        "presentation",
+        "risk",
+        "allowFreeform",
+      ],
+    ) &&
     isUuid(value.requestId) &&
     ["select", "confirm", "input", "editor"].includes(String(value.kind)) &&
     isOptionalString(value.title) &&
@@ -968,12 +983,19 @@ function isExtensionUiRequest(value: unknown): boolean {
         value.options.every(
           (item) =>
             isPlainObject(item) &&
-            hasExactKeys(item, ["id", "label"]) &&
+            hasExactKeys(item, ["id", "label"], ["description", "destructive"]) &&
             isString(item.id) &&
-            isString(item.label),
+            isString(item.label) &&
+            isOptionalString(item.description) &&
+            (item.destructive === undefined || isBoolean(item.destructive)),
         ))) &&
     isOptionalString(value.defaultValue) &&
-    (value.timeoutMs === undefined || isSafeRevision(value.timeoutMs))
+    (value.timeoutMs === undefined || isSafeRevision(value.timeoutMs)) &&
+    isOptionalString(value.sourceLabel) &&
+    isOptionalString(value.correlationId) &&
+    (value.presentation === undefined || ["inline", "modal"].includes(String(value.presentation))) &&
+    (value.risk === undefined || ["normal", "high"].includes(String(value.risk))) &&
+    (value.allowFreeform === undefined || isBoolean(value.allowFreeform))
   );
 }
 

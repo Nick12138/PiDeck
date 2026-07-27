@@ -506,14 +506,60 @@ export type PiSettingsPatch = {
   autoRetry?: boolean;
 };
 
+export type ExtensionPresentationAudience = "agent" | "user";
+export type ExtensionPresentationKind =
+  | "activity"
+  | "progress"
+  | "decision"
+  | "result"
+  | "warning";
+export type ExtensionPresentationStatus =
+  | "pending"
+  | "running"
+  | "resolved"
+  | "cancelled"
+  | "expired"
+  | "failed";
+export type ExtensionPresentationSeverity = "neutral" | "info" | "warning" | "danger";
+
+/** Portable, declarative presentation hints for custom Extension messages. */
+export type ExtensionPresentation = {
+  version: 1;
+  extensionId: string;
+  audience: ExtensionPresentationAudience;
+  kind: ExtensionPresentationKind;
+  correlationId: string;
+  sourceLabel?: string;
+  status?: ExtensionPresentationStatus;
+  severity?: ExtensionPresentationSeverity;
+  groupKey?: string;
+  title?: string;
+  summary?: string;
+  /** References a live Extension UI request; it is never executable by itself. */
+  actionRequestId?: string;
+  technicalDetails?: JsonValue;
+};
+
+export type ExtensionUiOption = {
+  id: string;
+  label: string;
+  description?: string;
+  destructive?: boolean;
+};
+
 export type ExtensionUiRequest = {
   requestId: string;
   kind: "select" | "confirm" | "input" | "editor";
   title?: string;
   message?: string;
-  options?: Array<{ id: string; label: string }>;
+  options?: ExtensionUiOption[];
   defaultValue?: string;
   timeoutMs?: number;
+  sourceLabel?: string;
+  correlationId?: string;
+  presentation?: "inline" | "modal";
+  risk?: "normal" | "high";
+  allowFreeform?: boolean;
 };
 
 export type SerializableSessionEntry = {

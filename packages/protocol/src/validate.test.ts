@@ -564,6 +564,35 @@ describe("deep result/event validation (C3)", () => {
     ).toBe(true);
   });
 
+  it("accepts declarative Extension UI presentation metadata", () => {
+    expect(
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "select",
+        sourceLabel: "Subagents",
+        correlationId: "decision-1",
+        presentation: "inline",
+        risk: "normal",
+        allowFreeform: true,
+        options: [
+          { id: "continue", label: "Continue", description: "Resume the agent" },
+          { id: "stop", label: "Stop", destructive: true },
+        ],
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("rejects executable or unknown Extension UI metadata", () => {
+    expect(
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "confirm",
+        presentation: "inline",
+        command: "subagent_supervisor(...)"
+      }).ok,
+    ).toBe(false);
+  });
+
   it("parseHostEvent rejects bad host.fatal", () => {
     const r = parseHostEvent({
       protocolVersion: 1,

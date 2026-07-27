@@ -1,3 +1,43 @@
+diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
+index e68363a34d73005579ac3c1b9e3ec8f8ca47ef2d..7e4b48f541f633aa4628089701811879dbfc46dc 100644
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -32,11 +32,26 @@ export type { BuildSystemPromptOptions } from "../system-prompt.ts";
+ export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
+ export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
++/** Optional PiDeck-only presentation metadata. Other UI modes ignore it. */
++export interface PiDeckExtensionUIDialogOptions {
++    presentation?: "inline" | "modal";
++    sourceLabel?: string;
++    correlationId?: string;
++    risk?: "normal" | "high";
++    allowFreeform?: boolean;
++    optionDetails?: Array<{
++        id: string;
++        description?: string;
++        destructive?: boolean;
++    }>;
++}
+ /** Options for extension UI dialogs. */
+ export interface ExtensionUIDialogOptions {
+     /** AbortSignal to programmatically dismiss the dialog. */
+     signal?: AbortSignal;
+     /** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
+     timeout?: number;
++    /** Declarative presentation hints used by PiDeck's desktop UI. */
++    pideck?: PiDeckExtensionUIDialogOptions;
+ }
+ /** Placement for extension widgets. */
+ export type WidgetPlacement = "aboveEditor" | "belowEditor";
+@@ -131,7 +146,7 @@ export interface ExtensionUIContext {
+     /** Get the current text from the core input editor. */
+     getEditorText(): string;
+     /** Show a multi-line editor for text editing. */
+-    editor(title: string, prefill?: string): Promise<string | undefined>;
++    editor(title: string, prefill?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+     /** Stack additional autocomplete behavior on top of the built-in provider. */
+     addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
+     /**
 diff --git a/dist/core/package-manager.d.ts b/dist/core/package-manager.d.ts
 index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634f9dd2e21 100644
 --- a/dist/core/package-manager.d.ts

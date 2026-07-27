@@ -567,19 +567,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setExtensionUiRequest: (request) =>
     set((state) => {
       const now = Date.now();
-      let active =
-        state.extensionUiRequest && !isExtensionUiRequestExpired(state.extensionUiRequest, now)
-          ? state.extensionUiRequest
-          : null;
       let queue = state.extensionUiQueue.filter(
         (queued) => !isExtensionUiRequestExpired(queued, now),
       );
-      if (!active && queue.length > 0) {
-        [active, ...queue] = queue;
-      }
       if (request === null) {
-        const targetSessionId = active
-          ? extensionUiSessionId(active)
+        const targetSessionId = state.extensionUiRequest
+          ? extensionUiSessionId(state.extensionUiRequest)
           : state.session?.sessionId ?? null;
         const nextIndex = targetSessionId
           ? queue.findIndex((queued) => extensionUiSessionId(queued) === targetSessionId)
@@ -592,6 +585,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           extensionUiRequest: next,
           extensionUiQueue: queue.filter((_, index) => index !== nextIndex),
         };
+      }
+      let active =
+        state.extensionUiRequest && !isExtensionUiRequestExpired(state.extensionUiRequest, now)
+          ? state.extensionUiRequest
+          : null;
+      if (!active && queue.length > 0) {
+        [active, ...queue] = queue;
       }
       if (isExtensionUiRequestExpired(request, now)) {
         return { extensionUiRequest: active, extensionUiQueue: queue };

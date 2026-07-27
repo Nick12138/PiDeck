@@ -1,9 +1,11 @@
 import type {
+  ExtensionPresentation,
   SerializableAgentContent,
   SerializableAgentMessage,
   SerializableSessionEntry,
   SerializableUsage,
 } from "@pideck/protocol";
+import { parseExtensionPresentation } from "@pideck/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
@@ -38,7 +40,8 @@ export type TranscriptContentBlock =
 
 export type TranscriptBlock =
   | TranscriptContentBlock
-  | { kind: "tool"; tool: ToolTrace };
+  | { kind: "tool"; tool: ToolTrace }
+  | { kind: "extension"; row: TranscriptRow };
 
 export type AssistantOutcome = {
   status: "streaming" | "complete" | "error" | "aborted";
@@ -88,6 +91,7 @@ export type TranscriptRow = {
   sections?: AssistantTurnSections;
   outcome?: AssistantOutcome;
   customType?: string;
+  extensionPresentation?: ExtensionPresentation;
   display?: boolean;
   details?: unknown;
   bash?: BashExecution;
@@ -426,11 +430,13 @@ function copyTextForBlocks(blocks: TranscriptBlock[]): string {
 }
 
 function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
-  const firstToolRound = rounds.findIndex((round) =>
-    round.some((block) => block.kind === "tool"),
+  const isExecutionActivity = (block: TranscriptBlock) =>
+    block.kind === "tool" || block.kind === "extension";
+  const firstActivityRound = rounds.findIndex((round) =>
+    round.some(isExecutionActivity),
   );
 
-  if (firstToolRound < 0) {
+  if (firstActivityRound < 0) {
     const blocks = rounds.flat();
     return {
       ordered: blocks,
@@ -447,9 +453,9 @@ function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
     };
   }
 
-  let lastToolRound = firstToolRound;
+  let lastActivityRound = firstActivityRound;
   rounds.forEach((round, index) => {
-    if (round.some((block) => block.kind === "tool")) lastToolRound = index;
+    if (round.some(isExecutionActivity)) lastActivityRound = index;
   });
 
   const initialThinking: AssistantTurnSections["initialThinking"] = [];
@@ -458,7 +464,7 @@ function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
   const final: AssistantTurnSections["final"] = [];
 
   rounds.forEach((round, roundIndex) => {
-    if (roundIndex < firstToolRound) {
+    if (roundIndex < firstActivityRound) {
       for (const block of round) {
         if (block.kind === "thinking") initialThinking.push(block);
         if (block.kind !== "tool") intro.push(block);
@@ -466,10 +472,10 @@ function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
       return;
     }
 
-    if (roundIndex === firstToolRound) {
-      const firstToolIndex = round.findIndex((block) => block.kind === "tool");
+    if (roundIndex === firstActivityRound) {
+      const firstActivityIndex = round.findIndex(isExecutionActivity);
       round.forEach((block, blockIndex) => {
-        if (blockIndex < firstToolIndex) {
+        if (blockIndex < firstActivityIndex) {
           if (block.kind === "thinking") initialThinking.push(block);
           if (block.kind !== "tool") intro.push(block);
         } else {
@@ -479,7 +485,7 @@ function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
       return;
     }
 
-    if (roundIndex <= lastToolRound) {
+    if (roundIndex <= lastActivityRound) {
       activity.push(...round);
       return;
     }
@@ -496,7 +502,7 @@ function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
     intro,
     activity,
     final,
-    stepCount: activity.filter((block) => block.kind === "tool").length,
+    stepCount: activity.filter(isExecutionActivity).length,
   };
 }
 
@@ -542,6 +548,33 @@ function customMessageVisible(message: SerializableAgentMessage): boolean {
   return asRecord(message).display === true;
 }
 
+function extensionPresentationForCustomMessage(
+  message: SerializableAgentMessage,
+  sourceKey: string,
+): ExtensionPresentation | undefined {
+  const record = asRecord(message);
+  const details = asRecord(record.details);
+  const declared =
+    parseExtensionPresentation(record.presentation) ??
+    parseExtensionPresentation(details.presentation);
+  if (declared) return declared;
+
+  if (stringField(message, "customType") !== "subagent_supervisor_request") return undefined;
+  const legacyId =
+    (typeof details.id === "string" && details.id.trim()) ||
+    (typeof details.runId === "string" && details.runId.trim()) ||
+    sourceKey;
+  return {
+    version: 1,
+    extensionId: "pi-subagents",
+    sourceLabel: "Subagents",
+    audience: "agent",
+    kind: "activity",
+    correlationId: legacyId.slice(0, 256),
+    severity: "neutral",
+  };
+}
+
 function bashFromMessage(message: SerializableAgentMessage): BashExecution {
   const record = asRecord(message);
   return {
@@ -583,12 +616,14 @@ function rowForNonAssistantMessage(
   if (role === "custom") {
     if (!customMessageVisible(message)) return null;
     const blocks = contentBlocksForValue(message.content);
+    const extensionPresentation = extensionPresentationForCustomMessage(message, sourceKey);
     return {
       key: `custom:${sourceKey}`,
       role: "custom",
       blocks,
       copyText: copyTextForBlocks(blocks),
       customType: stringField(message, "customType") ?? "custom",
+      ...(extensionPresentation ? { extensionPresentation } : {}),
       display: true,
       ...(asRecord(message).details !== undefined ? { details: asRecord(message).details } : {}),
       ...(sourceId ? { sourceId } : {}),
@@ -699,6 +734,7 @@ function sourceMessages(
         content: (record.content as SerializableAgentContent[] | string) ?? "",
         display: record.display === true,
         ...(record.details !== undefined ? { details: record.details } : {}),
+        ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
       } as SerializableAgentMessage;
       sources.push({ kind: "message", message, key: sourceKey, sourceId, timestamp });
       continue;
@@ -988,6 +1024,28 @@ export function buildTranscriptRows(
       timestamp,
       sourceIndex,
     );
+    if (special?.role === "custom") {
+      const block: TranscriptBlock = { kind: "extension", row: special };
+      if (activeAssistant?.role === "assistant") {
+        activeAssistant.blocks.push(block);
+        activeAssistant.rounds = [...(activeAssistant.rounds ?? []), [block]];
+        activeAssistant.copyText = copyTextForBlocks(activeAssistant.blocks);
+        if (sourceId) activeAssistant.sourceEndId = sourceId;
+      } else {
+        const row: WorkingTranscriptRow = {
+          key: `assistant:${sourceKey}`,
+          role: "assistant",
+          blocks: [block],
+          copyText: "",
+          rounds: [[block]],
+          ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
+          ...(timestamp !== undefined ? { timestamp } : {}),
+        };
+        rows.push(row);
+        activeAssistant = row;
+      }
+      return;
+    }
     if (special) rows.push(special);
     // Hidden custom messages are intentionally absent but still represent a
     // context boundary; this prevents unrelated assistant turns from merging.
@@ -1028,6 +1086,9 @@ function blockEquivalent(a: TranscriptBlock, b: TranscriptBlock): boolean {
       blockListEquivalent(x.resultBlocks ?? [], y.resultBlocks ?? []) &&
       x.details === y.details
     );
+  }
+  if (a.kind === "extension" && b.kind === "extension") {
+    return rowEquivalent(a.row, b.row);
   }
   return false;
 }
@@ -1084,6 +1145,7 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
     a.timestamp !== b.timestamp ||
     !valuesEquivalent(a.outcome, b.outcome) ||
     a.customType !== b.customType ||
+    !valuesEquivalent(a.extensionPresentation, b.extensionPresentation) ||
     a.display !== b.display ||
     !valuesEquivalent(a.details, b.details) ||
     !valuesEquivalent(a.bash, b.bash) ||

@@ -68,6 +68,69 @@ describe("extension-ui-bridge", () => {
     await expect(p).resolves.toBe("beta");
   });
 
+  it("normalizes namespaced PiDeck presentation metadata", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingSelect = ui.select(
+      "Pick",
+      ["keep", "delete"],
+      {
+        timeout: 5_000,
+        pideck: {
+          presentation: "inline",
+          sourceLabel: "\u001b[31mReview\u001b[0m",
+          correlationId: "review-1",
+          risk: "high",
+          allowFreeform: true,
+          optionDetails: [
+            {
+              id: "delete",
+              description: "\u001b[2KCannot be undone",
+              destructive: true,
+            },
+            { id: "missing", description: "ignored" },
+          ],
+        },
+      } as never,
+    );
+
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      presentation?: string;
+      sourceLabel?: string;
+      correlationId?: string;
+      risk?: string;
+      allowFreeform?: boolean;
+      options?: Array<{
+        id: string;
+        label: string;
+        description?: string;
+        destructive?: boolean;
+      }>;
+    };
+    expect(request).toMatchObject({
+      presentation: "inline",
+      sourceLabel: "Review",
+      correlationId: "review-1",
+      risk: "high",
+      allowFreeform: true,
+      options: [
+        { id: "keep", label: "keep" },
+        {
+          id: "delete",
+          label: "delete",
+          description: "Cannot be undone",
+          destructive: true,
+        },
+      ],
+    });
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pendingSelect).resolves.toBeUndefined();
+  });
+
   it("confirm returns boolean; cancel yields false", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({

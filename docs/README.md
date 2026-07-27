@@ -21,12 +21,13 @@ Landed behavior updates these pages in the same change.
 2. [Process boundaries](./architecture/process-boundaries.md)
 3. [Protocol](./architecture/protocol.md)
 4. [Chat runtime](./architecture/chat-runtime.md)
-5. [Packages & workspaces](./architecture/packages-workspaces.md)
-6. [Source map](./architecture/source-map.md)
-7. [P0 scope and verification](./operations/p0-scope.md)
-8. [Development](./operations/development.md)
-9. [Release](./operations/release.md)
-10. [Remediation / completion report](./operations/remediation-report.md)
+5. [Extension presentation](./architecture/extension-presentation.md)
+6. [Packages & workspaces](./architecture/packages-workspaces.md)
+7. [Source map](./architecture/source-map.md)
+8. [P0 scope and verification](./operations/p0-scope.md)
+9. [Development](./operations/development.md)
+10. [Release](./operations/release.md)
+11. [Remediation / completion report](./operations/remediation-report.md)
 
 ## Document index
 
@@ -36,6 +37,7 @@ Landed behavior updates these pages in the same change.
 | [architecture/process-boundaries.md](./architecture/process-boundaries.md) | Current | Rust / Node / React ownership |
 | [architecture/protocol.md](./architecture/protocol.md) | Current | Methods, events, identity, errors |
 | [architecture/chat-runtime.md](./architecture/chat-runtime.md) | Current | Session, chat, tools, Extension UI |
+| [architecture/extension-presentation.md](./architecture/extension-presentation.md) | Current | Cross-Extension transcript presentation and inline requests |
 | [architecture/packages-workspaces.md](./architecture/packages-workspaces.md) | Current | Workspace loading, packages, resources |
 | [architecture/source-map.md](./architecture/source-map.md) | Current | Feature → source paths + gating scripts |
 | [operations/p0-scope.md](./operations/p0-scope.md) | Authoritative | Product P0/P1/P2 scope, acceptance evidence, verification layers |

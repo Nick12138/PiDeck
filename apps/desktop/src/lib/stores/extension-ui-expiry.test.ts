@@ -1,5 +1,9 @@
-import { expect, it } from "vitest";
+import { beforeEach, expect, it } from "vitest";
 import { useAppStore } from "./app-store";
+
+beforeEach(() => {
+  useAppStore.setState({ extensionUiRequest: null, extensionUiQueue: [] });
+});
 
 it("drops expired Extension UI requests and advances to the next live request", () => {
   const context = {
@@ -38,4 +42,38 @@ it("drops expired Extension UI requests and advances to the next live request", 
   ]);
   useAppStore.getState().setExtensionUiRequest(null);
   expect(useAppStore.getState().extensionUiRequest?.title).toBe("Second live");
+});
+
+it("advances once when the active Extension UI request expires while queued", () => {
+  const context = {
+    expectedHostInstanceId: "11111111-1111-4111-8111-111111111111",
+    expectedWorkspaceId: "22222222-2222-4222-8222-222222222222",
+    expectedWorkspaceRevision: 1,
+    expectedSessionId: "33333333-3333-4333-8333-333333333333",
+    expectedSessionRevision: 1,
+  };
+  const now = Date.now();
+  useAppStore.setState({
+    extensionUiRequest: {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      kind: "confirm",
+      title: "Elapsed active",
+      context,
+      expiresAt: now - 1,
+    },
+    extensionUiQueue: [
+      {
+        requestId: "55555555-5555-4555-8555-555555555555",
+        kind: "confirm",
+        title: "Queued live",
+        context,
+        expiresAt: now + 60_000,
+      },
+    ],
+  });
+
+  useAppStore.getState().setExtensionUiRequest(null);
+
+  expect(useAppStore.getState().extensionUiRequest?.title).toBe("Queued live");
+  expect(useAppStore.getState().extensionUiQueue).toEqual([]);
 });

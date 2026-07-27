@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Activity,
   ArrowDown,
   Ban,
   Bot,
@@ -15,6 +16,7 @@ import {
   GitFork,
   ListTree,
   LoaderCircle,
+  MessageCircleQuestion,
   Puzzle,
   Terminal,
 } from "lucide-react";
@@ -24,6 +26,7 @@ import { sanitizeAgentText } from "./markdown-utils";
 import { ToolView } from "./ToolView";
 import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
+import { useT, type Translate } from "../../lib/i18n/use-t";
 import { PiMark } from "../../components/PiMark";
 import {
   buildTranscriptRows,
@@ -76,6 +79,7 @@ const INITIAL_VISIBLE_ROWS = 60;
 const SHOW_EARLIER_CHUNK = 120;
 
 export function Transcript() {
+  const t = useT();
   const session = useAppStore((state) => state.session);
   const messages = session?.messages ?? [];
   const prevRowsRef = useRef<TranscriptRow[] | null>(null);
@@ -224,7 +228,7 @@ export function Transcript() {
               onClick={showEarlier}
               className="mx-auto flex h-8 items-center rounded-full border border-border bg-surface-raised px-4 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
             >
-              Show earlier messages ({hidden} hidden)
+              {t("transcriptShowEarlier", { count: hidden })}
             </button>
           )}
           {visibleRows.map((row) => {
@@ -247,7 +251,7 @@ export function Transcript() {
             !hasRunningTool && (
             <div className="flex items-center gap-3 text-xs text-muted">
               <AssistantAvatar />
-              <span>Pi is working...</span>
+              <span>{t("transcriptPiWorking")}</span>
             </div>
           )}
           <div className="h-1" aria-hidden="true" />
@@ -258,8 +262,8 @@ export function Transcript() {
           type="button"
           onClick={scrollToBottom}
           className="absolute bottom-3 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground"
-          title="Jump to latest message"
-          aria-label="Jump to latest message"
+          title={t("transcriptJumpLatest")}
+          aria-label={t("transcriptJumpLatest")}
         >
           <ArrowDown size={15} />
         </button>
@@ -313,6 +317,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
   showCaret: boolean;
   working: boolean;
 }) {
+  const t = useT();
   if (row.role === "user") {
     const images = row.blocks.filter(
       (block): block is Extract<TranscriptBlock, { kind: "image" }> =>
@@ -327,7 +332,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
               <img
                 key={`img:${index}`}
                 src={`data:${image.mimeType};base64,${image.data}`}
-                alt="attachment"
+                alt={t("transcriptAttachmentAlt")}
                 className="max-h-48 max-w-full rounded-lg border border-border object-contain"
               />
             ))}
@@ -377,7 +382,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
     );
   }
 
-  if (row.role === "custom") return <CustomMessageRow row={row} />;
+  if (row.role === "custom") return <ExtensionMessageRow row={row} />;
   if (row.role === "bash") return <BashExecutionRow row={row} />;
   if (row.role === "summary") return <SummaryRow row={row} />;
   if (row.role === "event") return <SessionEventRow row={row} />;
@@ -400,7 +405,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
     <div className="group/assistant relative w-full">
       <div className="flex h-7 items-center gap-2">
         <AssistantAvatar />
-        {working && <span className="text-[11px] text-muted">Pi is working...</span>}
+        {working && <span className="text-[11px] text-muted">{t("transcriptPiWorking")}</span>}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
         <AssistantOrderedContent
@@ -446,13 +451,14 @@ function ForkFromTurnButton({
   entryId: string;
   className?: string;
 }) {
+  const t = useT();
   const idle = useAppStore((s) => s.session?.isIdle ?? false);
   const [pending, setPending] = useState(false);
   return (
     <button
       type="button"
-      title="Fork from here"
-      aria-label="Fork from here"
+      title={t("transcriptForkHere")}
+      aria-label={t("transcriptForkHere")}
       disabled={!idle || pending}
       className={`flex size-6 items-center justify-center rounded text-muted transition-opacity hover:bg-surface-overlay hover:text-foreground disabled:opacity-40 ${className}`}
       onClick={() => {
@@ -487,19 +493,24 @@ export function AssistantOrderedContent({
   lastTextBlock?: Extract<TranscriptBlock, { kind: "text" }>;
   turnActive: boolean;
 }) {
+  const t = useT();
   const content: ReactNode[] = [];
   let workBlocks: TranscriptBlock[] = [];
   let workIndex = 0;
 
   const flushWork = (traceActive = false) => {
     if (workBlocks.length === 0) return;
-    const hasTool = workBlocks.some((block) => block.kind === "tool");
-    if (hasTool) {
+    const hasActivity = workBlocks.some(
+      (block) => block.kind === "tool" || block.kind === "extension",
+    );
+    if (hasActivity) {
       content.push(
         <ExecutionTrace
           key={`ordered-trace:${workIndex}`}
           blocks={workBlocks}
-          stepCount={workBlocks.filter((block) => block.kind === "tool").length}
+          stepCount={workBlocks.filter(
+            (block) => block.kind === "tool" || block.kind === "extension",
+          ).length}
           mode={mode}
           showCaret={showCaret}
           lastTextBlock={lastTextBlock}
@@ -513,7 +524,7 @@ export function AssistantOrderedContent({
             <ThinkingBlock
               key={`ordered-thinking:${workIndex}:${index}`}
               content={block.text}
-              label="Thought process"
+              label={t("transcriptThoughtProcess")}
               defaultOpen={mode === "streaming"}
             />,
           );
@@ -534,7 +545,7 @@ export function AssistantOrderedContent({
   };
 
   blocks.forEach((block, index) => {
-    if (block.kind === "thinking" || block.kind === "tool") {
+    if (block.kind === "thinking" || block.kind === "tool" || block.kind === "extension") {
       workBlocks.push(block);
       return;
     }
@@ -570,29 +581,62 @@ export function ExecutionTrace({
   lastTextBlock?: Extract<TranscriptBlock, { kind: "text" }>;
   turnActive: boolean;
 }) {
+  const t = useT();
   const tools = blocks.filter(
     (block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool",
+  );
+  const extensions = blocks.filter(
+    (block): block is Extract<TranscriptBlock, { kind: "extension" }> =>
+      block.kind === "extension",
   );
   const imageCount = tools.reduce(
     (count, block) =>
       count + (block.tool.resultBlocks?.filter((result) => result.kind === "image").length ?? 0),
     0,
   );
-  const active = executionTraceIsActive(
-    tools.map((block) => block.tool),
-    turnActive,
-  );
+  const active =
+    executionTraceIsActive(
+      tools.map((block) => block.tool),
+      turnActive,
+    ) ||
+    extensions.some((block) => {
+      const status = block.row.extensionPresentation?.status;
+      return status === "pending" || status === "running";
+    });
   const [open, setOpen] = useState(false);
-  const failed = tools.filter((block) => block.tool.status === "error").length;
+  const failed =
+    tools.filter((block) => block.tool.status === "error").length +
+    extensions.filter(
+      (block) => block.row.extensionPresentation?.status === "failed",
+    ).length;
   const aborted = tools.filter((block) => block.tool.status === "aborted").length;
   const traceLabel = active
-    ? `Running ${stepCount} ${stepCount === 1 ? "action" : "actions"}`
+    ? t(stepCount === 1 ? "transcriptTraceRunningOne" : "transcriptTraceRunningMany", {
+        count: stepCount,
+      })
     : failed > 0
-      ? `${stepCount} ${stepCount === 1 ? "action" : "actions"} completed, ${failed} failed`
+      ? t(
+          stepCount === 1
+            ? "transcriptTraceCompletedFailedOne"
+            : "transcriptTraceCompletedFailedMany",
+          { count: stepCount, failed },
+        )
       : aborted > 0
-        ? `Stopped after ${stepCount} ${stepCount === 1 ? "action" : "actions"}`
-        : `${stepCount} ${stepCount === 1 ? "action" : "actions"} completed`;
-  const traceLabelWithMedia = imageCount > 0 ? `${traceLabel} / ${imageCount} image${imageCount === 1 ? "" : "s"}` : traceLabel;
+        ? t(stepCount === 1 ? "transcriptTraceStoppedOne" : "transcriptTraceStoppedMany", {
+            count: stepCount,
+          })
+        : t(
+            stepCount === 1
+              ? "transcriptTraceCompletedOne"
+              : "transcriptTraceCompletedMany",
+            { count: stepCount },
+          );
+  const traceLabelWithMedia = imageCount > 0
+    ? `${traceLabel} / ${t(
+        imageCount === 1 ? "transcriptTraceImageOne" : "transcriptTraceImageMany",
+        { count: imageCount },
+      )}`
+    : traceLabel;
   const TraceIcon = active ? LoaderCircle : ListTree;
   return (
     <div className="execution-trace">
@@ -653,6 +697,7 @@ function AssistantBlock({
   mode: "streaming" | "static";
   showCaret: boolean;
 }) {
+  const t = useT();
   if (block.kind === "text") {
     return <LazyMarkdownMessage content={block.text} mode={mode} showCaret={showCaret} />;
   }
@@ -663,13 +708,16 @@ function AssistantBlock({
     return (
       <img
         src={`data:${block.mimeType};base64,${block.data}`}
-        alt="attachment"
+        alt={t("transcriptAttachmentAlt")}
         className="max-h-48 max-w-full rounded-lg border border-border object-contain"
       />
     );
   }
   if (block.kind === "unknown") {
     return <UnknownBlock block={block} />;
+  }
+  if (block.kind === "extension") {
+    return <ExtensionMessageRow row={block.row} />;
   }
   return <ToolTraceBlock tool={block.tool} />;
 }
@@ -704,29 +752,34 @@ function ToolTraceBlock({ tool }: { tool: Extract<TranscriptBlock, { kind: "tool
 
 const TOOL_RESULT_TEXT_LIMIT = 100_000;
 
-function boundedToolResultText(text: string): string {
+function boundedToolResultText(text: string, truncatedLabel: string): string {
   return text.length <= TOOL_RESULT_TEXT_LIMIT
     ? text
-    : `${text.slice(0, TOOL_RESULT_TEXT_LIMIT)}\n... [tool data truncated]`;
+    : `${text.slice(0, TOOL_RESULT_TEXT_LIMIT)}\n... ${truncatedLabel}`;
 }
 
 function ContentBlockView({ block }: { block: TranscriptContentBlock }) {
+  const t = useT();
   if (block.kind === "text") {
     return (
       <LazyMarkdownMessage
-        content={boundedToolResultText(block.text)}
+        content={boundedToolResultText(block.text, t("transcriptToolDataTruncated"))}
         className="text-foreground/80"
       />
     );
   }
   if (block.kind === "thinking") {
-    return <ThinkingBlock content={boundedToolResultText(block.text)} />;
+    return (
+      <ThinkingBlock
+        content={boundedToolResultText(block.text, t("transcriptToolDataTruncated"))}
+      />
+    );
   }
   if (block.kind === "image") {
     return (
       <img
         src={`data:${block.mimeType};base64,${block.data}`}
-        alt="tool result"
+        alt={t("transcriptToolResultAlt")}
         className="max-h-64 max-w-full rounded-md border border-border object-contain"
       />
     );
@@ -735,6 +788,7 @@ function ContentBlockView({ block }: { block: TranscriptContentBlock }) {
 }
 
 function UnknownBlock({ block }: { block: Extract<TranscriptContentBlock, { kind: "unknown" }> }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <details
@@ -744,57 +798,221 @@ function UnknownBlock({ block }: { block: Extract<TranscriptContentBlock, { kind
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
         <Braces size={13} />
-        <span>Unsupported content</span>
+        <span>{t("transcriptUnsupportedContent")}</span>
         <span className="min-w-0 max-w-[55%] truncate font-mono text-[10px] text-muted/75" title={block.type}>
           {block.type}
         </span>
       </summary>
       {open && (
         <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words border-t border-border px-2.5 py-2 font-mono text-[11px] leading-5 text-foreground/75">
-          {formatJson(block.value)}
+          {formatJson(block.value, t("transcriptDetailsTruncated"))}
         </pre>
       )}
     </details>
   );
 }
 
-function CustomMessageRow({ row }: { row: TranscriptRow }) {
+function extensionStatusLabel(
+  status: NonNullable<TranscriptRow["extensionPresentation"]>["status"],
+  t: Translate,
+): string | null {
+  if (!status) return null;
+  const labels = {
+    pending: "extPresentationPending",
+    running: "extPresentationRunning",
+    resolved: "extPresentationResolved",
+    cancelled: "extPresentationCancelled",
+    expired: "extPresentationExpired",
+    failed: "extPresentationFailed",
+  } as const;
+  return t(labels[status]);
+}
+
+function extensionKindLabel(
+  presentation: NonNullable<TranscriptRow["extensionPresentation"]>,
+  t: Translate,
+): string {
+  if (presentation.audience === "agent") return t("extPresentationAgentActivity");
+  const labels = {
+    activity: "extPresentationActivity",
+    progress: "extPresentationProgress",
+    decision: "extPresentationDecision",
+    result: "extPresentationResult",
+    warning: "extPresentationWarning",
+  } as const;
+  return t(labels[presentation.kind]);
+}
+
+function ExtensionTechnicalContent({
+  row,
+  presentation,
+  renderBlocks = false,
+}: {
+  row: TranscriptRow;
+  presentation?: NonNullable<TranscriptRow["extensionPresentation"]>;
+  renderBlocks?: boolean;
+}) {
+  const t = useT();
   const visibleBlocks = row.blocks.filter(
     (block): block is Exclude<TranscriptBlock, { kind: "tool" }> => block.kind !== "tool",
   );
+  const metadata = {
+    ...(row.customType ? { customType: row.customType } : {}),
+    ...(presentation ? { presentation } : {}),
+    ...(row.details !== undefined ? { details: row.details } : {}),
+  };
+  const hasMetadata = Object.keys(metadata).length > 0;
   return (
-    <div className="group/extension flex min-w-0 items-start gap-3">
-      <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent">
-        <Puzzle size={14} />
-      </div>
-      <div className="min-w-0 flex-1 border-l-2 border-accent/35 pl-3">
-        <div className="mb-1 flex min-h-6 items-center gap-2 text-[11px] text-muted">
-          <span className="font-medium text-accent">Extension message</span>
-          {row.customType && (
-            <span
-              className="min-w-0 max-w-[12rem] truncate rounded bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-muted"
-              title={row.customType}
-            >
-              {row.customType}
-            </span>
-          )}
-          <CopyMessageButton
-            text={row.copyText}
-            className="ml-auto opacity-0 group-hover/extension:opacity-100"
-          />
+    <div className="space-y-2">
+      {renderBlocks ? (
+        visibleBlocks.length > 0 && (
+          <div className="space-y-2">
+            {visibleBlocks.map((block, index) => (
+              <AssistantBlock key={`extension-content:${index}`} block={block} mode="static" showCaret={false} />
+            ))}
+          </div>
+        )
+      ) : row.copyText ? (
+        <div>
+          <div className="mb-1 text-[10px] font-medium text-muted">
+            {t("extPresentationRawMessage")}
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
+            {formatJson(row.copyText, t("transcriptDetailsTruncated"))}
+          </pre>
         </div>
-        <div className="space-y-2">
-          {visibleBlocks.map((block, index) => (
-            <AssistantBlock key={`custom:${index}`} block={block} mode="static" showCaret={false} />
-          ))}
+      ) : null}
+      {hasMetadata && (
+        <div>
+          <div className="mb-1 text-[10px] font-medium text-muted">
+            {t("extPresentationMetadata")}
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
+            {formatJson(metadata, t("transcriptDetailsTruncated"))}
+          </pre>
         </div>
-        {row.details !== undefined && <JsonDetails label="Extension details" value={row.details} />}
-      </div>
+      )}
+    </div>
+  );
+}
+
+function ExtensionFallbackRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="min-w-0 text-xs text-muted">
+      <button
+        type="button"
+        className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Puzzle size={14} className="shrink-0" />
+        <span className="min-w-0 truncate">{t("extPresentationFallback")}</span>
+        <ChevronRight
+          size={13}
+          className={`ml-auto shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="ml-2 mt-1 border-l border-border py-1 pl-4">
+          <ExtensionTechnicalContent row={row} renderBlocks />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ExtensionMessageRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const presentation = row.extensionPresentation;
+  if (!presentation) return <ExtensionFallbackRow row={row} />;
+
+  const agentOnly = presentation.audience === "agent";
+  const title = agentOnly
+    ? t("extPresentationAgentActivity")
+    : presentation.title?.trim() || extensionKindLabel(presentation, t);
+  const summary = agentOnly ? undefined : presentation.summary?.trim();
+  const statusLabel = extensionStatusLabel(presentation.status, t);
+  const isDecision = presentation.audience === "user" && presentation.kind === "decision";
+  const isDanger = presentation.status === "failed" || presentation.severity === "danger";
+  const isWarning =
+    !isDanger && (presentation.kind === "warning" || presentation.severity === "warning");
+  const isSuccess = presentation.kind === "result" || presentation.status === "resolved";
+  const Icon =
+    isDanger || isWarning
+      ? CircleAlert
+      : isSuccess
+        ? CircleCheck
+        : isDecision
+          ? MessageCircleQuestion
+          : presentation.kind === "progress" && presentation.status === "running"
+            ? LoaderCircle
+            : Activity;
+  const iconTone = isDanger
+    ? "text-danger"
+    : isWarning
+      ? "text-warning"
+      : isSuccess
+        ? "text-success"
+        : isDecision
+          ? "text-foreground/80"
+          : "text-muted";
+
+  const header = (
+    <>
+      <Icon
+        size={14}
+        className={`shrink-0 ${iconTone} ${
+          presentation.kind === "progress" && presentation.status === "running"
+            ? "animate-spin"
+            : ""
+        }`}
+      />
+      <span className="min-w-0 truncate" title={title}>
+        {title}
+      </span>
+      {!agentOnly && presentation.sourceLabel && (
+        <span
+          className="max-w-48 shrink-0 truncate text-[10px] font-normal text-muted"
+          title={presentation.sourceLabel}
+        >
+          {presentation.sourceLabel}
+        </span>
+      )}
+      {statusLabel && (
+        <span className="shrink-0 text-[10px] font-normal text-muted">{statusLabel}</span>
+      )}
+    </>
+  );
+
+  return (
+    <div className="min-w-0">
+      <button
+        type="button"
+        className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {header}
+        <ChevronRight
+          size={13}
+          className={`ml-auto shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="ml-2 mt-1 space-y-2 border-l border-border py-1 pl-4">
+          {summary && <p className="break-words text-xs leading-5 text-muted">{summary}</p>}
+          <ExtensionTechnicalContent row={row} presentation={presentation} />
+        </div>
+      )}
     </div>
   );
 }
 
 function BashExecutionRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
   const bash = row.bash;
   if (!bash) return null;
   const hasError = bash.cancelled || (bash.exitCode !== undefined && bash.exitCode !== 0);
@@ -803,7 +1021,7 @@ function BashExecutionRow({ row }: { row: TranscriptRow }) {
   const output = bash.output ? (
     <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border px-3 py-2 font-mono text-[11px] leading-5 text-foreground/80">
       {bash.output}
-      {bash.truncated ? "\n[output truncated]" : ""}
+      {bash.truncated ? `\n${t("transcriptOutputTruncated")}` : ""}
     </pre>
   ) : null;
   return (
@@ -813,11 +1031,17 @@ function BashExecutionRow({ row }: { row: TranscriptRow }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-h-7 items-center gap-2 text-xs">
-          <span className="min-w-0 break-all font-mono text-foreground/90">$ {bash.command || "(empty command)"}</span>
+          <span className="min-w-0 break-all font-mono text-foreground/90">
+            $ {bash.command || t("transcriptEmptyCommand")}
+          </span>
           <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px]">
             {hasError ? <CircleAlert size={12} className="text-danger" /> : <CircleCheck size={12} className="text-success" />}
             <span className={hasError ? "text-danger" : "text-muted"}>
-              {bash.cancelled ? "Cancelled" : bash.exitCode === undefined ? "Running" : `Exit ${bash.exitCode}`}
+              {bash.cancelled
+                ? t("transcriptCancelled")
+                : bash.exitCode === undefined
+                  ? t("transcriptRunning")
+                  : t("transcriptExitCode", { code: bash.exitCode })}
             </span>
           </span>
         </div>
@@ -825,7 +1049,7 @@ function BashExecutionRow({ row }: { row: TranscriptRow }) {
           <details className="mt-1 rounded-md border border-border bg-surface-raised" open={hasError}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-[10px] text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
               <ChevronRight size={12} />
-              <span>{outputLines.length} output lines</span>
+              <span>{t("transcriptOutputLines", { count: outputLines.length })}</span>
             </summary>
             {output}
           </details>
@@ -834,7 +1058,7 @@ function BashExecutionRow({ row }: { row: TranscriptRow }) {
         ))}
         {bash.fullOutputPath && (
           <div className="mt-1 min-w-0 break-words text-[10px] text-muted">
-            Full output: <span className="font-mono break-all">{bash.fullOutputPath}</span>
+            {t("transcriptFullOutput")} <span className="font-mono break-all">{bash.fullOutputPath}</span>
           </div>
         )}
       </div>
@@ -843,6 +1067,7 @@ function BashExecutionRow({ row }: { row: TranscriptRow }) {
 }
 
 function SummaryRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
   const summary = row.summary;
   if (!summary) return null;
   const isBranch = summary.kind === "branch";
@@ -850,31 +1075,68 @@ function SummaryRow({ row }: { row: TranscriptRow }) {
     <details className="group/summary border-y border-border/70 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
         {isBranch ? <GitBranch size={14} /> : <FoldVertical size={14} />}
-        <span className="font-medium">{isBranch ? "Branch summary" : "Conversation compacted"}</span>
+        <span className="font-medium">
+          {isBranch ? t("transcriptBranchSummary") : t("transcriptConversationCompacted")}
+        </span>
         {summary.tokensBefore !== undefined && (
-          <span className="text-[10px]">{formatTokenCount(summary.tokensBefore)} tokens before</span>
+          <span className="text-[10px]">
+            {t("transcriptTokensBefore", { count: formatTokenCount(summary.tokensBefore) })}
+          </span>
         )}
         <ChevronRight size={13} className="ml-auto transition-transform group-open/summary:rotate-90" />
       </summary>
       <div className="mt-2 border-l border-border pl-4">
         <LazyMarkdownMessage content={summary.text} className="text-muted" />
-        {summary.details !== undefined && <JsonDetails label="Summary details" value={summary.details} />}
+        {summary.details !== undefined && (
+          <JsonDetails label={t("transcriptSummaryDetails")} value={summary.details} />
+        )}
       </div>
     </details>
   );
 }
 
 function SessionEventRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
   const event = row.event;
   if (!event) return null;
   const Icon = event.kind === "model" ? Bot : event.kind === "thinkingLevel" ? Brain : CircleAlert;
+  const eventDetails = event.details && typeof event.details === "object"
+    ? event.details as Record<string, unknown>
+    : undefined;
+  const thinkingLevel = String(eventDetails?.thinkingLevel ?? "off");
+  const thinkingLevelLabels = {
+    off: "modelThinkingOff",
+    minimal: "modelThinkingMinimal",
+    low: "modelThinkingLow",
+    medium: "modelThinkingMedium",
+    high: "modelThinkingHigh",
+    xhigh: "modelThinkingExtraHigh",
+  } as const;
+  const localizedThinkingLevel = thinkingLevel in thinkingLevelLabels
+    ? t(thinkingLevelLabels[thinkingLevel as keyof typeof thinkingLevelLabels])
+    : thinkingLevel;
+  const label = event.kind === "model" && eventDetails
+    ? t("transcriptModelChanged", {
+        model: `${String(eventDetails.provider ?? "")}/${String(eventDetails.modelId ?? "")}`,
+      })
+    : event.kind === "thinkingLevel" && eventDetails
+      ? t("transcriptThinkingLevelChanged", {
+          level: localizedThinkingLevel,
+        })
+      : event.kind === "unknown" && eventDetails
+        ? t("transcriptUnknownMessageRole", {
+            role: typeof eventDetails.role === "string" && eventDetails.role
+              ? eventDetails.role
+              : t("transcriptMissingRole"),
+          })
+      : event.label;
   return (
     <div>
       <div className="flex items-center gap-3 py-1 text-[11px] text-muted">
         <div className="h-px flex-1 bg-border/70" />
         <span className="flex min-w-0 max-w-[80%] items-center gap-1.5 text-center">
           <Icon size={13} />
-          <span className="min-w-0 break-words">{event.label}</span>
+          <span className="min-w-0 break-words">{label}</span>
         </span>
         <div className="h-px flex-1 bg-border/70" />
       </div>
@@ -883,7 +1145,9 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
           {row.blocks.map((block, index) => (
             <AssistantBlock key={`event:${index}`} block={block} mode="static" showCaret={false} />
           ))}
-          {event.details !== undefined && <JsonDetails label="Raw message" value={event.details} />}
+          {event.details !== undefined && (
+            <JsonDetails label={t("transcriptRawMessage")} value={event.details} />
+          )}
         </div>
       )}
     </div>
@@ -891,13 +1155,18 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
 }
 
 function AssistantOutcome({ outcome }: { outcome: NonNullable<TranscriptRow["outcome"]> }) {
+  const t = useT();
   const aborted = outcome.status === "aborted";
-  const message = outcome.errorMessage || (aborted ? "Operation aborted" : "The assistant could not complete this response.");
+  const message = outcome.errorMessage || (
+    aborted ? t("transcriptOperationAborted") : t("transcriptAssistantIncomplete")
+  );
   return (
     <div className={`flex items-start gap-2 border-l-2 px-3 py-2 text-xs ${aborted ? "border-warning/60 bg-warning/8 text-warning" : "border-danger/70 bg-danger/8 text-danger"}`}>
       {aborted ? <Ban size={14} className="mt-0.5 shrink-0" /> : <CircleAlert size={14} className="mt-0.5 shrink-0" />}
       <div className="min-w-0">
-        <div className="font-medium">{aborted ? "Response stopped" : "Response failed"}</div>
+        <div className="font-medium">
+          {aborted ? t("transcriptResponseStopped") : t("transcriptResponseFailed")}
+        </div>
         <div className="mt-0.5 whitespace-pre-wrap break-words opacity-90">{message}</div>
       </div>
     </div>
@@ -905,6 +1174,7 @@ function AssistantOutcome({ outcome }: { outcome: NonNullable<TranscriptRow["out
 }
 
 function JsonDetails({ label, value }: { label: string; value: unknown }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <details
@@ -918,14 +1188,14 @@ function JsonDetails({ label, value }: { label: string; value: unknown }) {
       </summary>
       {open && (
         <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
-          {formatJson(value)}
+          {formatJson(value, t("transcriptDetailsTruncated"))}
         </pre>
       )}
     </details>
   );
 }
 
-function formatJson(value: unknown): string {
+function formatJson(value: unknown, truncatedLabel = "[details truncated]"): string {
   const limit = 100_000;
   let formatted: string;
   if (typeof value === "string") {
@@ -938,18 +1208,19 @@ function formatJson(value: unknown): string {
     }
   }
   if (formatted.length <= limit) return formatted;
-  return `${formatted.slice(0, limit)}\n... [details truncated]`;
+  return `${formatted.slice(0, limit)}\n... ${truncatedLabel}`;
 }
 
 function ThinkingBlock({
   content,
-  label = "Thinking",
+  label,
   defaultOpen = false,
 }: {
   content: string;
   label?: string;
   defaultOpen?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(defaultOpen);
   const userToggled = useRef(false);
   const text = sanitizeAgentText(content);
@@ -970,7 +1241,7 @@ function ThinkingBlock({
         aria-expanded={open}
       >
         <Brain size={14} />
-        <span>{label}</span>
+        <span>{label ?? t("transcriptThinking")}</span>
         <ChevronRight
           size={13}
           className={`ml-auto transition-transform ${open ? "rotate-90" : ""}`}
@@ -986,13 +1257,18 @@ function ThinkingBlock({
 }
 
 function UsageLabel({ usage }: { usage?: TranscriptRow["usage"] }) {
+  const t = useT();
   if (!usage) return null;
   const tooltip = [
-    `Input: ${formatTokenCount(usage.input)} tokens`,
-    `Output: ${formatTokenCount(usage.output)} tokens`,
-    `Cache read: ${formatTokenCount(usage.cacheRead)} tokens`,
-    `Cache write: ${formatTokenCount(usage.cacheWrite)} tokens`,
-    `Reasoning: ${usage.reasoning === undefined ? "not reported" : formatTokenCount(usage.reasoning)}`,
+    t("transcriptUsageInput", { count: formatTokenCount(usage.input) }),
+    t("transcriptUsageOutput", { count: formatTokenCount(usage.output) }),
+    t("transcriptUsageCacheRead", { count: formatTokenCount(usage.cacheRead) }),
+    t("transcriptUsageCacheWrite", { count: formatTokenCount(usage.cacheWrite) }),
+    t("transcriptUsageReasoning", {
+      count: usage.reasoning === undefined
+        ? t("transcriptUsageNotReported")
+        : formatTokenCount(usage.reasoning),
+    }),
   ].join("\n");
   const cost =
     usage.cost.total > 0
@@ -1006,7 +1282,7 @@ function UsageLabel({ usage }: { usage?: TranscriptRow["usage"] }) {
       className="whitespace-nowrap text-[10px] tabular-nums text-muted"
       title={tooltip}
     >
-      {formatTokenCount(usage.totalTokens)} tok
+      {formatTokenCount(usage.totalTokens)} {t("transcriptTokenShort")}
       {cost ? ` / ${cost}` : ""}
     </span>
   );
@@ -1019,13 +1295,14 @@ function CopyMessageButton({
   text: string;
   className?: string;
 }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   if (!text) return null;
   return (
     <button
       type="button"
-      title={copied ? "Copied" : "Copy message"}
-      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? t("transcriptCopied") : t("transcriptCopyMessage")}
+      aria-label={copied ? t("transcriptCopied") : t("transcriptCopyMessage")}
       className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-opacity hover:bg-surface-overlay hover:text-foreground ${className}`}
       onClick={() => {
         void navigator.clipboard

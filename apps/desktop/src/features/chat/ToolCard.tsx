@@ -8,27 +8,31 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ToolTraceStatus } from "./transcript-model";
+import { useT, type Translate } from "../../lib/i18n/use-t";
 
-function limitToolText(value: string): string {
+function limitToolText(value: string, truncatedLabel = "[tool data truncated]"): string {
   const limit = 100_000;
   return value.length <= limit
     ? value
-    : `${value.slice(0, limit)}\n... [tool data truncated]`;
+    : `${value.slice(0, limit)}\n... ${truncatedLabel}`;
 }
 
-export function toolValueText(value: unknown): string {
+export function toolValueText(
+  value: unknown,
+  truncatedLabel = "[tool data truncated]",
+): string {
   if (value === undefined) return "";
   if (typeof value === "string") {
     try {
-      return limitToolText(JSON.stringify(JSON.parse(value), null, 2));
+      return limitToolText(JSON.stringify(JSON.parse(value), null, 2), truncatedLabel);
     } catch {
-      return limitToolText(value);
+      return limitToolText(value, truncatedLabel);
     }
   }
   try {
-    return limitToolText(JSON.stringify(value, null, 2) ?? "null");
+    return limitToolText(JSON.stringify(value, null, 2) ?? "null", truncatedLabel);
   } catch {
-    return limitToolText(String(value));
+    return limitToolText(String(value), truncatedLabel);
   }
 }
 
@@ -73,18 +77,18 @@ function toolIcon(name: string) {
   return Wrench;
 }
 
-export function statusLabel(status: ToolTraceStatus): string {
+export function statusLabel(status: ToolTraceStatus, t?: Translate): string {
   switch (status) {
     case "done":
-      return "Done";
+      return t?.("toolStatusDone") ?? "Done";
     case "error":
-      return "Failed";
+      return t?.("toolStatusFailed") ?? "Failed";
     case "aborted":
-      return "Stopped";
+      return t?.("toolStatusStopped") ?? "Stopped";
     case "running":
-      return "Running";
+      return t?.("toolStatusRunning") ?? "Running";
     default:
-      return "Waiting";
+      return t?.("toolStatusWaiting") ?? "Waiting";
   }
 }
 
@@ -114,6 +118,7 @@ export function useToolDisclosure(
 }
 
 export function ToolCard(props: ToolCardProps) {
+  const t = useT();
   const [open, setOpen] = useToolDisclosure(props);
   const Icon = toolIcon(props.name);
   const canExpand =
@@ -159,7 +164,9 @@ export function ToolCard(props: ToolCardProps) {
         <span className="shrink-0 text-[10px] text-muted max-[520px]:hidden">
           {formatDuration(props.startedAt, props.endedAt)}
         </span>
-        <span className={`shrink-0 text-[10px] ${statusClass}`}>{statusLabel(props.status)}</span>
+        <span className={`shrink-0 text-[10px] ${statusClass}`}>
+          {statusLabel(props.status, t)}
+        </span>
         {canExpand && (
           <ChevronRight
             size={13}
@@ -170,11 +177,11 @@ export function ToolCard(props: ToolCardProps) {
       {open && canExpand && (
         <div className="mb-2 ml-[22px] mt-1 flex flex-col gap-2">
           {props.args !== undefined && (
-            <ToolSection label="Arguments" value={props.args} />
+            <ToolSection label={t("toolArguments")} value={props.args} />
           )}
           {props.result !== undefined && (
             <ToolSection
-              label={props.status === "error" ? "Error" : "Result"}
+              label={props.status === "error" ? t("toolError") : t("toolResult")}
               value={props.result}
               error={props.status === "error"}
               terminal={props.name.toLocaleLowerCase().includes("bash")}
@@ -183,7 +190,7 @@ export function ToolCard(props: ToolCardProps) {
           {props.resultContent !== undefined && (
             <section>
               <div className="mb-1 text-[10px] font-medium text-muted">
-                {props.status === "error" ? "Error" : "Result"}
+                {props.status === "error" ? t("toolError") : t("toolResult")}
               </div>
               <div
                 className={
@@ -197,7 +204,7 @@ export function ToolCard(props: ToolCardProps) {
             </section>
           )}
           {props.details !== undefined && (
-            <ToolSection label="Details" value={props.details} />
+            <ToolSection label={t("toolDetails")} value={props.details} />
           )}
         </div>
       )}
@@ -216,6 +223,7 @@ function ToolSection({
   error?: boolean;
   terminal?: boolean;
 }) {
+  const t = useT();
   return (
     <section>
       <div className="mb-1 text-[10px] font-medium text-muted">{label}</div>
@@ -228,13 +236,14 @@ function ToolSection({
               : "bg-surface-overlay/55 text-foreground/80"
         }`}
       >
-        {toolValueText(value)}
+        {toolValueText(value, t("transcriptToolDataTruncated"))}
       </pre>
     </section>
   );
 }
 
 export function ToolDetailsDisclosure({ details }: { details?: unknown }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   if (details === undefined || details === null) return null;
   return (
@@ -245,11 +254,11 @@ export function ToolDetailsDisclosure({ details }: { details?: unknown }) {
     >
       <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
         <Braces size={12} />
-        <span>Details</span>
+        <span>{t("toolDetails")}</span>
       </summary>
       {open && (
         <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-overlay/50 px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground/70">
-          {toolValueText(details)}
+          {toolValueText(details, t("transcriptToolDataTruncated"))}
         </pre>
       )}
     </details>

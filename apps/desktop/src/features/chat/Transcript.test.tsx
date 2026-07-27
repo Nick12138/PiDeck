@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AssistantOrderedContent, DurationLabel, ExecutionTrace } from "./Transcript";
-import type { TranscriptBlock } from "./transcript-model";
+import { AssistantOrderedContent, DurationLabel, ExecutionTrace, ExtensionMessageRow } from "./Transcript";
+import type { TranscriptBlock, TranscriptRow } from "./transcript-model";
 
 function toolBlock(id: string, status: "running" | "done"): TranscriptBlock {
   return {
@@ -101,5 +101,90 @@ describe("AssistantOrderedContent", () => {
 
     expect(markup).toContain("1 action completed");
     expect(markup).toContain("Running 1 action");
+  });
+});
+
+describe("ExtensionMessageRow", () => {
+  it("uses the Agent coordination title as the only closed disclosure control", () => {
+    const row: TranscriptRow = {
+      key: "custom:1",
+      role: "custom",
+      blocks: [{ kind: "text", text: "Reply with: internal_tool({ action: 'respond' })" }],
+      copyText: "Reply with: internal_tool({ action: 'respond' })",
+      customType: "subagent_supervisor_request",
+      details: { id: "request-1" },
+      extensionPresentation: {
+        version: 1,
+        extensionId: "pi-subagents",
+        sourceLabel: "Subagents",
+        audience: "agent",
+        kind: "activity",
+        correlationId: "request-1",
+        title: "This must stay hidden",
+        summary: "This must also stay hidden",
+      },
+    };
+
+    const markup = renderToStaticMarkup(<ExtensionMessageRow row={row} />);
+
+    expect(markup).toContain("Agent coordination");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Technical details");
+    expect(markup).not.toContain("Reply with: internal_tool");
+    expect(markup).not.toContain("This must stay hidden");
+    expect(markup).not.toContain("This must also stay hidden");
+    expect(markup).not.toContain("Extension message");
+    expect(markup).not.toContain("border-accent");
+    expect(markup).not.toContain("<details");
+  });
+
+  it("renders a user decision from bounded presentation copy without exposing its custom type", () => {
+    const row: TranscriptRow = {
+      key: "custom:2",
+      role: "custom",
+      blocks: [],
+      copyText: "internal payload",
+      customType: "private_decision_protocol",
+      extensionPresentation: {
+        version: 1,
+        extensionId: "review-extension",
+        sourceLabel: "Review",
+        audience: "user",
+        kind: "decision",
+        correlationId: "review-1",
+        status: "pending",
+        title: "Choose a review path",
+        summary: "The extension is waiting for your choice.",
+      },
+    };
+
+    const markup = renderToStaticMarkup(<ExtensionMessageRow row={row} />);
+
+    expect(markup).toContain("Choose a review path");
+    expect(markup).toContain("Pending");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("The extension is waiting for your choice.");
+    expect(markup).not.toContain("private_decision_protocol");
+    expect(markup).not.toContain("Technical details");
+    expect(markup).not.toContain("border-y");
+  });
+
+  it("keeps unknown visible messages in a neutral closed fallback", () => {
+    const row: TranscriptRow = {
+      key: "custom:3",
+      role: "custom",
+      blocks: [{ kind: "text", text: "Legacy extension content" }],
+      copyText: "Legacy extension content",
+      customType: "legacy-extension",
+    };
+
+    const markup = renderToStaticMarkup(<ExtensionMessageRow row={row} />);
+
+    expect(markup).toContain("Extension message");
+    expect(markup).not.toContain("Legacy extension content");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("border-y");
+    expect(markup).not.toContain("border-accent");
   });
 });

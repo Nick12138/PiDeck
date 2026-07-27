@@ -12,6 +12,7 @@ import { formatTokenCount } from "../../lib/format-token-count";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { requestCompact, setAutoCompaction } from "./compaction-actions";
 import { Switch } from "../../components/Switch";
+import { useT } from "../../lib/i18n/use-t";
 
 const MODEL_MENU_MIN_WIDTH = 120;
 const MODEL_MENU_MAX_WIDTH = 280;
@@ -49,6 +50,18 @@ export function modelOptionLabel(model: ModelSummary): string {
   return `${model.provider}/${model.name || model.modelId}`;
 }
 
+export function thinkingLevelLabel(level: string): string {
+  const labels = {
+    off: "Off",
+    minimal: "Minimal",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra high",
+  } as const;
+  return level in labels ? labels[level as keyof typeof labels] : level;
+}
+
 export function canRequestModelList(args: {
   hasHost: boolean;
   hasWorkspace: boolean;
@@ -68,6 +81,7 @@ export function canRequestModelList(args: {
 }
 
 export function ContextUsageRing() {
+  const t = useT();
   const session = useAppStore((s) => s.session);
   const contextUsage = session?.contextUsage;
   const breakdown = contextUsage?.breakdown;
@@ -81,9 +95,12 @@ export function ContextUsageRing() {
   const roundedPercent = percent === null ? null : Math.round(percent);
   const title = contextUsage
     ? contextUsage.tokens === null
-      ? `Context usage unknown / ${formatTokenCount(contextUsage.contextWindow)} tokens`
-      : `${formatTokenCount(contextUsage.tokens)} / ${formatTokenCount(contextUsage.contextWindow)} context tokens`
-    : "No model context available";
+      ? t("contextUsageUnknown", { window: formatTokenCount(contextUsage.contextWindow) })
+      : t("contextUsageValue", {
+          used: formatTokenCount(contextUsage.tokens),
+          window: formatTokenCount(contextUsage.contextWindow),
+        })
+    : t("contextUnavailable");
   const autoCompactionEnabled = session?.autoCompactionEnabled ?? false;
 
   useEffect(() => {
@@ -134,39 +151,39 @@ export function ContextUsageRing() {
       </button>
       {open && (
         <div className="absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg">
-          <span className="font-medium">Context usage</span>
+          <span className="font-medium">{t("contextUsageTitle")}</span>
           <span className="mt-0.5 tabular-nums text-muted">{title}</span>
           {breakdown && (
             <>
               <span className="my-2 h-px bg-border" />
               <span className="mb-1 text-[10px] font-medium uppercase text-muted">
-                Estimated composition
+                {t("contextEstimatedComposition")}
               </span>
               <span className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
-                <span className="text-muted">System prompt</span>
+                <span className="text-muted">{t("contextSystemPrompt")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.systemPrompt)}</span>
-                <span className="text-muted">Tool definitions</span>
+                <span className="text-muted">{t("contextToolDefinitions")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.toolDefinitions)}</span>
-                <span className="text-muted">User prompts</span>
+                <span className="text-muted">{t("contextUserPrompts")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.userPrompts)}</span>
-                <span className="text-muted">Assistant</span>
+                <span className="text-muted">{t("contextAssistant")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.assistantMessages)}</span>
-                <span className="text-muted">Tool results</span>
+                <span className="text-muted">{t("contextToolResults")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.toolResults)}</span>
-                <span className="text-muted">Summaries</span>
+                <span className="text-muted">{t("contextSummaries")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.summaries)}</span>
-                <span className="text-muted">Other / framing</span>
+                <span className="text-muted">{t("contextOtherFraming")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.other)}</span>
               </span>
-              <span className="mt-2 text-[10px] text-muted">Estimated; total from provider.</span>
+              <span className="mt-2 text-[10px] text-muted">{t("contextEstimateNote")}</span>
             </>
           )}
           <span className="my-2 h-px bg-border" />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-muted">Auto-compaction</span>
+            <span className="text-muted">{t("contextAutoCompaction")}</span>
             <Switch
               checked={autoCompactionEnabled}
-              label="Toggle auto-compaction"
+              label={t("contextToggleAutoCompaction")}
               disabled={!session}
               onChange={() =>
                 session && void setAutoCompaction(!session.autoCompactionEnabled)
@@ -179,7 +196,7 @@ export function ContextUsageRing() {
             disabled={compactPending || !session?.isIdle}
             onClick={() => void compactNow()}
           >
-            {session?.isCompacting ? "Compacting…" : "Compact now"}
+            {session?.isCompacting ? t("contextCompacting") : t("contextCompactNow")}
           </button>
         </div>
       )}
@@ -189,6 +206,7 @@ export function ContextUsageRing() {
 
 /** Model menu and context indicator for the composer's bottom bar. */
 export function ModelControls() {
+  const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
@@ -324,7 +342,7 @@ export function ModelControls() {
     (thinkingModelSelected ? availableThinkingLevels : ["off"]);
   const modelMenuLabels = modelOptions.length > 0
     ? modelOptions.map(modelOptionLabel)
-    : ["No enabled models"];
+    : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
 
   useLayoutEffect(() => {
@@ -384,7 +402,7 @@ export function ModelControls() {
       setThinkingLevels(res.result.thinkingLevels);
       return true;
     }
-    pushNotification(res.error?.message ?? "Could not switch model", "error");
+    pushNotification(res.error?.message ?? t("modelSwitchFailed"), "error");
     return false;
   }
 
@@ -414,7 +432,7 @@ export function ModelControls() {
       setThinkingModelKey(null);
       return;
     }
-    pushNotification(res.error?.message ?? "Could not set thinking level", "error");
+    pushNotification(res.error?.message ?? t("modelThinkingSetFailed"), "error");
   }
 
   return (
@@ -433,14 +451,14 @@ export function ModelControls() {
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          title={session?.model ? modelOptionLabel(session.model) : "Select model"}
+          title={session?.model ? modelOptionLabel(session.model) : t("modelSelect")}
           onClick={() => {
             setMenuOpen((open) => !open);
             setThinkingModelKey(null);
           }}
         >
           <span className="truncate">
-            {session?.model ? modelOptionLabel(session.model) : "No model"}
+            {session?.model ? modelOptionLabel(session.model) : t("modelNone")}
           </span>
           <ChevronDown
             className={`shrink-0 transition-transform ${menuOpen ? "rotate-180" : ""}`}
@@ -456,10 +474,10 @@ export function ModelControls() {
               ref={modelMenuPanelRef}
               className="max-h-80 w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
               role="menu"
-              aria-label="Models"
+              aria-label={t("modelMenuLabel")}
             >
               {modelOptions.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-muted">No enabled models</p>
+                <p className="px-2 py-1.5 text-xs text-muted">{t("modelNoneEnabled")}</p>
               ) : modelOptions.map((model) => {
                 const key = `${model.provider}/${model.modelId}`;
                 const selected = session?.model?.provider === model.provider &&
@@ -492,8 +510,8 @@ export function ModelControls() {
                       className={`flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground ${
                         thinkingModelKey === key ? "bg-surface-overlay text-foreground" : ""
                       }`}
-                      title={`Thinking level for ${modelOptionLabel(model)}`}
-                      aria-label={`Thinking level for ${modelOptionLabel(model)}`}
+                      title={t("modelThinkingFor", { model: modelOptionLabel(model) })}
+                      aria-label={t("modelThinkingFor", { model: modelOptionLabel(model) })}
                       aria-expanded={thinkingModelKey === key}
                       onClick={(event) => {
                         if (thinkingModelKey === key) {
@@ -521,10 +539,12 @@ export function ModelControls() {
                 className="absolute left-full ml-1 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
                 style={{ top: thinkingMenuTop }}
                 role="menu"
-                aria-label={`Thinking level for ${modelOptionLabel(thinkingModel)}`}
+                aria-label={t("modelThinkingFor", { model: modelOptionLabel(thinkingModel) })}
               >
                 {thinkingMenuLevels.length === 0 ? (
-                  <span className="block px-2 py-1.5 text-[11px] text-muted">No levels</span>
+                  <span className="block px-2 py-1.5 text-[11px] text-muted">
+                    {t("modelNoThinkingLevels")}
+                  </span>
                 ) : thinkingMenuLevels.map((level) => {
                   const active = thinkingModelSelected && session?.thinkingLevel === level;
                   return (
@@ -543,7 +563,7 @@ export function ModelControls() {
                       <span className="flex size-3 shrink-0 items-center justify-center">
                         {active && <Check size={11} />}
                       </span>
-                      {level}
+                      {thinkingLevelLabel(level)}
                     </button>
                   );
                 })}

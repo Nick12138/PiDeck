@@ -5,6 +5,7 @@ import {
   includeCurrentModel,
   modelOptionLabel,
   requestModelListWithRetry,
+  thinkingLevelLabel,
   thinkingLevelsForModel,
 } from "./ModelControls";
 
@@ -53,6 +54,27 @@ describe("includeCurrentModel", () => {
 describe("modelOptionLabel", () => {
   it("prefixes the display name with the Provider ID", () => {
     expect(modelOptionLabel(current)).toBe("muapi/Grok 4.5");
+  });
+});
+
+describe("thinkingLevelLabel", () => {
+  it("keeps model thinking levels in English", () => {
+    expect([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ].map(thinkingLevelLabel)).toEqual([
+      "Off",
+      "Minimal",
+      "Low",
+      "Medium",
+      "High",
+      "Extra high",
+    ]);
+    expect(thinkingLevelLabel("provider-specific")).toBe("provider-specific");
   });
 });
 

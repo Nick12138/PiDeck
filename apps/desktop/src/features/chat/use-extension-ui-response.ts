@@ -1,0 +1,118 @@
+import type { JsonValue } from "@pideck/protocol";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { hostClient } from "../../lib/bridge/host-client";
+import { latestSessionTargetContext } from "../../lib/bridge/host-context";
+import { useT } from "../../lib/i18n/use-t";
+import {
+  isExtensionUiRequestExpired,
+  useAppStore,
+  type ExtensionUiRequestState,
+} from "../../lib/stores/app-store";
+
+export type ExtensionUiResponseController = {
+  input: string;
+  setInput: (value: string) => void;
+  submitting: boolean;
+  error: string | null;
+  respond: (status: "resolved" | "cancelled", value?: JsonValue) => Promise<boolean>;
+};
+
+export function useExtensionUiResponse(
+  request: ExtensionUiRequestState | null,
+): ExtensionUiResponseController {
+  const t = useT();
+  const setRequest = useAppStore((state) => state.setExtensionUiRequest);
+  const pushNotification = useAppStore((state) => state.pushNotification);
+  const [input, setInputState] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const requestRef = useRef(request);
+  requestRef.current = request;
+
+  const clearIfCurrent = useCallback(
+    (requestId: string): boolean => {
+      if (useAppStore.getState().extensionUiRequest?.requestId !== requestId) return false;
+      setRequest(null);
+      return true;
+    },
+    [setRequest],
+  );
+
+  useEffect(() => {
+    submittingRef.current = false;
+    setInputState(request?.defaultValue ?? "");
+    setSubmitting(false);
+    setError(null);
+  }, [request?.requestId]);
+
+  useEffect(() => {
+    if (!request?.expiresAt) return;
+    const requestId = request.requestId;
+    const timer = window.setTimeout(() => {
+      if (!clearIfCurrent(requestId)) return;
+      pushNotification(t("extUiExpired"), "warning");
+    }, Math.max(0, request.expiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [request?.requestId, request?.expiresAt, clearIfCurrent, pushNotification, t]);
+
+  const respond = useCallback(
+    async (status: "resolved" | "cancelled", value?: JsonValue): Promise<boolean> => {
+      if (!request || submittingRef.current) return false;
+      if (isExtensionUiRequestExpired(request)) {
+        if (clearIfCurrent(request.requestId)) {
+          pushNotification(t("extUiExpired"), "warning");
+        }
+        return false;
+      }
+
+      const requestId = request.requestId;
+      submittingRef.current = true;
+      setSubmitting(true);
+      setError(null);
+      try {
+        const state = useAppStore.getState();
+        const response = await hostClient.request(
+          "extensionUi.respond",
+          latestSessionTargetContext(
+            request.context,
+            state.host,
+            state.workspace,
+            state.session,
+          ),
+          { requestId, status, value },
+        );
+        if (!response.ok) {
+          const message = response.error?.message ?? t("extUiRespondFailed");
+          if (useAppStore.getState().extensionUiRequest?.requestId === requestId) {
+            setError(message);
+            pushNotification(message, "error");
+          }
+          return false;
+        }
+        clearIfCurrent(requestId);
+        return true;
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : t("extUiRespondFailed");
+        if (useAppStore.getState().extensionUiRequest?.requestId === requestId) {
+          setError(message);
+          pushNotification(message, "error");
+        }
+        return false;
+      } finally {
+        if (requestRef.current?.requestId === requestId) {
+          submittingRef.current = false;
+          setSubmitting(false);
+        }
+      }
+    },
+    [request, clearIfCurrent, pushNotification, t],
+  );
+
+  const setInput = useCallback((value: string) => {
+    setInputState(value);
+    setError(null);
+  }, []);
+
+  return { input, setInput, submitting, error, respond };
+}

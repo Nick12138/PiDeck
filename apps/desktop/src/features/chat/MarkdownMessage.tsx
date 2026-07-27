@@ -43,6 +43,7 @@ import {
   sanitizeAgentText,
   sanitizeMermaidSvg,
 } from "./markdown-utils";
+import { useT, type Translate } from "../../lib/i18n/use-t";
 
 type MarkdownMessageProps = {
   content: string;
@@ -179,17 +180,18 @@ function createFootnoteIdPlugin(prefix: string): RehypePlugin {
   };
 }
 
-function imageFallback({ alt, title }: MarkdownImageProps) {
+function ImageFallback({ alt, title }: MarkdownImageProps) {
+  const t = useT();
   const label = alt?.trim() || title?.trim();
   return label ? (
     <span className="inline-flex rounded-md bg-surface-overlay px-2 py-1 text-xs italic text-muted">
-      Image: {label}
+      {t("markdownImageLabel", { label })}
     </span>
   ) : null;
 }
 
-function openExternalLink(safeHref: string) {
-  if (!window.confirm(`Open external link?\n\n${safeHref}`)) return;
+function openExternalLink(safeHref: string, t: Translate) {
+  if (!window.confirm(t("markdownOpenExternalLink", { url: safeHref }))) return;
   void import("@tauri-apps/plugin-shell")
     .then(({ open }) => open(safeHref))
     .catch(() => window.open(safeHref, "_blank", "noopener,noreferrer"));
@@ -198,6 +200,7 @@ function openExternalLink(safeHref: string) {
 function safeLink(
   { children, href, title, node, target: _target, rel: _rel, ...props }: MarkdownLinkProps,
   footnotePrefix: string,
+  t: Translate,
 ) {
   const footnoteHref =
     typeof href === "string" &&
@@ -226,7 +229,7 @@ function safeLink(
       rel="noreferrer noopener"
       onClick={(event) => {
         event.preventDefault();
-        openExternalLink(safeHref);
+        openExternalLink(safeHref, t);
       }}
     >
       {children}
@@ -246,12 +249,13 @@ function isGeneratedFootnoteLink(node: unknown): boolean {
 }
 
 function MermaidError({ chart, error, retry }: MermaidErrorComponentProps) {
+  const t = useT();
   return (
     <div className="markdown-mermaid-error" role="alert">
       <div className="flex min-w-0 items-start gap-2">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <div className="min-w-0">
-          <p className="font-medium">Mermaid diagram failed to render</p>
+          <p className="font-medium">{t("markdownMermaidFailed")}</p>
           <p className="mt-1 break-words font-mono text-xs opacity-80">{error}</p>
         </div>
       </div>
@@ -259,13 +263,15 @@ function MermaidError({ chart, error, retry }: MermaidErrorComponentProps) {
         type="button"
         className="markdown-mermaid-error-retry"
         onClick={retry}
-        title="Retry diagram"
-        aria-label="Retry diagram"
+        title={t("markdownRetryDiagram")}
+        aria-label={t("markdownRetryDiagram")}
       >
         <RotateCw className="size-3.5" aria-hidden="true" />
       </button>
       <details className="mt-2 min-w-0">
-        <summary className="cursor-pointer text-xs opacity-80">Show source</summary>
+        <summary className="cursor-pointer text-xs opacity-80">
+          {t("markdownShowSource")}
+        </summary>
         <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-black/10 p-2 text-xs">{chart}</pre>
       </details>
     </div>
@@ -282,6 +288,7 @@ function codeText(child: ReactElement<CodeChildProps>): string {
 }
 
 function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
+  const t = useT();
   const child = isValidElement<CodeChildProps>(children) ? children : null;
   const content = child ? codeText(child) : "";
   const lineCount = codeLineCount(content);
@@ -314,8 +321,8 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
         type="button"
         onClick={() => void copyCode()}
         className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md bg-surface/90 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-        title={copied ? "Copied" : "Copy code"}
-        aria-label={copied ? "Copied" : "Copy code"}
+        title={copied ? t("markdownCopied") : t("markdownCopyCode")}
+        aria-label={copied ? t("markdownCopied") : t("markdownCopyCode")}
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
@@ -335,7 +342,9 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
           aria-expanded={expanded}
         >
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded ? "Collapse code" : `Expand ${lineCount} lines`}
+          {expanded
+            ? t("markdownCollapseCode")
+            : t("markdownExpandLines", { count: lineCount })}
         </button>
       )}
     </div>
@@ -343,7 +352,7 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
 }
 
 const markdownComponents: Components = {
-  img: imageFallback,
+  img: ImageFallback,
   pre: CollapsibleCodeBlock,
 };
 
@@ -353,6 +362,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   showCaret = false,
   className = "",
 }: MarkdownMessageProps) {
+  const t = useT();
   const reactMessageId = useId();
   const footnotePrefix = useMemo(
     () => `pideck-md-${reactMessageId.replace(/[^A-Za-z0-9_-]/g, "") || "message"}-`,
@@ -366,9 +376,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const components = useMemo<Components>(
     () => ({
       ...markdownComponents,
-      a: (props) => safeLink(props, footnotePrefix),
+      a: (props) => safeLink(props, footnotePrefix, t),
     }),
-    [footnotePrefix],
+    [footnotePrefix, t],
   );
   const urlTransform = useCallback(
     (url: string, key: string, node: unknown) => {
@@ -384,9 +394,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     if (!anchor || !anchor.closest('[data-streamdown="mermaid"]')) return false;
     const href = anchor.getAttribute("data-pideck-mermaid-href");
     if (!href || !isSafeExternalUrl(href)) return true;
-    openExternalLink(href);
+    openExternalLink(href, t);
     return true;
-  }, []);
+  }, [t]);
   const normalized = useMemo(
     () => deferIncompleteMermaid(sanitizeAgentText(content)),
     [content],
