@@ -111,6 +111,13 @@ the restore cannot complete, the entry is kept and `modelConfigHealth` reports
 know whether provider configuration and credentials still agree. That state is
 sticky for the process lifetime: only a restart that finds no journal clears it.
 
+Backup files (or the explicit `auth.absent` marker) are fsynced before the
+actionable journal record is published. Recovery accepts exactly one credential
+backup state: either a readable `auth.json` backup or an empty `auth.absent`
+marker. Missing, unreadable, malformed, or ambiguous backup state leaves both
+live files untouched, keeps the journal, and reports degraded health. A
+non-empty `auth.absent` file is treated as a malformed marker.
+
 ## Extension provider ownership
 
 Extensions register model providers into the one shared `ModelRuntime`, whose

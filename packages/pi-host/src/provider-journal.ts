@@ -18,7 +18,16 @@
  * Host genuinely does not know whether the configuration is coherent.
  */
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderMutationStage } from "@pideck/protocol";
 import { logger } from "./logger.js";
@@ -55,15 +64,46 @@ function entryDir(agentDir: string, journalId: string): string {
   return join(journalRoot(agentDir), journalId);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errnoCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | null | undefined)?.code;
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+async function writeDurableFile(path: string, content: string): Promise<void> {
+  const handle = await open(path, "wx", FILE_MODE);
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.chmod(FILE_MODE);
+    await handle.sync();
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
 async function writeRecord(directory: string, record: ProviderJournalRecord): Promise<void> {
   const path = join(directory, JOURNAL_FILE);
   const temp = `${path}.${randomUUID()}.tmp`;
-  await writeFile(temp, JSON.stringify(record, null, 2) + "\n", {
-    encoding: "utf8",
-    mode: FILE_MODE,
-  });
-  const { rename } = await import("node:fs/promises");
-  await rename(temp, path);
+  try {
+    await writeDurableFile(temp, JSON.stringify(record, null, 2) + "\n");
+    await rename(temp, path);
+    await syncDirectory(directory);
+  } catch (error) {
+    await unlink(temp).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function readRecord(directory: string): Promise<ProviderJournalRecord | null> {
@@ -110,11 +150,13 @@ export class ProviderMutationJournal {
     const journalId = randomUUID();
     const directory = entryDir(options.agentDir, journalId);
     await mkdir(directory, { recursive: true, mode: DIR_MODE });
+    await syncDirectory(options.agentDir);
+    await syncDirectory(journalRoot(options.agentDir));
 
     let modelsBackup: string | null = null;
     if (options.modelsBytes !== null) {
       modelsBackup = join(directory, "models.json");
-      await writeFile(modelsBackup, options.modelsBytes, { encoding: "utf8", mode: FILE_MODE });
+      await writeDurableFile(modelsBackup, options.modelsBytes);
     }
 
     // The credential snapshot is whole-file, so it restores every provider the
@@ -122,11 +164,11 @@ export class ProviderMutationJournal {
     const snapshot = await options.credentialStore.snapshot();
     const authBackup = join(directory, "auth.json");
     if (snapshot.content === null) {
-      await writeFile(join(directory, "auth.absent"), "", { encoding: "utf8", mode: FILE_MODE });
+      await writeDurableFile(join(directory, "auth.absent"), "");
     } else {
-      await writeFile(authBackup, snapshot.content, { encoding: "utf8", mode: FILE_MODE });
-      await chmod(authBackup, FILE_MODE).catch(() => undefined);
+      await writeDurableFile(authBackup, snapshot.content);
     }
+    await syncDirectory(directory);
 
     const record: ProviderJournalRecord = {
       schemaVersion: 1,
@@ -155,12 +197,15 @@ export class ProviderMutationJournal {
 
   /** The mutation fully succeeded. Removing the entry is the commit marker. */
   async finish(): Promise<void> {
-    await rm(this.directory, { recursive: true, force: true }).catch((error: unknown) => {
+    try {
+      await rm(this.directory, { recursive: true, force: true });
+      await syncDirectory(journalRoot(this.agentDir));
+    } catch (error) {
       logger.warn("Could not clear provider journal entry", {
         journalId: this.record.journalId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
-    });
+    }
   }
 
   /**
@@ -187,34 +232,53 @@ async function restoreFromEntry(
   credentialStore: FileCredentialStore,
 ): Promise<JournalRecovery> {
   const failures: string[] = [];
+  let modelsPlan: { kind: "restore"; content: string } | { kind: "remove" } | null = null;
+  let authContent: string | null = null;
+  let authReady = false;
 
   try {
-    const { rename, unlink } = await import("node:fs/promises");
-    if (record.modelsBackup) {
-      const bytes = await readFile(record.modelsBackup, "utf8");
-      const temp = `${record.modelsPath}.${randomUUID()}.restore`;
-      await writeFile(temp, bytes, { encoding: "utf8", mode: FILE_MODE });
-      await rename(temp, record.modelsPath);
-    } else {
-      // models.json did not exist before the mutation.
-      await unlink(record.modelsPath).catch((error: unknown) => {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") throw error;
-      });
-    }
+    modelsPlan =
+      record.modelsBackup === null
+        ? { kind: "remove" }
+        : { kind: "restore", content: await readFile(record.modelsBackup, "utf8") };
   } catch (error) {
-    failures.push(`models.json: ${error instanceof Error ? error.message : String(error)}`);
+    failures.push(`models.json backup: ${errorMessage(error)}`);
   }
 
   try {
-    const authBackup = join(directory, "auth.json");
-    const content = await readFile(authBackup, "utf8").catch(() => null);
-    await credentialStore.restore({
-      path: credentialStorePath(agentDir),
-      content,
-    });
+    authContent = await readCredentialBackup(directory);
+    authReady = true;
   } catch (error) {
-    failures.push(`auth.json: ${error instanceof Error ? error.message : String(error)}`);
+    failures.push(`auth.json credential backup: ${errorMessage(error)}`);
+  }
+
+  // An incomplete journal is not authority to mutate either live file. Keep
+  // the entry so startup remains degraded until recovery can be resolved.
+  if (modelsPlan && authReady) {
+    try {
+      if (modelsPlan.kind === "restore") {
+        const bytes = modelsPlan.content;
+        const temp = `${record.modelsPath}.${randomUUID()}.restore`;
+        await writeFile(temp, bytes, { encoding: "utf8", mode: FILE_MODE });
+        await rename(temp, record.modelsPath);
+      } else {
+        // models.json did not exist before the mutation.
+        await unlink(record.modelsPath).catch((error: unknown) => {
+          if (errnoCode(error) !== "ENOENT") throw error;
+        });
+      }
+    } catch (error) {
+      failures.push(`models.json: ${errorMessage(error)}`);
+    }
+
+    try {
+      await credentialStore.restore({
+        path: credentialStorePath(agentDir),
+        content: authContent,
+      });
+    } catch (error) {
+      failures.push(`auth.json: ${errorMessage(error)}`);
+    }
   }
 
   return {
@@ -226,6 +290,41 @@ async function restoreFromEntry(
         ? `Rolled back interrupted ${record.operation} of provider ${record.providerId}`
         : `Could not fully roll back ${record.operation} of provider ${record.providerId}: ${failures.join("; ")}`,
   };
+}
+
+type OptionalBackup = { present: false } | { present: true; content: string };
+
+async function readOptionalBackup(path: string): Promise<OptionalBackup> {
+  try {
+    return { present: true, content: await readFile(path, "utf8") };
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return { present: false };
+    throw error;
+  }
+}
+
+async function readCredentialBackup(directory: string): Promise<string | null> {
+  const [backup, absent] = await Promise.all([
+    readOptionalBackup(join(directory, "auth.json")),
+    readOptionalBackup(join(directory, "auth.absent")),
+  ]);
+
+  if (backup.present && absent.present) {
+    throw new Error("auth.json and auth.absent both exist");
+  }
+  if (!backup.present && !absent.present) {
+    throw new Error("auth.json and auth.absent are both missing");
+  }
+  if (absent.present) {
+    if (absent.content.length !== 0) {
+      throw new Error("auth.absent is not an empty marker");
+    }
+    return null;
+  }
+  if (!backup.present) {
+    throw new Error("auth.json backup state is invalid");
+  }
+  return backup.content;
 }
 
 function credentialStorePath(agentDir: string): string {

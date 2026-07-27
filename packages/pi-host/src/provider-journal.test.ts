@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,6 +30,12 @@ function createAgentDir(): { agentDir: string; modelsPath: string; store: FileCr
 function journalEntries(agentDir: string): string[] {
   const root = join(agentDir, "provider-journal");
   return existsSync(root) ? readdirSync(root) : [];
+}
+
+function onlyJournalEntry(agentDir: string): string {
+  const entries = journalEntries(agentDir);
+  expect(entries).toHaveLength(1);
+  return join(agentDir, "provider-journal", entries[0]!);
 }
 
 async function beginSave(agentDir: string, modelsPath: string, store: FileCredentialStore) {
@@ -116,6 +122,119 @@ describe("recoverProviderJournals", () => {
     expect(outcome).toBeNull(); // resolved cleanly, so nothing to report
     expect(readFileSync(modelsPath, "utf8")).toBe(ORIGINAL_MODELS);
     expect(await recovered.readRaw("a")).toEqual({ type: "api_key", key: "sk-original" });
+    expect(journalEntries(agentDir)).toHaveLength(0);
+  });
+
+  it("fails closed when the credential backup is missing", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    await beginSave(agentDir, modelsPath, store);
+    rmSync(join(onlyJournalEntry(agentDir), "auth.json"));
+
+    const liveModels = JSON.stringify({ providers: { crashed: {} } });
+    writeFileSync(modelsPath, liveModels);
+    await store.modify("a", async () => ({ type: "api_key", key: "sk-live" }));
+    const authPath = join(agentDir, "auth.json");
+    const liveAuth = readFileSync(authPath, "utf8");
+
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.restored).toBe(false);
+    expect(outcome!.message).toContain("credential backup");
+    expect(buildDegradedModelConfigHealth(outcome!).state).toBe("degraded");
+    expect(readFileSync(modelsPath, "utf8")).toBe(liveModels);
+    expect(readFileSync(authPath, "utf8")).toBe(liveAuth);
+    expect(journalEntries(agentDir)).toHaveLength(1);
+  });
+
+  it("fails closed when the credential backup cannot be read as a file", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    await beginSave(agentDir, modelsPath, store);
+    const authBackup = join(onlyJournalEntry(agentDir), "auth.json");
+    rmSync(authBackup);
+    mkdirSync(authBackup);
+
+    const liveModels = JSON.stringify({ providers: { crashed: {} } });
+    writeFileSync(modelsPath, liveModels);
+    const authPath = join(agentDir, "auth.json");
+    const liveAuth = readFileSync(authPath, "utf8");
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.restored).toBe(false);
+    expect(outcome!.message).toContain("credential backup");
+    expect(readFileSync(modelsPath, "utf8")).toBe(liveModels);
+    expect(readFileSync(authPath, "utf8")).toBe(liveAuth);
+    expect(journalEntries(agentDir)).toHaveLength(1);
+  });
+
+  it("fails closed when credential backup and absence marker both exist", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    await beginSave(agentDir, modelsPath, store);
+    writeFileSync(join(onlyJournalEntry(agentDir), "auth.absent"), "");
+
+    const liveModels = JSON.stringify({ providers: { crashed: {} } });
+    writeFileSync(modelsPath, liveModels);
+    await store.modify("a", async () => ({ type: "api_key", key: "sk-live" }));
+    const authPath = join(agentDir, "auth.json");
+    const liveAuth = readFileSync(authPath, "utf8");
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.restored).toBe(false);
+    expect(outcome!.message).toContain("credential backup");
+    expect(readFileSync(modelsPath, "utf8")).toBe(liveModels);
+    expect(readFileSync(authPath, "utf8")).toBe(liveAuth);
+    expect(journalEntries(agentDir)).toHaveLength(1);
+  });
+
+  it("fails closed when the absence marker is not empty", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    await beginSave(agentDir, modelsPath, store);
+    const entry = onlyJournalEntry(agentDir);
+    rmSync(join(entry, "auth.json"));
+    writeFileSync(join(entry, "auth.absent"), "corrupt");
+
+    const authPath = join(agentDir, "auth.json");
+    const liveAuth = readFileSync(authPath, "utf8");
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.restored).toBe(false);
+    expect(outcome!.message).toContain("credential backup");
+    expect(readFileSync(authPath, "utf8")).toBe(liveAuth);
+    expect(journalEntries(agentDir)).toHaveLength(1);
+  });
+
+  it("uses auth.absent to restore a credential file that was originally absent", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    const authPath = join(agentDir, "auth.json");
+    rmSync(authPath);
+    vi.spyOn(store, "snapshot").mockResolvedValue({ path: authPath, content: null });
+
+    await beginSave(agentDir, modelsPath, store);
+    expect(existsSync(join(onlyJournalEntry(agentDir), "auth.absent"))).toBe(true);
+    writeFileSync(authPath, JSON.stringify({ a: { type: "api_key", key: "sk-new" } }));
+
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).toBeNull();
+    expect(existsSync(authPath)).toBe(false);
     expect(journalEntries(agentDir)).toHaveLength(0);
   });
 

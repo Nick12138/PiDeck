@@ -118,9 +118,12 @@ class HostProcess {
   }
 
   async kill(): Promise<void> {
-    if (!this.proc.killed) {
-      this.proc.kill();
-    }
+    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return;
+    const exited = new Promise<void>((resolve) => {
+      this.proc.once("exit", () => resolve());
+    });
+    this.proc.kill();
+    await exited;
   }
 }
 
