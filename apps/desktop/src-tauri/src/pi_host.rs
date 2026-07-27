@@ -28,22 +28,22 @@ const MAX_HOST_STDERR_LINE_BYTES: usize = 1024 * 1024;
 const HOST_STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
-struct HostStdoutLineTooLong {
+struct HostLineTooLong {
     max_bytes: usize,
 }
 
-impl std::fmt::Display for HostStdoutLineTooLong {
+impl std::fmt::Display for HostLineTooLong {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "line exceeds {} byte limit", self.max_bytes)
     }
 }
 
-impl std::error::Error for HostStdoutLineTooLong {}
+impl std::error::Error for HostLineTooLong {}
 
-fn is_host_stdout_line_too_long(error: &std::io::Error) -> bool {
+fn is_host_line_too_long(error: &std::io::Error) -> bool {
     error
         .get_ref()
-        .and_then(|source| source.downcast_ref::<HostStdoutLineTooLong>())
+        .and_then(|source| source.downcast_ref::<HostLineTooLong>())
         .is_some()
 }
 
@@ -117,7 +117,7 @@ where
         }
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            HostStdoutLineTooLong { max_bytes },
+            HostLineTooLong { max_bytes },
         ));
     }
     *buffer = String::from_utf8(bytes).map_err(|error| {
@@ -138,12 +138,17 @@ where
     R: AsyncBufRead + Unpin,
 {
     let mut bytes = Vec::new();
-    let mut limited = reader.take((max_bytes as u64).saturating_add(1));
-    let bytes_read = limited.read_until(b'\n', &mut bytes).await?;
+    let bytes_read = {
+        let mut limited = (&mut *reader).take((max_bytes as u64).saturating_add(1));
+        limited.read_until(b'\n', &mut bytes).await?
+    };
     if bytes_read > max_bytes {
+        if bytes.last() != Some(&b'\n') {
+            discard_through_newline(reader).await?;
+        }
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("line exceeds {max_bytes} byte limit"),
+            HostLineTooLong { max_bytes },
         ));
     }
     buffer.clear();
@@ -993,6 +998,16 @@ impl PiHostManager {
                         eprintln!("[pi-host] {trimmed}");
                         let _ = app_err.emit("pi-host-stderr", trimmed);
                     }
+                    Err(error) if is_host_line_too_long(&error) => {
+                        let message = format!("Pi Host stderr line truncated: {error}");
+                        {
+                            let mut logs = stderr_buf.lock().await;
+                            push_stderr_tail(&mut logs, message.clone(), 50);
+                        }
+                        eprintln!("[pideck] {message}");
+                        let _ = app_err.emit("pi-host-stderr", message);
+                        continue;
+                    }
                     Err(error) => {
                         let message = format!("Pi Host stderr transport read failed: {error}");
                         {
@@ -1051,7 +1066,7 @@ impl PiHostManager {
                             }
                             let _ = app_out.emit("pi-host-stdout", payload);
                         }
-                        Err(error) if is_host_stdout_line_too_long(&error) => {
+                        Err(error) if is_host_line_too_long(&error) => {
                             let message = format!("Pi Host stdout frame dropped: {error}");
                             eprintln!("[pideck] {message}");
                             let _ = app_out.emit("pi-host-stderr", message);

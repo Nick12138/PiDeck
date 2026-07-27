@@ -296,6 +296,32 @@ rl.on('line', (line) => {
     }
 
     #[tokio::test]
+    async fn bounded_stderr_reader_rejects_oversize_line_and_keeps_reading() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let write_task = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            writer.write_all(b"123456789\nok\n").await.unwrap();
+        });
+        let mut reader = tokio::io::BufReader::new(reader);
+        let mut line = String::new();
+
+        let error = read_bounded_lossy_line(&mut reader, &mut line, 8)
+            .await
+            .expect_err("oversize stderr line must be reported");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("8 byte limit"));
+
+        assert_eq!(
+            read_bounded_lossy_line(&mut reader, &mut line, 8)
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(line, "ok\n");
+        write_task.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn host_stdin_write_enforces_its_own_deadline() {
         let (mut writer, _idle_reader) = tokio::io::duplex(1);
         let result = tokio::time::timeout(
