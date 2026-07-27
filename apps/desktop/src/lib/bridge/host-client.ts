@@ -1,6 +1,4 @@
 import {
-  isHostEvent,
-  isHostResponse,
   parseHostEvent,
   parseHostResponse,
   type HostContextMap,
@@ -105,6 +103,23 @@ export class HostClient {
     return this.sequence;
   }
 
+  private rejectPendingForInvalidResponse(message: unknown, diagnostic: string): boolean {
+    if (typeof message !== "object" || message === null || Array.isArray(message)) return false;
+    const id = (message as Record<string, unknown>).id;
+    if (typeof id !== "string") return false;
+    const pending = this.pending.get(id);
+    if (!pending) return false;
+
+    if (pending.timer) clearTimeout(pending.timer);
+    this.pending.delete(id);
+    pending.reject(
+      new Error(
+        `Host protocol mismatch for ${String(pending.method)} response: ${diagnostic}`,
+      ),
+    );
+    return true;
+  }
+
   private handleLine(line: string): void {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -115,13 +130,9 @@ export class HostClient {
       return;
     }
 
-    if (isHostResponse(msg)) {
-      // C3: deep envelope + method result validation at client boundary
-      const deep = parseHostResponse(msg);
-      if (!deep.ok) {
-        return;
-      }
-      const response = deep.value as HostResponseEnvelope;
+    const parsedResponse = parseHostResponse(msg);
+    if (parsedResponse.ok) {
+      const response = parsedResponse.value as HostResponseEnvelope;
       if (
         this.hostInstanceId &&
         response.hostInstanceId !== this.hostInstanceId &&
@@ -147,13 +158,11 @@ export class HostClient {
       }
       return;
     }
+    if (this.rejectPendingForInvalidResponse(msg, parsedResponse.error.message)) return;
 
-    if (isHostEvent(msg)) {
-      const deepEv = parseHostEvent(msg);
-      if (!deepEv.ok) {
-        return;
-      }
-      const event = deepEv.value as HostEventEnvelope;
+    const parsedEvent = parseHostEvent(msg);
+    if (parsedEvent.ok) {
+      const event = parsedEvent.value as HostEventEnvelope;
       if (isSyntheticLifecycleFatal(event)) {
         // Rust lifecycle notifications use sentinel identities because the child
         // may already be gone. A notification can arrive after its replacement
