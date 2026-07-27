@@ -23,3 +23,10 @@ coverage/
 artifacts/
 .artifacts/
 
+# Local agent planning and scratch files
+/.planning/
+/notes.md
+/task_plan.md
+
+# Tauri generates this platform copy; desktop-schema.json is the tracked canonical schema
+/apps/desktop/src-tauri/gen/schemas/macOS-schema.json
