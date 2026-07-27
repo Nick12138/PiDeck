@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../lib/stores/app-store";
-import { hostClient } from "../lib/bridge/host-client";
+import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
 import { createTauriTransport } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
@@ -147,7 +147,7 @@ export function applyModelChanged(payload: HostEventPayloadMap["model.changed"])
   store.setThinkingLevels(payload.availableThinkingLevels);
 }
 
-function handleHostEvent(
+export function handleHostEvent(
   event: HostEventEnvelope,
   requestRecovery: (reason: string) => void,
   agentEventBuffer: {
@@ -159,11 +159,13 @@ function handleHostEvent(
   const lifecycleEvent = event.event === "host.statusChanged" || event.event === "host.fatal";
   if ((store.rehydrating || store.desynchronized) && !lifecycleEvent) return;
 
-  const seqAction = store.noteSequence(event.sequence);
-  if (seqAction === "drop") return;
-  if (seqAction === "gap") {
-    requestRecovery(`sequence gap at ${event.sequence}`);
-    return;
+  if (!isSyntheticLifecycleFatal(event)) {
+    const seqAction = store.noteSequence(event.sequence);
+    if (seqAction === "drop") return;
+    if (seqAction === "gap") {
+      requestRecovery(`sequence gap at ${event.sequence}`);
+      return;
+    }
   }
 
   const hostId = store.host?.hostInstanceId ?? hostClient.getHostInstanceId();

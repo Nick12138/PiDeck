@@ -28,6 +28,22 @@ type Pending = {
 
 export type HostEventMessage = HostEventEnvelope;
 
+const SYNTHETIC_LIFECYCLE_FATAL_HOST_IDS = new Set([
+  "00000000-0000-4000-8000-000000000001",
+  "00000000-0000-4000-8000-000000000002",
+  "00000000-0000-4000-8000-000000000003",
+]);
+
+export function isSyntheticLifecycleFatal(
+  event: HostEventEnvelope,
+): event is HostEventEnvelope<"host.fatal"> {
+  return (
+    event.event === "host.fatal" &&
+    event.sequence === 1 &&
+    SYNTHETIC_LIFECYCLE_FATAL_HOST_IDS.has(event.hostInstanceId)
+  );
+}
+
 /**
  * Typed protocol client for the Node Pi Host.
  * React never imports pi-coding-agent — only this bridge talks JSONL.
@@ -138,15 +154,7 @@ export class HostClient {
         return;
       }
       const event = deepEv.value as HostEventEnvelope;
-      const syntheticLifecycleFatal =
-        event.event === "host.fatal" &&
-        event.sequence === 1 &&
-        [
-          "00000000-0000-4000-8000-000000000001",
-          "00000000-0000-4000-8000-000000000002",
-          "00000000-0000-4000-8000-000000000003",
-        ].includes(event.hostInstanceId);
-      if (syntheticLifecycleFatal) {
+      if (isSyntheticLifecycleFatal(event)) {
         // Rust lifecycle notifications use sentinel identities because the child
         // may already be gone. A notification can arrive after its replacement
         // has emitted host.ready; never let that stale epoch retire the new Host.
