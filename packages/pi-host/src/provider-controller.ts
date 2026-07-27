@@ -1302,30 +1302,40 @@ export function createProviderHandlers(
   };
 
   return {
-    "provider.list": async () => {
-      try {
-        await refreshRegistry(factory);
-        const config = await readModelsConfig(modelsPath);
-        const enabledProviders = new Set(resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-          runtimeProviderIds(factory),
-        ));
-        const providers = Object.entries(config.providers)
-          .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
-          .map(([id, raw]) => providerSnapshot(id, raw, factory, enabledProviders.has(id)))
-          .sort((left, right) => left.name.localeCompare(right.name));
-        // Proves the migrated runtime can still compose the user's providers.
-        await factory.deps.recordMigrationMilestone?.("providerSnapshot");
-        return { result: { providers } };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "SETTINGS_READ_FAILED",
-            error instanceof Error ? error.message : "Could not read Provider configuration",
-          ),
-        };
+    "provider.list": async (ctx) => {
+      const server = factory.getServer();
+      if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
+      const out = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        run: async () => {
+          await refreshRegistry(factory);
+          const config = await readModelsConfig(modelsPath);
+          const enabledProviders = new Set(resolveEnabledProviders(
+            config,
+            factory.getGraph()?.agentSession?.model?.provider,
+            runtimeProviderIds(factory),
+          ));
+          const providers = Object.entries(config.providers)
+            .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
+            .map(([id, raw]) => providerSnapshot(id, raw, factory, enabledProviders.has(id)))
+            .sort((left, right) => left.name.localeCompare(right.name));
+          // Proves the migrated runtime can still compose the user's providers.
+          await factory.deps.recordMigrationMilestone?.("providerSnapshot");
+          return { providers };
+        },
+      });
+      if (!out.ok) {
+        if (out.error.code === "INTERNAL_ERROR") {
+          return {
+            error: createHostError("SETTINGS_READ_FAILED", out.error.message),
+            identity: out.identity,
+          };
+        }
+        return { error: out.error, identity: out.identity };
       }
+      return { result: out.result, identity: out.identity };
     },
 
     "provider.setEnabled": async (ctx) => {

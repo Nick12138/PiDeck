@@ -183,6 +183,30 @@ describe("Provider controller", () => {
     }
   });
 
+  it("rejects Provider listing while a Provider mutation owns the graph", async () => {
+    const { handlers, modelRuntime, server } = await setup({ providers: {} });
+    const refresh = vi.spyOn(modelRuntime, "refresh");
+    expect(
+      server.serviceGraphLock.tryAcquire({
+        operationKind: "provider.mutation",
+        requestId: "held-provider-mutation",
+      }),
+    ).toBe(true);
+
+    try {
+      const outcome = await handlers["provider.list"]!({
+        id: "list-during-mutation",
+        params: null,
+      } as never);
+
+      expect("error" in outcome && outcome.error.code).toBe("SERVICE_GRAPH_BUSY");
+      if ("error" in outcome) expect(outcome.error.retryable).toBe(true);
+      expect(refresh).not.toHaveBeenCalled();
+    } finally {
+      server.serviceGraphLock.release("held-provider-mutation");
+    }
+  });
+
   it("preserves unrelated configuration and keeps API keys out of models.json", async () => {
     const { layout, credentialStore, handlers } = await setup({
       version: 1,
