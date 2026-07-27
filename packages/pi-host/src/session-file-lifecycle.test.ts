@@ -84,6 +84,52 @@ function writeSession(dir: string, sessionId: string, cwd: string): string {
 }
 
 describe("Session file lifecycle", () => {
+  it("invalidates the Workspace cache before persistent Session mutations", async () => {
+    const fixture = createFixture();
+    const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
+    let expectedSourcePath = sessionPath;
+    const invalidate = vi
+      .spyOn(fixture.factory, "invalidateRetainedWorkspaceGraph")
+      .mockImplementation(async (canonicalCwd) => {
+        expect(canonicalCwd).toBe(fixture.cwd);
+        expect(existsSync(expectedSourcePath)).toBe(true);
+      });
+
+    const renamed = await fixture.factory.renameSession(
+      "rename-with-invalidation",
+      SESSION_ID,
+      sessionPath,
+      "Updated name",
+    );
+    expect("error" in renamed).toBe(false);
+
+    const archived = await fixture.factory.archiveSession(
+      "archive-with-invalidation",
+      SESSION_ID,
+      sessionPath,
+    );
+    expect("error" in archived).toBe(false);
+    if ("error" in archived) return;
+    expectedSourcePath = archived.sessionPath;
+
+    const restored = await fixture.factory.restoreSession(
+      "restore-with-invalidation",
+      SESSION_ID,
+      archived.sessionPath,
+    );
+    expect("error" in restored).toBe(false);
+    if ("error" in restored) return;
+    expectedSourcePath = restored.sessionPath;
+
+    const deleted = await fixture.factory.deleteSession(
+      "delete-with-invalidation",
+      SESSION_ID,
+      restored.sessionPath,
+    );
+    expect(deleted).toEqual({ sessionId: SESSION_ID, deleted: true });
+    expect(invalidate).toHaveBeenCalledTimes(4);
+  });
+
   it("renames inactive and archived Sessions without activating them", async () => {
     const fixture = createFixture();
     const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
@@ -246,11 +292,13 @@ describe("Session file lifecycle", () => {
     const fixture = createFixture();
     const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
     const otherPath = writeSession(fixture.activeDir, SECOND_SESSION_ID, fixture.cwd);
+    const invalidate = vi.spyOn(fixture.factory, "invalidateRetainedWorkspaceGraph");
 
     const forged = await fixture.factory.archiveSession("forged", SESSION_ID, otherPath);
     expect("error" in forged && forged.error.code).toBe("SESSION_NOT_FOUND");
     expect(existsSync(sessionPath)).toBe(true);
     expect(existsSync(otherPath)).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
 
     vi.spyOn(fixture.factory, "getSessionRuntimeInfo").mockReturnValue({
       runtimeState: "idle",
@@ -263,6 +311,7 @@ describe("Session file lifecycle", () => {
     );
     expect("error" in occupied && occupied.error.code).toBe("AGENT_BUSY");
     expect(existsSync(sessionPath)).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it("cleans all archived Sessions and reports the count", async () => {
@@ -271,10 +320,13 @@ describe("Session file lifecycle", () => {
     const second = writeSession(fixture.activeDir, SECOND_SESSION_ID, fixture.cwd);
     await fixture.factory.archiveSession("archive-first", SESSION_ID, first);
     await fixture.factory.archiveSession("archive-second", SECOND_SESSION_ID, second);
+    const invalidate = vi.spyOn(fixture.factory, "invalidateRetainedWorkspaceGraph");
 
     const result = await fixture.factory.cleanupArchivedSessions("cleanup");
 
     expect(result).toEqual({ deletedCount: 2, failedCount: 0 });
     expect(await fixture.factory.listSessions()).toEqual([]);
+    expect(invalidate).toHaveBeenCalledOnce();
+    expect(invalidate).toHaveBeenCalledWith(fixture.cwd);
   });
 });

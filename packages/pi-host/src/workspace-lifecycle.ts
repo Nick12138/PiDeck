@@ -167,6 +167,14 @@ export class WorkspaceLifecycle {
     }
   }
 
+  async invalidateRetainedWorkspaceGraph(canonicalCwd: string): Promise<void> {
+    const key = this.retainedGraphKey(canonicalCwd);
+    const graph = this.retainedGraphs.get(key);
+    if (!graph) return;
+    this.retainedGraphs.delete(key);
+    await this.disposeGraph(graph);
+  }
+
   async invalidateRetainedRuntimeCaches(): Promise<void> {
     const graph = this.context.getGraph();
     if (graph) {

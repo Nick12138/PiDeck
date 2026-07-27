@@ -234,6 +234,11 @@ export class WorkspaceGraphFactory {
     return this.workspaceLifecycle.disposeRetainedGraphs();
   }
 
+  /** Dispose the idle Workspace graph that shares a Session storage namespace. */
+  async invalidateRetainedWorkspaceGraph(canonicalCwd: string): Promise<void> {
+    return this.workspaceLifecycle.invalidateRetainedWorkspaceGraph(canonicalCwd);
+  }
+
   /** Drop every idle runtime that may have captured old settings or resources. */
   async invalidateRetainedRuntimeCaches(): Promise<void> {
     return this.workspaceLifecycle.invalidateRetainedRuntimeCaches();

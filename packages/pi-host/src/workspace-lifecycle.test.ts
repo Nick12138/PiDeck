@@ -72,6 +72,28 @@ describe("Workspace lifecycle", () => {
     expect(internal.takeRetainedGraph(lower.canonicalCwd)).toBe(lower);
   });
 
+  it("invalidates only the retained graph for the matching Workspace", async () => {
+    const subject = lifecycle("linux");
+    const target = { canonicalCwd: "/repo/target" } as WorkspaceGraph;
+    const unrelated = { canonicalCwd: "/repo/unrelated" } as WorkspaceGraph;
+    const internal = subject as unknown as {
+      retainedGraphs: Map<string, WorkspaceGraph>;
+    };
+    internal.retainedGraphs.set(workspaceIdentityKey(target.canonicalCwd, "linux"), target);
+    internal.retainedGraphs.set(
+      workspaceIdentityKey(unrelated.canonicalCwd, "linux"),
+      unrelated,
+    );
+    const dispose = vi.spyOn(subject, "disposeGraph").mockResolvedValue();
+
+    await subject.invalidateRetainedWorkspaceGraph(target.canonicalCwd);
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledWith(target);
+    expect(internal.retainedGraphs.has(target.canonicalCwd)).toBe(false);
+    expect(internal.retainedGraphs.get(unrelated.canonicalCwd)).toBe(unrelated);
+  });
+
   it("canonicalizes an existing Workspace path", () => {
     const root = mkdtempSync(join(tmpdir(), "pideck-workspace-lifecycle-"));
     try {

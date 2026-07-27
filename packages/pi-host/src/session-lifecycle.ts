@@ -143,6 +143,7 @@ export async function archiveSession(
         error: createHostError("SESSION_SWITCH_FAILED", "Session is already archived"),
       };
     }
+    await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await rename(session.path, archivedPath);
     return { sessionId, sessionPath: archivedPath, archived: true as const };
   });
@@ -174,6 +175,7 @@ export async function restoreSession(
       };
     }
     await factory.disposeRetainedSessionRuntimeIfPresent(g, session.id, session.path);
+    await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await rename(session.path, restoredPath);
     return { sessionId, sessionPath: restoredPath, archived: false as const };
   });
@@ -221,6 +223,7 @@ export async function deleteSession(
       };
     }
     await factory.disposeRetainedSessionRuntimeIfPresent(g, sessionId, sessionPath);
+    await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await unlink(session.path);
     return { sessionId, deleted: true as const };
   });
@@ -234,6 +237,9 @@ export async function cleanupArchivedSessions(
     const sessions = await listSessionFiles(factory, g, true);
     let deletedCount = 0;
     let failedCount = 0;
+    if (sessions.length > 0) {
+      await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
+    }
     for (const session of sessions) {
       try {
         await unlink(session.path);
@@ -288,6 +294,7 @@ export async function renameSession(
           }),
         };
       }
+      await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
       const snapshot = factory.setActiveSessionName(name);
       if (!snapshot) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
@@ -307,6 +314,7 @@ export async function renameSession(
       };
     }
     await factory.disposeRetainedSessionRuntimeIfPresent(g, target.id, target.path);
+    await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     const sessionManager = SessionManager.open(target.path, undefined, g.canonicalCwd);
     sessionManager.appendSessionInfo(name);
     return { sessionId, name: sessionManager.getSessionName() ?? name };
