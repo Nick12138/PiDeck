@@ -196,6 +196,13 @@ export function mapPackageUpdates(
   return summaries;
 }
 
+export async function updatePackageInScope(
+  packageManager: NonNullable<WorkspaceGraph["packageManager"]>,
+  record: Pick<PackageSnapshot["configured"][number], "source" | "scope">,
+): Promise<void> {
+  await packageManager.update(record.source, { local: record.scope === "project" });
+}
+
 export function createPackageHandlers(
   factory: WorkspaceGraphFactory,
 ): Partial<Record<string, MethodHandler>> {
@@ -1018,7 +1025,7 @@ async function runMutation(
         const rec = g.packageSnapshot?.configured.find((c) => c.id === p.packageId);
         if (!rec) throw new Error("Package not found");
         emitProgress("start", "update", rec.source);
-        await pm.update(rec.source);
+        await updatePackageInScope(pm, rec);
         emitProgress("complete", "update", rec.source);
         break;
       }

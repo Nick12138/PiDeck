@@ -2,7 +2,18 @@ diff --git a/dist/core/package-manager.d.ts b/dist/core/package-manager.d.ts
 index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634f9dd2e21 100644
 --- a/dist/core/package-manager.d.ts
 +++ b/dist/core/package-manager.d.ts
-@@ -63,6 +63,12 @@ export interface PackageManager {
+@@ -50,7 +50,9 @@ export interface PackageManager {
+     removeAndPersist(source: string, options?: {
+         local?: boolean;
+     }): Promise<boolean>;
+-    update(source?: string): Promise<void>;
++    update(source?: string, options?: {
++        local?: boolean;
++    }): Promise<void>;
+     listConfiguredPackages(): ConfiguredPackage[];
+     resolveExtensionSources(sources: string[], options?: {
+         local?: boolean;
+@@ -63,6 +65,12 @@ export interface PackageManager {
          local?: boolean;
      }): boolean;
      setProgressCallback(callback: ProgressCallback | undefined): void;
@@ -15,7 +26,7 @@ index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634
      getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
  }
  interface PackageManagerOptions {
-@@ -79,8 +85,10 @@ export declare class DefaultPackageManager implements PackageManager {
+@@ -79,8 +87,10 @@ export declare class DefaultPackageManager implements PackageManager {
      private globalNpmRoot;
      private globalNpmRootCommandKey;
      private progressCallback;
@@ -26,6 +37,17 @@ index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634
      addSourceToSettings(source: string, options?: {
          local?: boolean;
      }): boolean;
+@@ -108,7 +118,9 @@ export declare class DefaultPackageManager implements PackageManager {
+     removeAndPersist(source: string, options?: {
+         local?: boolean;
+     }): Promise<boolean>;
+-    update(source?: string): Promise<void>;
++    update(source?: string, options?: {
++        local?: boolean;
++    }): Promise<void>;
+     private updateConfiguredSources;
+     private shouldUpdateNpmSource;
+     private updateNpmBatch;
 diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
 index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241bd57d7fb 100644
 --- a/dist/core/package-manager.js
@@ -51,7 +73,32 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
      addSourceToSettings(source, options) {
          const scope = options?.local ? "project" : "user";
          const currentSettings = scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-@@ -2055,6 +2062,7 @@ export class DefaultPackageManager {
+@@ -810,20 +817,23 @@ export class DefaultPackageManager {
+-    async update(source) {
++    async update(source, options) {
+         const globalSettings = this.settingsManager.getGlobalSettings();
+         const projectSettings = this.settingsManager.getProjectSettings();
+         const identity = source ? this.getPackageIdentity(source) : undefined;
++        const requestedScope = source && options ? (options.local ? "project" : "user") : undefined;
+         let matched = false;
+         const updateSources = [];
+         for (const pkg of globalSettings.packages ?? []) {
++            if (requestedScope === "project") continue;
+             const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+             if (identity && this.getPackageIdentity(sourceStr, "user") !== identity)
+                 continue;
+             matched = true;
+             updateSources.push({ source: sourceStr, scope: "user" });
+         }
+         for (const pkg of projectSettings.packages ?? []) {
++            if (requestedScope === "user") continue;
+             const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+             if (identity && this.getPackageIdentity(sourceStr, "project") !== identity)
+                 continue;
+             matched = true;
+             updateSources.push({ source: sourceStr, scope: "project" });
+         }
+@@ -2055,6 +2065,7 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
              stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
              env,
@@ -59,7 +106,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
          });
      }
      spawnCaptureCommand(command, args, options) {
-@@ -2064,6 +2072,7 @@ export class DefaultPackageManager {
+@@ -2064,6 +2075,7 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
              stdio: ["ignore", "pipe", "pipe"],
              env,
@@ -67,7 +114,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
          });
      }
      runCommandCapture(command, args, options) {
-@@ -2120,6 +2129,10 @@ export class DefaultPackageManager {
+@@ -2120,6 +2132,10 @@ export class DefaultPackageManager {
          });
      }
      runCommandSync(command, args) {
