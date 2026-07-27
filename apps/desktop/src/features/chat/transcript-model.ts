@@ -337,36 +337,28 @@ function toolResultForMessage(message: SerializableAgentMessage): ToolResultReco
 function toolTraceFromPart(
   part: SerializableAgentContent,
   index: number,
-  results: Map<string, ToolResultRecord>,
 ): ToolTrace | null {
   if (!["toolCall", "tool_use", "functionCall"].includes(part.type)) return null;
   const record = asRecord(part);
   const id = typeof record.id === "string" ? record.id : `tool:${index}`;
-  const linkedResult = results.get(id);
   const rawStatus = typeof record.status === "string" ? record.status : undefined;
-  const status: ToolTraceStatus = linkedResult
-    ? linkedResult.aborted
-      ? "aborted"
-      : linkedResult.isError
-        ? "error"
-        : "done"
-    : rawStatus === "done" || rawStatus === "error" || rawStatus === "aborted"
+  const status: ToolTraceStatus =
+    rawStatus === "done" || rawStatus === "error" || rawStatus === "aborted"
       ? rawStatus
       : rawStatus === "running"
         ? "running"
         : "waiting";
   const inlineResult = record.result;
   const resultBlocks =
-    linkedResult?.resultBlocks ??
-    (Array.isArray(record.resultBlocks)
+    Array.isArray(record.resultBlocks)
       ? contentBlocksForValue(record.resultBlocks)
-      : contentBlocksForValue(inlineResult));
-  const details = record.details ?? linkedResult?.details;
+      : contentBlocksForValue(inlineResult);
+  const details = record.details;
   return {
     id,
-    name: typeof record.name === "string" ? record.name : linkedResult?.name ?? "tool",
+    name: typeof record.name === "string" ? record.name : "tool",
     args: record.arguments ?? record.input,
-    result: inlineResult ?? linkedResult?.result,
+    result: inlineResult,
     ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
     ...(details !== undefined && details !== null ? { details } : {}),
     status,
@@ -378,14 +370,13 @@ function toolTraceFromPart(
 function blocksForMessage(
   message: SerializableAgentMessage,
   sourceIndex: number,
-  results: Map<string, ToolResultRecord>,
 ): TranscriptBlock[] {
   if (typeof message.content === "string") {
     return message.content ? [{ kind: "text", text: message.content }] : [];
   }
   const blocks: TranscriptBlock[] = [];
   for (const [partIndex, part] of contentParts(message).entries()) {
-    const tool = toolTraceFromPart(part, sourceIndex * 1000 + partIndex, results);
+    const tool = toolTraceFromPart(part, sourceIndex * 1000 + partIndex);
     if (tool) {
       blocks.push({ kind: "tool", tool });
       continue;
@@ -394,6 +385,16 @@ function blocksForMessage(
     if (block) blocks.push(block);
   }
   return blocks;
+}
+
+function applyToolResult(trace: ToolTrace, result: ToolResultRecord): void {
+  trace.status = result.aborted ? "aborted" : result.isError ? "error" : "done";
+  if (trace.name === "tool") trace.name = result.name;
+  if ((trace.result === undefined || trace.result === null) && result.result !== undefined) {
+    trace.result = result.result;
+  }
+  if (result.resultBlocks.length > 0) trace.resultBlocks = result.resultBlocks;
+  if (trace.details === undefined && result.details !== undefined) trace.details = result.details;
 }
 
 function extendRowTiming(
@@ -577,7 +578,6 @@ function rowForNonAssistantMessage(
   sourceId: string | undefined,
   timestamp: number | undefined,
   sourceIndex: number,
-  results: Map<string, ToolResultRecord>,
 ): TranscriptRow | null {
   const role = message.role;
   if (role === "custom") {
@@ -621,7 +621,7 @@ function rowForNonAssistantMessage(
       ...(timestamp !== undefined ? { timestamp } : {}),
     };
   }
-  const blocks = blocksForMessage(message, sourceIndex, results);
+  const blocks = blocksForMessage(message, sourceIndex);
   const copyText = copyTextForBlocks(blocks);
   if (role === "user" || role === "error") {
     if (blocks.length === 0 && role !== "error") return null;
@@ -830,27 +830,27 @@ export function buildTranscriptRows(
       : (inputOrMessages as { messages: readonly SerializableAgentMessage[] } & BuildTranscriptOptions);
   const messages = input.messages;
   const { sources } = sourceMessages(messages, input);
-  const allMessages = sources
-    .filter((source): source is MessageSource => source.kind === "message")
-    .map((source) => source.message);
-  const results = new Map<string, ToolResultRecord>();
-  const declaredToolIds = new Set<string>();
-  for (const message of allMessages) {
-    const result = toolResultForMessage(message);
-    if (result) results.set(result.id, result);
-    if (Array.isArray(message.content)) {
-      for (const part of message.content) {
-        if (!["toolCall", "tool_use", "functionCall"].includes(part.type)) continue;
-        const id = stringField(part, "id");
-        if (id) declaredToolIds.add(id);
-      }
-    }
-  }
-
   const rows: WorkingTranscriptRow[] = [];
   let activeAssistant: WorkingTranscriptRow | null = null;
+  // Tool-call ids are provider-owned and may repeat. Track unresolved call
+  // occurrences only inside the assistant turn currently being projected.
+  const pendingToolTraces = new Map<string, ToolTrace[]>();
+  const registerToolTrace = (trace: ToolTrace) => {
+    const pending = pendingToolTraces.get(trace.id);
+    if (pending) pending.push(trace);
+    else pendingToolTraces.set(trace.id, [trace]);
+  };
+  const firstPendingToolTrace = (id: string): ToolTrace | undefined =>
+    pendingToolTraces.get(id)?.[0];
+  const takePendingToolTrace = (id: string): ToolTrace | undefined => {
+    const pending = pendingToolTraces.get(id);
+    const trace = pending?.shift();
+    if (pending?.length === 0) pendingToolTraces.delete(id);
+    return trace;
+  };
   const resetAssistant = () => {
     activeAssistant = null;
+    pendingToolTraces.clear();
   };
 
   sources.forEach((source, sourceIndex) => {
@@ -863,7 +863,12 @@ export function buildTranscriptRows(
     const role = message.role;
     if (role === "toolResult") {
       const result = toolResultForMessage(message);
-      if (!result || declaredToolIds.has(result.id)) return;
+      if (!result) return;
+      const linkedTrace = takePendingToolTrace(result.id);
+      if (linkedTrace) {
+        applyToolResult(linkedTrace, result);
+        return;
+      }
       const block: TranscriptBlock = {
         kind: "tool",
         tool: {
@@ -889,22 +894,21 @@ export function buildTranscriptRows(
       return;
     }
     if (role === "tool") {
-      const toolBlocks = blocksForMessage(message, sourceIndex, results).filter(
+      const toolBlocks = blocksForMessage(message, sourceIndex).filter(
         (block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool",
       );
       if (toolBlocks.length === 0) return;
       if (activeAssistant?.role === "assistant") {
         for (const block of toolBlocks) {
-          const existing = activeAssistant.blocks.find(
-            (candidate) => candidate.kind === "tool" && candidate.tool.id === block.tool.id,
-          );
-          if (existing?.kind === "tool") {
-            Object.assign(existing.tool, block.tool);
+          const pending = firstPendingToolTrace(block.tool.id);
+          if (pending) {
+            Object.assign(pending, block.tool);
           } else {
             activeAssistant.blocks.push(block);
             const lastRound = activeAssistant.rounds?.[activeAssistant.rounds.length - 1];
             if (lastRound) lastRound.push(block);
             else activeAssistant.rounds = [[block]];
+            registerToolTrace(block.tool);
           }
           extendRowTiming(activeAssistant, block.tool.startedAt, block.tool.endedAt);
         }
@@ -920,6 +924,7 @@ export function buildTranscriptRows(
           ...(sourceId ? { sourceId, sourceEndId: sourceId } : {}),
           ...(timestamp !== undefined ? { timestamp } : {}),
         };
+        for (const block of toolBlocks) registerToolTrace(block.tool);
         rows.push(row);
         activeAssistant = row;
       }
@@ -928,9 +933,12 @@ export function buildTranscriptRows(
     if (role === "assistant") {
       const outcome = assistantOutcome(message);
       const blocks = applyAssistantOutcomeToBlocks(
-        blocksForMessage(message, sourceIndex, results),
+        blocksForMessage(message, sourceIndex),
         outcome,
       );
+      for (const block of blocks) {
+        if (block.kind === "tool") registerToolTrace(block.tool);
+      }
       const messageStartedAt = numberField(message, "startedAt");
       const messageEndedAt = numberField(message, "endedAt");
       if (activeAssistant?.role === "assistant") {
@@ -979,7 +987,6 @@ export function buildTranscriptRows(
       sourceId,
       timestamp,
       sourceIndex,
-      results,
     );
     if (special) rows.push(special);
     // Hidden custom messages are intentionally absent but still represent a

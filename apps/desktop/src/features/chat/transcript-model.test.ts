@@ -410,6 +410,85 @@ describe("buildTranscriptRows", () => {
     }
   });
 
+  it("associates reused tool-call ids with their own chronological rounds", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "Read the first file" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_0", name: "read", arguments: { path: "a.ts" } },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call_0",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "first file contents" }],
+      },
+      { role: "assistant", content: "First done" },
+      { role: "user", content: "Read the second file" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_0", name: "read", arguments: { path: "b.ts" } },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call_0",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "second file contents" }],
+      },
+      { role: "assistant", content: "Second done" },
+    ]);
+    const assistantRows = rows.filter((row) => row.role === "assistant");
+    const tools = assistantRows.map((row) =>
+      row.blocks.find((block) => block.kind === "tool"),
+    );
+
+    expect(assistantRows).toHaveLength(2);
+    expect(tools[0]?.kind === "tool" ? tools[0].tool.result : undefined).toBe(
+      "first file contents",
+    );
+    expect(tools[1]?.kind === "tool" ? tools[1].tool.result : undefined).toBe(
+      "second file contents",
+    );
+  });
+
+  it("does not let a future call claim an earlier unmatched result", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "toolResult",
+        toolCallId: "call_0",
+        toolName: "read",
+        isError: true,
+        content: [{ type: "text", text: "orphaned failure" }],
+      },
+      { role: "user", content: "Start a new turn" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_0", name: "read", arguments: { path: "later.ts" } },
+        ],
+      },
+    ]);
+    const assistantRows = rows.filter((row) => row.role === "assistant");
+    const orphan = assistantRows[0]?.blocks.find((block) => block.kind === "tool");
+    const later = assistantRows[1]?.blocks.find((block) => block.kind === "tool");
+
+    expect(assistantRows).toHaveLength(2);
+    expect(orphan?.kind === "tool" ? orphan.tool : undefined).toMatchObject({
+      status: "error",
+      result: "orphaned failure",
+    });
+    expect(later?.kind === "tool" ? later.tool : undefined).toMatchObject({
+      status: "waiting",
+    });
+    expect(later?.kind === "tool" ? later.tool.result : undefined).toBeUndefined();
+  });
+
   it("preserves the original assistant block order", () => {
     const rows = buildTranscriptRows([
       {
@@ -500,6 +579,47 @@ describe("buildTranscriptRows", () => {
     expect(tools[0]?.kind === "tool" ? tools[0].tool.status : undefined).toBe("done");
     expect(rows[0]?.startedAt).toBe(100);
     expect(rows[0]?.endedAt).toBe(180);
+  });
+
+  it("merges a terminal live projection with its persisted tool result", () => {
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "live-persisted", name: "read", arguments: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "toolCall",
+            id: "live-persisted",
+            name: "read",
+            status: "done",
+            result: "live result",
+            details: { source: "live" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "live-persisted",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "persisted result" }],
+        details: { source: "persisted" },
+      },
+    ]);
+    const tools = rows[0]?.blocks.filter((block) => block.kind === "tool") ?? [];
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.kind === "tool" ? tools[0].tool : undefined).toMatchObject({
+      id: "live-persisted",
+      status: "done",
+      result: "live result",
+      details: { source: "live" },
+    });
   });
 
   it("projects realtime tool result blocks and details", () => {
