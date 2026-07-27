@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
@@ -205,6 +205,28 @@ describe("Provider controller", () => {
     } finally {
       server.serviceGraphLock.release("held-provider-mutation");
     }
+  });
+
+  it("retains only the five newest Provider configuration backups", async () => {
+    const { layout, handlers } = await setup({ providers: {} });
+    const seeded = Array.from({ length: 6 }, (_, index) =>
+      `models-${1_001 + index}-${(index + 1).toString(16).padStart(8, "0")}.bak`
+    );
+    for (const name of seeded) writeFileSync(join(layout.agentDir, name), name);
+    writeFileSync(join(layout.agentDir, "models-user-copy.bak"), "keep");
+
+    const outcome = await handlers["provider.setEnabled"]!({
+      id: "enable-with-backup-pruning",
+      params: { providerId: "openai", enabled: true },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    const backups = readdirSync(layout.agentDir)
+      .filter((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name));
+    expect(backups).toHaveLength(5);
+    expect(backups).toEqual(expect.arrayContaining(seeded.slice(2)));
+    expect(backups.some((name) => !seeded.includes(name))).toBe(true);
+    expect(readdirSync(layout.agentDir)).toContain("models-user-copy.bak");
   });
 
   it("preserves unrelated configuration and keeps API keys out of models.json", async () => {

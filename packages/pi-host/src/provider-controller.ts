@@ -3,6 +3,7 @@ import {
   copyFile,
   mkdir,
   readFile,
+  readdir,
   rename,
   unlink,
   writeFile,
@@ -68,6 +69,8 @@ type ProviderConnectionCapture =
   | { error: HostError };
 const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
 const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
+const MODELS_BACKUP_RETENTION = 5;
+const MODELS_BACKUP_PATTERN = /^models-(\d+)-[0-9a-f]{8}\.bak$/u;
 // Per-builtin-provider model allow-lists: { providerId: modelId[] }. A missing
 // entry means every model of that provider is offered.
 const PROVIDER_MODELS_KEY = "pideckProviderModels";
@@ -398,6 +401,28 @@ async function validateCandidateModelsConfig(tempPath: string): Promise<void> {
   }
 }
 
+async function pruneModelsBackups(directory: string): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const backups = entries.flatMap((entry) => {
+    if (!entry.isFile()) return [];
+    const match = MODELS_BACKUP_PATTERN.exec(entry.name);
+    if (!match) return [];
+    return [{ name: entry.name, timestamp: Number(match[1]) }];
+  });
+  backups.sort((left, right) =>
+    left.timestamp - right.timestamp || left.name.localeCompare(right.name));
+  const stale = backups.slice(0, Math.max(0, backups.length - MODELS_BACKUP_RETENTION));
+  await Promise.all(
+    stale.map(({ name }) => unlink(join(directory, name)).catch(() => undefined)),
+  );
+}
+
 async function commitModelsConfig(
   path: string,
   root: JsonObject,
@@ -429,6 +454,7 @@ async function commitModelsConfig(
         throw replaceError;
       }
     }
+    await pruneModelsBackups(dirname(path));
   } finally {
     await unlink(tempPath).catch(() => undefined);
   }
