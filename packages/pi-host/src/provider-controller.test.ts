@@ -68,7 +68,18 @@ async function setup(initialModels: unknown) {
     modelRuntime,
     server,
     handlers: createProviderHandlers(factory),
+    setHealth: (next: ModelConfigHealth) => {
+      health = next;
+    },
   };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 function draft(models: ProviderDraft["models"]): ProviderDraft {
@@ -1197,6 +1208,128 @@ describe("Provider login", () => {
         params: { loginId: (first.result as { loginId: string }).loginId },
       } as never);
     }
+  });
+
+  it("does not admit a login while a Provider mutation owns the graph", async () => {
+    const { handlers, modelRuntime, server } = await setup({ providers: {} });
+    const login = vi.spyOn(modelRuntime, "login").mockResolvedValue({
+      type: "api_key",
+      key: "sk-unused",
+    });
+    expect(
+      server.serviceGraphLock.tryAcquire({
+        operationKind: "provider.mutation",
+        requestId: "held-provider-mutation",
+      }),
+    ).toBe(true);
+
+    try {
+      const outcome = await handlers["provider.loginStart"]!({
+        id: "login-during-mutation",
+        params: { providerId: "openai", authType: "api_key" },
+      } as never);
+
+      expect("error" in outcome && outcome.error.code).toBe("SERVICE_GRAPH_BUSY");
+      expect(login).not.toHaveBeenCalled();
+    } finally {
+      server.serviceGraphLock.release("held-provider-mutation");
+    }
+  });
+
+  it("rejects login while an unresolved Provider journal remains", async () => {
+    const { handlers, modelRuntime, setHealth } = await setup({ providers: {} });
+    setHealth({
+      state: "degraded",
+      source: "provider.journal",
+      message: "An interrupted Provider mutation could not be recovered",
+      recovery: {
+        journalId: "journal-1",
+        stage: "prepared",
+        restored: false,
+      },
+    });
+    const login = vi.spyOn(modelRuntime, "login").mockResolvedValue({
+      type: "api_key",
+      key: "sk-unused",
+    });
+
+    const outcome = await handlers["provider.loginStart"]!({
+      id: "login-with-unresolved-journal",
+      params: { providerId: "openai", authType: "api_key" },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("SETTINGS_WRITE_FAILED");
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed login credential out of a concurrent save rollback", async () => {
+    const { credentialStore, handlers, modelRuntime, server } = await setup({
+      providers: {
+        custom: {
+          name: "Custom Gateway",
+          baseUrl: "http://127.0.0.1:8317/v1",
+          api: "openai-responses",
+          models: [],
+        },
+      },
+    });
+    const events = captureLoginEvents(server);
+    const allowLoginPersist = deferred();
+    const saveCredentialReached = deferred();
+    const failSaveCredential = deferred();
+    const modifyCredential = credentialStore.modify.bind(credentialStore);
+    vi.spyOn(credentialStore, "modify").mockImplementation(
+      async (providerId, update) => {
+        if (providerId === "custom") {
+          saveCredentialReached.resolve();
+          await failSaveCredential.promise;
+          throw new Error("forced Provider save failure");
+        }
+        return modifyCredential(providerId, update);
+      },
+    );
+    vi.spyOn(modelRuntime, "login").mockImplementation(async (providerId) => {
+      await allowLoginPersist.promise;
+      await modifyCredential(providerId, async () => ({
+        type: "api_key",
+        key: "sk-from-login",
+      }));
+      return { type: "api_key", key: "sk-from-login" };
+    });
+
+    const start = await handlers["provider.loginStart"]!({
+      id: "login-before-save",
+      params: { providerId: "openai", authType: "api_key" },
+    } as never);
+    expect("error" in start).toBe(false);
+
+    const savePromise = handlers["provider.save"]!({
+      id: "save-during-login",
+      params: {
+        originalId: "custom",
+        provider: draft([]),
+        apiKey: "sk-save",
+      },
+    } as never);
+    const admission = await Promise.race([
+      saveCredentialReached.promise.then(() => "journal-started" as const),
+      savePromise.then(() => "rejected" as const),
+    ]);
+
+    allowLoginPersist.resolve();
+    await vi.waitFor(() => {
+      expect(
+        events.some((entry) => entry.event.kind === "done" && entry.event.ok === true),
+      ).toBe(true);
+    });
+    if (admission === "journal-started") failSaveCredential.resolve();
+    const save = await savePromise;
+
+    expect("error" in save && save.error.code).toBe("AGENT_BUSY");
+    expect(await credentialStore.readRaw("openai")).toEqual({
+      type: "api_key",
+      key: "sk-from-login",
+    });
   });
 
   it("toggles a builtin Provider in the enabled list by id", async () => {

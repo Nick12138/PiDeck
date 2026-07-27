@@ -1119,6 +1119,28 @@ export function createProviderHandlers(
 
   let activeLogin: ActiveLoginFlow | null = null;
 
+  const loginInProgressError = (): HostError | null =>
+    activeLogin
+      ? createHostError(
+          "AGENT_BUSY",
+          "Wait for the active Provider login to finish before changing Provider credentials",
+          { retryable: true },
+        )
+      : null;
+
+  const unresolvedJournalLoginError = (): HostError | null => {
+    const health = factory.deps.getModelConfigHealth();
+    if (health.state !== "degraded" || health.source !== "provider.journal") return null;
+    return createHostError(
+      "SETTINGS_WRITE_FAILED",
+      "Resolve the incomplete Provider mutation before signing in",
+      {
+        retryable: false,
+        details: health.recovery ? { recovery: health.recovery } : undefined,
+      },
+    );
+  };
+
   const emitLoginEvent = (flow: ActiveLoginFlow, event: ProviderLoginFlowEvent): void => {
     const server = factory.getServer();
     if (!server) return;
@@ -1337,6 +1359,8 @@ export function createProviderHandlers(
         requestId: ctx.id,
         run: async ({ signal }) => {
           try {
+            const loginConflict = loginInProgressError();
+            if (loginConflict) return { error: loginConflict };
             if (factory.hasBusySessions()) {
               return {
                 error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider configuration", {
@@ -1453,6 +1477,8 @@ export function createProviderHandlers(
         requestId: ctx.id,
         run: async ({ signal }) => {
           try {
+            const loginConflict = loginInProgressError();
+            if (loginConflict) return { error: loginConflict };
             const conflictUnderLock = currentModelConflict(factory, providerId);
             if (conflictUnderLock) return { error: conflictUnderLock };
             if (factory.hasBusySessions()) {
@@ -1771,44 +1797,65 @@ export function createProviderHandlers(
       };
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
-      if (activeLogin) {
-        return {
-          error: createHostError("AGENT_BUSY", "Another Provider login is already in progress", {
-            retryable: true,
-          }),
-        };
+      let admittedFlow: ActiveLoginFlow | null = null;
+      const admission = await withStableGraphRead({
+        requestId: ctx.id,
+        identity: server.identity,
+        serviceGraphLock: server.serviceGraphLock,
+        run: async (): Promise<{ flow: ActiveLoginFlow } | { error: HostError }> => {
+          const loginConflict = loginInProgressError();
+          if (loginConflict) return { error: loginConflict };
+          const recoveryConflict = unresolvedJournalLoginError();
+          if (recoveryConflict) return { error: recoveryConflict };
+
+          const provider = factory.deps.modelRuntime
+            .getProviders()
+            .find((candidate) => candidate.id === providerId);
+          if (!provider) {
+            return {
+              error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+            };
+          }
+          const supported = authType === "oauth"
+            ? provider.auth?.oauth !== undefined
+            : typeof provider.auth?.apiKey?.login === "function";
+          if (!supported) {
+            return {
+              error: createHostError(
+                "INVALID_REQUEST",
+                `Provider ${providerId} does not support ${authType === "oauth" ? "OAuth" : "API key"} login`,
+              ),
+            };
+          }
+          const flow: ActiveLoginFlow = {
+            loginId: randomUUID(),
+            providerId,
+            controller: new AbortController(),
+            pending: new Map(),
+            timeout: setTimeout(() => {
+              if (activeLogin) cancelLoginFlow(activeLogin, "Login timed out");
+            }, LOGIN_FLOW_TIMEOUT_MS),
+            settled: false,
+          };
+          flow.timeout.unref?.();
+          activeLogin = flow;
+          admittedFlow = flow;
+          return { flow };
+        },
+      });
+      if (!admission.ok) {
+        if (admittedFlow && activeLogin === admittedFlow) finishLoginFlow(admittedFlow);
+        return { error: admission.error, identity: admission.identity };
       }
-      const provider = factory.deps.modelRuntime
-        .getProviders()
-        .find((candidate) => candidate.id === providerId);
-      if (!provider) {
-        return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+      if ("error" in admission.result) {
+        return { error: admission.result.error, identity: admission.identity };
       }
-      const supported = authType === "oauth"
-        ? provider.auth?.oauth !== undefined
-        : typeof provider.auth?.apiKey?.login === "function";
-      if (!supported) {
-        return {
-          error: createHostError(
-            "INVALID_REQUEST",
-            `Provider ${providerId} does not support ${authType === "oauth" ? "OAuth" : "API key"} login`,
-          ),
-        };
-      }
-      const flow: ActiveLoginFlow = {
-        loginId: randomUUID(),
-        providerId,
-        controller: new AbortController(),
-        pending: new Map(),
-        timeout: setTimeout(() => {
-          if (activeLogin) cancelLoginFlow(activeLogin, "Login timed out");
-        }, LOGIN_FLOW_TIMEOUT_MS),
-        settled: false,
-      };
-      flow.timeout.unref?.();
-      activeLogin = flow;
+      const { flow } = admission.result;
       void runLoginFlow(flow, authType);
-      return { result: { loginId: flow.loginId, providerId } };
+      return {
+        result: { loginId: flow.loginId, providerId },
+        identity: admission.identity,
+      };
     },
 
     "provider.loginRespond": async (ctx) => {
@@ -1858,6 +1905,8 @@ export function createProviderHandlers(
         requestId: ctx.id,
         run: async ({ signal }) => {
           try {
+            const loginConflict = loginInProgressError();
+            if (loginConflict) return { error: loginConflict };
             const conflictUnderLock = currentModelConflict(factory, providerId);
             if (conflictUnderLock) return { error: conflictUnderLock };
             if (factory.hasBusySessions()) {
