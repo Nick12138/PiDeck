@@ -1,11 +1,12 @@
 import { join, resolve as pathResolve } from "node:path";
+import { sessionArchiveDir, workspaceStorageKey } from "./pideck-data.js";
 
 export function sessionStorageDirs(agentDir: string, cwd: string): {
   activeDir: string;
   archiveDir: string;
 } {
   const resolvedCwd = pathResolve(cwd);
-  const safePath = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  const safePath = workspaceStorageKey(resolvedCwd);
   const activeDir = join(pathResolve(agentDir), "sessions", safePath);
-  return { activeDir, archiveDir: join(activeDir, ".archive") };
+  return { activeDir, archiveDir: sessionArchiveDir(agentDir, resolvedCwd) };
 }

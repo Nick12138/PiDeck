@@ -32,6 +32,7 @@ import { join } from "node:path";
 import type { ProviderMutationStage } from "@pideck/protocol";
 import { logger } from "./logger.js";
 import type { FileCredentialStore } from "./credential-store.js";
+import { providerJournalRoot as journalRoot } from "./pideck-data.js";
 
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
@@ -55,10 +56,6 @@ export type JournalRecovery = {
   restored: boolean;
   message: string;
 };
-
-function journalRoot(agentDir: string): string {
-  return join(agentDir, "provider-journal");
-}
 
 function entryDir(agentDir: string, journalId: string): string {
   return join(journalRoot(agentDir), journalId);
@@ -240,7 +237,7 @@ async function restoreFromEntry(
     modelsPlan =
       record.modelsBackup === null
         ? { kind: "remove" }
-        : { kind: "restore", content: await readFile(record.modelsBackup, "utf8") };
+        : { kind: "restore", content: await readFile(join(directory, "models.json"), "utf8") };
   } catch (error) {
     failures.push(`models.json backup: ${errorMessage(error)}`);
   }

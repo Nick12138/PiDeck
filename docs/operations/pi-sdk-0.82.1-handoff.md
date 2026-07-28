@@ -217,7 +217,7 @@ package 配置
 Session header/metadata
 ```
 
-建议备份目录为 `~/.pi/agent/backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/`。manifest 不得包含 credential 内容。只有 runtime create、local refresh、旧 Session open/continue/save、provider snapshot 和正常 shutdown 都成功后，才能记录 migration completed。
+建议备份目录为 `~/.pi/agent/pideck/migration-backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/`。PiDeck 自有的 provider journal、Model 配置备份和 Session 归档也分别放在同级命名空间的 `provider-journal/`、`model-backups/` 和 `session-archive/` 下；原生的 `models.json` 与活动 Session 位置不变。manifest 不得包含 credential 内容。只有 runtime create、local refresh、旧 Session open/continue/save、provider snapshot 和正常 shutdown 都成功后，才能记录 migration completed。
 
 ### 6.4 Host-owned ModelRuntime
 

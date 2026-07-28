@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
@@ -13,6 +13,7 @@ import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp
 import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import { modelBackupDir } from "./pideck-data.js";
 
 const layouts: TempAgentLayout[] = [];
 const httpServers: Server[] = [];
@@ -209,10 +210,12 @@ describe("Provider controller", () => {
 
   it("retains only the five newest Provider configuration backups", async () => {
     const { layout, handlers } = await setup({ providers: {} });
+    const backupDir = modelBackupDir(layout.agentDir);
+    mkdirSync(backupDir, { recursive: true });
     const seeded = Array.from({ length: 6 }, (_, index) =>
       `models-${1_001 + index}-${(index + 1).toString(16).padStart(8, "0")}.bak`
     );
-    for (const name of seeded) writeFileSync(join(layout.agentDir, name), name);
+    for (const name of seeded) writeFileSync(join(backupDir, name), name);
     writeFileSync(join(layout.agentDir, "models-user-copy.bak"), "keep");
 
     const outcome = await handlers["provider.setEnabled"]!({
@@ -221,12 +224,14 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
-    const backups = readdirSync(layout.agentDir)
+    const backups = readdirSync(backupDir)
       .filter((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name));
     expect(backups).toHaveLength(5);
     expect(backups).toEqual(expect.arrayContaining(seeded.slice(2)));
     expect(backups.some((name) => !seeded.includes(name))).toBe(true);
     expect(readdirSync(layout.agentDir)).toContain("models-user-copy.bak");
+    expect(readdirSync(layout.agentDir).some((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name)))
+      .toBe(false);
   });
 
   it("preserves unrelated configuration and keeps API keys out of models.json", async () => {

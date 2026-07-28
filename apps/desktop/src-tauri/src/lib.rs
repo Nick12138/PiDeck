@@ -25,7 +25,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let settings = DesktopSettingsStore::load(app.handle())?;
+            let mut settings = DesktopSettingsStore::load(app.handle())?;
+            settings.ensure_default_project_workspace()?;
             let host = PiHostManager::new(app.handle().clone(), &settings);
             app.manage(AppState {
                 settings: Mutex::new(settings),

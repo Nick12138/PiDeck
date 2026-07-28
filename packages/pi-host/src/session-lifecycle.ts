@@ -136,7 +136,7 @@ export async function archiveSession(
     }
     await factory.disposeRetainedSessionRuntimeIfPresent(g, session.id, session.path);
     const { archiveDir } = sessionStorageDirs(factory, g);
-    await mkdir(archiveDir, { recursive: true });
+    await mkdir(archiveDir, { recursive: true, mode: 0o700 });
     const archivedPath = join(archiveDir, basename(session.path));
     if (existsSync(archivedPath)) {
       return {

@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PiHostServer } from "./server.js";
 import { TryMutex } from "./locks.js";
@@ -16,6 +16,7 @@ import {
   type GraphFactoryDeps,
   type WorkspaceGraph,
 } from "./workspace-graph-factory.js";
+import { sessionArchiveDir } from "./pideck-data.js";
 
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const SECOND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
@@ -56,7 +57,14 @@ function createFixture() {
     },
   } as unknown as PiHostServer);
 
-  return { root, cwd: resolvedCwd, activeDir, factory, graph };
+  return {
+    root,
+    cwd: resolvedCwd,
+    activeDir,
+    archiveDir: sessionArchiveDir(agentDir, resolvedCwd),
+    factory,
+    graph,
+  };
 }
 
 function writeSession(dir: string, sessionId: string, cwd: string): string {
@@ -200,6 +208,7 @@ describe("Session file lifecycle", () => {
     expect(existsSync(originalPath)).toBe(false);
     expect("error" in archived).toBe(false);
     if ("error" in archived) return;
+    expect(archived.sessionPath).toBe(join(fixture.archiveDir, basename(originalPath)));
     expect(existsSync(archived.sessionPath)).toBe(true);
     expect(await fixture.factory.listSessions()).toEqual([
       expect.objectContaining({ id: SESSION_ID, archived: true }),

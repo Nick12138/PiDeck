@@ -103,7 +103,7 @@ async function buildWorkspaceSession(runtime: ModelRuntime, providerId: string) 
   await resourceLoader.reload();
   expect(resourceLoader.getExtensions().errors).toEqual([]);
 
-  const sessionManager = SessionManager.create(cwd);
+  const sessionManager = SessionManager.create(cwd, join(agentDir, "sessions"));
   const { session } = await createAgentSession({
     cwd,
     agentDir,

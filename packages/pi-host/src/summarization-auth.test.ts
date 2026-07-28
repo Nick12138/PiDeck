@@ -118,7 +118,7 @@ async function buildCaptureSession() {
     noContextFiles: true,
   });
   await resourceLoader.reload();
-  const sessionManager = SessionManager.create(cwd);
+  const sessionManager = SessionManager.create(cwd, join(agentDir, "sessions"));
   const { session } = await createAgentSession({
     cwd,
     agentDir,

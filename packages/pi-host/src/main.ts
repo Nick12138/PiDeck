@@ -37,7 +37,8 @@ import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
 import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
-import { ensureMigrationBackup } from "./migration-backup.js";
+import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
+import { migrateLegacyPideckData } from "./pideck-data.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -134,6 +135,10 @@ async function main(): Promise<void> {
     sdkVersion: SDK_VERSION,
     node: process.version,
   });
+
+  // Keep the shared Pi directory native-compatible: adopt PiDeck-owned data
+  // into one private namespace before recovery reads any persisted state.
+  await migrateLegacyPideckData(agentDir, MIGRATION_ID);
 
   // Before anything can rewrite user data. The 0.82.1 runtime introduces
   // models-store.json and recomposes providers, so a downgrade is only safe

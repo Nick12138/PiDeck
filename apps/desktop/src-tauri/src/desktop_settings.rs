@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
+const PIDECK_DATA_DIR_NAME: &str = "pideck";
+const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -237,6 +239,41 @@ impl DesktopSettingsStore {
         self.write_settings(&self.settings)
     }
 
+    pub fn ensure_default_project_workspace(&mut self) -> Result<Option<PathBuf>, String> {
+        let has_workspace = self
+            .settings
+            .default_workspace
+            .as_deref()
+            .is_some_and(|path| !path.trim().is_empty())
+            || self
+                .settings
+                .last_workspace
+                .as_deref()
+                .is_some_and(|path| !path.trim().is_empty())
+            || self
+                .settings
+                .known_workspaces
+                .iter()
+                .any(|path| !path.trim().is_empty());
+        if has_workspace {
+            return Ok(None);
+        }
+
+        let namespace_dir = self.resolved_agent_dir().join(PIDECK_DATA_DIR_NAME);
+        let project_dir = namespace_dir.join(DEFAULT_PROJECT_DIR_NAME);
+        create_private_directory(&namespace_dir)?;
+        create_private_directory(&project_dir)?;
+
+        let project_path = project_dir.to_string_lossy().into_owned();
+        let mut next = self.settings.clone();
+        next.default_workspace = None;
+        next.last_workspace = Some(project_path.clone());
+        next.known_workspaces = vec![project_path];
+        self.write_settings(&next)?;
+        self.settings = next;
+        Ok(Some(project_dir))
+    }
+
     pub fn patch(&mut self, patch: serde_json::Value) -> Result<DesktopSettings, String> {
         let mut current = serde_json::to_value(&self.settings).map_err(|e| e.to_string())?;
         if let (Some(obj), Some(patch_object)) = (current.as_object_mut(), patch.as_object()) {
@@ -259,6 +296,18 @@ impl DesktopSettingsStore {
             .join(".pi")
             .join("agent")
     }
+}
+
+fn create_private_directory(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path)
+        .map_err(|error| format!("create directory {}: {error}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("set directory permissions {}: {error}", path.display()))?;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -296,6 +345,8 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     fn test_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("pideck-settings-{name}-{}", Uuid::new_v4()));
@@ -427,5 +478,84 @@ mod tests {
                 .unwrap();
         assert_eq!(replacement["schemaVersion"], SETTINGS_SCHEMA_VERSION);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn initializes_and_persists_the_default_project_workspace() {
+        let dir = test_dir("default-project");
+        let agent_dir = dir.join("agent");
+        let project_dir = agent_dir.join("pideck").join("DefaultProject");
+        let project_path = project_dir.to_string_lossy().into_owned();
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store.settings.agent_dir = Some(agent_dir.to_string_lossy().into_owned());
+
+        assert_eq!(
+            store.ensure_default_project_workspace().unwrap(),
+            Some(project_dir.clone())
+        );
+        assert!(project_dir.is_dir());
+        assert_eq!(store.settings.default_workspace, None);
+        assert_eq!(
+            store.settings.last_workspace.as_deref(),
+            Some(project_path.as_str())
+        );
+        assert_eq!(store.settings.known_workspaces, vec![project_path.clone()]);
+
+        #[cfg(unix)]
+        {
+            let namespace_mode = fs::metadata(agent_dir.join("pideck"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            let project_mode = fs::metadata(&project_dir).unwrap().permissions().mode() & 0o777;
+            assert_eq!(namespace_mode, 0o700);
+            assert_eq!(project_mode, 0o700);
+        }
+
+        assert_eq!(store.ensure_default_project_workspace().unwrap(), None);
+        assert_eq!(store.settings.known_workspaces, vec![project_path.clone()]);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            reloaded.settings.last_workspace.as_deref(),
+            Some(project_path.as_str())
+        );
+        assert_eq!(reloaded.settings.known_workspaces, vec![project_path]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn preserves_every_form_of_existing_workspace_configuration() {
+        let cases = [
+            DesktopSettings {
+                default_workspace: Some("/projects/default".into()),
+                ..DesktopSettings::default()
+            },
+            DesktopSettings {
+                last_workspace: Some("/projects/recent".into()),
+                ..DesktopSettings::default()
+            },
+            DesktopSettings {
+                known_workspaces: vec!["/projects/known".into()],
+                ..DesktopSettings::default()
+            },
+        ];
+
+        for (index, settings) in cases.into_iter().enumerate() {
+            let dir = test_dir(&format!("existing-workspace-{index}"));
+            let agent_dir = dir.join("agent");
+            let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+            store.settings = DesktopSettings {
+                agent_dir: Some(agent_dir.to_string_lossy().into_owned()),
+                ..settings
+            };
+            let before = serde_json::to_value(&store.settings).unwrap();
+
+            assert_eq!(store.ensure_default_project_workspace().unwrap(), None);
+            assert_eq!(serde_json::to_value(&store.settings).unwrap(), before);
+            assert!(!agent_dir.join("pideck").join("DefaultProject").exists());
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 }

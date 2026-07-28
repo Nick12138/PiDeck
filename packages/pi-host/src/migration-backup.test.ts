@@ -47,7 +47,7 @@ function createAgentDir(options: { sessions?: number } = {}): string {
 }
 
 function backupDir(agentDir: string): string {
-  return join(agentDir, "backups", MIGRATION_ID);
+  return join(agentDir, "pideck", "migration-backups", MIGRATION_ID);
 }
 
 function readManifest(directory: string): MigrationManifest {

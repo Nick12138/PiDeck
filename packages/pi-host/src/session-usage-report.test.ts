@@ -47,7 +47,10 @@ async function createFixture() {
   roots.push(agentDir);
   const cwd = join(agentDir, "workspace");
   const dirs = sessionStorageDirs(agentDir, cwd);
-  await mkdir(dirs.archiveDir, { recursive: true });
+  await Promise.all([
+    mkdir(dirs.activeDir, { recursive: true }),
+    mkdir(dirs.archiveDir, { recursive: true }),
+  ]);
   return { agentDir, cwd, dirs };
 }
 

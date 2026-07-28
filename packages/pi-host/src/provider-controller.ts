@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  chmod,
   copyFile,
   mkdir,
   readFile,
@@ -45,6 +46,10 @@ import { rebindCurrentSessionModel } from "./model-thinking.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import { ProviderMutationJournal } from "./provider-journal.js";
+import {
+  modelBackupDir,
+  PIDECK_MODEL_BACKUP_PATTERN,
+} from "./pideck-data.js";
 
 type JsonObject = Record<string, unknown>;
 type ModelsConfig = { root: JsonObject; providers: JsonObject; original: string | null };
@@ -70,7 +75,6 @@ type ProviderConnectionCapture =
 const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
 const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
 const MODELS_BACKUP_RETENTION = 5;
-const MODELS_BACKUP_PATTERN = /^models-(\d+)-[0-9a-f]{8}\.bak$/u;
 // Per-builtin-provider model allow-lists: { providerId: modelId[] }. A missing
 // entry means every model of that provider is offered.
 const PROVIDER_MODELS_KEY = "pideckProviderModels";
@@ -411,7 +415,7 @@ async function pruneModelsBackups(directory: string): Promise<void> {
 
   const backups = entries.flatMap((entry) => {
     if (!entry.isFile()) return [];
-    const match = MODELS_BACKUP_PATTERN.exec(entry.name);
+    const match = PIDECK_MODEL_BACKUP_PATTERN.exec(entry.name);
     if (!match) return [];
     return [{ name: entry.name, timestamp: Number(match[1]) }];
   });
@@ -426,17 +430,23 @@ async function pruneModelsBackups(directory: string): Promise<void> {
 async function commitModelsConfig(
   path: string,
   root: JsonObject,
-  _factory: WorkspaceGraphFactory,
+  factory: WorkspaceGraphFactory,
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
+  const backupDirectory = modelBackupDir(factory.deps.agentDir);
+  await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
   const candidate = JSON.stringify(root, null, 2) + "\n";
-  const tempPath = join(dirname(path), `.models-${randomUUID()}.tmp`);
-  const backupPath = join(dirname(path), `models-${Date.now()}-${randomUUID().slice(0, 8)}.bak`);
+  const tempPath = join(backupDirectory, `.models-${randomUUID()}.tmp`);
+  const backupPath = join(
+    backupDirectory,
+    `models-${Date.now()}-${randomUUID().slice(0, 8)}.bak`,
+  );
   await writeFile(tempPath, candidate, { encoding: "utf8", mode: 0o600 });
   try {
     await validateCandidateModelsConfig(tempPath);
     try {
       await copyFile(path, backupPath);
+      await chmod(backupPath, 0o600);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -444,7 +454,7 @@ async function commitModelsConfig(
       await rename(tempPath, path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const displacedPath = join(dirname(path), `.models-${randomUUID()}.old`);
+      const displacedPath = join(backupDirectory, `.models-${randomUUID()}.old`);
       await rename(path, displacedPath);
       try {
         await rename(tempPath, path);
@@ -454,7 +464,7 @@ async function commitModelsConfig(
         throw replaceError;
       }
     }
-    await pruneModelsBackups(dirname(path));
+    await pruneModelsBackups(backupDirectory);
   } finally {
     await unlink(tempPath).catch(() => undefined);
   }

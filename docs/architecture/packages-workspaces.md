@@ -2,7 +2,14 @@
 
 ## Workspace loading
 
-1. User picks a directory through `workspace.setCurrent`.
+Before the native Desktop starts Pi Host, it guarantees one usable Workspace
+for a genuinely empty first-run configuration. It creates
+`<agentDir>/pideck/DefaultProject`, records it in `lastWorkspace` and
+`knownWorkspaces`, and passes it through the normal Host preload path. Existing
+Workspace configuration always wins, and standalone Host processes retain the
+`waitingForWorkspace` state until given an explicit cwd.
+
+1. Desktop supplies a startup cwd, or the user picks one through `workspace.setCurrent`.
 2. Host canonicalizes the path and builds services with explicit `projectTrusted: true`.
 3. Project extensions, skills, prompts, and themes become available immediately.
 

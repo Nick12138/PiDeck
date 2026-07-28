@@ -72,13 +72,42 @@ Do not set `PI_OFFLINE` globally — it would also disable the update-check
 capability. The scoping is safe because every reload call site runs under
 `serviceGraphLock`.
 
+## PiDeck-owned agent data
+
+PiDeck keeps its Host-owned persistent data under one namespace inside the Pi
+agent directory:
+
+```text
+<agentDir>/pideck/
+  DefaultProject/
+  migration-backups/pideck-sdk-0.80.7-to-0.82.1/
+  provider-journal/
+  model-backups/
+  session-archive/<encoded-cwd>/
+```
+
+Canonical Pi files such as `<agentDir>/models.json` and active Sessions under
+`<agentDir>/sessions/<encoded-cwd>/` stay in their native locations. Before any
+of those files are read at startup, the Host adopts data from the former
+`backups/pideck-sdk-0.80.7-to-0.82.1`, `provider-journal`, root-level
+`models-<timestamp>-<id>.bak`, and per-workspace `.archive` locations. The move
+is restartable; a conflicting source and destination abort startup without
+overwriting either copy.
+
+On Desktop startup, an empty Workspace configuration creates
+`<agentDir>/pideck/DefaultProject` with `0700` permissions and persists it as
+both the recent Workspace and the first known Workspace. Any non-empty
+`defaultWorkspace`, `lastWorkspace`, or `knownWorkspaces` setting suppresses
+this fallback. `defaultWorkspace` itself is not set, so a Workspace the user
+opens later becomes the normal restart target.
+
 ## Pre-migration backup
 
 Before the 0.82.1 runtime first touches a real agent directory, the Host copies
 the pre-migration user data to:
 
 ```text
-<agentDir>/backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/
+<agentDir>/pideck/migration-backups/pideck-sdk-0.80.7-to-0.82.1/<timestamp>/
 ```
 
 It holds `auth.json`, `models.json`, `models-store.json`, and `settings.json`
@@ -101,8 +130,8 @@ be rolled back is worse than refusing to start.
 
 A provider change writes `models.json` and `auth.json`, which no single rename
 can cover together. Before committing either, the pre-mutation bytes of both go
-to `<agentDir>/provider-journal/<journalId>/`. The entry is removed only after
-the whole mutation, including the local refresh and reconciliation, succeeds —
+to `<agentDir>/pideck/provider-journal/<journalId>/`. The entry is removed only
+after the whole mutation, including the local refresh and reconciliation, succeeds —
 so an entry found at startup means exactly one thing: a mutation did not finish.
 
 Startup restores both files from that entry before the runtime reads them. If

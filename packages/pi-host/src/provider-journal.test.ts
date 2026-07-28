@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { FileCredentialStore } from "./credential-store.js";
 import { ProviderMutationJournal, recoverProviderJournals } from "./provider-journal.js";
 import { buildDegradedModelConfigHealth } from "./model-health.js";
+import { providerJournalRoot } from "./pideck-data.js";
 
 const roots: string[] = [];
 
@@ -28,14 +29,14 @@ function createAgentDir(): { agentDir: string; modelsPath: string; store: FileCr
 }
 
 function journalEntries(agentDir: string): string[] {
-  const root = join(agentDir, "provider-journal");
+  const root = providerJournalRoot(agentDir);
   return existsSync(root) ? readdirSync(root) : [];
 }
 
 function onlyJournalEntry(agentDir: string): string {
   const entries = journalEntries(agentDir);
   expect(entries).toHaveLength(1);
-  return join(agentDir, "provider-journal", entries[0]!);
+  return join(providerJournalRoot(agentDir), entries[0]!);
 }
 
 async function beginSave(agentDir: string, modelsPath: string, store: FileCredentialStore) {
@@ -122,6 +123,26 @@ describe("recoverProviderJournals", () => {
     expect(outcome).toBeNull(); // resolved cleanly, so nothing to report
     expect(readFileSync(modelsPath, "utf8")).toBe(ORIGINAL_MODELS);
     expect(await recovered.readRaw("a")).toEqual({ type: "api_key", key: "sk-original" });
+    expect(journalEntries(agentDir)).toHaveLength(0);
+  });
+
+  it("resolves the models backup from the migrated entry instead of a stale path", async () => {
+    const { agentDir, modelsPath, store } = createAgentDir();
+    await beginSave(agentDir, modelsPath, store);
+    const entry = onlyJournalEntry(agentDir);
+    const recordPath = join(entry, "journal.json");
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    record.modelsBackup = join(agentDir, "provider-journal", record.journalId, "models.json");
+    writeFileSync(recordPath, JSON.stringify(record));
+    writeFileSync(modelsPath, JSON.stringify({ providers: { crashed: {} } }));
+
+    const outcome = await recoverProviderJournals(
+      agentDir,
+      FileCredentialStore.forAgentDir(agentDir),
+    );
+
+    expect(outcome).toBeNull();
+    expect(readFileSync(modelsPath, "utf8")).toBe(ORIGINAL_MODELS);
     expect(journalEntries(agentDir)).toHaveLength(0);
   });
 
@@ -269,7 +290,7 @@ describe("recoverProviderJournals", () => {
 
   it("discards an entry with no readable record instead of blocking startup", async () => {
     const { agentDir, store } = createAgentDir();
-    const orphan = join(agentDir, "provider-journal", "orphan");
+    const orphan = join(providerJournalRoot(agentDir), "orphan");
     mkdirSync(orphan, { recursive: true });
     writeFileSync(join(orphan, "journal.json"), "{ not json");
 
