@@ -10,7 +10,10 @@ import {
   ServerCog,
   Settings2,
 } from "lucide-react";
-import type { TerminalProfileId } from "@pideck/protocol";
+import type {
+  ExtensionDecisionPresentation,
+  TerminalProfileId,
+} from "@pideck/protocol";
 import { Dialog } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
@@ -25,6 +28,7 @@ import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
+import { hostClient } from "../../lib/bridge/host-client";
 
 type ShellProfileSummary = {
   id: TerminalProfileId;
@@ -43,6 +47,7 @@ function GeneralSettings() {
   const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
+  const [decisionPresentationSaving, setDecisionPresentationSaving] = useState(false);
 
   async function loadShellProfiles() {
     setShellCatalogLoading(true);
@@ -72,6 +77,76 @@ function GeneralSettings() {
       notifyDesktopSettingsSaveFailure(error);
     }
   }
+
+  async function patchExtensionDecisionPresentation(
+    next: ExtensionDecisionPresentation,
+  ) {
+    const previous =
+      useAppStore.getState().desktopSettings?.extensionDecisionPresentation ??
+      "legacy-modal";
+    if (next === previous || decisionPresentationSaving) return;
+
+    const hostAtStart = useAppStore.getState().host;
+    let configuredHost = false;
+    setDecisionPresentationSaving(true);
+    try {
+      if (hostAtStart) {
+        const response = await hostClient.request(
+          "extensionUi.configure",
+          { expectedHostInstanceId: hostAtStart.hostInstanceId },
+          { extensionDecisionPresentation: next },
+        );
+        if (!response.ok) throw new Error(response.error.message);
+        configuredHost = true;
+      }
+      await persistDesktopSettings({ extensionDecisionPresentation: next });
+    } catch (error) {
+      const currentHost = useAppStore.getState().host;
+      const currentHostId = currentHost?.hostInstanceId;
+      if (
+        configuredHost &&
+        currentHostId &&
+        currentHostId === hostAtStart?.hostInstanceId
+      ) {
+        try {
+          await hostClient.request(
+            "extensionUi.configure",
+            { expectedHostInstanceId: currentHostId },
+            { extensionDecisionPresentation: previous },
+          );
+        } catch {
+          // The next hello re-applies the persisted value after a Host epoch change.
+        }
+      }
+      notifyDesktopSettingsSaveFailure(error);
+    } finally {
+      setDecisionPresentationSaving(false);
+    }
+  }
+
+  const decisionPresentation =
+    desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
+  const decisionPresentationOptions: Array<{
+    value: ExtensionDecisionPresentation;
+    label: MessageKey;
+    description: MessageKey;
+  }> = [
+    {
+      value: "legacy-modal",
+      label: "generalExtensionDecisionLegacy",
+      description: "generalExtensionDecisionLegacyDesc",
+    },
+    {
+      value: "auto",
+      label: "generalExtensionDecisionAuto",
+      description: "generalExtensionDecisionAutoDesc",
+    },
+    {
+      value: "inline-first",
+      label: "generalExtensionDecisionInlineFirst",
+      description: "generalExtensionDecisionInlineFirstDesc",
+    },
+  ];
 
 
   return (
@@ -142,6 +217,66 @@ function GeneralSettings() {
                 onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
               />
             </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-muted">
+            {t("generalExtensionDecisionGroup")}
+          </h2>
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm">{t("generalExtensionDecision")}</p>
+              <p id="extension-decision-presentation-help" className="text-xs text-muted">
+                {t("generalExtensionDecisionDesc")}
+              </p>
+            </div>
+            <fieldset
+              className="grid overflow-hidden rounded-md border border-border sm:grid-cols-3"
+              aria-describedby="extension-decision-presentation-help"
+              disabled={decisionPresentationSaving}
+            >
+              <legend className="sr-only">{t("generalExtensionDecision")}</legend>
+              {decisionPresentationOptions.map((option, index) => {
+                const selected = decisionPresentation === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={`relative flex min-h-20 flex-col gap-1 px-3 py-2.5 transition-colors ${
+                      index > 0 ? "border-t border-border sm:border-l sm:border-t-0" : ""
+                    } ${decisionPresentationSaving ? "cursor-wait opacity-60" : "cursor-pointer"} ${
+                      selected
+                        ? "bg-surface-overlay text-foreground"
+                        : "text-muted hover:bg-surface-overlay/60 hover:text-foreground"
+                    }`}
+                  >
+                    <input
+                      className="peer sr-only"
+                      type="radio"
+                      name="extension-decision-presentation"
+                      value={option.value}
+                      checked={selected}
+                      onChange={() =>
+                        void patchExtensionDecisionPresentation(option.value)
+                      }
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-accent opacity-0 peer-focus-visible:opacity-100"
+                    />
+                    <span className="text-xs font-medium">{t(option.label)}</span>
+                    <span className="text-[11px] leading-4 text-muted">
+                      {t(option.description)}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+            <span className="sr-only" role="status" aria-live="polite">
+              {decisionPresentationSaving
+                ? t("generalExtensionDecisionSaving")
+                : ""}
+            </span>
           </div>
         </section>
 

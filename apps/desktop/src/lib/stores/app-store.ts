@@ -3,6 +3,7 @@ import type {
   DesktopSettings,
   SessionTargetContext,
   ExtensionUiRequest,
+  ExtensionUiGroupStatus,
   HostStatusSnapshot,
   PackageMutationResult,
   PackageSnapshot,
@@ -68,6 +69,112 @@ export type ExtensionUiRequestState = ExtensionUiRequest & {
   expiresAt?: number;
 };
 
+export type ExtensionDecisionStepOutcome =
+  | "answered"
+  | "cancelled"
+  | "expired"
+  | "stale";
+
+export type ExtensionDecisionGroupState = {
+  groupKey: string;
+  context: SessionTargetContext;
+  origin?: ExtensionUiRequest["origin"];
+  presentation: "inline" | "modal";
+  risk: "normal" | "high";
+  activeRequestId: string | null;
+  answeredCount: number;
+  steps: Array<{
+    requestId: string;
+    kind: ExtensionUiRequest["kind"];
+    status: "active" | ExtensionDecisionStepOutcome;
+  }>;
+  status: "active" | ExtensionUiGroupStatus;
+};
+
+const MAX_EXTENSION_DECISION_GROUP_STEPS = 100;
+
+function sameDecisionGroupSession(
+  left: SessionTargetContext,
+  right: SessionTargetContext,
+): boolean {
+  return (
+    left.expectedHostInstanceId === right.expectedHostInstanceId &&
+    left.expectedWorkspaceId === right.expectedWorkspaceId &&
+    left.expectedWorkspaceRevision === right.expectedWorkspaceRevision &&
+    left.expectedSessionId === right.expectedSessionId
+  );
+}
+
+function registerDecisionGroupRequest(
+  groups: Record<string, ExtensionDecisionGroupState>,
+  request: ExtensionUiRequestState,
+): Record<string, ExtensionDecisionGroupState> {
+  if (!request.groupKey) return groups;
+  const existing = groups[request.groupKey];
+  const current =
+    existing && sameDecisionGroupSession(existing.context, request.context)
+      ? existing
+      : undefined;
+  const stepIndex = current?.steps.findIndex(
+    (step) => step.requestId === request.requestId,
+  ) ?? -1;
+  const steps = current ? [...current.steps] : [];
+  const step = {
+    requestId: request.requestId,
+    kind: request.kind,
+    status: "active" as const,
+  };
+  if (stepIndex >= 0) steps[stepIndex] = step;
+  else steps.push(step);
+  const boundedSteps = steps.slice(-MAX_EXTENSION_DECISION_GROUP_STEPS);
+  return {
+    ...groups,
+    [request.groupKey]: {
+      groupKey: request.groupKey,
+      context: request.context,
+      ...(request.origin ? { origin: request.origin } : {}),
+      presentation: request.presentation ?? "modal",
+      risk: request.risk ?? "normal",
+      activeRequestId: request.requestId,
+      answeredCount: current?.answeredCount ?? 0,
+      steps: boundedSteps,
+      status: "active",
+    },
+  };
+}
+
+function settleDecisionGroupRequest(
+  groups: Record<string, ExtensionDecisionGroupState>,
+  request: ExtensionUiRequestState,
+  outcome: ExtensionDecisionStepOutcome,
+): Record<string, ExtensionDecisionGroupState> {
+  if (!request.groupKey) return groups;
+  const group = groups[request.groupKey];
+  if (!group || !sameDecisionGroupSession(group.context, request.context)) return groups;
+  const previousStep = group.steps.find(
+    (step) => step.requestId === request.requestId,
+  );
+  const steps = group.steps.map((step) =>
+    step.requestId === request.requestId ? { ...step, status: outcome } : step,
+  );
+  const next = {
+    ...group,
+    activeRequestId:
+      group.activeRequestId === request.requestId ? null : group.activeRequestId,
+    answeredCount:
+      outcome === "answered" && previousStep?.status !== "answered"
+        ? group.answeredCount + 1
+        : group.answeredCount,
+    steps,
+  };
+  if (next.status !== "active" && next.activeRequestId === null) {
+    const remaining = { ...groups };
+    delete remaining[request.groupKey];
+    return remaining;
+  }
+  return { ...groups, [request.groupKey]: next };
+}
+
 export function isExtensionUiRequestExpired(
   request: ExtensionUiRequestState,
   now = Date.now(),
@@ -77,6 +184,54 @@ export function isExtensionUiRequestExpired(
 
 function extensionUiSessionId(request: ExtensionUiRequestState): string | null {
   return request.context.expectedSessionId;
+}
+
+export type ExtensionUiWaitingSummary = {
+  count: number;
+  hasHighRisk: boolean;
+};
+
+/** Derive sidebar visibility from the authoritative request queue. */
+export function deriveExtensionUiWaitingBySession(
+  activeRequest: ExtensionUiRequestState | null,
+  queuedRequests: readonly ExtensionUiRequestState[],
+  now = Date.now(),
+): Record<string, ExtensionUiWaitingSummary> {
+  const summaries: Record<string, ExtensionUiWaitingSummary> = {};
+  const seen = new Set<string>();
+  for (const request of activeRequest ? [activeRequest, ...queuedRequests] : queuedRequests) {
+    if (seen.has(request.requestId) || isExtensionUiRequestExpired(request, now)) continue;
+    seen.add(request.requestId);
+    const sessionId = extensionUiSessionId(request);
+    if (!sessionId) continue;
+    const current = summaries[sessionId];
+    summaries[sessionId] = {
+      count: (current?.count ?? 0) + 1,
+      hasHighRisk: (current?.hasHighRisk ?? false) || request.risk === "high",
+    };
+  }
+  return summaries;
+}
+
+export function isExtensionDecisionBlockingSession(
+  activeRequest: ExtensionUiRequestState | null,
+  groups: Readonly<Record<string, ExtensionDecisionGroupState>>,
+  sessionId: string | null,
+  now = Date.now(),
+): boolean {
+  if (!sessionId) return false;
+  if (
+    activeRequest &&
+    !isExtensionUiRequestExpired(activeRequest, now) &&
+    extensionUiSessionId(activeRequest) === sessionId
+  ) {
+    return true;
+  }
+  return Object.values(groups).some(
+    (group) =>
+      group.status === "active" &&
+      group.context.expectedSessionId === sessionId,
+  );
 }
 
 function alignExtensionUiToSession(
@@ -154,6 +309,7 @@ export type AppState = EpochState & {
   desktopSettings: DesktopSettings | null;
   extensionUiRequest: ExtensionUiRequestState | null;
   extensionUiQueue: ExtensionUiRequestState[];
+  extensionDecisionGroups: Record<string, ExtensionDecisionGroupState>;
   extensionStatus: string | null;
   extensionStatuses: Record<string, string>;
   extensionWidgets: Record<string, ExtensionWidgetState>;
@@ -197,6 +353,15 @@ export type AppState = EpochState & {
   setDesktopSettings: (d: DesktopSettings | null) => void;
   setExtensionUiRequest: (r: ExtensionUiRequestState | null) => void;
   enqueueExtensionUiRequest: (r: ExtensionUiRequestState) => void;
+  presentCandidateExtensionUiRequest: (r: ExtensionUiRequestState) => void;
+  closeExtensionUiRequest: (
+    requestId: string,
+    outcome?: ExtensionDecisionStepOutcome,
+  ) => void;
+  closeExtensionDecisionGroup: (
+    groupKey: string,
+    status: ExtensionUiGroupStatus,
+  ) => void;
   openExtensionTerminal: (t: ExtensionTerminalState) => void;
   closeExtensionTerminal: (requestId: string) => void;
   setDockOpen: (open: boolean) => void;
@@ -257,6 +422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   desktopSettings: null,
   extensionUiRequest: null,
   extensionUiQueue: [],
+  extensionDecisionGroups: {},
   extensionStatus: null,
   extensionStatuses: {},
   extensionWidgets: {},
@@ -367,6 +533,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...next,
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
@@ -414,6 +581,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? {
             extensionUiRequest: null,
             extensionUiQueue: [],
+            extensionDecisionGroups: {},
             extensionStatus: null,
             extensionStatuses: {},
             extensionWidgets: {},
@@ -435,6 +603,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessionCatalog: emptySessionCatalog(),
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
@@ -542,6 +711,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? {
             extensionUiRequest: null,
             extensionUiQueue: [],
+            extensionDecisionGroups: {},
             extensionStatus: null,
             extensionStatuses: {},
             extensionWidgets: {},
@@ -596,24 +766,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (isExtensionUiRequestExpired(request, now)) {
         return { extensionUiRequest: active, extensionUiQueue: queue };
       }
+      const extensionDecisionGroups = registerDecisionGroupRequest(
+        state.extensionDecisionGroups,
+        request,
+      );
       if (active?.requestId === request.requestId) {
-        return { extensionUiRequest: request, extensionUiQueue: queue };
+        return { extensionUiRequest: request, extensionUiQueue: queue, extensionDecisionGroups };
       }
       const existingIndex = queue.findIndex((queued) => queued.requestId === request.requestId);
       if (existingIndex >= 0) {
         queue = [...queue];
         queue[existingIndex] = request;
-        return { extensionUiRequest: active, extensionUiQueue: queue };
+        return { extensionUiRequest: active, extensionUiQueue: queue, extensionDecisionGroups };
       }
-      if (!active) return { extensionUiRequest: request, extensionUiQueue: queue };
-      return { extensionUiRequest: active, extensionUiQueue: [...queue, request] };
+      if (!active) {
+        return { extensionUiRequest: request, extensionUiQueue: queue, extensionDecisionGroups };
+      }
+      return {
+        extensionUiRequest: active,
+        extensionUiQueue: [...queue, request],
+        extensionDecisionGroups,
+      };
     }),
   enqueueExtensionUiRequest: (request) =>
     set((state) => {
       const now = Date.now();
       if (isExtensionUiRequestExpired(request, now)) return {};
+      const extensionDecisionGroups = registerDecisionGroupRequest(
+        state.extensionDecisionGroups,
+        request,
+      );
       if (state.extensionUiRequest?.requestId === request.requestId) {
-        return { extensionUiRequest: request };
+        return { extensionUiRequest: request, extensionDecisionGroups };
       }
       const queue = state.extensionUiQueue.filter(
         (queued) => !isExtensionUiRequestExpired(queued, now),
@@ -622,9 +806,99 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (existingIndex >= 0) {
         const nextQueue = [...queue];
         nextQueue[existingIndex] = request;
-        return { extensionUiQueue: nextQueue };
+        return { extensionUiQueue: nextQueue, extensionDecisionGroups };
       }
-      return { extensionUiQueue: [...queue, request] };
+      return { extensionUiQueue: [...queue, request], extensionDecisionGroups };
+    }),
+  presentCandidateExtensionUiRequest: (request) =>
+    set((state) => {
+      const now = Date.now();
+      if (isExtensionUiRequestExpired(request, now)) return {};
+      const extensionDecisionGroups = registerDecisionGroupRequest(
+        state.extensionDecisionGroups,
+        request,
+      );
+      let queue = state.extensionUiQueue.filter(
+        (queued) =>
+          queued.requestId !== request.requestId && !isExtensionUiRequestExpired(queued, now),
+      );
+      const active =
+        state.extensionUiRequest && !isExtensionUiRequestExpired(state.extensionUiRequest, now)
+          ? state.extensionUiRequest
+          : null;
+      if (active && active.requestId !== request.requestId) {
+        queue = [active, ...queue.filter((queued) => queued.requestId !== active.requestId)];
+      }
+      return {
+        extensionUiRequest: request,
+        extensionUiQueue: queue,
+        extensionDecisionGroups,
+      };
+    }),
+  closeExtensionUiRequest: (requestId, outcome = "stale") =>
+    set((state) => {
+      const active = state.extensionUiRequest;
+      if (active?.requestId !== requestId) {
+        const queuedIndex = state.extensionUiQueue.findIndex(
+          (queued) => queued.requestId === requestId,
+        );
+        if (queuedIndex < 0) return {};
+        const queuedRequest = state.extensionUiQueue[queuedIndex]!;
+        return {
+          extensionUiQueue: state.extensionUiQueue.filter(
+            (_, index) => index !== queuedIndex,
+          ),
+          extensionDecisionGroups: settleDecisionGroupRequest(
+            state.extensionDecisionGroups,
+            queuedRequest,
+            outcome,
+          ),
+        };
+      }
+
+      const now = Date.now();
+      const extensionDecisionGroups = settleDecisionGroupRequest(
+        state.extensionDecisionGroups,
+        active,
+        outcome,
+      );
+      const targetSessionId = extensionUiSessionId(active);
+      const queue = state.extensionUiQueue.filter(
+        (queued) => queued.requestId !== requestId && !isExtensionUiRequestExpired(queued, now),
+      );
+      const nextIndex = targetSessionId
+        ? queue.findIndex((queued) => extensionUiSessionId(queued) === targetSessionId)
+        : -1;
+      if (nextIndex < 0) {
+        return { extensionUiRequest: null, extensionUiQueue: queue, extensionDecisionGroups };
+      }
+      return {
+        extensionUiRequest: queue[nextIndex]!,
+        extensionUiQueue: queue.filter((_, index) => index !== nextIndex),
+        extensionDecisionGroups,
+      };
+    }),
+  closeExtensionDecisionGroup: (groupKey, status) =>
+    set((state) => {
+      const group = state.extensionDecisionGroups[groupKey];
+      if (!group) return {};
+      const activeRequestStillPresent =
+        group.activeRequestId !== null &&
+        (state.extensionUiRequest?.requestId === group.activeRequestId ||
+          state.extensionUiQueue.some(
+            (request) => request.requestId === group.activeRequestId,
+          ));
+      if (!activeRequestStillPresent) {
+        const extensionDecisionGroups = { ...state.extensionDecisionGroups };
+        delete extensionDecisionGroups[groupKey];
+        return { extensionDecisionGroups };
+      }
+      return {
+        extensionDecisionGroups: {
+          ...state.extensionDecisionGroups,
+          [groupKey]: { ...group, status },
+        },
+      };
     }),
   openExtensionTerminal: (panel) =>
     set((state) => ({
@@ -776,6 +1050,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       rehydrating: false,
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
@@ -792,6 +1067,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...emptyEpoch(),
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},

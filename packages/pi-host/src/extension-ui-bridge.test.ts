@@ -8,8 +8,28 @@ import {
   cancelAllPending,
   injectExtensionCustomInput,
 } from "./extension-ui-bridge.js";
-import type { HostEventName, HostIdentity } from "@pideck/protocol";
-import { withExtensionCommandOrigin } from "./extension-command-context.js";
+import {
+  MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
+  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+  MAX_EXTENSION_UI_MESSAGE_LENGTH,
+  MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+  MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+  MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
+  MAX_EXTENSION_UI_TITLE_LENGTH,
+  validateEventPayload,
+  type HostEventName,
+  type HostIdentity,
+} from "@pideck/protocol";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import {
+  createExtensionInvocationRunner,
+  getActiveExtensionInvocation,
+  type ExtensionInvocationContext,
+  type ResolvedExtensionCommandInvocation,
+  withExtensionCommandOrigin,
+} from "./extension-invocation-context.js";
 
 const id: HostIdentity = {
   hostInstanceId: "h",
@@ -22,6 +42,24 @@ const id: HostIdentity = {
 
 const COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000006";
 const NEXT_COMMAND_RUN_ID = "00000000-0000-4000-8000-000000000007";
+
+function commandInvocation(invocation: string): ResolvedExtensionCommandInvocation {
+  return {
+    invocation,
+    command: {
+      name: invocation,
+      invocationName: invocation,
+      sourceInfo: {
+        path: `/packages/review/extensions/${invocation}.ts`,
+        source: "npm:@pideck/review-extension@1.0.0",
+        scope: "user",
+        origin: "package",
+        baseDir: "/packages/review",
+      },
+      handler: async () => {},
+    },
+  };
+}
 
 function targetContext(identity: HostIdentity = id) {
   return {
@@ -50,6 +88,33 @@ function extensionUiHandlers() {
   };
 }
 
+describe("Extension UI configuration handler", () => {
+  it("applies and returns the server-owned mode idempotently", async () => {
+    let mode: "legacy-modal" | "auto" | "inline-first" = "legacy-modal";
+    const server = {
+      setExtensionDecisionPresentation: vi.fn((next: typeof mode) => {
+        mode = next;
+      }),
+      getExtensionDecisionPresentation: vi.fn(() => mode),
+    };
+    const handlers = createExtensionUiHandlers({
+      getServer: () => server,
+    } as never);
+
+    const configure = () =>
+      handlers["extensionUi.configure"]!({
+        params: { extensionDecisionPresentation: "inline-first" },
+      } as never);
+    await expect(configure()).resolves.toEqual({
+      result: { extensionDecisionPresentation: "inline-first" },
+    });
+    await expect(configure()).resolves.toEqual({
+      result: { extensionDecisionPresentation: "inline-first" },
+    });
+    expect(server.setExtensionDecisionPresentation).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("extension-ui-bridge", () => {
   it("select uses positional title/options and returns option string", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
@@ -62,10 +127,131 @@ describe("extension-ui-bridge", () => {
     const req = events.find((x) => x.e === "extensionUi.request")!.p as {
       requestId: string;
       kind: string;
+      origin: unknown;
     };
     expect(req.kind).toBe("select");
+    expect(req.origin).toEqual({ invocationKind: "unknown" });
     respondExtensionUi(req.requestId, "resolved", "beta", id);
     await expect(p).resolves.toBe("beta");
+  });
+
+  it("bounds blocking payloads while preserving selected SDK option values", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const sharedPrefix = "x".repeat(MAX_EXTENSION_UI_OPTION_ID_LENGTH);
+    const firstLongValue = `${sharedPrefix}a`;
+    const secondLongValue = `${sharedPrefix}b`;
+    const values = [
+      "described",
+      firstLongValue,
+      secondLongValue,
+      ...Array.from({ length: MAX_EXTENSION_UI_OPTIONS }, (_, index) => `option-${index}`),
+    ];
+    const pendingSelect = ui.select(
+      "t".repeat(MAX_EXTENSION_UI_TITLE_LENGTH + 1),
+      values,
+      {
+        pideck: {
+          sourceLabel: "s".repeat(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH + 1),
+          correlationId: "c".repeat(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH + 1),
+          optionDetails: [
+            {
+              id: "described",
+              description: "d".repeat(MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH + 1),
+            },
+          ],
+        },
+      } as never,
+    );
+    const selectRequest = events.at(-1)?.p as {
+      requestId: string;
+      title: string;
+      sourceLabel: string;
+      correlationId: string;
+      options: Array<{ id: string; label: string; description?: string }>;
+    };
+
+    expect(selectRequest.title).toHaveLength(MAX_EXTENSION_UI_TITLE_LENGTH);
+    expect(selectRequest.sourceLabel).toHaveLength(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH);
+    expect(selectRequest.correlationId).toHaveLength(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH);
+    expect(selectRequest.options).toHaveLength(MAX_EXTENSION_UI_OPTIONS);
+    expect(selectRequest.options[0]?.description).toHaveLength(
+      MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+    );
+    expect(selectRequest.options[1]?.id).toHaveLength(MAX_EXTENSION_UI_OPTION_ID_LENGTH);
+    expect(selectRequest.options[1]?.label).toHaveLength(MAX_EXTENSION_UI_OPTION_LABEL_LENGTH);
+    expect(selectRequest.options[2]?.id).not.toBe(selectRequest.options[1]?.id);
+    expect(selectRequest.options[2]?.id.length).toBeLessThanOrEqual(
+      MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+    );
+    expect(validateEventPayload("extensionUi.request", selectRequest).ok).toBe(true);
+
+    respondExtensionUi(selectRequest.requestId, "resolved", selectRequest.options[2]?.id, id);
+    await expect(pendingSelect).resolves.toBe(secondLongValue);
+
+    const pendingConfirm = ui.confirm(
+      "title",
+      "m".repeat(MAX_EXTENSION_UI_MESSAGE_LENGTH + 1),
+    );
+    const confirmRequest = events.at(-1)?.p as { requestId: string; message: string };
+    expect(confirmRequest.message).toHaveLength(MAX_EXTENSION_UI_MESSAGE_LENGTH);
+    respondExtensionUi(confirmRequest.requestId, "cancelled", undefined, id);
+    await expect(pendingConfirm).resolves.toBe(false);
+
+    const pendingEditor = ui.editor(
+      "title",
+      "d".repeat(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH + 1),
+    );
+    const editorRequest = events.at(-1)?.p as { requestId: string; defaultValue: string };
+    expect(editorRequest.defaultValue).toHaveLength(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH);
+    respondExtensionUi(editorRequest.requestId, "cancelled", undefined, id);
+    await expect(pendingEditor).resolves.toBeUndefined();
+  });
+
+  it("publishes trusted origin with the fail-safe legacy modal decision", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const activeInvocation: ExtensionInvocationContext = {
+      session: {} as ExtensionInvocationContext["session"],
+      invocationId: "00000000-0000-4000-8000-000000000008",
+      origin: {
+        invocationKind: "tool",
+        extensionId: "ext_0123456789abcdef01234567",
+        extensionDisplayName: "Trusted review",
+        sourceKind: "package",
+        toolName: "review_changes",
+        toolCallId: "tool-call-1",
+      },
+      active: true,
+      widgetAttentionRequested: false,
+    };
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getActiveInvocation: () => activeInvocation,
+    });
+    const pending = ui.confirm("Continue?", "Review changes", {
+      pideck: { sourceLabel: "Untrusted label" },
+    });
+    const request = events.find((event) => event.e === "extensionUi.request")!.p as {
+      requestId: string;
+      sourceLabel: string;
+      presentation?: string;
+      risk?: string;
+      routeReason?: string;
+      origin: unknown;
+    };
+    expect(request).toMatchObject({
+      sourceLabel: "Untrusted label",
+      origin: activeInvocation.origin,
+      presentation: "modal",
+      risk: "normal",
+      routeReason: "explicit-modal",
+    });
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pending).resolves.toBe(false);
   });
 
   it("normalizes namespaced PiDeck presentation metadata", async () => {
@@ -99,10 +285,13 @@ describe("extension-ui-bridge", () => {
 
     const request = events.find((event) => event.e === "extensionUi.request")?.p as {
       requestId: string;
+      presentationHint?: string;
+      riskHint?: string;
       presentation?: string;
       sourceLabel?: string;
       correlationId?: string;
       risk?: string;
+      routeReason?: string;
       allowFreeform?: boolean;
       options?: Array<{
         id: string;
@@ -112,10 +301,13 @@ describe("extension-ui-bridge", () => {
       }>;
     };
     expect(request).toMatchObject({
-      presentation: "inline",
+      presentationHint: "inline",
+      riskHint: "high",
+      presentation: "modal",
       sourceLabel: "Review",
       correlationId: "review-1",
       risk: "high",
+      routeReason: "destructive-option",
       allowFreeform: true,
       options: [
         { id: "keep", label: "keep" },
@@ -129,6 +321,206 @@ describe("extension-ui-bridge", () => {
     });
     respondExtensionUi(request.requestId, "cancelled", undefined, id);
     await expect(pendingSelect).resolves.toBeUndefined();
+  });
+
+  it("routes an ordinary active tool inline in auto mode", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const activeInvocation: ExtensionInvocationContext = {
+      session: {} as ExtensionInvocationContext["session"],
+      invocationId: "00000000-0000-4000-8000-000000000018",
+      origin: {
+        invocationKind: "tool",
+        extensionId: "ext_0123456789abcdef01234567",
+        extensionDisplayName: "Trusted review",
+        sourceKind: "package",
+        toolName: "review_changes",
+        toolCallId: "tool-call-auto",
+      },
+      active: true,
+      widgetAttentionRequested: false,
+    };
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => id,
+      getExtensionDecisionPresentation: () => "auto",
+      isInlineSurfaceAvailable: () => true,
+      getActiveInvocation: () => activeInvocation,
+    });
+
+    const pending = ui.confirm("Continue?", "Review changes");
+    const request = events.find((event) => event.e === "extensionUi.request")!.p as {
+      requestId: string;
+      presentation: string;
+      risk: string;
+      routeReason: string;
+    };
+    expect(request).toMatchObject({
+      presentation: "inline",
+      risk: "normal",
+      routeReason: "active-tool",
+    });
+    respondExtensionUi(request.requestId, "cancelled", undefined, id);
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it("forces a trusted tool-call permission decision to high-risk Modal", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const activeInvocation: ExtensionInvocationContext = {
+      session: {} as ExtensionInvocationContext["session"],
+      invocationId: "00000000-0000-4000-8000-000000000020",
+      origin: {
+        invocationKind: "event",
+        extensionId: "ext_0123456789abcdef01234567",
+        extensionDisplayName: "Permission guard",
+        sourceKind: "package",
+        eventType: "tool_call",
+        toolName: "bash",
+        toolCallId: "tool-call-guarded",
+      },
+      active: true,
+      widgetAttentionRequested: false,
+    };
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => id,
+      getExtensionDecisionPresentation: () => "auto",
+      isInlineSurfaceAvailable: () => true,
+      getActiveInvocation: () => activeInvocation,
+    });
+
+    const pending = ui.select("Allow command?", ["Allow", "Block"], {
+      pideck: { presentation: "inline", risk: "normal" },
+    } as never);
+    const request = events.find((event) => event.e === "extensionUi.request")!.p as {
+      requestId: string;
+      presentation: string;
+      risk: string;
+      routeReason: string;
+    };
+    expect(request).toMatchObject({
+      presentation: "modal",
+      risk: "high",
+      routeReason: "high-risk",
+    });
+    respondExtensionUi(request.requestId, "resolved", "Block", id);
+    await expect(pending).resolves.toBe("Block");
+  });
+
+  it("publishes one Host-owned group for sequential tool dialogs", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const session = {} as AgentSession;
+    const runner = createExtensionInvocationRunner(session);
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => id,
+      getExtensionDecisionPresentation: () => "auto",
+      isInlineSurfaceAvailable: () => true,
+      getActiveInvocation: () => getActiveExtensionInvocation(session),
+    });
+
+    await runner(
+      {
+        kind: "tool",
+        sourceInfo: {
+          path: "/packages/questions/extensions/index.ts",
+          source: "npm:@pideck/questions@1.0.0",
+          scope: "user",
+          origin: "package",
+          baseDir: "/packages/questions",
+        },
+        toolName: "ask_user_question",
+        toolCallId: "provider-call-sensitive",
+      },
+      async () => {
+        const firstPending = ui.select("Pick", ["alpha", "beta"]);
+        const first = events.find((event) => event.e === "extensionUi.request")!.p as {
+          requestId: string;
+          groupKey?: string;
+        };
+        expect(first.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
+        expect(first.groupKey).not.toContain("provider-call-sensitive");
+        respondExtensionUi(first.requestId, "resolved", "alpha", id);
+        await expect(firstPending).resolves.toBe("alpha");
+
+        const secondPending = ui.input("Explain", "Details");
+        const requests = events.filter((event) => event.e === "extensionUi.request");
+        const second = requests.at(-1)!.p as {
+          requestId: string;
+          groupKey?: string;
+        };
+        expect(second.groupKey).toBe(first.groupKey);
+        respondExtensionUi(second.requestId, "resolved", "because", id);
+        await expect(secondPending).resolves.toBe("because");
+        expect(events.some((event) => event.e === "extensionUi.groupClosed")).toBe(false);
+      },
+    );
+
+    expect(events.filter((event) => event.e === "extensionUi.groupClosed")).toEqual([
+      {
+        e: "extensionUi.groupClosed",
+        p: {
+          groupKey: expect.stringMatching(/^tool:[0-9a-f]{32}$/),
+          status: "completed",
+        },
+      },
+    ]);
+  });
+
+  it("keeps a background tool request on its owner and records the queue route", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const foreground = { ...id, sessionId: "foreground", sessionRevision: 2 };
+    const activeInvocation: ExtensionInvocationContext = {
+      session: {} as ExtensionInvocationContext["session"],
+      invocationId: "00000000-0000-4000-8000-000000000019",
+      origin: {
+        invocationKind: "tool",
+        extensionId: "ext_0123456789abcdef01234567",
+        extensionDisplayName: "Trusted review",
+        sourceKind: "package",
+        toolName: "review_changes",
+        toolCallId: "tool-call-background",
+      },
+      active: true,
+      widgetAttentionRequested: false,
+    };
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => foreground,
+      getExtensionDecisionPresentation: () => "auto",
+      isInlineSurfaceAvailable: () => true,
+      getActiveInvocation: () => activeInvocation,
+    });
+
+    const pending = ui.input("Background", "value");
+    const request = events.find((event) => event.e === "extensionUi.request")!.p as {
+      requestId: string;
+      presentation: string;
+      routeReason: string;
+    };
+    expect(request).toMatchObject({
+      presentation: "inline",
+      routeReason: "background-session",
+    });
+    expect(respondExtensionUi(request.requestId, "resolved", "done", id)).toBe(true);
+    await expect(pending).resolves.toBe("done");
+  });
+
+  it("cancels a stale owner without publishing or allocating a request", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => ({ ...id, workspaceRevision: 2 }),
+      getExtensionDecisionPresentation: () => "auto",
+      isInlineSurfaceAvailable: () => true,
+    });
+
+    await expect(ui.confirm("Stale", "Ignore")).resolves.toBe(false);
+    expect(events).toEqual([]);
   });
 
   it("confirm returns boolean; cancel yields false", async () => {
@@ -151,6 +543,181 @@ describe("extension-ui-bridge", () => {
     await expect(p2).resolves.toBe(false);
   });
 
+  it("keeps missing and zero timeouts pending without timers", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: Array<{ e: HostEventName; p: unknown }> = [];
+      const ui = createExtensionUiContext({
+        emit: (e, p) => events.push({ e, p }),
+        getIdentity: () => id,
+      });
+      const missingTimeout = ui.input("Missing timeout", "");
+      const zeroTimeout = ui.editor("Zero timeout", "", { timeout: 0 });
+      const requests = events
+        .filter((event) => event.e === "extensionUi.request")
+        .map((event) => event.p as { requestId: string; timeoutMs?: number });
+
+      expect(requests).toHaveLength(2);
+      expect(requests.map((request) => request.timeoutMs)).toEqual([undefined, undefined]);
+      expect(vi.getTimerCount()).toBe(0);
+
+      let settled = false;
+      void Promise.all([missingTimeout, zeroTimeout]).then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(settled).toBe(false);
+
+      for (const request of requests) {
+        expect(respondExtensionUi(request.requestId, "cancelled", undefined, id)).toBe(true);
+      }
+      await expect(missingTimeout).resolves.toBeUndefined();
+      await expect(zeroTimeout).resolves.toBeUndefined();
+      expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([]);
+    } finally {
+      cancelAllPending("missing/zero timeout test cleanup");
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out once and publishes an authoritative close", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: Array<{ e: HostEventName; p: unknown }> = [];
+      const ui = createExtensionUiContext({
+        emit: (e, p) => events.push({ e, p }),
+        getIdentity: () => id,
+      });
+      const pendingConfirm = ui.confirm("Timeout", "Wait?", { timeout: 1_000 });
+      const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+        requestId: string;
+        timeoutMs?: number;
+      };
+      expect(request.timeoutMs).toBe(1_000);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(pendingConfirm).resolves.toBe(false);
+      expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([
+        {
+          e: "extensionUi.closed",
+          p: { requestId: request.requestId, reason: "timed-out" },
+        },
+      ]);
+      expect(respondExtensionUi(request.requestId, "resolved", true, id)).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(events.filter((event) => event.e === "extensionUi.closed")).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      cancelAllPending("positive timeout test cleanup");
+      vi.useRealTimers();
+    }
+  });
+
+  it("honors pre-aborted and later-aborted dialog signals", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const preAborted = new AbortController();
+    preAborted.abort();
+    await expect(
+      ui.input("Already aborted", "", { signal: preAborted.signal }),
+    ).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+
+    const controller = new AbortController();
+    const pendingSelect = ui.select("Abort later", ["one"], {
+      signal: controller.signal,
+    });
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    controller.abort();
+
+    await expect(pendingSelect).resolves.toBeUndefined();
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: request.requestId, reason: "aborted" },
+      },
+    ]);
+    controller.abort();
+    expect(respondExtensionUi(request.requestId, "resolved", "one", id)).toBe(false);
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toHaveLength(1);
+  });
+
+  it("inherits the active tool signal when an Extension omits dialog options", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const controller = new AbortController();
+    const invocation: ExtensionInvocationContext = {
+      session: {} as AgentSession,
+      invocationId: "00000000-0000-4000-8000-000000000099",
+      origin: {
+        invocationKind: "tool",
+        extensionId: "ext_0123456789abcdef01234567",
+        extensionDisplayName: "Abortable tool",
+        sourceKind: "package",
+        toolName: "ask_user_question",
+        toolCallId: "tool-call-abort",
+      },
+      signal: controller.signal,
+      active: true,
+      widgetAttentionRequested: false,
+    };
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getActiveInvocation: () => invocation,
+    });
+    const pendingSelect = ui.select("Abort inherited", ["one"]);
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+
+    controller.abort();
+
+    await expect(pendingSelect).resolves.toBeUndefined();
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: request.requestId, reason: "aborted" },
+      },
+    ]);
+    expect(respondExtensionUi(request.requestId, "resolved", "one", id)).toBe(false);
+  });
+
+  it("rolls back pending state when request emission throws", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let requestId = "";
+      const ui = createExtensionUiContext({
+        emit: (event, payload) => {
+          if (event !== "extensionUi.request") return;
+          requestId = (payload as { requestId: string }).requestId;
+          throw new Error("request transport failed");
+        },
+        getIdentity: () => id,
+      });
+
+      await expect(
+        ui.input("Emit failure", "", {
+          timeout: 5_000,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("request transport failed");
+      expect(requestId).toBeTruthy();
+      expect(vi.getTimerCount()).toBe(0);
+      controller.abort();
+      expect(respondExtensionUi(requestId, "resolved", "late", id)).toBe(false);
+    } finally {
+      cancelAllPending("emit failure test cleanup");
+      vi.useRealTimers();
+    }
+  });
+
   it("cancelAllPending resolves pending without hang", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({
@@ -160,6 +727,15 @@ describe("extension-ui-bridge", () => {
     const p = ui.input("Name", "type here");
     cancelAllPending("test");
     await expect(p).resolves.toBeUndefined();
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: request.requestId, reason: "disposed" },
+      },
+    ]);
   });
 
   it("cancels only the matching session generation", async () => {
@@ -168,13 +744,34 @@ describe("extension-ui-bridge", () => {
       sessionId: "s-next",
       sessionRevision: 2,
     };
-    const first = createExtensionUiContext({ emit: () => {}, getIdentity: () => id });
-    const second = createExtensionUiContext({ emit: () => {}, getIdentity: () => nextId });
+    const firstEvents: Array<{ e: HostEventName; p: unknown }> = [];
+    const secondEvents: Array<{ e: HostEventName; p: unknown }> = [];
+    const first = createExtensionUiContext({
+      emit: (e, p) => firstEvents.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const second = createExtensionUiContext({
+      emit: (e, p) => secondEvents.push({ e, p }),
+      getIdentity: () => nextId,
+    });
     const firstPending = first.input("First", "");
     const secondPending = second.input("Second", "");
+    const firstRequest = firstEvents.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    const secondRequest = secondEvents.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
 
     cancelPendingForIdentity(id);
     await expect(firstPending).resolves.toBeUndefined();
+    expect(firstEvents.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: firstRequest.requestId, reason: "stale" },
+      },
+    ]);
+    expect(secondEvents.filter((event) => event.e === "extensionUi.closed")).toEqual([]);
 
     let secondSettled = false;
     void secondPending.then(() => {
@@ -185,6 +782,12 @@ describe("extension-ui-bridge", () => {
 
     cancelPendingForIdentity(nextId);
     await expect(secondPending).resolves.toBeUndefined();
+    expect(secondEvents.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: secondRequest.requestId, reason: "stale" },
+      },
+    ]);
   });
 
   it("accepts a background dialog only from its captured target identity", async () => {
@@ -275,7 +878,7 @@ describe("extension-ui-bridge", () => {
     await withExtensionCommandOrigin(
       session as never,
       COMMAND_RUN_ID,
-      "brainstorm",
+      commandInvocation("brainstorm"),
       async () => {
         ui!.setWidget("brainstorm", ["active"]);
         ui!.setWidget("brainstorm-details", ["more"]);
@@ -400,6 +1003,72 @@ describe("extension-ui-bridge", () => {
     expect(publish).toBeTypeOf("function");
     publish();
     binding.cleanup();
+  });
+
+  it("publishes candidate abort closure before the binding is ready", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const controller = new AbortController();
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: ReturnType<typeof createExtensionUiContext> }) => {
+        await uiContext.input("Startup", "value", { signal: controller.signal });
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+
+    const activation = binding.activate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    controller.abort();
+    const publish = await activation;
+
+    expect(events).toEqual([
+      { e: "extensionUi.request", p: expect.objectContaining({ requestId: request.requestId }) },
+      {
+        e: "extensionUi.closed",
+        p: { requestId: request.requestId, reason: "aborted" },
+      },
+    ]);
+    publish();
+    binding.cleanup();
+  });
+
+  it("publishes disposal closure before disabling the binding emitter", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const publish = await binding.activate();
+    publish();
+    const pendingInput = ui!.input("Dispose", "value");
+    await Promise.resolve();
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    expect(request.requestId).toBeTruthy();
+
+    binding.cleanup();
+
+    await expect(pendingInput).resolves.toBeUndefined();
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toEqual([
+      {
+        e: "extensionUi.closed",
+        p: { requestId: request.requestId, reason: "disposed" },
+      },
+    ]);
+    binding.cleanup();
+    expect(events.filter((event) => event.e === "extensionUi.closed")).toHaveLength(1);
   });
 
   it("propagates bind failure from activation", async () => {
@@ -906,7 +1575,7 @@ describe("extension-ui-bridge", () => {
     await withExtensionCommandOrigin(
       session as never,
       COMMAND_RUN_ID,
-      "brainstorm",
+      commandInvocation("brainstorm"),
       async () => {
         ui!.setWidget("brainstorm-live", (tui) => {
           requestRender = () => tui.requestRender();
@@ -983,7 +1652,7 @@ describe("extension-ui-bridge", () => {
     await withExtensionCommandOrigin(
       session as never,
       COMMAND_RUN_ID,
-      "brainstorm",
+      commandInvocation("brainstorm"),
       async () => {
         text = "command update";
         requestRender?.();
@@ -1010,7 +1679,7 @@ describe("extension-ui-bridge", () => {
     await withExtensionCommandOrigin(
       session as never,
       NEXT_COMMAND_RUN_ID,
-      "brainstorm",
+      commandInvocation("brainstorm"),
       async () => {
         text = "next command update";
         requestRender?.();

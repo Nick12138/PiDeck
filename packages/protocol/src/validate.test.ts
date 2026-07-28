@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { HOST_METHODS, METHOD_CONTEXT_SCOPE } from "./methods.js";
-import { MAX_AGENT_IMAGE_BYTES, MAX_AGENT_REQUEST_IMAGES } from "./limits.js";
+import {
+  MAX_AGENT_IMAGE_BYTES,
+  MAX_AGENT_REQUEST_IMAGES,
+  MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
+  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+  MAX_EXTENSION_UI_MESSAGE_LENGTH,
+  MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+  MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+  MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
+  MAX_EXTENSION_UI_TITLE_LENGTH,
+} from "./limits.js";
 import {
   isJsonValue,
   parseHostEvent,
@@ -78,6 +90,51 @@ describe("parseHostRequest", () => {
     if (result.ok) {
       expect(result.value.method).toBe("system.hello");
     }
+  });
+
+  it("accepts an optional presentation mode in hello and rejects unknown modes", () => {
+    const request = {
+      protocolVersion: 1 as const,
+      id: REQUEST_ID,
+      method: "system.hello" as const,
+      context: {},
+      params: {
+        clientName: "test",
+        clientVersion: "0.1.0",
+        protocolVersion: 1 as const,
+      },
+    };
+    expect(
+      parseHostRequest({
+        ...request,
+        params: {
+          ...request.params,
+          extensionDecisionPresentation: "legacy-modal",
+        },
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseHostRequest({
+        ...request,
+        params: {
+          ...request.params,
+          extensionDecisionPresentation: "automatic",
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("classifies Extension UI configuration as Host-scoped", () => {
+    expect(METHOD_CONTEXT_SCOPE["extensionUi.configure"]).toBe("host");
+    expect(
+      parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method: "extensionUi.configure",
+        context: { expectedHostInstanceId: HOST_ID },
+        params: { extensionDecisionPresentation: "auto" },
+      }).ok,
+    ).toBe(true);
   });
 
   it("rejects unknown method", () => {
@@ -564,6 +621,60 @@ describe("deep result/event validation (C3)", () => {
     ).toBe(true);
   });
 
+  it("validates authoritative Extension UI close reasons with exact keys", () => {
+    for (const reason of ["aborted", "timed-out", "disposed", "stale"] as const) {
+      expect(
+        validateEventPayload("extensionUi.closed", {
+          requestId: EXTENSION_REQUEST_ID,
+          reason,
+        }).ok,
+      ).toBe(true);
+    }
+    expect(
+      validateEventPayload("extensionUi.closed", {
+        requestId: EXTENSION_REQUEST_ID,
+        reason: "resolved",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateEventPayload("extensionUi.closed", {
+        requestId: EXTENSION_REQUEST_ID,
+        reason: "aborted",
+        extra: true,
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("validates authoritative Extension UI group completion with bounded exact keys", () => {
+    for (const status of ["completed", "failed", "cancelled", "stale"] as const) {
+      expect(
+        validateEventPayload("extensionUi.groupClosed", {
+          groupKey: "tool:0123456789abcdef",
+          status,
+        }).ok,
+      ).toBe(true);
+    }
+    expect(
+      validateEventPayload("extensionUi.groupClosed", {
+        groupKey: "x".repeat(257),
+        status: "completed",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateEventPayload("extensionUi.groupClosed", {
+        groupKey: "tool:0123456789abcdef",
+        status: "active",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateEventPayload("extensionUi.groupClosed", {
+        groupKey: "tool:0123456789abcdef",
+        status: "completed",
+        extra: true,
+      }).ok,
+    ).toBe(false);
+  });
+
   it("accepts declarative Extension UI presentation metadata", () => {
     expect(
       validateEventPayload("extensionUi.request", {
@@ -571,8 +682,12 @@ describe("deep result/event validation (C3)", () => {
         kind: "select",
         sourceLabel: "Subagents",
         correlationId: "decision-1",
-        presentation: "inline",
-        risk: "normal",
+        presentationHint: "inline",
+        riskHint: "normal",
+        presentation: "modal",
+        risk: "high",
+        routeReason: "destructive-option",
+        groupKey: "tool:0123456789abcdef",
         allowFreeform: true,
         options: [
           { id: "continue", label: "Continue", description: "Resume the agent" },
@@ -580,6 +695,156 @@ describe("deep result/event validation (C3)", () => {
         ],
       }).ok,
     ).toBe(true);
+    expect(
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "confirm",
+        groupKey: "x".repeat(257),
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("enforces blocking Extension UI request bounds", () => {
+    const request = (overrides: Record<string, unknown>) =>
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "select",
+        ...overrides,
+      }).ok;
+    expect(
+      request({
+        title: "t".repeat(MAX_EXTENSION_UI_TITLE_LENGTH),
+        message: "m".repeat(MAX_EXTENSION_UI_MESSAGE_LENGTH),
+        defaultValue: "d".repeat(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH),
+        sourceLabel: "s".repeat(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH),
+        correlationId: "c".repeat(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH),
+        options: [
+          {
+            id: "i".repeat(MAX_EXTENSION_UI_OPTION_ID_LENGTH),
+            label: "l".repeat(MAX_EXTENSION_UI_OPTION_LABEL_LENGTH),
+            description: "d".repeat(MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH),
+          },
+        ],
+      }),
+    ).toBe(true);
+    for (const [field, maxLength] of [
+      ["title", MAX_EXTENSION_UI_TITLE_LENGTH],
+      ["message", MAX_EXTENSION_UI_MESSAGE_LENGTH],
+      ["defaultValue", MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH],
+      ["sourceLabel", MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH],
+      ["correlationId", MAX_EXTENSION_UI_CORRELATION_ID_LENGTH],
+    ] as const) {
+      expect(request({ [field]: "x".repeat(maxLength + 1) })).toBe(false);
+    }
+    for (const [field, maxLength] of [
+      ["id", MAX_EXTENSION_UI_OPTION_ID_LENGTH],
+      ["label", MAX_EXTENSION_UI_OPTION_LABEL_LENGTH],
+      ["description", MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH],
+    ] as const) {
+      expect(
+        request({
+          options: [{ id: "id", label: "label", [field]: "x".repeat(maxLength + 1) }],
+        }),
+      ).toBe(false);
+    }
+    expect(
+      request({
+        options: Array.from({ length: MAX_EXTENSION_UI_OPTIONS }, (_, index) => ({
+          id: String(index),
+          label: String(index),
+        })),
+      }),
+    ).toBe(true);
+    expect(
+      request({
+        options: Array.from({ length: MAX_EXTENSION_UI_OPTIONS + 1 }, (_, index) => ({
+          id: String(index),
+          label: String(index),
+        })),
+      }),
+    ).toBe(false);
+    expect(request({ options: [{ id: undefined, label: "label" }] })).toBe(false);
+  });
+
+  it("accepts strict trusted Extension UI invocation origins", () => {
+    const identity = {
+      extensionId: "ext_0123456789abcdef",
+      extensionDisplayName: "Ask User",
+      sourceKind: "package" as const,
+    };
+    for (const origin of [
+      { invocationKind: "unknown" },
+      {
+        ...identity,
+        invocationKind: "tool",
+        toolName: "ask_user_question",
+        toolCallId: "tool-call-1",
+      },
+      { ...identity, invocationKind: "command", commandName: "review" },
+      { ...identity, invocationKind: "shortcut", shortcut: "ctrl+r" },
+      {
+        ...identity,
+        invocationKind: "event",
+        eventType: "tool_call",
+        toolName: "read",
+        toolCallId: "tool-call-2",
+      },
+      { ...identity, invocationKind: "background" },
+    ]) {
+      expect(
+        validateEventPayload("extensionUi.request", {
+          requestId: EXTENSION_REQUEST_ID,
+          kind: "confirm",
+          origin,
+        }).ok,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects malformed or unbounded Extension UI origins", () => {
+    const request = (origin: unknown) =>
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "confirm",
+        origin,
+      }).ok;
+    expect(request({ invocationKind: "unknown", extensionId: "forged" })).toBe(false);
+    expect(
+      request({
+        invocationKind: "tool",
+        extensionId: "ext_0123456789abcdef",
+        extensionDisplayName: "Ask User",
+        sourceKind: "package",
+        toolName: "ask_user_question",
+      }),
+    ).toBe(false);
+    expect(
+      request({
+        invocationKind: "event",
+        extensionId: "ext_0123456789abcdef",
+        extensionDisplayName: "Ask User",
+        sourceKind: "untrusted",
+        eventType: "session_start",
+      }),
+    ).toBe(false);
+    expect(
+      request({
+        invocationKind: "command",
+        extensionId: "x".repeat(129),
+        extensionDisplayName: "Ask User",
+        sourceKind: "package",
+        commandName: "review",
+      }),
+    ).toBe(false);
+    expect(
+      request({
+        invocationKind: "event",
+        extensionId: "ext_0123456789abcdef",
+        extensionDisplayName: "",
+        sourceKind: "package",
+        eventType: "session_start",
+      }),
+    ).toBe(false);
   });
 
   it("rejects executable or unknown Extension UI metadata", () => {
@@ -589,6 +854,15 @@ describe("deep result/event validation (C3)", () => {
         kind: "confirm",
         presentation: "inline",
         command: "subagent_supervisor(...)"
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateEventPayload("extensionUi.request", {
+        requestId: EXTENSION_REQUEST_ID,
+        kind: "confirm",
+        presentation: "modal",
+        risk: "normal",
+        routeReason: "extension-decided",
       }).ok,
     ).toBe(false);
   });

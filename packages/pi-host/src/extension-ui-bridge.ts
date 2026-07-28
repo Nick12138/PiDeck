@@ -25,6 +25,18 @@ import {
 } from "@earendil-works/pi-tui";
 import {
   createHostError,
+  MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
+  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+  MAX_EXTENSION_UI_MESSAGE_LENGTH,
+  MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+  MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+  MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
+  MAX_EXTENSION_UI_TITLE_LENGTH,
+  type ExtensionDecisionPresentation,
+  type ExtensionUiClosedReason,
+  type ExtensionUiOrigin,
   type HostEventName,
   type HostIdentity,
   type SessionTargetContext,
@@ -35,9 +47,17 @@ import { VirtualTerminal } from "./virtual-terminal.js";
 import { logger } from "./logger.js";
 import {
   claimExtensionCommandWidgetAttention,
-  getActiveExtensionCommandOrigin,
+  createExtensionInvocationRunner,
+  getActiveExtensionInvocation,
   type ExtensionCommandOrigin,
-} from "./extension-command-context.js";
+  type ExtensionInvocationContext,
+} from "./extension-invocation-context.js";
+import {
+  classifyHostDecisionRisk,
+  resolveDecisionRoute,
+  resolveExtensionUiOwnerSessionState,
+} from "./extension-ui-policy.js";
+import { ExtensionUiGroupRegistry } from "./extension-ui-groups.js";
 
 type PendingUi = {
   requestId: string;
@@ -46,6 +66,8 @@ type PendingUi = {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout> | undefined;
+  cleanup?: () => void;
+  emitClosed?: (reason: ExtensionUiClosedReason) => void;
 };
 
 export type ExtensionUiOwner = Pick<
@@ -63,6 +85,36 @@ type ActiveCustom = {
 };
 
 const pending = new Map<string, PendingUi>();
+
+type PendingSettlement =
+  | {
+      status: "resolved";
+      value: unknown;
+      closeReason?: ExtensionUiClosedReason;
+    }
+  | { status: "rejected"; error: Error };
+
+function settlePending(requestId: string, settlement: PendingSettlement): boolean {
+  const entry = pending.get(requestId);
+  if (!entry) return false;
+
+  pending.delete(requestId);
+  if (entry.timer !== undefined) clearTimeout(entry.timer);
+  entry.cleanup?.();
+
+  if (settlement.status === "resolved" && settlement.closeReason && entry.emitClosed) {
+    try {
+      entry.emitClosed(settlement.closeReason);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`Extension UI close event failed for requestId=${requestId}: ${message}`);
+    }
+  }
+
+  if (settlement.status === "rejected") entry.reject(settlement.error);
+  else entry.resolve(settlement.value);
+  return true;
+}
 
 /** Live ui.custom() panels — routes extensionUi.customInput/customResize to the virtual terminal. */
 const activeCustoms = new Map<string, ActiveCustom>();
@@ -109,10 +161,13 @@ export type ExtensionUiBridgeOptions = {
     payload: unknown,
   ) => void;
   getIdentity: () => HostIdentity;
+  getCurrentIdentity?: () => HostIdentity;
+  getExtensionDecisionPresentation?: () => ExtensionDecisionPresentation;
+  isInlineSurfaceAvailable?: () => boolean;
   waitUntilActive?: () => Promise<void>;
   isDisposed?: () => boolean;
   registerCleanup?: (cleanup: () => void) => void;
-  getActiveCommandOrigin?: () => ExtensionCommandOrigin | undefined;
+  getActiveInvocation?: () => ExtensionInvocationContext | undefined;
 };
 
 export type ExtensionUiBinding = {
@@ -131,10 +186,10 @@ type PiDeckDialogOptionDetails = {
 };
 
 type NormalizedPiDeckDialogMetadata = {
-  presentation?: "inline" | "modal";
+  presentationHint?: "inline" | "modal";
   sourceLabel?: string;
   correlationId?: string;
-  risk?: "normal" | "high";
+  riskHint?: "normal" | "high";
   allowFreeform?: boolean;
   optionDetails: Map<string, PiDeckDialogOptionDetails>;
 };
@@ -151,8 +206,48 @@ function boundedSanitizedString(value: unknown, maxLength: number): string | und
   return sanitized.trim() ? sanitized : undefined;
 }
 
+function boundedSanitizedText(value: unknown, maxLength: number): string {
+  return stripAnsi(String(value)).slice(0, maxLength);
+}
+
+type PreparedSelectOption = {
+  id: string;
+  label: string;
+  metadataId: string;
+};
+
+function prepareSelectOptions(values: string[]): {
+  options: PreparedSelectOption[];
+  responseValues: Map<string, string>;
+} {
+  const usedIds = new Set<string>();
+  const responseValues = new Map<string, string>();
+  const options = values.slice(0, MAX_EXTENSION_UI_OPTIONS).map((value, index) => {
+    const sanitizedValue = stripAnsi(String(value));
+    const baseId = sanitizedValue.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH);
+    let id = baseId;
+    let attempt = 0;
+    while (usedIds.has(id)) {
+      attempt += 1;
+      const suffix = `~${index + 1}-${attempt}`;
+      id = `${baseId.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH - suffix.length)}${suffix}`;
+    }
+    usedIds.add(id);
+    responseValues.set(id, sanitizedValue);
+    return { id, label: sanitizedValue, metadataId: sanitizedValue };
+  });
+  return { options, responseValues };
+}
+
 function piDeckMetadataFromDialogOptions(options: unknown): unknown {
   return plainRecord(options)?.pideck;
+}
+
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+function normalizeDialogTimeout(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return Math.min(MAX_TIMER_DELAY_MS, Math.max(1, Math.floor(value)));
 }
 
 function normalizePiDeckDialogMetadata(value: unknown): NormalizedPiDeckDialogMetadata {
@@ -161,23 +256,34 @@ function normalizePiDeckDialogMetadata(value: unknown): NormalizedPiDeckDialogMe
   if (!source) return normalized;
 
   if (source.presentation === "inline" || source.presentation === "modal") {
-    normalized.presentation = source.presentation;
+    normalized.presentationHint = source.presentation;
   }
-  const sourceLabel = boundedSanitizedString(source.sourceLabel, 120);
+  const sourceLabel = boundedSanitizedString(
+    source.sourceLabel,
+    MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
+  );
   if (sourceLabel) normalized.sourceLabel = sourceLabel;
-  const correlationId = boundedSanitizedString(source.correlationId, 256);
+  const correlationId = boundedSanitizedString(
+    source.correlationId,
+    MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
+  );
   if (correlationId) normalized.correlationId = correlationId;
-  if (source.risk === "normal" || source.risk === "high") normalized.risk = source.risk;
+  if (source.risk === "normal" || source.risk === "high") {
+    normalized.riskHint = source.risk;
+  }
   if (typeof source.allowFreeform === "boolean") {
     normalized.allowFreeform = source.allowFreeform;
   }
   if (Array.isArray(source.optionDetails)) {
-    for (const rawItem of source.optionDetails.slice(0, 100)) {
+    for (const rawItem of source.optionDetails.slice(0, MAX_EXTENSION_UI_OPTIONS)) {
       const item = plainRecord(rawItem);
       if (!item) continue;
-      const id = boundedSanitizedString(item.id, 256);
+      const id = boundedSanitizedString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH);
       if (!id) continue;
-      const description = boundedSanitizedString(item.description, 500);
+      const description = boundedSanitizedString(
+        item.description,
+        MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+      );
       const destructive = typeof item.destructive === "boolean" ? item.destructive : undefined;
       if (description === undefined && destructive === undefined) continue;
       normalized.optionDetails.set(id, {
@@ -349,6 +455,17 @@ export function createExtensionUiContext(
   opts: ExtensionUiBridgeOptions,
 ): ExtensionUIContext {
   const identityAt = () => opts.getIdentity();
+  const activeInvocation = () => opts.getActiveInvocation?.();
+  const activeCommandOrigin = (): ExtensionCommandOrigin | undefined => {
+    const context = activeInvocation();
+    return context?.origin.invocationKind === "command"
+      ? (context as ExtensionCommandOrigin)
+      : undefined;
+  };
+  const decisionGroups = new ExtensionUiGroupRegistry((payload) =>
+    opts.emit("extensionUi.groupClosed", payload),
+  );
+  opts.registerCleanup?.(() => decisionGroups.closeAll("cancelled"));
   const desktopTheme = createDesktopStubTheme();
   const activeWidgetFactories = new Map<string, ActiveWidgetFactory>();
   const publishedWidgetKeys = new Set<string>();
@@ -397,82 +514,187 @@ export function createExtensionUiContext(
   const requestBlocking = async (
     kind: "select" | "confirm" | "input" | "editor",
     payload: Record<string, unknown>,
-    timeoutMs = 120_000,
+    dialogOpts?: { timeout?: number; signal?: AbortSignal },
   ): Promise<unknown> => {
     if (opts.waitUntilActive) {
       await opts.waitUntilActive();
     }
     if (opts.isDisposed?.()) return undefined;
-    const requestId = randomUUID();
+    const invocation = activeInvocation();
+    const signals = [
+      ...new Set(
+        [dialogOpts?.signal, invocation?.signal].filter(
+          (signal): signal is AbortSignal => signal !== undefined,
+        ),
+      ),
+    ];
+    if (signals.some((signal) => signal.aborted)) return undefined;
+    const timeoutMs = normalizeDialogTimeout(dialogOpts?.timeout);
     const id = identityAt();
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(requestId);
-        resolve(undefined);
-        opts.emit("extensionUi.notification", {
-          message: "Extension UI request timed out",
-          level: "warning",
-        });
-      }, timeoutMs);
+    const origin: ExtensionUiOrigin = invocation?.origin ?? {
+      invocationKind: "unknown",
+    };
+    const {
+      optionDetails,
+      presentationHint,
+      riskHint,
+      ...requestMetadata
+    } = normalizePiDeckDialogMetadata(payload.pideck);
+    const options = Array.isArray(payload.options)
+      ? payload.options.slice(0, MAX_EXTENSION_UI_OPTIONS).map((option) => {
+          const item = option as { id?: unknown; label?: unknown; metadataId?: unknown };
+          const optionId = boundedSanitizedText(
+            item.id ?? "",
+            MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+          );
+          const metadataId = boundedSanitizedText(
+            item.metadataId ?? item.id ?? "",
+            MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+          );
+          const details = optionDetails.get(metadataId);
+          return {
+            id: optionId,
+            label: boundedSanitizedText(
+              item.label ?? "",
+              MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+            ),
+            ...(details?.description ? { description: details.description } : {}),
+            ...(details?.destructive !== undefined
+              ? { destructive: details.destructive }
+              : {}),
+          };
+        })
+      : undefined;
+    const inlineSurfaceAvailable = opts.isInlineSurfaceAvailable?.() ?? true;
+    const ownerSessionState = resolveExtensionUiOwnerSessionState(
+      id,
+      opts.getCurrentIdentity?.() ?? id,
+      inlineSurfaceAvailable,
+    );
+    const route = resolveDecisionRoute({
+      mode: opts.getExtensionDecisionPresentation?.() ?? "legacy-modal",
+      kind,
+      origin,
+      ...classifyHostDecisionRisk(origin),
+      ...(presentationHint ? { presentationHint } : {}),
+      ...(riskHint ? { riskHint } : {}),
+      hasDestructiveOption:
+        options?.some((option) => option.destructive === true) ?? false,
+      ownerSessionState,
+      inlineSurfaceAvailable,
+    });
+    if (route.disposition === "cancel") return undefined;
+    const groupKey = decisionGroups.groupForRequest(invocation, id);
 
-      pending.set(requestId, {
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const entry: PendingUi = {
         requestId,
         kind,
         owner: ownerFromIdentity(id),
         resolve,
         reject,
-        timer,
-      });
+        timer: undefined,
+        emitClosed: (reason) => opts.emit("extensionUi.closed", { requestId, reason }),
+      };
+      pending.set(requestId, entry);
 
-      const { optionDetails, ...presentationMetadata } = normalizePiDeckDialogMetadata(
-        payload.pideck,
-      );
-      const options = Array.isArray(payload.options)
-        ? payload.options.map((option) => {
-            const item = option as { id?: unknown; label?: unknown };
-            const id = stripAnsi(String(item.id ?? ""));
-            const details = optionDetails.get(id);
-            return {
-              id,
-              label: stripAnsi(String(item.label ?? "")),
-              ...(details?.description ? { description: details.description } : {}),
-              ...(details?.destructive !== undefined
-                ? { destructive: details.destructive }
-                : {}),
-            };
-          })
-        : undefined;
-      opts.emit("extensionUi.request", {
-        requestId,
-        kind,
-        title: payload.title === undefined ? undefined : stripAnsi(String(payload.title)),
-        message: payload.message === undefined ? undefined : stripAnsi(String(payload.message)),
-        options,
-        defaultValue:
-          payload.defaultValue === undefined
-            ? undefined
-            : stripAnsi(String(payload.defaultValue)),
-        timeoutMs,
-        ...presentationMetadata,
-      });
+      if (signals.length > 0) {
+        const onAbort = () => {
+          settlePending(requestId, {
+            status: "resolved",
+            value: undefined,
+            closeReason: "aborted",
+          });
+        };
+        for (const signal of signals) {
+          signal.addEventListener("abort", onAbort, { once: true });
+        }
+        entry.cleanup = () => {
+          for (const signal of signals) signal.removeEventListener("abort", onAbort);
+        };
+        if (signals.some((signal) => signal.aborted)) {
+          onAbort();
+          return;
+        }
+      }
+
+      if (timeoutMs !== undefined) {
+        entry.timer = setTimeout(() => {
+          if (
+            !settlePending(requestId, {
+              status: "resolved",
+              value: undefined,
+              closeReason: "timed-out",
+            })
+          ) {
+            return;
+          }
+          opts.emit("extensionUi.notification", {
+            message: "Extension UI request timed out",
+            level: "warning",
+          });
+        }, timeoutMs);
+      }
+
+      try {
+        opts.emit("extensionUi.request", {
+          requestId,
+          kind,
+          title:
+            payload.title === undefined
+              ? undefined
+              : boundedSanitizedText(payload.title, MAX_EXTENSION_UI_TITLE_LENGTH),
+          message:
+            payload.message === undefined
+              ? undefined
+              : boundedSanitizedText(payload.message, MAX_EXTENSION_UI_MESSAGE_LENGTH),
+          options,
+          defaultValue:
+            payload.defaultValue === undefined
+              ? undefined
+              : boundedSanitizedText(
+                  payload.defaultValue,
+                  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+                ),
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          origin,
+          ...requestMetadata,
+          ...(presentationHint ? { presentationHint } : {}),
+          ...(riskHint ? { riskHint } : {}),
+          presentation: route.presentation,
+          risk: route.risk,
+          routeReason: route.reason,
+          ...(groupKey ? { groupKey } : {}),
+        });
+      } catch (err) {
+        settlePending(requestId, {
+          status: "rejected",
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     });
   };
 
   const ui: ExtensionUIContext = {
     select: async (title, options, dialogOpts) => {
-      const labels = options.map((o: string) => ({ id: o, label: o }));
+      const prepared = prepareSelectOptions(options);
       const value = await requestBlocking(
         "select",
-        { title, options: labels, pideck: piDeckMetadataFromDialogOptions(dialogOpts) },
-        dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
+        {
+          title,
+          options: prepared.options,
+          pideck: piDeckMetadataFromDialogOptions(dialogOpts),
+        },
+        dialogOpts,
       );
-      return typeof value === "string" ? value : undefined;
+      return typeof value === "string" ? prepared.responseValues.get(value) : undefined;
     },
     confirm: async (title, message, dialogOpts) => {
       const value = await requestBlocking(
         "confirm",
         { title, message, pideck: piDeckMetadataFromDialogOptions(dialogOpts) },
-        dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
+        dialogOpts,
       );
       return value === true;
     },
@@ -485,7 +707,7 @@ export function createExtensionUiContext(
           defaultValue: "",
           pideck: piDeckMetadataFromDialogOptions(dialogOpts),
         },
-        dialogOpts?.timeout ? Number(dialogOpts.timeout) : 120_000,
+        dialogOpts,
       );
       return typeof value === "string" ? value : undefined;
     },
@@ -509,7 +731,7 @@ export function createExtensionUiContext(
     setWidget: (key, content, options?) => {
       const sanitizedKey = stripAnsi(String(key));
       const placement = options?.placement === "belowEditor" ? "belowEditor" : undefined;
-      const commandOrigin = opts.getActiveCommandOrigin?.();
+      const commandOrigin = activeCommandOrigin();
       let replacingPublishedWidget = publishedWidgetKeys.has(sanitizedKey);
       disposeWidgetFactory(sanitizedKey);
       if (typeof content === "function") {
@@ -529,7 +751,7 @@ export function createExtensionUiContext(
         let pendingRenderOrigin: ExtensionCommandOrigin | undefined;
         const requestRender = widgetTui.requestRender.bind(widgetTui);
         widgetTui.requestRender = (force = false) => {
-          pendingRenderOrigin = opts.getActiveCommandOrigin?.() ?? pendingRenderOrigin;
+          pendingRenderOrigin = activeCommandOrigin() ?? pendingRenderOrigin;
           requestRender(force);
         };
         const dispose = () => {
@@ -553,7 +775,7 @@ export function createExtensionUiContext(
               if (disposed || !widgetComponent) return [];
               try {
                 const renderOrigin =
-                  opts.getActiveCommandOrigin?.() ??
+                  activeCommandOrigin() ??
                   pendingRenderOrigin ??
                   initialRenderOrigin;
                 const lines = widgetComponent.render(width);
@@ -762,8 +984,7 @@ export function createExtensionUiContext(
     pasteToEditor: () => {},
     setEditorText: () => {},
     getEditorText: () => "",
-    editor: async (title, prefill, ...rest: unknown[]) => {
-      const dialogOpts = rest[0];
+    editor: async (title, prefill, dialogOpts) => {
       const value = await requestBlocking(
         "editor",
         {
@@ -771,9 +992,7 @@ export function createExtensionUiContext(
           defaultValue: prefill ?? "",
           pideck: piDeckMetadataFromDialogOptions(dialogOpts),
         },
-        plainRecord(dialogOpts)?.timeout
-          ? Number(plainRecord(dialogOpts)?.timeout)
-          : 120_000,
+        dialogOpts,
       );
       return typeof value === "string" ? value : undefined;
     },
@@ -804,6 +1023,8 @@ export function createExtensionUiContext(
  */
 const BLOCKING_EXTENSION_EVENTS: ReadonlySet<HostEventName> = new Set([
   "extensionUi.request",
+  "extensionUi.closed",
+  "extensionUi.groupClosed",
   "extensionUi.customStarted",
   "extensionUi.customFrame",
   "extensionUi.customClosed",
@@ -862,16 +1083,21 @@ export async function bindExtensionUi(
   const uiContext = createExtensionUiContext({
     emit,
     getIdentity: () => bindingIdentity,
+    getCurrentIdentity: opts.getCurrentIdentity,
+    getExtensionDecisionPresentation: opts.getExtensionDecisionPresentation,
+    isInlineSurfaceAvailable:
+      opts.isInlineSurfaceAvailable ?? (() => readyForEvents),
     waitUntilActive: () => activation,
     isDisposed: () => disposed,
     registerCleanup: (cleanup) => contextCleanups.add(cleanup),
-    getActiveCommandOrigin:
-      opts.getActiveCommandOrigin ?? (() => getActiveExtensionCommandOrigin(session)),
+    getActiveInvocation:
+      opts.getActiveInvocation ?? (() => getActiveExtensionInvocation(session)),
   });
   const ready = session
     .bindExtensions({
       uiContext,
       mode: "rpc",
+      invocationRunner: createExtensionInvocationRunner(session),
     })
     .then(() => {
       logger.info("Extension UI bound via bindExtensions({ uiContext, mode: rpc })");
@@ -911,10 +1137,7 @@ export async function bindExtensionUi(
     },
     cleanup: () => {
       if (disposed) return;
-      disposed = true;
-      queuedEvents.length = 0;
-      releaseActivation();
-      cancelPendingForIdentity(bindingIdentity);
+      cancelPendingForIdentity(bindingIdentity, "disposed");
       for (const cleanup of contextCleanups) {
         try {
           cleanup();
@@ -923,6 +1146,9 @@ export async function bindExtensionUi(
         }
       }
       contextCleanups.clear();
+      disposed = true;
+      queuedEvents.length = 0;
+      releaseActivation();
     },
     updateIdentity: (identity) => {
       const next = { ...identity };
@@ -951,32 +1177,35 @@ export function respondExtensionUi(
   const p = pending.get(requestId);
   if (!p) return false;
   if (!ownerMatches(p.owner, expectedOwner)) return false;
-  clearTimeout(p.timer);
-  pending.delete(requestId);
-  if (status === "cancelled") {
-    p.resolve(undefined);
-  } else {
-    p.resolve(value);
-  }
-  return true;
+  return settlePending(requestId, {
+    status: "resolved",
+    value: status === "cancelled" ? undefined : value,
+  });
 }
 
-export function cancelPendingForIdentity(identity: HostIdentity): void {
+export function cancelPendingForIdentity(
+  identity: HostIdentity,
+  reason: ExtensionUiClosedReason = "stale",
+): void {
   const owner = ownerFromIdentity(identity);
   for (const [requestId, p] of pending) {
     if (!ownerMatches(p.owner, owner)) continue;
-    clearTimeout(p.timer);
-    p.resolve(undefined);
-    pending.delete(requestId);
+    settlePending(requestId, {
+      status: "resolved",
+      value: undefined,
+      closeReason: reason,
+    });
   }
 }
 
 export function cancelAllPending(_reason: string): void {
-  for (const [, p] of pending) {
-    clearTimeout(p.timer);
-    p.resolve(undefined);
+  for (const requestId of [...pending.keys()]) {
+    settlePending(requestId, {
+      status: "resolved",
+      value: undefined,
+      closeReason: "disposed",
+    });
   }
-  pending.clear();
 }
 
 /** Route frontend keyboard/paste data into a live custom panel. False if unknown/closed. */
@@ -1008,6 +1237,24 @@ export function createExtensionUiHandlers(
   factory: WorkspaceGraphFactory,
 ): Partial<Record<string, ServerMethodHandler>> {
   return {
+    "extensionUi.configure": async (ctx) => {
+      const params = ctx.params as {
+        extensionDecisionPresentation: ExtensionDecisionPresentation;
+      };
+      const server = factory.getServer();
+      if (!server) {
+        return {
+          error: createHostError("INTERNAL_ERROR", "Pi Host server is not bound"),
+        };
+      }
+      server.setExtensionDecisionPresentation(params.extensionDecisionPresentation);
+      return {
+        result: {
+          extensionDecisionPresentation:
+            server.getExtensionDecisionPresentation(),
+        },
+      };
+    },
     "extensionUi.respond": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, {
         requireWorkspace: true,

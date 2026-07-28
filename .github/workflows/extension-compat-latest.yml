@@ -1,0 +1,37 @@
+name: Extension compatibility latest audit
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-compat-latest
+  cancel-in-progress: true
+
+jobs:
+  audit-rpiv-latest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Replace the disposable v2 test alias with npm latest
+        run: >-
+          pnpm --filter @pideck/pi-host add --save-dev --save-exact
+          '@pideck-test/rpiv-ask-user-question-v2@npm:@juicesharp/rpiv-ask-user-question@latest'
+          --lockfile=false
+      - name: Run the real published-package regression
+        run: >-
+          pnpm --filter @pideck/pi-host exec vitest run
+          src/real-extension-compatibility.test.ts

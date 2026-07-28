@@ -35,6 +35,11 @@ Extension UI `requestId`. A mismatch returns `STALE_REVISION` without resolving,
 closing, injecting input into, or resizing the legitimate request. Session
 promotion migrates the request owner to the promoted Session revision.
 
+`extensionUi.configure` is Host-scoped and idempotently selects
+`legacy-modal`, `auto`, or `inline-first`. Desktop also sends the persisted value as
+an optional `system.hello` parameter; Host defaults independently to `legacy-modal`
+and echoes the active value in `HostStatusSnapshot`.
+
 Queue replacement and clearing additionally require `expectedRevision`. A mismatch
 returns `STALE_REVISION` before the SDK queue is mutated. Queue snapshots in Session
 snapshots, mutation responses, and `agent.queueChanged` all carry the same revision.
@@ -52,7 +57,7 @@ Implemented in `packages/protocol` + handlers in `packages/pi-host`:
 - `model.list` / `setCurrent` / `setThinkingLevel`
 - `package.*` / `resource.setPreference` / `resource.setPreferences`
 - `piSettings.get` / `patch`
-- `extensionUi.respond` / `customInput` / `customResize`
+- `extensionUi.configure` / `respond` / `customInput` / `customResize`
 
 Desktop-only (Rust, not Host): `desktopSettings.get` / `patch`, `desktop.openPath`, and
 `shell_terminal_create` / `write` / `resize` / `close`. The real Shell terminal uses
@@ -67,7 +72,23 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
 - `workspace.changed`
 - `session.snapshot`, `agent.event`, `agent.toolsChanged`
 - `package.progress`, `package.snapshot`
-- `extensionUi.request` / status / widget / notification
+- `extensionUi.request` / `extensionUi.closed` / `extensionUi.groupClosed` / status /
+  widget / notification. A blocking
+  request may carry a Host-generated `origin` identifying its Extension and tool,
+  command, or event invocation without exposing local paths. The field remains optional
+  so a new Desktop accepts legacy Host requests; a current Host emits explicit
+  `{ invocationKind: "unknown" }` when no active invocation is attributable. Sanitized
+  Extension metadata is retained as `presentationHint` / `riskHint`; Host publishes the
+  authoritative `presentation`, `risk`, and `routeReason` after ownership and safety
+  checks. A request
+  is closed by Host with `{ requestId, reason }` when it is aborted, times out, is
+  disposed, or becomes stale; Desktop removes the matching active or queued request
+  idempotently.
+  Trusted tool/command invocations may add a bounded, opaque `groupKey`. Request
+  delivery opens or advances that group; Host publishes exactly one
+  `{ groupKey, status }` close event when the invocation completes, fails, is cancelled,
+  or becomes stale. Desktop never derives group completion from adjacent requests or
+  transcript events.
 - `extensionUi.customStarted` / `customFrame` / `customClosed` — ui.custom() panels: the host runs a real pi-tui TUI over a virtual terminal (`packages/pi-host/src/virtual-terminal.ts`) and streams its ANSI output as frames; the desktop renders them in an xterm.js dock panel and feeds keyboard input back via `extensionUi.customInput`
 
 ## Runtime validation

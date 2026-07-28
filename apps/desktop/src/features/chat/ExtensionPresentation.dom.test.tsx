@@ -3,9 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore, type ExtensionUiRequestState } from "../../lib/stores/app-store";
 import { AssistantOrderedContent, ExtensionMessageRow } from "./Transcript";
+import { Composer } from "./Composer";
 import { ExtensionUiModal } from "./ExtensionUiModal";
 import { InlineExtensionUiRequest } from "./InlineExtensionUiRequest";
 import type { TranscriptRow } from "./transcript-model";
@@ -18,6 +20,65 @@ const CONTEXT = {
   expectedSessionRevision: 1,
 };
 
+function hostSnapshot(): HostStatusSnapshot {
+  return {
+    protocolVersion: 1,
+    hostInstanceId: CONTEXT.expectedHostInstanceId,
+    workspaceId: CONTEXT.expectedWorkspaceId,
+    workspaceRevision: CONTEXT.expectedWorkspaceRevision,
+    sessionId: CONTEXT.expectedSessionId,
+    sessionRevision: CONTEXT.expectedSessionRevision,
+    packageRevision: 0,
+    sdkVersion: "0.82.1",
+    nodeVersion: process.version,
+    agentDir: "/agent",
+    phase: "ready",
+    capabilities: {
+      packageUpdateCheck: true,
+      extensionUi: true,
+      sessionExport: true,
+    },
+    modelConfigHealth: { state: "ok", source: "ModelRegistry.getError" },
+  };
+}
+
+function workspaceSnapshot(): WorkspaceSnapshot {
+  return {
+    id: CONTEXT.expectedWorkspaceId,
+    cwd: "/workspace",
+    canonicalCwd: "/workspace",
+    revision: CONTEXT.expectedWorkspaceRevision,
+    servicesReady: true,
+  };
+}
+
+function sessionSnapshot(): SessionSnapshot {
+  return {
+    sessionId: CONTEXT.expectedSessionId,
+    cwd: "/workspace",
+    revision: CONTEXT.expectedSessionRevision,
+    isStreaming: false,
+    isIdle: true,
+    isCompacting: false,
+    isRetrying: false,
+    thinkingLevel: "off",
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { revision: 0, steering: [], followUp: [] },
+    messages: [{ role: "user", content: "Existing conversation" }],
+    tools: {
+      revision: 1,
+      workspaceId: CONTEXT.expectedWorkspaceId,
+      sessionId: CONTEXT.expectedSessionId,
+      sessionRevision: CONTEXT.expectedSessionRevision,
+      tools: [],
+      active: [],
+    },
+  };
+}
+
 let requestSequence = 0;
 
 function setLanguage(language: "en" | "zh") {
@@ -26,6 +87,7 @@ function setLanguage(language: "en" | "zh") {
     language,
     restoreLastSession: true,
     autoRestartHostOnce: true,
+    extensionDecisionPresentation: "legacy-modal",
     terminalProfile: "auto",
   });
 }
@@ -57,8 +119,13 @@ describe("Extension presentation surfaces", () => {
     requestSequence = 0;
     setLanguage("en");
     useAppStore.setState({
+      host: null,
+      workspace: null,
+      session: null,
+      sessionDrafts: {},
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       notifications: [],
     });
   });
@@ -218,6 +285,31 @@ describe("Extension presentation surfaces", () => {
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
   });
 
+  it("prefers Host-trusted Extension origin over an untrusted source hint", () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          sourceLabel: "Untrusted label",
+          origin: {
+            invocationKind: "tool",
+            extensionId: "ext_0123456789abcdef01234567",
+            extensionDisplayName: "Trusted review",
+            sourceKind: "package",
+            toolName: "review_changes",
+            toolCallId: "tool-call-1",
+          },
+        }),
+      );
+    });
+    renderRequestSurfaces();
+
+    expect(screen.getByText("Trusted review")).toHaveAttribute(
+      "title",
+      "Trusted review · review_changes",
+    );
+    expect(screen.queryByText("Untrusted label")).not.toBeInTheDocument();
+  });
+
   it("shows a local failure and lets the same action retry", async () => {
     const hostRequest = vi
       .spyOn(hostClient, "request")
@@ -306,6 +398,66 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("button", { name: "Send response" })).toBeDisabled();
   });
 
+  it("filters a virtualized large option list and submits the original option ID", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    const options = Array.from({ length: 150 }, (_, index) => ({
+      id: `value-${index}`,
+      label: `Option ${index}`,
+      description: `Description ${index}`,
+    }));
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          options,
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+
+    expect(view.container.querySelector('[data-extension-option-list="virtualized"]')).toBeTruthy();
+    const search = screen.getByRole("searchbox", { name: "Search options" });
+    await user.type(search, "Option 149");
+    expect(screen.getByRole("button", { name: "Option 149. Description 149" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Option 14. Description 14" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Option 149. Description 149" }));
+    await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
+    expect(hostRequest).toHaveBeenCalledWith(
+      "extensionUi.respond",
+      CONTEXT,
+      expect.objectContaining({ status: "resolved", value: "value-149" }),
+    );
+  });
+
+  it("shows a recoverable empty state when no option matches", async () => {
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(
+        extensionRequest({
+          presentation: "inline",
+          kind: "select",
+          options: Array.from({ length: 12 }, (_, index) => ({
+            id: `value-${index}`,
+            label: `Option ${index}`,
+          })),
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderRequestSurfaces();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search options" }), "missing");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No matching options. Try another search.",
+    );
+    await user.click(screen.getByRole("button", { name: "Clear option search" }));
+    expect(screen.getByRole("button", { name: "Option 0" })).toBeVisible();
+  });
+
   it("submits a labeled input from the keyboard", async () => {
     const hostRequest = vi
       .spyOn(hostClient, "request")
@@ -354,6 +506,49 @@ describe("Extension presentation surfaces", () => {
     );
   });
 
+  it("keeps focus in a submitting Modal and restores its opener after success", async () => {
+    let resolveResponse: ((value: unknown) => void) | undefined;
+    vi.spyOn(hostClient, "request").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveResponse = resolve;
+        }) as never,
+    );
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Open decision</button>
+        <ExtensionUiModal />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Open decision" });
+    opener.focus();
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(extensionRequest());
+    });
+
+    const confirm = await screen.findByRole("button", { name: "Confirm" });
+    await user.click(confirm);
+
+    const dialog = screen.getByRole("dialog");
+    await waitFor(() => expect(dialog).toHaveFocus());
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Submitting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await user.tab();
+    expect(dialog).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(dialog).toHaveFocus();
+
+    await act(async () => {
+      resolveResponse?.({ ok: true, result: null });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+  });
+
   it("expires the current request once and advances to the next live request", async () => {
     vi.useFakeTimers();
     const now = Date.now();
@@ -379,5 +574,98 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("dialog", { name: "Next modal request" })).toBeVisible();
     expect(useAppStore.getState().notifications.filter((item) => item.message === "Extension request expired"))
       .toHaveLength(1);
+  });
+
+  it("keeps one Inline group shell across sequential select and input requests", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      session: {
+        sessionId: CONTEXT.expectedSessionId,
+        revision: CONTEXT.expectedSessionRevision,
+      } as never,
+    });
+    const groupKey = "tool:0123456789abcdef";
+    const first = extensionRequest({
+      kind: "select",
+      title: "Choose a direction",
+      options: [
+        { id: "alpha", label: "Alpha" },
+        { id: "beta", label: "Beta" },
+      ],
+      groupKey,
+      presentation: "inline",
+    });
+    act(() => useAppStore.getState().setExtensionUiRequest(first));
+    const user = userEvent.setup();
+    const view = renderRequestSurfaces();
+
+    expect(view.container.querySelector(`[data-extension-ui-group="${groupKey}"]`)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Alpha" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the next question"),
+    );
+
+    const second = extensionRequest({
+      kind: "input",
+      title: "Add context",
+      groupKey,
+      presentation: "inline",
+    });
+    act(() => useAppStore.getState().setExtensionUiRequest(second));
+
+    expect(screen.getByText("1 answered")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Add context" })).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(view.container.querySelectorAll("[data-extension-ui-surface]")).toHaveLength(1);
+  });
+
+  it("blocks Composer submission through group waiting and restores focus after group close", async () => {
+    const hostRequest = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    useAppStore.setState({
+      host: hostSnapshot(),
+      workspace: workspaceSnapshot(),
+      session: sessionSnapshot(),
+    });
+    const groupKey = "tool:composer-block";
+    const request = extensionRequest({
+      groupKey,
+      presentation: "inline",
+    });
+    act(() => useAppStore.getState().setExtensionUiRequest(request));
+    const user = userEvent.setup();
+    render(
+      <>
+        <InlineExtensionUiRequest />
+        <Composer />
+      </>,
+    );
+
+    const composer = screen.getByRole("textbox");
+    await user.type(composer, "Keep this draft{Enter}");
+    expect(composer).toHaveValue("Keep this draft");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "Answer the Extension question above before sending a message.",
+    );
+    expect(hostRequest).not.toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(screen.getByText("Waiting for the next question…")).toBeVisible(),
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(composer).not.toHaveFocus();
+
+    act(() => useAppStore.getState().closeExtensionDecisionGroup(groupKey, "completed"));
+    await waitFor(() => expect(composer).toHaveFocus());
+    expect(composer).toHaveValue("Keep this draft");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 });

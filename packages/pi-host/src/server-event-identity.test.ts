@@ -86,6 +86,41 @@ describe("PiHostServer.emitForIdentity", () => {
   });
 });
 
+describe("PiHostServer Extension UI presentation handshake", () => {
+  it("defaults to legacy modal and applies the optional hello mode", async () => {
+    const host = server();
+    const writeResponse = vi.spyOn(host, "writeResponse").mockImplementation(() => {});
+
+    expect(host.getExtensionDecisionPresentation()).toBe("legacy-modal");
+    expect(host.buildStatus().extensionDecisionPresentation).toBe("legacy-modal");
+
+    await host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "55555555-5555-4555-8555-555555555551",
+        method: "system.hello",
+        context: {},
+        params: {
+          clientName: "pideck",
+          clientVersion: "0.1.0",
+          protocolVersion: 1,
+          extensionDecisionPresentation: "auto",
+        },
+      }),
+    );
+
+    expect(host.getExtensionDecisionPresentation()).toBe("auto");
+    expect(writeResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        result: expect.objectContaining({
+          extensionDecisionPresentation: "auto",
+        }),
+      }),
+    );
+  });
+});
+
 describe("PiHostServer rehydrate barrier", () => {
   it.each<GraphOperationKind>([
     "workspace.setCurrent",

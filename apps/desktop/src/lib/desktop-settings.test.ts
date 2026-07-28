@@ -20,6 +20,7 @@ const initialSettings = {
   language: "en" as const,
   restoreLastSession: true,
   autoRestartHostOnce: true,
+  extensionDecisionPresentation: "legacy-modal" as const,
   terminalProfile: "auto" as const,
 };
 

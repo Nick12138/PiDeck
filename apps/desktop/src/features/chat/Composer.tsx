@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Bug,
   FileText,
   FolderSearch,
+  MessageCircleQuestion,
   PencilLine,
   Plus,
   Puzzle,
@@ -11,7 +12,10 @@ import {
   TestTube,
   X,
 } from "lucide-react";
-import { useAppStore } from "../../lib/stores/app-store";
+import {
+  isExtensionDecisionBlockingSession,
+  useAppStore,
+} from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
   MAX_AGENT_IMAGE_BYTES,
@@ -204,6 +208,8 @@ export function Composer({
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
+  const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
+  const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
   const text = useAppStore((s) =>
     session ? (s.sessionDrafts[session.sessionId] ?? "") : "",
   );
@@ -220,6 +226,8 @@ export function Composer({
   const [forkOpen, setForkOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previousBlockedSessionRef = useRef<string | null>(null);
+  const decisionHintId = useId();
   const extensionWidgetAnchorRef = useRef<HTMLDivElement>(null);
   const templatesRef = useRef<{ key: string; items: CompletionItem[] } | null>(null);
   const fileSnapshotRef = useRef<{
@@ -231,6 +239,27 @@ export function Composer({
   const ime = useImeComposition();
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
+  const decisionBlocked = isExtensionDecisionBlockingSession(
+    extensionUiRequest,
+    extensionDecisionGroups,
+    sessionId,
+  );
+  const blockedSessionId = decisionBlocked ? sessionId : null;
+
+  useEffect(() => {
+    const previousBlockedSessionId = previousBlockedSessionRef.current;
+    previousBlockedSessionRef.current = blockedSessionId;
+    if (
+      !previousBlockedSessionId ||
+      blockedSessionId !== null ||
+      previousBlockedSessionId !== sessionId ||
+      disabled
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [blockedSessionId, disabled, sessionId]);
 
   useEffect(
     () =>
@@ -501,7 +530,7 @@ export function Composer({
   }
 
   async function send() {
-    if (!host || !workspace || !session || disabled) return;
+    if (!host || !workspace || !session || disabled || decisionBlocked) return;
     if (!text.trim() && images.length === 0 && files.length === 0) return;
 
     const builtin = matchBuiltinCommand(text);
@@ -632,8 +661,8 @@ export function Composer({
     }
   }
 
-  const canSend =
-    !disabled && (Boolean(text.trim()) || images.length > 0 || files.length > 0);
+  const hasDraftContent = Boolean(text.trim()) || images.length > 0 || files.length > 0;
+  const canSend = !disabled && !decisionBlocked && hasDraftContent;
 
   function selectStarterPrompt(prompt: string) {
     if (!session || disabled) return;
@@ -737,6 +766,17 @@ export function Composer({
             ))}
           </div>
         )}
+        {decisionBlocked ? (
+          <div
+            id={decisionHintId}
+            role="status"
+            aria-live="polite"
+            className="flex min-h-8 items-center gap-1.5 px-2 pb-1 text-xs text-muted"
+          >
+            <MessageCircleQuestion size={13} className="shrink-0 text-accent" aria-hidden="true" />
+            <span>{t("composerDecisionPending")}</span>
+          </div>
+        ) : null}
         <div className="relative">
           {completion && (
             <div className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg">
@@ -774,6 +814,7 @@ export function Composer({
             placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
             value={text}
             disabled={disabled}
+            aria-describedby={decisionBlocked ? decisionHintId : undefined}
             onChange={(event) => {
               if (!session) return;
               setSessionDraft(session.sessionId, event.target.value);
@@ -912,9 +953,9 @@ export function Composer({
       {welcomeWorkspaceName && (
         <div
           className={`mx-auto mt-3 flex min-h-9 w-full max-w-3xl flex-wrap justify-center gap-1.5 ${
-            canSend ? "invisible pointer-events-none" : ""
+            hasDraftContent ? "invisible pointer-events-none" : ""
           }`}
-          aria-hidden={canSend || undefined}
+          aria-hidden={hasDraftContent || undefined}
         >
           {STARTER_PROMPTS.map(({ labelKey, promptKey, icon: Icon }) => {
             const label = t(labelKey);

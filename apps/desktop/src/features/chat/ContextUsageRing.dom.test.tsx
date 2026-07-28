@@ -109,6 +109,7 @@ describe("ContextUsageRing panel", () => {
       language: "en",
       restoreLastSession: true,
       autoRestartHostOnce: true,
+      extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",
     });
     useAppStore.getState().setHost(null);

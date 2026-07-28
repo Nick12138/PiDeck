@@ -32,6 +32,8 @@ export function expectedIdentityForEvent(
     case "workspace.changed":
     case "provider.loginEvent":
     case "extensionUi.request":
+    case "extensionUi.closed":
+    case "extensionUi.groupClosed":
     case "extensionUi.customStarted":
     case "extensionUi.customFrame":
     case "extensionUi.customClosed":
@@ -64,13 +66,16 @@ export function expectedIdentityForEvent(
   }
 }
 
-export function isBackgroundExtensionUiRequest(args: {
+export type ExtensionUiRequestDelivery = "active" | "background" | "candidate";
+
+export function extensionUiRequestDelivery(args: {
   eventSessionId: string;
   activeSessionId: string | null;
   catalogRuntimeState?: SessionRuntimeState;
-}): boolean {
-  return (
-    args.eventSessionId !== args.activeSessionId &&
-    (args.catalogRuntimeState === "running" || args.catalogRuntimeState === "queued")
-  );
+}): ExtensionUiRequestDelivery {
+  if (args.eventSessionId === args.activeSessionId) return "active";
+  if (args.catalogRuntimeState === "running" || args.catalogRuntimeState === "queued") {
+    return "background";
+  }
+  return "candidate";
 }

@@ -15,6 +15,7 @@ import {
   type HostStatusSnapshot,
   type ModelConfigHealth,
   type HostCapabilities,
+  type ExtensionDecisionPresentation,
 } from "@pideck/protocol";
 import { IdentityState } from "./identity.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
@@ -87,6 +88,7 @@ export class PiHostServer {
   private readonly shutdownController = new AbortController();
   private sequence = 0;
   private phase: HostPhase = "booting";
+  private extensionDecisionPresentation: ExtensionDecisionPresentation = "legacy-modal";
   private shuttingDown = false;
   private lastError?: HostError;
   private fatalError?: HostError;
@@ -110,6 +112,14 @@ export class PiHostServer {
 
   getIdentity(): HostIdentity {
     return this.identity.snapshot();
+  }
+
+  getExtensionDecisionPresentation(): ExtensionDecisionPresentation {
+    return this.extensionDecisionPresentation;
+  }
+
+  setExtensionDecisionPresentation(mode: ExtensionDecisionPresentation): void {
+    this.extensionDecisionPresentation = mode;
   }
 
   setPhase(phase: HostPhase): void {
@@ -143,6 +153,7 @@ export class PiHostServer {
       phase: this.phase,
       capabilities: this.deps.capabilities,
       modelConfigHealth: this.deps.getModelConfigHealth(),
+      extensionDecisionPresentation: this.extensionDecisionPresentation,
       ...(this.lastError ? { lastError: this.lastError } : {}),
       ...(this.fatalError ? { fatalError: this.fatalError } : {}),
     };
@@ -361,6 +372,10 @@ export class PiHostServer {
 
     // Built-in system handlers
     if (method === "system.hello") {
+      const requestedMode = (params as {
+        extensionDecisionPresentation?: ExtensionDecisionPresentation;
+      }).extensionDecisionPresentation;
+      if (requestedMode) this.setExtensionDecisionPresentation(requestedMode);
       this.writeResponse(
         createSuccessResponse(this.identity.snapshot(), id, method, this.buildStatus()),
       );

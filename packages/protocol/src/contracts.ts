@@ -34,7 +34,10 @@ import type {
   ResourceRecord,
   PiSettingsSnapshot,
   PiSettingsPatch,
+  ExtensionUiClosed,
+  ExtensionUiGroupClosed,
   ExtensionUiRequest,
+  ExtensionDecisionPresentation,
   SerializableSessionEntry,
   SerializableSessionTreeNode,
   SerializableCompactionResult,
@@ -125,13 +128,19 @@ export type HostContextMap = {
   "resource.setPreferences": SessionPackageContext;
   "piSettings.get": WorkspaceContext;
   "piSettings.patch": NullableSessionContext;
+  "extensionUi.configure": HostContext;
   "extensionUi.respond": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
   "extensionUi.customResize": SessionTargetContext;
 };
 
 export type HostRequestParams = {
-  "system.hello": { clientName: string; clientVersion: string; protocolVersion: 1 };
+  "system.hello": {
+    clientName: string;
+    clientVersion: string;
+    protocolVersion: 1;
+    extensionDecisionPresentation?: ExtensionDecisionPresentation;
+  };
   "system.getStatus": null;
   "system.rehydrate": null;
   "system.shutdown": null;
@@ -218,6 +227,9 @@ export type HostRequestParams = {
   "resource.setPreferences": { updates: ResourcePreferenceUpdate[] };
   "piSettings.get": null;
   "piSettings.patch": { patch: PiSettingsPatch };
+  "extensionUi.configure": {
+    extensionDecisionPresentation: ExtensionDecisionPresentation;
+  };
   "extensionUi.respond": {
     requestId: string;
     status: "resolved" | "cancelled";
@@ -347,6 +359,9 @@ export type HostResultMap = {
   "resource.setPreferences": PackageMutationResult;
   "piSettings.get": PiSettingsSnapshot;
   "piSettings.patch": PiSettingsSnapshot;
+  "extensionUi.configure": {
+    extensionDecisionPresentation: ExtensionDecisionPresentation;
+  };
   "extensionUi.respond": { accepted: true };
   "extensionUi.customInput": { accepted: true };
   "extensionUi.customResize": { accepted: true };
@@ -411,6 +426,8 @@ export type HostEventPayloadMap = {
     message: string;
   };
   "extensionUi.request": ExtensionUiRequest;
+  "extensionUi.closed": ExtensionUiClosed;
+  "extensionUi.groupClosed": ExtensionUiGroupClosed;
   "extensionUi.statusChanged": { key?: string; text: string };
   "extensionUi.widgetChanged": {
     key?: string;

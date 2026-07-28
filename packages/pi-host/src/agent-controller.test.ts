@@ -9,7 +9,7 @@ import type {
   BackgroundSessionRuntime,
   WorkspaceGraphFactory,
 } from "./workspace-graph-factory.js";
-import { getActiveExtensionCommandOrigin } from "./extension-command-context.js";
+import { getActiveExtensionCommandOrigin } from "./extension-invocation-context.js";
 import {
   beginQueueTransaction,
   finishQueueTransaction,
@@ -268,7 +268,21 @@ describe("agent.prompt extension command provenance", () => {
       prompt: ReturnType<typeof vi.fn>;
     };
     session.extensionRunner = {
-      getCommand: (name) => (name === "brainstorm" ? { invocationName: name } : undefined),
+      getCommand: (name) =>
+        name === "brainstorm"
+          ? {
+              name,
+              invocationName: name,
+              sourceInfo: {
+                path: "/packages/brainstorm/extensions/index.ts",
+                source: "npm:@pideck/brainstorm@1.0.0",
+                scope: "user",
+                origin: "package",
+                baseDir: "/packages/brainstorm",
+              },
+              handler: async () => {},
+            }
+          : undefined,
     };
     let duringPrompt:
       | { runId: string; invocation: string }

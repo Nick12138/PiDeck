@@ -18,7 +18,7 @@ import {
   type TimedAgentEventEnvelope,
 } from "../lib/chat/transcript-reducer";
 import { classifyToolSnapshot } from "../lib/stores/tool-revision";
-import { expectedIdentityForEvent, isBackgroundExtensionUiRequest } from "./event-identity";
+import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";
 import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
@@ -315,17 +315,42 @@ export function handleHostEvent(
           expectedSessionRevision: event.sessionRevision,
         },
       };
-      if (
-        isBackgroundExtensionUiRequest({
-          eventSessionId: event.sessionId,
-          activeSessionId: store.session?.sessionId ?? null,
-          catalogRuntimeState: store.sessionCatalog.entries[event.sessionId]?.runtimeState,
-        })
-      ) {
+      const delivery = extensionUiRequestDelivery({
+        eventSessionId: event.sessionId,
+        activeSessionId: store.session?.sessionId ?? null,
+        catalogRuntimeState: store.sessionCatalog.entries[event.sessionId]?.runtimeState,
+      });
+      if (delivery === "background") {
         store.enqueueExtensionUiRequest(extensionRequest);
+      } else if (delivery === "candidate") {
+        store.presentCandidateExtensionUiRequest(extensionRequest);
       } else {
         store.setExtensionUiRequest(extensionRequest);
       }
+      break;
+    case "extensionUi.closed":
+      if (!event.sessionId) {
+        requestRecovery("extensionUi.closed missing session identity");
+        return;
+      }
+      store.closeExtensionUiRequest(
+        event.payload.requestId,
+        event.payload.reason === "aborted"
+          ? "cancelled"
+          : event.payload.reason === "timed-out"
+            ? "expired"
+            : "stale",
+      );
+      break;
+    case "extensionUi.groupClosed":
+      if (!event.sessionId) {
+        requestRecovery("extensionUi.groupClosed missing session identity");
+        return;
+      }
+      store.closeExtensionDecisionGroup(
+        event.payload.groupKey,
+        event.payload.status,
+      );
       break;
     case "extensionUi.statusChanged":
       if (
@@ -521,6 +546,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
+            extensionDecisionPresentation: "legacy-modal",
             terminalProfile: "auto",
           });
           applyTheme("dark");
@@ -626,7 +652,14 @@ export function App() {
               let sessionRestoreEligible = false;
               for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
                 try {
-                  const status = await hostClient.hello("pideck", await getAppVersion());
+                  const configuredPresentation =
+                    useAppStore.getState().desktopSettings
+                      ?.extensionDecisionPresentation ?? "legacy-modal";
+                  const status = await hostClient.hello(
+                    "pideck",
+                    await getAppVersion(),
+                    configuredPresentation,
+                  );
                   if (expectedHostId !== "bootstrap" && status.hostInstanceId !== expectedHostId) {
                     throw new Error("Host generation changed during hello");
                   }

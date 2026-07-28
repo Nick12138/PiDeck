@@ -602,6 +602,7 @@ async function mutatePackageUnderLock(
           // goes through the official full reload.
           await g.agentSession.reload();
           const sessionRevision = server.identity.bumpSessionRevision();
+          g.extensionUiUpdateIdentity?.(server.getIdentity());
           g.toolRevision = 1;
           sessionSnap = buildSessionSnapshot({
             session: g.agentSession,

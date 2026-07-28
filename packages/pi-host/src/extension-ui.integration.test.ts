@@ -171,6 +171,50 @@ describe("extension UI real loader + bindExtensions path", () => {
     while (!existsSync(marker) && Date.now() < markerDeadline) {
       await new Promise((r) => setTimeout(r, 50));
     }
+    const firstRequests = events.filter((event) => event.e === "extensionUi.request");
+    expect(firstRequests).toHaveLength(3);
+    const firstOrigins = firstRequests.map(
+      (event) =>
+        (event.p as {
+          origin: {
+            invocationKind: string;
+            extensionId: string;
+            eventType: string;
+          };
+        }).origin,
+    );
+    for (const origin of firstOrigins) {
+      expect(origin).toMatchObject({
+        invocationKind: "event",
+        eventType: "session_start",
+      });
+      expect(origin.extensionId).toMatch(/^ext_[0-9a-f]{24}$/);
+    }
+
+    // The SDK replaces ExtensionRunner on reload. Stored bindings must install
+    // the invocation runner before the replacement emits its session_start.
+    await session.reload();
+    const allRequests = events.filter((event) => event.e === "extensionUi.request");
+    expect(allRequests).toHaveLength(6);
+    const reloadOrigins = allRequests.slice(3).map(
+      (event) =>
+        (event.p as {
+          origin: {
+            invocationKind: string;
+            extensionId: string;
+            eventType: string;
+          };
+        }).origin,
+    );
+    expect(reloadOrigins).toHaveLength(3);
+    for (const origin of reloadOrigins) {
+      expect(origin).toMatchObject({
+        invocationKind: "event",
+        extensionId: firstOrigins[0]!.extensionId,
+        eventType: "session_start",
+      });
+    }
+
     stopRespond = true;
     await Promise.race([
       respondLoop,

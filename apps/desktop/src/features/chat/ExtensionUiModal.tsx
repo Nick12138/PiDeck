@@ -3,11 +3,15 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { ExtensionUiRequestContent } from "./ExtensionUiRequestContent";
 import { useExtensionUiResponse } from "./use-extension-ui-response";
 
+const FOCUSABLE_SELECTOR =
+  "button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
 export function ExtensionUiModal() {
   const activeRequest = useAppStore((state) => state.extensionUiRequest);
   const request = activeRequest?.presentation === "inline" ? null : activeRequest;
   const controller = useExtensionUiResponse(request);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const wasSubmittingRef = useRef(false);
   const titleId = useId();
 
   useEffect(() => {
@@ -15,7 +19,7 @@ export function ExtensionUiModal() {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const timer = window.setTimeout(() => {
       dialogRef.current
-        ?.querySelector<HTMLElement>("button, textarea, input, select, [tabindex]:not([tabindex='-1'])")
+        ?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
         ?.focus();
     }, 0);
     return () => {
@@ -23,6 +27,17 @@ export function ExtensionUiModal() {
       previousFocus?.focus();
     };
   }, [request?.requestId]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (controller.submitting) {
+      dialog.focus();
+    } else if (wasSubmittingRef.current && document.activeElement === dialog) {
+      dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    }
+    wasSubmittingRef.current = controller.submitting;
+  }, [controller.submitting]);
 
   if (!request) return null;
 
@@ -33,10 +48,14 @@ export function ExtensionUiModal() {
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
-    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
-    )];
-    if (focusable.length === 0) return;
+    const focusable = [
+      ...dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    ];
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current.focus();
+      return;
+    }
     const first = focusable[0]!;
     const last = focusable.at(-1)!;
     if (event.shiftKey && document.activeElement === first) {
@@ -55,8 +74,10 @@ export function ExtensionUiModal() {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-busy={controller.submitting}
+        tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface-raised p-5 shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         data-extension-ui-surface="modal"
       >
         <ExtensionUiRequestContent

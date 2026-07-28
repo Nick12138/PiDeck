@@ -23,6 +23,9 @@ the current Windows development-candidate boundary follow
 | Package filters | `packages/pi-host/src/package-filters.ts` | `package-filters.test.ts` |
 | Package controller | `packages/pi-host/src/package-controller.ts` | integration + disk fingerprint + resource-reload-required |
 | Agent controller | `packages/pi-host/src/agent-controller.ts` | integration |
+| Extension invocation provenance | `packages/pi-host/src/extension-invocation-context.ts` + pinned SDK patch | `extension-command-context.test.ts`, `sdk-invocation-runner.test.ts` |
+| Extension UI routing policy | `packages/pi-host/src/extension-ui-policy.ts` | `extension-ui-policy.test.ts` decision/risk/ownership matrix |
+| Extension UI decision groups | `packages/pi-host/src/extension-ui-groups.ts` | `extension-ui-groups.test.ts` key/lifecycle/concurrency matrix |
 | Extension UI bridge | `packages/pi-host/src/extension-ui-bridge.ts` | `extension-ui-bridge.test.ts` + integration |
 | Extension UI lifecycle helpers | `packages/pi-host/src/extension-ui-lifecycle.ts` | `extension-ui-lifecycle.test.ts`; thin binding/activation/slot cleanup wrapper, while the bridge owns pending RPC and UI state |
 | Extension UI fixture integration | `packages/pi-host/src/extension-ui.integration.test.ts` | real DefaultResourceLoader path |
@@ -43,11 +46,11 @@ the current Windows development-candidate boundary follow
 | App shell | `apps/desktop/src/app/App.tsx` | epoch/rehydrate store tests |
 | Host client | `apps/desktop/src/lib/bridge/host-client.ts` | `host-client.test.ts` (deep parse) |
 | Tauri transport | `apps/desktop/src/lib/bridge/tauri-transport.ts` | — |
-| Stores / epoch | `apps/desktop/src/lib/stores/` | `app-store.test.ts`, `epoch-store.test.ts` |
+| Stores / epoch / decision groups | `apps/desktop/src/lib/stores/` | `app-store.test.ts` (redacted group transitions), `epoch-store.test.ts` |
 | Session Catalog / runtime projection | `apps/desktop/src/lib/stores/session-catalog.ts` | `session-catalog.test.ts`, `app-store.test.ts` |
-| Chat | `apps/desktop/src/features/chat/` | `transcript-model.test.ts` (row build + stable-row reuse) |
+| Chat | `apps/desktop/src/features/chat/` | `transcript-model.test.ts` (row build + stable-row reuse), `ExtensionPresentation.dom.test.tsx` (group continuity, Composer blocking/focus, large-option search/virtualization) |
 | Packages | `apps/desktop/src/features/packages/PackagesPage.tsx` | atomic mutation apply |
-| Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
+| Settings | `apps/desktop/src/features/settings/` | `SettingsPage.dom.test.tsx` (nav dirty guard, routing mode sync/rollback, Host split), `ProvidersSettings.dom.test.tsx` (dirty tracking, key-removal safety, number fields), `HostSettings.dom.test.tsx` (capabilities, restart confirm, agent-dir change) |
 | Shared confirm dialog | `apps/desktop/src/components/Dialog.tsx` (tones: default/warning/danger) | `Dialog.dom.test.tsx` (Escape containment, focus) |
 | Shared UI controls | `apps/desktop/src/components/Switch.tsx`, `SectionHeader.tsx` | via settings/packages DOM tests |
 | i18n (en/zh catalogs, language setting) | `apps/desktop/src/lib/i18n/` | `i18n.test.ts` (locale resolution, interpolation, zh coverage); language switch in `SettingsPage.dom.test.tsx` |
@@ -58,7 +61,7 @@ the current Windows development-candidate boundary follow
 | Feature | Source | Tests |
 |---|---|---|
 | Entry | `apps/desktop/src-tauri/src/main.rs`, `lib.rs` | via cargo |
-| Desktop settings | `apps/desktop/src-tauri/src/desktop_settings.rs` | versioning, migration, corruption recovery, atomic replace unit tests |
+| Desktop settings | `apps/desktop/src-tauri/src/desktop_settings.rs` | versioning, routing-mode default/validation, migration, corruption recovery, atomic replace unit tests |
 | Host process | `apps/desktop/src-tauri/src/pi_host.rs` | `pi_host_tests.rs` (auto-restart, direct reap, Windows Job Object, Unix session/group descendant cleanup) |
 | Commands | `apps/desktop/src-tauri/src/commands.rs` | open-path validation unit tests |
 
@@ -71,3 +74,5 @@ the current Windows development-candidate boundary follow
 | Tracked P0 implementation state | `docs/operations/p0-status.json` | `pnpm verify:docs` |
 | Windows candidate packaging + integrity | `scripts/package-release.mjs`, `scripts/windows-installer-integrity.mjs` | `pnpm package:release` (Windows only) |
 | Pull-request CI | `.github/workflows/p0.yml` | `pnpm verify:p0` |
+| Extension compatibility fixtures | `test-fixtures/pi-packages/extension-compat-matrix/`, `packages/pi-host/src/extension-compatibility-matrix.test.ts`, `real-extension-compatibility.test.ts` | behavior-class matrix plus exact published-package aliases |
+| Scheduled latest Extension audit | `.github/workflows/extension-compat-latest.yml` | weekly/manual, independent of PR and `main` gates |

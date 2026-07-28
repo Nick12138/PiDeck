@@ -2,7 +2,11 @@
  * R7: app-store epoch wiring — host/workspace changes clear stale state.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { useAppStore } from "./app-store";
+import {
+  deriveExtensionUiWaitingBySession,
+  isExtensionDecisionBlockingSession,
+  useAppStore,
+} from "./app-store";
 import type {
   HostStatusSnapshot,
   SessionSnapshot,
@@ -79,6 +83,7 @@ describe("app-store epoch wiring", () => {
       tools: null,
       extensionUiRequest: null,
       extensionUiQueue: [],
+      extensionDecisionGroups: {},
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
@@ -96,6 +101,118 @@ describe("app-store epoch wiring", () => {
       hostFatal: null,
       rehydrating: false,
     });
+  });
+
+  it("retains redacted decision group steps until Host completion", () => {
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    const groupKey = "tool:0123456789abcdef";
+    const first = {
+      requestId: "11111111-1111-4111-8111-111111111111",
+      kind: "select" as const,
+      groupKey,
+      presentation: "inline" as const,
+      context,
+    };
+    const second = {
+      requestId: "22222222-2222-4222-8222-222222222222",
+      kind: "input" as const,
+      groupKey,
+      presentation: "inline" as const,
+      context: { ...context, expectedSessionRevision: 2 },
+    };
+
+    useAppStore.getState().setExtensionUiRequest(first);
+    useAppStore.getState().closeExtensionUiRequest(first.requestId, "answered");
+
+    expect(useAppStore.getState().extensionUiRequest).toBeNull();
+    expect(useAppStore.getState().extensionDecisionGroups[groupKey]).toMatchObject({
+      activeRequestId: null,
+      answeredCount: 1,
+      status: "active",
+      steps: [{ requestId: first.requestId, kind: "select", status: "answered" }],
+    });
+    expect(useAppStore.getState().extensionDecisionGroups[groupKey]).not.toHaveProperty("value");
+
+    useAppStore.getState().setExtensionUiRequest(second);
+    expect(useAppStore.getState().extensionDecisionGroups[groupKey]).toMatchObject({
+      activeRequestId: second.requestId,
+      context: { expectedSessionRevision: 2 },
+      answeredCount: 1,
+      steps: [
+        { requestId: first.requestId, kind: "select", status: "answered" },
+        { requestId: second.requestId, kind: "input", status: "active" },
+      ],
+    });
+
+    useAppStore.getState().closeExtensionDecisionGroup(groupKey, "completed");
+    expect(useAppStore.getState().extensionDecisionGroups[groupKey]?.status).toBe("completed");
+    useAppStore.getState().closeExtensionUiRequest(second.requestId, "answered");
+    expect(useAppStore.getState().extensionDecisionGroups[groupKey]).toBeUndefined();
+  });
+
+  it("bounds retained group steps while preserving the answered count", () => {
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    const groupKey = "tool:bounded";
+    for (let index = 0; index < 105; index += 1) {
+      const requestId = `request-${index}`;
+      useAppStore.getState().setExtensionUiRequest({
+        requestId,
+        kind: "input",
+        groupKey,
+        presentation: "inline",
+        context,
+      });
+      useAppStore.getState().closeExtensionUiRequest(requestId, "answered");
+    }
+
+    const group = useAppStore.getState().extensionDecisionGroups[groupKey];
+    expect(group?.steps).toHaveLength(100);
+    expect(group?.answeredCount).toBe(105);
+    expect(group?.steps[0]?.requestId).toBe("request-5");
+  });
+
+  it("keeps concurrent decision groups isolated", () => {
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    useAppStore.getState().setExtensionUiRequest({
+      requestId: "33333333-3333-4333-8333-333333333333",
+      kind: "confirm",
+      groupKey: "tool:first",
+      presentation: "inline",
+      context,
+    });
+    useAppStore.getState().setExtensionUiRequest({
+      requestId: "44444444-4444-4444-8444-444444444444",
+      kind: "confirm",
+      groupKey: "tool:second",
+      presentation: "inline",
+      context,
+    });
+
+    expect(Object.keys(useAppStore.getState().extensionDecisionGroups)).toEqual([
+      "tool:first",
+      "tool:second",
+    ]);
+    useAppStore.getState().closeExtensionDecisionGroup("tool:second", "failed");
+    expect(useAppStore.getState().extensionDecisionGroups["tool:first"]?.status).toBe("active");
+    expect(useAppStore.getState().extensionDecisionGroups["tool:second"]?.status).toBe("failed");
   });
 
   it("beginHostEpoch clears prior workspace/session/packages/tools", () => {
@@ -314,6 +431,65 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().extensionUiRequest?.context.expectedSessionRevision).toBe(2);
   });
 
+  it("closes Extension UI requests by ID without disturbing unrelated work", () => {
+    const activeContext = {
+      expectedHostInstanceId: "11111111-1111-4111-8111-111111111111",
+      expectedWorkspaceId: "22222222-2222-4222-8222-222222222222",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "33333333-3333-4333-8333-333333333333",
+      expectedSessionRevision: 1,
+    };
+    const first = {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      kind: "confirm" as const,
+      title: "First",
+      context: activeContext,
+    };
+    const second = {
+      requestId: "55555555-5555-4555-8555-555555555555",
+      kind: "input" as const,
+      title: "Second",
+      context: activeContext,
+    };
+    const background = {
+      requestId: "66666666-6666-4666-8666-666666666666",
+      kind: "editor" as const,
+      title: "Background",
+      context: {
+        ...activeContext,
+        expectedSessionId: "77777777-7777-4777-8777-777777777777",
+      },
+    };
+
+    useAppStore.getState().setExtensionUiRequest(first);
+    useAppStore.getState().setExtensionUiRequest(second);
+    useAppStore.getState().enqueueExtensionUiRequest(background);
+
+    useAppStore.getState().closeExtensionUiRequest(second.requestId);
+    expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(first.requestId);
+    expect(useAppStore.getState().extensionUiQueue.map((request) => request.requestId)).toEqual([
+      background.requestId,
+    ]);
+
+    useAppStore.getState().closeExtensionUiRequest("88888888-8888-4888-8888-888888888888");
+    expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(first.requestId);
+    expect(useAppStore.getState().extensionUiQueue.map((request) => request.requestId)).toEqual([
+      background.requestId,
+    ]);
+
+    useAppStore.getState().setExtensionUiRequest(second);
+    useAppStore.getState().closeExtensionUiRequest(first.requestId);
+    expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(second.requestId);
+    expect(useAppStore.getState().extensionUiQueue.map((request) => request.requestId)).toEqual([
+      background.requestId,
+    ]);
+
+    useAppStore.getState().closeExtensionUiRequest(first.requestId);
+    expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(second.requestId);
+    useAppStore.getState().closeExtensionUiRequest(background.requestId);
+    expect(useAppStore.getState().extensionUiQueue).toEqual([]);
+  });
+
   it("keeps background Extension UI queued until its Session becomes active", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w", 1));
@@ -338,6 +514,119 @@ describe("app-store epoch wiring", () => {
 
     expect(useAppStore.getState().extensionUiRequest?.title).toBe("Background request");
     expect(useAppStore.getState().extensionUiQueue).toEqual([]);
+  });
+
+  it("presents a candidate request without losing the outgoing Session request", () => {
+    const outgoing = {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      kind: "confirm" as const,
+      title: "Outgoing request",
+      context: {
+        expectedHostInstanceId: "h1",
+        expectedWorkspaceId: "w",
+        expectedWorkspaceRevision: 1,
+        expectedSessionId: "s1",
+        expectedSessionRevision: 1,
+      },
+    };
+    const candidate = {
+      requestId: "55555555-5555-4555-8555-555555555555",
+      kind: "input" as const,
+      title: "Candidate request",
+      context: {
+        ...outgoing.context,
+        expectedSessionId: "s2",
+      },
+    };
+
+    useAppStore.getState().setExtensionUiRequest(outgoing);
+    useAppStore.getState().presentCandidateExtensionUiRequest(candidate);
+
+    expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(candidate.requestId);
+    expect(useAppStore.getState().extensionUiQueue.map((request) => request.requestId)).toEqual([
+      outgoing.requestId,
+    ]);
+
+    useAppStore.getState().closeExtensionUiRequest(candidate.requestId, "answered");
+
+    expect(useAppStore.getState().extensionUiRequest).toBeNull();
+    expect(useAppStore.getState().extensionUiQueue.map((request) => request.requestId)).toEqual([
+      outgoing.requestId,
+    ]);
+  });
+
+  it("derives expiry-aware waiting decision summaries by Session", () => {
+    const now = 10_000;
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    const active = {
+      requestId: "active",
+      kind: "confirm" as const,
+      risk: "normal" as const,
+      context,
+    };
+    const background = {
+      requestId: "background",
+      kind: "input" as const,
+      risk: "high" as const,
+      context: { ...context, expectedSessionId: "s2" },
+    };
+    const expired = {
+      requestId: "expired",
+      kind: "select" as const,
+      expiresAt: now,
+      context: { ...context, expectedSessionId: "s2" },
+    };
+
+    expect(
+      deriveExtensionUiWaitingBySession(
+        active,
+        [active, background, expired],
+        now,
+      ),
+    ).toEqual({
+      s1: { count: 1, hasHighRisk: false },
+      s2: { count: 1, hasHighRisk: true },
+    });
+  });
+
+  it("keeps a Session blocked through a decision group's waiting interval", () => {
+    const context = {
+      expectedHostInstanceId: "h1",
+      expectedWorkspaceId: "w1",
+      expectedWorkspaceRevision: 1,
+      expectedSessionId: "s1",
+      expectedSessionRevision: 1,
+    };
+    const group = {
+      groupKey: "tool:blocking",
+      context,
+      presentation: "inline" as const,
+      risk: "normal" as const,
+      activeRequestId: null,
+      answeredCount: 1,
+      steps: [],
+      status: "active" as const,
+    };
+
+    expect(
+      isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s1"),
+    ).toBe(true);
+    expect(
+      isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s2"),
+    ).toBe(false);
+    expect(
+      isExtensionDecisionBlockingSession(
+        null,
+        { [group.groupKey]: { ...group, status: "completed" } },
+        "s1",
+      ),
+    ).toBe(false);
   });
 
   it("stores Package progress globally and clears it on a new Host epoch", () => {

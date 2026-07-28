@@ -3,6 +3,8 @@ import {
   ArchiveRestore,
   Check,
   ChevronDown,
+  CircleAlert,
+  MessageCircleQuestion,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -13,9 +15,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tCurrent, useT } from "../../lib/i18n/use-t";
-import { useAppStore } from "../../lib/stores/app-store";
+import {
+  deriveExtensionUiWaitingBySession,
+  useAppStore,
+} from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import {
@@ -202,6 +207,8 @@ export function SessionList({
   const desynchronized = useAppStore((s) => s.desynchronized);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const sessionCatalog = useAppStore((s) => s.sessionCatalog);
+  const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
+  const extensionUiQueue = useAppStore((s) => s.extensionUiQueue);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
   const replaceSessionCatalog = useAppStore((s) => s.replaceSessionCatalog);
   const clearSessionCatalog = useAppStore((s) => s.clearSessionCatalog);
@@ -220,6 +227,7 @@ export function SessionList({
     null,
   );
   const [confirmAction, setConfirmAction] = useState<SessionConfirmAction | null>(null);
+  const [extensionUiExpiryTick, setExtensionUiExpiryTick] = useState(0);
   const ime = useImeComposition();
   const [pinnedSessionIds, setPinnedSessionIds] = useState<string[]>(() =>
     readPinnedSessionIds(useAppStore.getState().workspace?.id),
@@ -362,6 +370,23 @@ export function SessionList({
       window.removeEventListener("scroll", closeSessionMenu, true);
     };
   }, [menuSessionId]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const nextExpiry = [extensionUiRequest, ...extensionUiQueue]
+      .flatMap((request) =>
+        request?.expiresAt !== undefined && request.expiresAt > now
+          ? [request.expiresAt]
+          : [],
+      )
+      .sort((left, right) => left - right)[0];
+    if (nextExpiry === undefined) return;
+    const timer = window.setTimeout(
+      () => setExtensionUiExpiryTick((current) => current + 1),
+      Math.max(0, nextExpiry - now) + 1,
+    );
+    return () => window.clearTimeout(timer);
+  }, [extensionUiExpiryTick, extensionUiQueue, extensionUiRequest]);
 
   async function createSession() {
     if (!host || !workspace || sessionMutationBlocked) return;
@@ -855,6 +880,15 @@ export function SessionList({
   );
   const visibleItems = filterSessionItems(allItems, query, filter);
   const archivedCount = allItems.filter((item) => item.archived).length;
+  const extensionUiWaitingBySession = useMemo(
+    () =>
+      deriveExtensionUiWaitingBySession(
+        extensionUiRequest,
+        extensionUiQueue,
+        Date.now(),
+      ),
+    [extensionUiExpiryTick, extensionUiQueue, extensionUiRequest],
+  );
 
   return (
     <div className="flex flex-col gap-1">
@@ -979,6 +1013,17 @@ export function SessionList({
           const statusDot = item.archived
             ? null
             : sessionStatusDotClass(item.runtimeState);
+          const decisionWaiting = item.archived
+            ? undefined
+            : extensionUiWaitingBySession[item.sessionId];
+          const decisionWaitingLabel = decisionWaiting
+            ? t(
+                decisionWaiting.hasHighRisk
+                  ? "sessionsDecisionWaitingHighRisk"
+                  : "sessionsDecisionWaiting",
+                { count: decisionWaiting.count },
+              )
+            : undefined;
           return (
             <li
               key={item.sessionId}
@@ -1048,7 +1093,7 @@ export function SessionList({
                     }
                   >
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className={`truncate ${active ? "font-medium" : ""}`}>
+                      <span className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}>
                         {sessionDisplayName(item, t("sessionsUntitled"))}
                       </span>
                       {pinned && (
@@ -1058,6 +1103,25 @@ export function SessionList({
                           className="shrink-0 text-muted"
                         />
                       )}
+                      {decisionWaiting && decisionWaitingLabel ? (
+                        <span
+                          aria-label={decisionWaitingLabel}
+                          title={decisionWaitingLabel}
+                          data-session-decision-count={decisionWaiting.count}
+                          className={`ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] tabular-nums ${
+                            decisionWaiting.hasHighRisk
+                              ? "border-warning/40 bg-warning/10 text-warning"
+                              : "border-border bg-surface text-muted"
+                          }`}
+                        >
+                          {decisionWaiting.hasHighRisk ? (
+                            <CircleAlert size={11} aria-hidden="true" />
+                          ) : (
+                            <MessageCircleQuestion size={11} aria-hidden="true" />
+                          )}
+                          <span aria-hidden="true">{decisionWaiting.count}</span>
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                   <div

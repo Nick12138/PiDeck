@@ -6,7 +6,7 @@ import type {
 } from "@pideck/protocol";
 import { HostClient } from "../lib/bridge/host-client";
 import { applySessionSnapshot, emptyEpoch } from "../lib/stores/epoch-store";
-import { expectedIdentityForEvent, isBackgroundExtensionUiRequest } from "./event-identity";
+import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";
 
 const state = {
   hostInstanceId: "11111111-1111-4111-8111-111111111111",
@@ -63,6 +63,36 @@ describe("expectedIdentityForEvent", () => {
       workspaceRevision: state.workspaceRevision + 1,
       sessionId: "55555555-5555-4555-8555-555555555555",
       sessionRevision: state.sessionRevision + 1,
+    });
+
+    expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(true);
+  });
+
+  it("allows a candidate Extension UI close before snapshots", () => {
+    const incoming = event("extensionUi.closed", {
+      workspaceId: "44444444-4444-4444-8444-444444444444",
+      workspaceRevision: state.workspaceRevision + 1,
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      sessionRevision: state.sessionRevision + 1,
+      payload: {
+        requestId: "66666666-6666-4666-8666-666666666666",
+        reason: "aborted",
+      },
+    });
+
+    expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(true);
+  });
+
+  it("allows a candidate Extension UI group close before snapshots", () => {
+    const incoming = event("extensionUi.groupClosed", {
+      workspaceId: "44444444-4444-4444-8444-444444444444",
+      workspaceRevision: state.workspaceRevision + 1,
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      sessionRevision: state.sessionRevision + 1,
+      payload: {
+        groupKey: "tool:0123456789abcdef",
+        status: "completed",
+      },
     });
 
     expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(true);
@@ -172,24 +202,43 @@ describe("expectedIdentityForEvent", () => {
   });
 });
 
-describe("isBackgroundExtensionUiRequest", () => {
+describe("extensionUiRequestDelivery", () => {
+  it("keeps the active Session on the ordinary request path", () => {
+    expect(
+      extensionUiRequestDelivery({
+        eventSessionId: state.sessionId,
+        activeSessionId: state.sessionId,
+        catalogRuntimeState: "running",
+      }),
+    ).toBe("active");
+  });
+
   it("queues a known running background Session request", () => {
     expect(
-      isBackgroundExtensionUiRequest({
+      extensionUiRequestDelivery({
         eventSessionId: "55555555-5555-4555-8555-555555555555",
         activeSessionId: state.sessionId,
         catalogRuntimeState: "running",
       }),
-    ).toBe(true);
+    ).toBe("background");
   });
 
-  it("allows a candidate Session request before its snapshot commits", () => {
+  it("prioritizes a candidate Session request before its snapshot commits", () => {
     expect(
-      isBackgroundExtensionUiRequest({
+      extensionUiRequestDelivery({
         eventSessionId: "55555555-5555-4555-8555-555555555555",
         activeSessionId: state.sessionId,
         catalogRuntimeState: "inactive",
       }),
-    ).toBe(false);
+    ).toBe("candidate");
+  });
+
+  it("treats a not-yet-catalogued Session as a candidate", () => {
+    expect(
+      extensionUiRequestDelivery({
+        eventSessionId: "55555555-5555-4555-8555-555555555555",
+        activeSessionId: state.sessionId,
+      }),
+    ).toBe("candidate");
   });
 });

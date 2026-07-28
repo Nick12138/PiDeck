@@ -71,8 +71,8 @@ inside the same execution-trace flow.
 
 ## Blocking requests
 
-Existing calls remain modal. Opt into the inline surface with the PiDeck
-namespace on dialog options:
+Dialog options can suggest a surface with the PiDeck namespace. The value is a
+hint; the Host resolves the final presentation under the configured rollout mode:
 
 ```ts
 const approved = await ctx.ui.confirm(
@@ -90,11 +90,24 @@ const approved = await ctx.ui.confirm(
 );
 ```
 
+The timeout above is explicit. Omitting `timeout`, or passing `timeout: 0`, leaves the
+request pending until it is answered, aborted, or closed by Session lifecycle cleanup;
+PiDeck does not add a default timeout.
+
+`sourceLabel` is Extension-controlled presentation copy, not identity. For standard
+blocking requests, Host captures the active command, registered tool, or individual
+event handler and attaches a trusted `origin`. Desktop displays the Host-derived
+Extension name when available and uses `sourceLabel` only for legacy or unknown-origin
+requests. Origin IDs are opaque hashes; absolute package and Extension paths are never
+sent over the protocol. Trusted invocation kind participates in Host routing; package
+names, titles, option labels, and `sourceLabel` do not.
+
 The same `pideck` object is supported by `select`, `input`, and the optional
 third argument added to `editor`. Supported fields are:
 
 ```ts
 interface PiDeckExtensionUIDialogOptions {
+  // Hints only; Host publishes the final presentation and risk.
   presentation?: "inline" | "modal";
   sourceLabel?: string;
   correlationId?: string;
@@ -110,6 +123,8 @@ interface PiDeckExtensionUIDialogOptions {
 
 Standard SDK select values are used as both IDs and labels. Option metadata is
 merged only when `optionDetails.id` exactly matches a sanitized select value.
+`destructive: true` raises effective risk and cannot be neutralized by
+`risk: "normal"`.
 
 ```ts
 await ctx.ui.select("Choose a cleanup mode", ["keep", "delete"], {
@@ -133,10 +148,88 @@ optional `pideck` namespace. Extensions compiled against an unpatched upstream
 0.82.1 declaration need the PiDeck type extension (or an equivalent local type
 intersection) even though the runtime option is backward compatible.
 
+### Host routing modes
+
+`extensionDecisionPresentation` is a Desktop setting synchronized to Pi Host:
+
+| Mode | Behavior |
+|---|---|
+| `legacy-modal` | Fail-safe Host fallback and one-click rollback; all requests use Modal |
+| `auto` | New-install default; active ordinary tool/command requests use Inline when available |
+| `inline-first` | Prefer Inline for other active origins after mandatory guards |
+
+Only a Desktop settings store with no existing file starts in `auto`. Legacy settings
+that predate the field and corrupt-settings recovery remain `legacy-modal`; Pi Host also
+starts in `legacy-modal` until a Desktop handshake explicitly configures it. Existing
+explicit user choices are preserved.
+
+Safety and ownership precedence is stable across modes: stale owners cancel;
+background requests stay with their Session; high-risk/destructive and Session
+lifecycle requests use Modal; explicit Modal and unavailable Inline surfaces use
+Modal. Extension Inline hints are honored only after those guards.
+
+Host risk is derived from trusted invocation metadata. A decision raised inside a
+`tool_call` permission interceptor is high risk, as is the reserved future
+`project_trust` path. Session lifecycle interceptors remain normal risk but are still
+forced to Modal. Host risk cannot be lowered by Extension metadata; routing never
+parses titles, option labels, commands, or package names to infer risk.
+
+On the wire, `presentationHint` / `riskHint` preserve sanitized Extension metadata.
+`presentation` / `risk` are the Host-final values consumed by Desktop, and
+`routeReason` records the governing decision such as `active-tool`, `high-risk`,
+`session-lifecycle`, `background-session`, or `inline-unavailable`.
+
+### Decision groups
+
+Sequential blocking dialogs created by one trusted tool or command invocation share a
+Host-generated `groupKey`. The key is a bounded hash over Host/Session identity,
+trusted invocation metadata, and the Host invocation ID; raw provider call IDs and
+local paths are not exposed. Event and unknown origins are not grouped automatically.
+
+The first `extensionUi.request` implicitly opens the group. Later requests from the
+same invocation reuse it, while parallel tool calls receive distinct keys. Host emits
+`extensionUi.groupClosed` with `completed`, `failed`, `cancelled`, or `stale` only when
+the invocation or binding lifecycle ends. Grouping does not change any individual
+dialog Promise, response, timeout, or cancellation semantics.
+
+Desktop keeps a redacted step summary containing only request ID, primitive kind, and
+outcome. It does not retain selected values or freeform answer text in group state.
+For Inline groups, the same card shell remains visible between sequential questions
+and announces that the next question is pending.
+
+## Waiting and large-decision UX
+
+Desktop derives an expiry-aware `{ count, hasHighRisk }` summary from the active
+request and Session queue. Background Session rows show that count inside their
+existing switch target; the badge disappears on settlement or expiry and never
+changes request ownership. The active Session composer remains editable so its draft
+is preserved, but ordinary send is blocked through both a live request and the
+between-question group interval. Focus returns only when the same Session's decision
+group ends.
+
+Select requests expose search once the list is materially long and use virtual rows
+at 100 or more options. Filtering matches labels and descriptions, while responses
+always return the original Host-published option ID. Empty results remain recoverable
+through a clear-search action.
+
+## Compatibility evidence
+
+Compatibility is organized by behavior class rather than package popularity:
+
+| Layer | Evidence |
+|---|---|
+| Contract fixture | Real SDK loader coverage for subagent dialog/widget/custom/activity, permission and repository guards, planning select/editor, 150-option selection, persistent widgets, renderers, provider-only registration, background ownership, and shutdown cleanup |
+| Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` RPC/group/envelope path and `1.20.0` custom-terminal fallback, both locked with registry integrity hashes |
+| Scheduled latest audit | Weekly/manual GitHub workflow replaces only the disposable v2 test alias with npm `latest`; it is separate from pull-request and `main` gates |
+
+Core routing contains no representative package-name branch. The published packages
+are ecosystem evidence; the repository fixture remains the stable per-commit contract.
+
 ## Response lifecycle
 
 - Inline and modal surfaces use the same `extensionUi.respond` RPC.
-- Only one surface renders a request. Missing `presentation` means modal.
+- Only one surface renders a request. New Host requests always carry final
+  `presentation`; missing presentation from a legacy Host still means Modal.
 - Controls disable while a response is in flight.
 - A failed response stays open, announces a local error, and can be retried.
 - Expiry removes only the matching active request and advances the same-Session

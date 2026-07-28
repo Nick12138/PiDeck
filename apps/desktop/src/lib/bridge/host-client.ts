@@ -8,6 +8,7 @@ import {
   type HostRequestParams,
   type HostResponseEnvelope,
   type HostStatusSnapshot,
+  type ExtensionDecisionPresentation,
 } from "@pideck/protocol";
 
 export type HostTransport = {
@@ -245,11 +246,20 @@ export class HostClient {
     }) as Promise<HostResponseEnvelope<M>>;
   }
 
-  async hello(clientName = "pideck", clientVersion = "0.1.0"): Promise<HostStatusSnapshot> {
+  async hello(
+    clientName = "pideck",
+    clientVersion = "0.1.0",
+    extensionDecisionPresentation: ExtensionDecisionPresentation = "legacy-modal",
+  ): Promise<HostStatusSnapshot> {
     const res = await this.request(
       "system.hello",
       {} as HostContextMap["system.hello"],
-      { clientName, clientVersion, protocolVersion: 1 },
+      {
+        clientName,
+        clientVersion,
+        protocolVersion: 1,
+        extensionDecisionPresentation,
+      },
       10_000,
     );
     if (!res.ok) {

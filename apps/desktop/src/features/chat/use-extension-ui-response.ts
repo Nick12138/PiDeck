@@ -4,6 +4,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import { useT } from "../../lib/i18n/use-t";
 import {
+  type ExtensionDecisionStepOutcome,
   isExtensionUiRequestExpired,
   useAppStore,
   type ExtensionUiRequestState,
@@ -21,7 +22,7 @@ export function useExtensionUiResponse(
   request: ExtensionUiRequestState | null,
 ): ExtensionUiResponseController {
   const t = useT();
-  const setRequest = useAppStore((state) => state.setExtensionUiRequest);
+  const closeRequest = useAppStore((state) => state.closeExtensionUiRequest);
   const pushNotification = useAppStore((state) => state.pushNotification);
   const [input, setInputState] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -31,12 +32,12 @@ export function useExtensionUiResponse(
   requestRef.current = request;
 
   const clearIfCurrent = useCallback(
-    (requestId: string): boolean => {
+    (requestId: string, outcome: ExtensionDecisionStepOutcome): boolean => {
       if (useAppStore.getState().extensionUiRequest?.requestId !== requestId) return false;
-      setRequest(null);
+      closeRequest(requestId, outcome);
       return true;
     },
-    [setRequest],
+    [closeRequest],
   );
 
   useEffect(() => {
@@ -50,7 +51,7 @@ export function useExtensionUiResponse(
     if (!request?.expiresAt) return;
     const requestId = request.requestId;
     const timer = window.setTimeout(() => {
-      if (!clearIfCurrent(requestId)) return;
+      if (!clearIfCurrent(requestId, "expired")) return;
       pushNotification(t("extUiExpired"), "warning");
     }, Math.max(0, request.expiresAt - Date.now()));
     return () => window.clearTimeout(timer);
@@ -60,7 +61,7 @@ export function useExtensionUiResponse(
     async (status: "resolved" | "cancelled", value?: JsonValue): Promise<boolean> => {
       if (!request || submittingRef.current) return false;
       if (isExtensionUiRequestExpired(request)) {
-        if (clearIfCurrent(request.requestId)) {
+        if (clearIfCurrent(request.requestId, "expired")) {
           pushNotification(t("extUiExpired"), "warning");
         }
         return false;
@@ -90,7 +91,10 @@ export function useExtensionUiResponse(
           }
           return false;
         }
-        clearIfCurrent(requestId);
+        clearIfCurrent(
+          requestId,
+          status === "resolved" ? "answered" : "cancelled",
+        );
         return true;
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : t("extUiRespondFailed");

@@ -1,8 +1,261 @@
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index b7a48336ddf4c0bcbf9609a91aba1a260635a19d..a7fb9d189ddfda034e598f64cb9778234a5fa0c7 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -16,7 +16,7 @@ import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLe
+ import type { ImageContent, Model, TextContent } from "@earendil-works/pi-ai/compat";
+ import { type BashResult } from "./bash-executor.ts";
+ import { type CompactionResult } from "./compaction/index.ts";
+-import { type ContextUsage, type ExtensionCommandContextActions, type ExtensionErrorListener, type ExtensionMode, ExtensionRunner, type ExtensionUIContext, type InputSource, type ReplacedSessionContext, type SessionStartEvent, type ShutdownHandler, type ToolDefinition, type ToolInfo } from "./extensions/index.ts";
++import { type ContextUsage, type ExtensionCommandContextActions, type ExtensionErrorListener, type ExtensionInvocationRunner, type ExtensionMode, ExtensionRunner, type ExtensionUIContext, type InputSource, type ReplacedSessionContext, type SessionStartEvent, type ShutdownHandler, type ToolDefinition, type ToolInfo } from "./extensions/index.ts";
+ import type { CustomMessage } from "./messages.ts";
+ import type { ModelRuntime } from "./model-runtime.ts";
+ import { type PromptTemplate } from "./prompt-templates.ts";
+@@ -145,6 +145,7 @@ export interface AgentSessionConfig {
+ export interface ExtensionBindings {
+     uiContext?: ExtensionUIContext;
+     mode?: ExtensionMode;
++    invocationRunner?: ExtensionInvocationRunner;
+     commandContextActions?: ExtensionCommandContextActions;
+     abortHandler?: () => void;
+     shutdownHandler?: ShutdownHandler;
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c1538152f 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -119,6 +119,7 @@ export class AgentSession {
+     _sessionStartEvent;
+     _extensionUIContext;
+     _extensionMode = "print";
++    _extensionInvocationRunner;
+     _extensionCommandContextActions;
+     _extensionAbortHandler;
+     _extensionShutdownHandler;
+@@ -1745,6 +1746,9 @@ export class AgentSession {
+         if (bindings.mode !== undefined) {
+             this._extensionMode = bindings.mode;
+         }
++        if (bindings.invocationRunner !== undefined) {
++            this._extensionInvocationRunner = bindings.invocationRunner;
++        }
+         if (bindings.commandContextActions !== undefined) {
+             this._extensionCommandContextActions = bindings.commandContextActions;
+         }
+@@ -1803,6 +1807,7 @@ export class AgentSession {
+     }
+     _applyExtensionBindings(runner) {
+         runner.setUIContext(this._extensionUIContext, this._extensionMode);
++        runner.setInvocationRunner(this._extensionInvocationRunner);
+         runner.bindCommandContext(this._extensionCommandContextActions);
+         this._extensionErrorUnsubscriber?.();
+         this._extensionErrorUnsubscriber = this._extensionErrorListener
+@@ -2061,6 +2066,7 @@ export class AgentSession {
+             includeAllExtensionTools: true,
+         });
+         const hasBindings = this._extensionUIContext ||
++            this._extensionInvocationRunner ||
+             this._extensionCommandContextActions ||
+             this._extensionShutdownHandler ||
+             this._extensionErrorListener;
+diff --git a/dist/core/extensions/index.d.ts b/dist/core/extensions/index.d.ts
+index d2933c195eaeb7194b2bec4fcd48a27e2ea477ab..365e398aca0df2136b3b16c72b8e8c15d1b4294f 100644
+--- a/dist/core/extensions/index.d.ts
++++ b/dist/core/extensions/index.d.ts
+@@ -6,7 +6,7 @@ export type { SourceInfo } from "../source-info.ts";
+ export { createExtensionRuntime, discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions, } from "./loader.ts";
+ export type { ExtensionErrorListener, ForkHandler, NavigateTreeHandler, NewSessionHandler, ShutdownHandler, SwitchSessionHandler, } from "./runner.ts";
+ export { ExtensionRunner } from "./runner.ts";
+-export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
++export type { AfterProviderResponseEvent, AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppendEntryHandler, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BashToolResultEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextEventResult, ContextUsage, CustomToolCallEvent, CustomToolResultEvent, EditorFactory, EditToolCallEvent, EditToolResultEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionInvocationMetadata, ExtensionInvocationRunner, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, FindToolResultEvent, GetActiveToolsHandler, GetAllToolsHandler, GetCommandsHandler, GetThinkingLevelHandler, GrepToolCallEvent, GrepToolResultEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, LsToolResultEvent, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ModelSelectEvent, ModelSelectSource, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, ReadToolResultEvent, RegisteredCommand, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, ResourcesDiscoverResult, SendMessageHandler, SendUserMessageHandler, SessionBeforeCompactEvent, SessionBeforeCompactResult, SessionBeforeForkEvent, SessionBeforeForkResult, SessionBeforeSwitchEvent, SessionBeforeSwitchResult, SessionBeforeTreeEvent, SessionBeforeTreeResult, SessionCompactEvent, SessionEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SetActiveToolsHandler, SetLabelHandler, SetModelHandler, SetThinkingLevelHandler, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, ToolResultEventResult, TreePreparation, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, WriteToolResultEvent, } from "./types.ts";
+ export { defineTool, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, } from "./types.ts";
+ export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";
+ //# sourceMappingURL=index.d.ts.map
+diff --git a/dist/core/extensions/runner.d.ts b/dist/core/extensions/runner.d.ts
+index 7a772b385d87d9aba7142136ef7c1b80a6665dec..7f337f5f4bd2085a4d10bd57bc8d3cdb5a9028a4 100644
+--- a/dist/core/extensions/runner.d.ts
++++ b/dist/core/extensions/runner.d.ts
+@@ -9,7 +9,7 @@ import type { KeybindingsConfig } from "../keybindings.ts";
+ import type { ModelRegistry } from "../model-registry.ts";
+ import type { SessionManager } from "../session-manager.ts";
+ import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+-import type { BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, ContextEvent, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFlag, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, InputEvent, InputEventResult, InputSource, LoadExtensionsResult, MessageEndEvent, MessageRenderer, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventResult, ProviderConfig, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, SessionBeforeCompactResult, SessionBeforeForkResult, SessionBeforeSwitchResult, SessionBeforeTreeResult, SessionShutdownEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UserBashEvent, UserBashEventResult } from "./types.ts";
++import type { BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, ContextEvent, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFlag, ExtensionInvocationMetadata, ExtensionInvocationRunner, ExtensionMode, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, InputEvent, InputEventResult, InputSource, LoadExtensionsResult, MessageEndEvent, MessageRenderer, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventResult, ProviderConfig, RegisteredTool, ReplacedSessionContext, ResolvedCommand, ResourcesDiscoverEvent, SessionBeforeCompactResult, SessionBeforeForkResult, SessionBeforeSwitchResult, SessionBeforeTreeResult, SessionShutdownEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UserBashEvent, UserBashEventResult } from "./types.ts";
+ /** Combined result from all before_agent_start handlers */
+ interface BeforeAgentStartCombinedResult {
+     messages?: NonNullable<BeforeAgentStartEventResult["message"]>[];
+@@ -72,6 +72,7 @@ export declare class ExtensionRunner {
+     private runtime;
+     private uiContext;
+     private mode;
++    private invocationRunner;
+     private cwd;
+     private sessionManager;
+     private modelRegistry;
+@@ -104,6 +105,8 @@ export declare class ExtensionRunner {
+     }): void;
+     bindCommandContext(actions?: ExtensionCommandContextActions): void;
+     setUIContext(uiContext?: ExtensionUIContext, mode?: ExtensionMode): void;
++    setInvocationRunner(invocationRunner?: ExtensionInvocationRunner): void;
++    invokeExtension<T>(metadata: ExtensionInvocationMetadata, invoke: () => T | Promise<T>): T | Promise<T>;
+     getUIContext(): ExtensionUIContext;
+     hasUI(): boolean;
+     getExtensionPaths(): string[];
+@@ -141,6 +144,7 @@ export declare class ExtensionRunner {
+     createContext(): ExtensionContext;
+     createCommandContext(): ExtensionCommandContext;
+     private isSessionBeforeEvent;
++    private invokeExtensionEvent;
+     emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>>;
+     emitMessageEnd(event: MessageEndEvent): Promise<AgentMessage | undefined>;
+     emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined>;
+diff --git a/dist/core/extensions/runner.js b/dist/core/extensions/runner.js
+index 686ff326fd6adc6fc1ddcb89e46f6d790621a197..df5cf2d202095c2a3b48c11bca7a8c8072fd3611 100644
+--- a/dist/core/extensions/runner.js
++++ b/dist/core/extensions/runner.js
+@@ -122,6 +122,7 @@ export class ExtensionRunner {
+     runtime;
+     uiContext;
+     mode = "print";
++    invocationRunner = (_metadata, invoke) => invoke();
+     cwd;
+     sessionManager;
+     modelRegistry;
+@@ -266,6 +267,12 @@ export class ExtensionRunner {
+         this.uiContext = uiContext ?? noOpUIContext;
+         this.mode = mode;
+     }
++    setInvocationRunner(invocationRunner) {
++        this.invocationRunner = invocationRunner ?? ((_metadata, invoke) => invoke());
++    }
++    invokeExtension(metadata, invoke) {
++        return this.invocationRunner(metadata, invoke);
++    }
+     getUIContext() {
+         return this.uiContext;
+     }
+@@ -566,6 +573,17 @@ export class ExtensionRunner {
+             event.type === "session_before_compact" ||
+             event.type === "session_before_tree");
+     }
++    invokeExtensionEvent(ext, event, invoke) {
++        const toolName = typeof event.toolName === "string" ? event.toolName : undefined;
++        const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
++        return this.invokeExtension({
++            kind: "event",
++            sourceInfo: ext.sourceInfo,
++            eventType: event.type,
++            ...(toolName === undefined ? {} : { toolName }),
++            ...(toolCallId === undefined ? {} : { toolCallId }),
++        }, invoke);
++    }
+     async emit(event) {
+         const ctx = this.createContext();
+         let result;
+@@ -575,7 +593,7 @@ export class ExtensionRunner {
+                 continue;
+             for (const handler of handlers) {
+                 try {
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     if (this.isSessionBeforeEvent(event) && handlerResult) {
+                         result = handlerResult;
+                         if (result.cancel) {
+@@ -608,7 +626,7 @@ export class ExtensionRunner {
+             for (const handler of handlers) {
+                 try {
+                     const currentEvent = { ...event, message: currentMessage };
+-                    const handlerResult = (await handler(currentEvent, ctx));
++                    const handlerResult = (await this.invokeExtensionEvent(ext, currentEvent, () => handler(currentEvent, ctx)));
+                     if (!handlerResult?.message)
+                         continue;
+                     if (handlerResult.message.role !== currentMessage.role) {
+@@ -646,7 +664,7 @@ export class ExtensionRunner {
+                 continue;
+             for (const handler of handlers) {
+                 try {
+-                    const handlerResult = (await handler(currentEvent, ctx));
++                    const handlerResult = (await this.invokeExtensionEvent(ext, currentEvent, () => handler(currentEvent, ctx)));
+                     if (!handlerResult)
+                         continue;
+                     if (handlerResult.content !== undefined) {
+@@ -696,7 +714,7 @@ export class ExtensionRunner {
+             if (!handlers || handlers.length === 0)
+                 continue;
+             for (const handler of handlers) {
+-                const handlerResult = await handler(event, ctx);
++                const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                 if (handlerResult) {
+                     result = handlerResult;
+                     if (result.block) {
+@@ -715,7 +733,7 @@ export class ExtensionRunner {
+                 continue;
+             for (const handler of handlers) {
+                 try {
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     if (handlerResult) {
+                         return handlerResult;
+                     }
+@@ -744,7 +762,7 @@ export class ExtensionRunner {
+             for (const handler of handlers) {
+                 try {
+                     const event = { type: "context", messages: currentMessages };
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     if (handlerResult && handlerResult.messages) {
+                         currentMessages = handlerResult.messages;
+                     }
+@@ -776,7 +794,7 @@ export class ExtensionRunner {
+                         type: "before_provider_request",
+                         payload: currentPayload,
+                     };
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     if (handlerResult !== undefined) {
+                         currentPayload = handlerResult;
+                     }
+@@ -808,7 +826,7 @@ export class ExtensionRunner {
+                         type: "before_provider_headers",
+                         headers,
+                     };
+-                    await handler(event, ctx);
++                    await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                 }
+                 catch (err) {
+                     const message = err instanceof Error ? err.message : String(err);
+@@ -846,7 +864,7 @@ export class ExtensionRunner {
+                         systemPrompt: currentSystemPrompt,
+                         systemPromptOptions,
+                     };
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     if (handlerResult) {
+                         const result = handlerResult;
+                         if (result.message) {
+@@ -890,7 +908,7 @@ export class ExtensionRunner {
+             for (const handler of handlers) {
+                 try {
+                     const event = { type: "resources_discover", cwd, reason };
+-                    const handlerResult = await handler(event, ctx);
++                    const handlerResult = await this.invokeExtensionEvent(ext, event, () => handler(event, ctx));
+                     const result = handlerResult;
+                     if (result?.skillPaths?.length) {
+                         skillPaths.push(...result.skillPaths.map((path) => ({ path, extensionPath: ext.path })));
+@@ -931,7 +949,7 @@ export class ExtensionRunner {
+                         source,
+                         streamingBehavior,
+                     };
+-                    const result = (await handler(event, ctx));
++                    const result = (await this.invokeExtensionEvent(ext, event, () => handler(event, ctx)));
+                     if (result?.action === "handled")
+                         return result;
+                     if (result?.action === "transform") {
 diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
-index e68363a34d73005579ac3c1b9e3ec8f8ca47ef2d..7e4b48f541f633aa4628089701811879dbfc46dc 100644
+index a7d5547e62e36d252b90ae083bc847ce97a5bf6d..488155af665a6a3fa6516ec476ee04a8048e7fb9 100644
 --- a/dist/core/extensions/types.d.ts
 +++ b/dist/core/extensions/types.d.ts
-@@ -32,11 +32,26 @@ export type { BuildSystemPromptOptions } from "../system-prompt.ts";
+@@ -31,13 +31,44 @@ export type { ExecOptions, ExecResult } from "../exec.ts";
+ export type { BuildSystemPromptOptions } from "../system-prompt.ts";
  export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
  export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
 +/** Optional PiDeck-only presentation metadata. Other UI modes ignore it. */
@@ -27,9 +280,26 @@ index e68363a34d73005579ac3c1b9e3ec8f8ca47ef2d..7e4b48f541f633aa4628089701811879
 +    /** Declarative presentation hints used by PiDeck's desktop UI. */
 +    pideck?: PiDeckExtensionUIDialogOptions;
  }
++/** Host-neutral metadata for one Extension callback invocation. */
++export type ExtensionInvocationMetadata = {
++    kind: "tool";
++    sourceInfo: SourceInfo;
++    toolName: string;
++    toolCallId: string;
++    signal?: AbortSignal;
++} | {
++    kind: "event";
++    sourceInfo: SourceInfo;
++    eventType: string;
++    toolName?: string;
++    toolCallId?: string;
++};
++/** Optional Host wrapper used to propagate trusted Extension invocation context. */
++export type ExtensionInvocationRunner = <T>(metadata: ExtensionInvocationMetadata, invoke: () => T | Promise<T>) => T | Promise<T>;
  /** Placement for extension widgets. */
  export type WidgetPlacement = "aboveEditor" | "belowEditor";
-@@ -131,7 +146,7 @@ export interface ExtensionUIContext {
+ /** Options for extension widgets. */
+@@ -131,7 +161,7 @@ export interface ExtensionUIContext {
      /** Get the current text from the core input editor. */
      getEditorText(): string;
      /** Show a multi-line editor for text editing. */
@@ -38,8 +308,36 @@ index e68363a34d73005579ac3c1b9e3ec8f8ca47ef2d..7e4b48f541f633aa4628089701811879
      /** Stack additional autocomplete behavior on top of the built-in provider. */
      addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
      /**
+diff --git a/dist/core/extensions/wrapper.js b/dist/core/extensions/wrapper.js
+index 1e9f7134dbd02635f83e65295915fa6d8c8e8676..9c1ae6e05065e6c76d4c01d3a45c461245f2f532 100644
+--- a/dist/core/extensions/wrapper.js
++++ b/dist/core/extensions/wrapper.js
+@@ -14,7 +14,13 @@ export function wrapRegisteredTool(registeredTool, runner) {
+     const execute = tool.execute;
+     return {
+         ...tool,
+-        execute: async (toolCallId, params, signal, onUpdate) => {
++        execute: (toolCallId, params, signal, onUpdate) => runner.invokeExtension({
++            kind: "tool",
++            sourceInfo: registeredTool.sourceInfo,
++            toolName: registeredTool.definition.name,
++            toolCallId,
++            signal,
++        }, async () => {
+             const activeBefore = runner.getActiveTools();
+             const result = await execute(toolCallId, params, signal, onUpdate);
+             const activeAfter = runner.getActiveTools();
+@@ -28,7 +33,7 @@ export function wrapRegisteredTool(registeredTool, runner) {
+                 ...result,
+                 addedToolNames: [...new Set([...(result.addedToolNames ?? []), ...addedToolNames])],
+             };
+-        },
++        }),
+     };
+ }
+ /**
 diff --git a/dist/core/package-manager.d.ts b/dist/core/package-manager.d.ts
-index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634f9dd2e21 100644
+index ec83cef50cab5316d6dace51c9229f677aa46713..e585410ec05d2948ed3a01970049f06b6a5f4037 100644
 --- a/dist/core/package-manager.d.ts
 +++ b/dist/core/package-manager.d.ts
 @@ -50,7 +50,9 @@ export interface PackageManager {
@@ -89,7 +387,7 @@ index ec83cef50cab5316d6dace51c9229f677aa46713..39e20dd9993b97c44d594f28e91a7634
      private shouldUpdateNpmSource;
      private updateNpmBatch;
 diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
-index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241bd57d7fb 100644
+index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2e1df837a 100644
 --- a/dist/core/package-manager.js
 +++ b/dist/core/package-manager.js
 @@ -603,6 +603,7 @@ export class DefaultPackageManager {
@@ -113,7 +411,10 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
      addSourceToSettings(source, options) {
          const scope = options?.local ? "project" : "user";
          const currentSettings = scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-@@ -810,20 +817,23 @@ export class DefaultPackageManager {
+@@ -807,13 +814,15 @@ export class DefaultPackageManager {
+         await this.remove(source, options);
+         return this.removeSourceFromSettings(source, options);
+     }
 -    async update(source) {
 +    async update(source, options) {
          const globalSettings = this.settingsManager.getGlobalSettings();
@@ -127,7 +428,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
              const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
              if (identity && this.getPackageIdentity(sourceStr, "user") !== identity)
                  continue;
-             matched = true;
+@@ -821,6 +830,7 @@ export class DefaultPackageManager {
              updateSources.push({ source: sourceStr, scope: "user" });
          }
          for (const pkg of projectSettings.packages ?? []) {
@@ -135,9 +436,6 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
              const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
              if (identity && this.getPackageIdentity(sourceStr, "project") !== identity)
                  continue;
-             matched = true;
-             updateSources.push({ source: sourceStr, scope: "project" });
-         }
 @@ -2055,6 +2065,7 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
              stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
@@ -165,3 +463,16 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..c87b07388e0c920cc46cdeb5f60a3241
          const env = getEnv();
          const result = spawnProcessSync(command, args, {
              stdio: ["ignore", "pipe", "pipe"],
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index e91e38f8bedfabb6e67305f9739277d1ebacde22..e6401249cd7ff8cf4edacc39eec0fa41c4484635 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -4,7 +4,7 @@ export { AgentSession, type AgentSessionConfig, type AgentSessionEvent, type Age
+ export { readStoredCredential } from "./core/auth-storage.ts";
+ export { type BranchPreparation, type BranchSummaryResult, type CollectEntriesResult, type CompactionResult, type CutPointResult, calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type FileOperations, findCutPoint, findTurnStartIndex, type GenerateBranchSummaryOptions, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.ts";
+ export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+-export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
++export type { AgentEndEvent, AgentSettledEvent, AgentStartEvent, AgentToolResult, AgentToolUpdateCallback, AppKeybinding, AutocompleteProviderFactory, BashToolCallEvent, BeforeAgentStartEvent, BeforeAgentStartEventResult, BeforeProviderHeadersEvent, BeforeProviderRequestEvent, BeforeProviderRequestEventResult, BuildSystemPromptOptions, CompactOptions, ContextEvent, ContextUsage, CustomToolCallEvent, EditToolCallEvent, EntryRenderer, EntryRenderOptions, ExecOptions, ExecResult, Extension, ExtensionActions, ExtensionAPI, ExtensionCommandContext, ExtensionCommandContextActions, ExtensionContext, ExtensionContextActions, ExtensionError, ExtensionEvent, ExtensionFactory, ExtensionFlag, ExtensionHandler, ExtensionInvocationMetadata, ExtensionInvocationRunner, ExtensionRuntime, ExtensionShortcut, ExtensionUIContext, ExtensionUIDialogOptions, ExtensionWidgetOptions, FindToolCallEvent, GrepToolCallEvent, InlineExtension, InputEvent, InputEventResult, InputSource, KeybindingsManager, LoadExtensionsResult, LsToolCallEvent, MessageEndEvent, MessageRenderer, MessageRenderOptions, MessageStartEvent, MessageUpdateEvent, ProjectTrustContext, ProjectTrustEvent, ProjectTrustEventDecision, ProjectTrustEventResult, ProjectTrustHandler, ProviderConfig, ProviderModelConfig, ReadToolCallEvent, RegisteredCommand, RegisteredTool, ResolvedCommand, SessionBeforeCompactEvent, SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionBeforeTreeEvent, SessionCompactEvent, SessionInfoChangedEvent, SessionShutdownEvent, SessionStartEvent, SessionTreeEvent, SlashCommandInfo, SlashCommandSource, SourceInfo, TerminalInputHandler, ToolCallEvent, ToolCallEventResult, ToolDefinition, ToolExecutionEndEvent, ToolExecutionMode, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, ToolRenderResultOptions, ToolResultEvent, TurnEndEvent, TurnStartEvent, UserBashEvent, UserBashEventResult, WidgetPlacement, WorkingIndicatorOptions, WriteToolCallEvent, } from "./core/extensions/index.ts";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
+ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+ export { convertToLlm } from "./core/messages.ts";

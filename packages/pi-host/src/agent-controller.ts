@@ -35,7 +35,7 @@ import {
 import {
   resolveExtensionCommandInvocation,
   withExtensionCommandOrigin,
-} from "./extension-command-context.js";
+} from "./extension-invocation-context.js";
 import { logger } from "./logger.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */

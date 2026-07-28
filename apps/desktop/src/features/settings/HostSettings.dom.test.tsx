@@ -97,6 +97,7 @@ describe("HostSettings", () => {
       theme: "dark",
       restoreLastSession: true,
       autoRestartHostOnce: true,
+      extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",
     });
     openMock.mockResolvedValue("/new/agent-dir");

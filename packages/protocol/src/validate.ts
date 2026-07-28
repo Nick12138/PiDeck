@@ -222,10 +222,18 @@ export function validateRequestParams<M extends HostMethod>(
   const ok = (value: unknown) => ({ ok: true, value: value as HostRequestParams[M] }) as const;
   switch (method) {
     case "system.hello":
-      return exactObject(params, ["clientName", "clientVersion", "protocolVersion"]) &&
+      return exactObject(
+        params,
+        ["clientName", "clientVersion", "protocolVersion"],
+        ["extensionDecisionPresentation"],
+      ) &&
         isNonEmptyString(params.clientName) &&
         isNonEmptyString(params.clientVersion) &&
-        params.protocolVersion === 1
+        params.protocolVersion === 1 &&
+        (params.extensionDecisionPresentation === undefined ||
+          ["legacy-modal", "auto", "inline-first"].includes(
+            String(params.extensionDecisionPresentation),
+          ))
         ? ok(params)
         : fail("invalid system.hello params", { method });
     case "system.getStatus":
@@ -509,6 +517,13 @@ export function validateRequestParams<M extends HostMethod>(
       }
       return ok(params);
     }
+    case "extensionUi.configure":
+      return exactObject(params, ["extensionDecisionPresentation"]) &&
+        ["legacy-modal", "auto", "inline-first"].includes(
+          String(params.extensionDecisionPresentation),
+        )
+        ? ok(params)
+        : fail("invalid extensionUi.configure params", { method });
     case "extensionUi.respond":
       return exactObject(params, ["requestId", "status"], ["value"]) &&
         isUuid(params.requestId) &&

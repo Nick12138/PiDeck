@@ -1,5 +1,16 @@
 import { HOST_ERROR_CODES } from "./errors.js";
 import type { HostEventName } from "./events.js";
+import {
+  MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
+  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
+  MAX_EXTENSION_UI_MESSAGE_LENGTH,
+  MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+  MAX_EXTENSION_UI_OPTION_ID_LENGTH,
+  MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
+  MAX_EXTENSION_UI_OPTIONS,
+  MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
+  MAX_EXTENSION_UI_TITLE_LENGTH,
+} from "./limits.js";
 import type { HostMethod } from "./methods.js";
 import type { RehydrateSnapshot, ToolSnapshot } from "./types.js";
 
@@ -41,6 +52,18 @@ function isString(value: unknown): value is string {
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
+}
+
+function isBoundedNonEmptyString(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= maxLength;
+}
+
+function isOptionalBoundedString(value: unknown, maxLength: number): boolean {
+  return value === undefined || (typeof value === "string" && value.length <= maxLength);
+}
+
+function isBoundedString(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.length <= maxLength;
 }
 
 function isBoolean(value: unknown): value is boolean {
@@ -142,7 +165,7 @@ export function isHostStatusSnapshot(value: unknown): boolean {
         "capabilities",
         "modelConfigHealth",
       ],
-      ["lastError", "fatalError"],
+      ["extensionDecisionPresentation", "lastError", "fatalError"],
     )
   ) {
     return false;
@@ -172,6 +195,10 @@ export function isHostStatusSnapshot(value: unknown): boolean {
     caps.extensionUi === true &&
     isBoolean(caps.sessionExport) &&
     isModelConfigHealth(value.modelConfigHealth) &&
+    (value.extensionDecisionPresentation === undefined ||
+      ["legacy-modal", "auto", "inline-first"].includes(
+        String(value.extensionDecisionPresentation),
+      )) &&
     (value.lastError === undefined || isHostErrorRecord(value.lastError)) &&
     (value.fatalError === undefined || isHostErrorRecord(value.fatalError))
   );
@@ -955,6 +982,55 @@ function isPiSettingsSnapshot(value: unknown): boolean {
   );
 }
 
+function isExtensionUiOrigin(value: unknown): boolean {
+  if (!isPlainObject(value) || !isString(value.invocationKind)) return false;
+  if (value.invocationKind === "unknown") {
+    return hasExactKeys(value, ["invocationKind"]);
+  }
+  const baseKeys = [
+    "invocationKind",
+    "extensionId",
+    "extensionDisplayName",
+    "sourceKind",
+  ];
+  if (
+    !isBoundedNonEmptyString(value.extensionId, 128) ||
+    !isBoundedNonEmptyString(value.extensionDisplayName, 120) ||
+    !["package", "user", "project", "synthetic"].includes(String(value.sourceKind))
+  ) {
+    return false;
+  }
+  switch (value.invocationKind) {
+    case "tool":
+      return (
+        hasExactKeys(value, [...baseKeys, "toolName", "toolCallId"]) &&
+        isBoundedNonEmptyString(value.toolName, 256) &&
+        isBoundedNonEmptyString(value.toolCallId, 256)
+      );
+    case "command":
+      return (
+        hasExactKeys(value, [...baseKeys, "commandName"]) &&
+        isBoundedNonEmptyString(value.commandName, 256)
+      );
+    case "shortcut":
+      return (
+        hasExactKeys(value, [...baseKeys, "shortcut"]) &&
+        isBoundedNonEmptyString(value.shortcut, 128)
+      );
+    case "event":
+      return (
+        hasExactKeys(value, [...baseKeys, "eventType"], ["toolName", "toolCallId"]) &&
+        isBoundedNonEmptyString(value.eventType, 256) &&
+        (value.toolName === undefined || isBoundedNonEmptyString(value.toolName, 256)) &&
+        (value.toolCallId === undefined || isBoundedNonEmptyString(value.toolCallId, 256))
+      );
+    case "background":
+      return hasExactKeys(value, baseKeys);
+    default:
+      return false;
+  }
+}
+
 function isExtensionUiRequest(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -969,33 +1045,62 @@ function isExtensionUiRequest(value: unknown): boolean {
         "timeoutMs",
         "sourceLabel",
         "correlationId",
+        "presentationHint",
+        "riskHint",
         "presentation",
         "risk",
+        "routeReason",
+        "groupKey",
         "allowFreeform",
+        "origin",
       ],
     ) &&
     isUuid(value.requestId) &&
     ["select", "confirm", "input", "editor"].includes(String(value.kind)) &&
-    isOptionalString(value.title) &&
-    isOptionalString(value.message) &&
+    isOptionalBoundedString(value.title, MAX_EXTENSION_UI_TITLE_LENGTH) &&
+    isOptionalBoundedString(value.message, MAX_EXTENSION_UI_MESSAGE_LENGTH) &&
     (value.options === undefined ||
       (Array.isArray(value.options) &&
+        value.options.length <= MAX_EXTENSION_UI_OPTIONS &&
         value.options.every(
           (item) =>
             isPlainObject(item) &&
             hasExactKeys(item, ["id", "label"], ["description", "destructive"]) &&
-            isString(item.id) &&
-            isString(item.label) &&
-            isOptionalString(item.description) &&
+            isBoundedString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH) &&
+            isBoundedString(item.label, MAX_EXTENSION_UI_OPTION_LABEL_LENGTH) &&
+            isOptionalBoundedString(
+              item.description,
+              MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
+            ) &&
             (item.destructive === undefined || isBoolean(item.destructive)),
         ))) &&
-    isOptionalString(value.defaultValue) &&
+    isOptionalBoundedString(value.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH) &&
     (value.timeoutMs === undefined || isSafeRevision(value.timeoutMs)) &&
-    isOptionalString(value.sourceLabel) &&
-    isOptionalString(value.correlationId) &&
+    isOptionalBoundedString(value.sourceLabel, MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH) &&
+    isOptionalBoundedString(value.correlationId, MAX_EXTENSION_UI_CORRELATION_ID_LENGTH) &&
+    (value.presentationHint === undefined ||
+      ["inline", "modal"].includes(String(value.presentationHint))) &&
+    (value.riskHint === undefined || ["normal", "high"].includes(String(value.riskHint))) &&
     (value.presentation === undefined || ["inline", "modal"].includes(String(value.presentation))) &&
     (value.risk === undefined || ["normal", "high"].includes(String(value.risk))) &&
-    (value.allowFreeform === undefined || isBoolean(value.allowFreeform))
+    (value.routeReason === undefined ||
+      [
+        "stale-owner",
+        "explicit-modal",
+        "explicit-inline",
+        "high-risk",
+        "destructive-option",
+        "project-trust",
+        "session-lifecycle",
+        "active-tool",
+        "active-command",
+        "background-session",
+        "inline-unavailable",
+        "unknown-origin",
+      ].includes(String(value.routeReason))) &&
+    (value.groupKey === undefined || isBoundedNonEmptyString(value.groupKey, 256)) &&
+    (value.allowFreeform === undefined || isBoolean(value.allowFreeform)) &&
+    (value.origin === undefined || isExtensionUiOrigin(value.origin))
   );
 }
 
@@ -1249,6 +1354,14 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isUuid(result.runId)
         ? null
         : "invalid agent.prompt result";
+    case "extensionUi.configure":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["extensionDecisionPresentation"]) &&
+        ["legacy-modal", "auto", "inline-first"].includes(
+          String(result.extensionDecisionPresentation),
+        )
+        ? null
+        : "invalid extensionUi.configure result";
     case "agent.steer":
     case "agent.followUp":
     case "agent.abortCompaction":
@@ -1581,6 +1694,20 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
       return isDiagnostic(payload) ? null : "invalid package.diagnostic payload";
     case "extensionUi.request":
       return isExtensionUiRequest(payload) ? null : "invalid extensionUi.request payload";
+    case "extensionUi.closed":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["requestId", "reason"]) &&
+        isUuid(payload.requestId) &&
+        ["aborted", "timed-out", "disposed", "stale"].includes(String(payload.reason))
+        ? null
+        : "invalid extensionUi.closed payload";
+    case "extensionUi.groupClosed":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["groupKey", "status"]) &&
+        isBoundedNonEmptyString(payload.groupKey, 256) &&
+        ["completed", "failed", "cancelled", "stale"].includes(String(payload.status))
+        ? null
+        : "invalid extensionUi.groupClosed payload";
     case "extensionUi.statusChanged":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["text"], ["key"]) &&

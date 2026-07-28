@@ -105,22 +105,68 @@ with reason `fork`. Forking before the first message is not supported.
 **Binding (SDK 0.82.1):** Host calls only public
 
 ```ts
-await session.bindExtensions({ uiContext, mode: "rpc" });
+await session.bindExtensions({
+  uiContext,
+  mode: "rpc",
+  invocationRunner
+});
 ```
 
 `uiContext` implements positional `ExtensionUIContext` APIs (`select(title, options)`, `confirm(title, message)`, `input`, `editor`, `notify`, `setStatus`, `setWidget`). TUI-only methods (custom editor/footer/header factories) are no-op or throw a clear unsupported error — they never access private setters.
+
+The narrow SDK patch invokes `invocationRunner` around each registered tool and each
+individual Extension event handler. PiDeck stores the resulting trusted `SourceInfo`
+context in AsyncLocalStorage; slash commands reuse the same context with their resolved
+command `sourceInfo`. The binding is reapplied before `session_start` on SDK reload.
+Only a bounded opaque Extension ID, display name, source kind, and invocation metadata
+reach Desktop; absolute Extension paths remain Host-local.
 
 Blocking: select / confirm / input / editor via `extensionUi.request` + `extensionUi.respond`.  
 Non-blocking: status, widget, notify.  
 Cancel / timeout / session dispose → `undefined` (or confirm false).
 
-Blocking requests remain modal unless an Extension opts into PiDeck's declarative
-`opts.pideck.presentation: "inline"` metadata. Custom transcript messages can
+Only a finite positive dialog timeout starts a Host timer and produces `timeoutMs` on
+the request; an omitted timeout or `timeout: 0` remains pending until response, abort,
+or lifecycle cleanup. Host-initiated termination emits `extensionUi.closed` with reason
+`aborted`, `timed-out`, `disposed`, or `stale`. Desktop removes that request by ID from
+the active slot or queue, so duplicate and late closes cannot dismiss unrelated work.
+
+Blocking request presentation is Host-authoritative. Desktop persists
+`extensionDecisionPresentation` and synchronizes it on `system.hello` plus the
+Host-scoped `extensionUi.configure` method:
+
+- `legacy-modal` is the fail-safe Host/migration default and immediate rollback; every request is Modal.
+- `auto` is the new-install Desktop default and keeps ordinary active tool/command requests Inline when the surface is ready.
+- `inline-first` also prefers Inline for other active origins after mandatory guards.
+
+An absent Desktop settings file opts into `auto`; a legacy file missing the field,
+corrupt-settings recovery, or a Host without the Desktop handshake remains
+`legacy-modal`. Trusted `tool_call` permission interceptors are Host-high-risk and
+cannot be downgraded by Extension hints.
+
+Stale owners are cancelled, background owners remain queued on their captured Session,
+and high-risk, destructive, lifecycle, candidate, or unavailable-surface requests remain
+Modal. Extension `opts.pideck.presentation` and `risk` values are hints and cannot lower a
+Host safety decision. Custom transcript messages can
 declare Extension Presentation v1 under `details.presentation`; agent-audience
 coordination and other visible Extension activity join the assistant's execution
 trace instead of splitting the conversation. Opening the trace reveals a quiet
 Extension title row; opening that row reveals raw protocol and metadata. See
 [Extension presentation](./extension-presentation.md).
+
+One tool or command invocation can issue multiple blocking dialogs. Host assigns the
+requests one redacted `groupKey` and closes the group at the invocation boundary;
+parallel invocations remain separate. Desktop keeps the existing Session FIFO request
+queue and layers group state beside it, retaining only step kind/outcome metadata. An
+Inline group therefore stays mounted across `select -> input` transitions without
+storing or replaying the user's answer content.
+
+Desktop derives per-Session waiting counts from the active request plus queue and
+expires sidebar badges without synthesizing Host responses. The composer remains
+editable but cannot submit during the active request or group waiting interval; its
+draft survives and focus returns only for the same Session after settlement. Select
+lists add filtering for long sets and virtualize at 100 options while returning the
+original option ID.
 
 Blocking requests and custom panels retain the Session identity captured by their
 Host event, so a running background Session remains interactive without becoming

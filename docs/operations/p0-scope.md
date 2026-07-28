@@ -77,6 +77,7 @@ These paths remain covered by unit and integration tests where applicable.
 |---|---|---|
 | `pnpm verify:quick` | Local development | Docs, typecheck, unit and Host integration tests |
 | `pnpm verify:p0` | Pull request and `main` | Quick gate, production frontend build, Rust tests |
+| `extension-compat-latest.yml` | Weekly or manual | Non-gating audit of upstream Extension package drift |
 
 > Release-grade verification is not currently automated. Windows development
 > candidates use `pnpm package:release`; macOS packaging is not implemented.

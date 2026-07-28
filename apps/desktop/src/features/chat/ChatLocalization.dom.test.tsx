@@ -17,6 +17,7 @@ describe("Chinese chat localization", () => {
       language: "zh",
       restoreLastSession: true,
       autoRestartHostOnce: true,
+      extensionDecisionPresentation: "legacy-modal",
       terminalProfile: "auto",
     });
   });

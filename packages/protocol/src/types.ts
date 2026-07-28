@@ -59,6 +59,7 @@ export type HostStatusSnapshot = HostIdentity & {
   phase: HostPhase;
   capabilities: HostCapabilities;
   modelConfigHealth: ModelConfigHealth;
+  extensionDecisionPresentation?: ExtensionDecisionPresentation;
   lastError?: HostError;
   fatalError?: HostError;
 };
@@ -547,6 +548,77 @@ export type ExtensionUiOption = {
   destructive?: boolean;
 };
 
+export type ExtensionUiClosedReason = "aborted" | "timed-out" | "disposed" | "stale";
+
+export type ExtensionUiClosed = {
+  requestId: string;
+  reason: ExtensionUiClosedReason;
+};
+
+export type ExtensionUiGroupStatus =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "stale";
+
+export type ExtensionUiGroupClosed = {
+  groupKey: string;
+  status: ExtensionUiGroupStatus;
+};
+
+export type ExtensionUiSourceKind = "package" | "user" | "project" | "synthetic";
+
+type ExtensionUiKnownOrigin = {
+  extensionId: string;
+  extensionDisplayName: string;
+  sourceKind: ExtensionUiSourceKind;
+};
+
+export type ExtensionUiOrigin =
+  | { invocationKind: "unknown" }
+  | (ExtensionUiKnownOrigin & {
+      invocationKind: "tool";
+      toolName: string;
+      toolCallId: string;
+    })
+  | (ExtensionUiKnownOrigin & {
+      invocationKind: "command";
+      commandName: string;
+    })
+  | (ExtensionUiKnownOrigin & {
+      invocationKind: "shortcut";
+      shortcut: string;
+    })
+  | (ExtensionUiKnownOrigin & {
+      invocationKind: "event";
+      eventType: string;
+      toolName?: string;
+      toolCallId?: string;
+    })
+  | (ExtensionUiKnownOrigin & { invocationKind: "background" });
+
+export type ExtensionDecisionPresentation =
+  | "legacy-modal"
+  | "auto"
+  | "inline-first";
+
+export type ExtensionUiPresentation = "inline" | "modal";
+export type ExtensionUiRisk = "normal" | "high";
+
+export type ExtensionUiRouteReason =
+  | "stale-owner"
+  | "explicit-modal"
+  | "explicit-inline"
+  | "high-risk"
+  | "destructive-option"
+  | "project-trust"
+  | "session-lifecycle"
+  | "active-tool"
+  | "active-command"
+  | "background-session"
+  | "inline-unavailable"
+  | "unknown-origin";
+
 export type ExtensionUiRequest = {
   requestId: string;
   kind: "select" | "confirm" | "input" | "editor";
@@ -557,9 +629,14 @@ export type ExtensionUiRequest = {
   timeoutMs?: number;
   sourceLabel?: string;
   correlationId?: string;
-  presentation?: "inline" | "modal";
-  risk?: "normal" | "high";
+  presentationHint?: ExtensionUiPresentation;
+  riskHint?: ExtensionUiRisk;
+  presentation?: ExtensionUiPresentation;
+  risk?: ExtensionUiRisk;
+  routeReason?: ExtensionUiRouteReason;
+  groupKey?: string;
   allowFreeform?: boolean;
+  origin?: ExtensionUiOrigin;
 };
 
 export type SerializableSessionEntry = {
@@ -650,6 +727,7 @@ export type DesktopSettings = {
   lastSessionPath?: string;
   agentDir?: string;
   autoRestartHostOnce: boolean;
+  extensionDecisionPresentation: ExtensionDecisionPresentation;
   terminalProfile: TerminalProfileId;
   /** UI language; "system" (or absent) follows the OS locale. */
   language?: "system" | "en" | "zh";

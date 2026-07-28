@@ -86,6 +86,7 @@ function mockFactory(opts: {
     resourceLoader: {
       reload: vi.fn(async () => {}),
     },
+    extensionUiUpdateIdentity: vi.fn(),
     packageSnapshot: {
       revision: 1,
       workspaceId: "w1",
@@ -432,6 +433,15 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     expect(g.packageSnapshot?.resourceReloadRequired).toBe(false);
     expect(g.resourceLoader!.reload).not.toHaveBeenCalled();
     expect(g.agentSession!.reload).toHaveBeenCalledTimes(1);
+    expect(g.extensionUiUpdateIdentity).toHaveBeenCalledOnce();
+    expect(g.extensionUiUpdateIdentity).toHaveBeenCalledWith({
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 2,
+      packageRevision: 2,
+    });
 
     // Prompt unblocked after real reloadResources
     const allowed = await agentHandlers["agent.prompt"]!(promptCtx as never);
@@ -585,6 +595,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     expect(g.packageSnapshot?.resourceReloadRequired).toBe(true);
     expect(g.resourceLoader!.reload).not.toHaveBeenCalled();
     expect(g.agentSession!.reload).toHaveBeenCalledTimes(1);
+    expect(g.extensionUiUpdateIdentity).not.toHaveBeenCalled();
 
     const agentHandlers = createAgentHandlers(factory);
     const blocked = await agentHandlers["agent.prompt"]!(promptCtx as never);

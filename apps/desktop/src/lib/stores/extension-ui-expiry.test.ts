@@ -2,7 +2,11 @@ import { beforeEach, expect, it } from "vitest";
 import { useAppStore } from "./app-store";
 
 beforeEach(() => {
-  useAppStore.setState({ extensionUiRequest: null, extensionUiQueue: [] });
+  useAppStore.setState({
+    extensionUiRequest: null,
+    extensionUiQueue: [],
+    extensionDecisionGroups: {},
+  });
 });
 
 it("drops expired Extension UI requests and advances to the next live request", () => {

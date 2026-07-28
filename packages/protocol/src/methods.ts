@@ -71,6 +71,7 @@ export const HOST_METHODS = [
   "resource.setPreferences",
   "piSettings.get",
   "piSettings.patch",
+  "extensionUi.configure",
   "extensionUi.respond",
   "extensionUi.customInput",
   "extensionUi.customResize",
@@ -134,7 +135,8 @@ export type HostOnlyMethod =
   | "provider.loginCancel"
   | "provider.logout"
   | "provider.builtinModels"
-  | "provider.setBuiltinModels";
+  | "provider.setBuiltinModels"
+  | "extensionUi.configure";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -298,6 +300,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "resource.setPreferences": "sessionPackage",
   "piSettings.get": "workspace",
   "piSettings.patch": "nullableSession",
+  "extensionUi.configure": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

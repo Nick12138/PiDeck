@@ -25,6 +25,9 @@ export function bindForCandidate(
     emitForIdentity: (identity, event, payload) =>
       server.emitForIdentity(identity, event, payload),
     getIdentity: () => candidateIdentity,
+    getCurrentIdentity: () => server.getIdentity(),
+    getExtensionDecisionPresentation: () =>
+      server.getExtensionDecisionPresentation(),
   });
 }
 

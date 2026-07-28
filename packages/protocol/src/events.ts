@@ -19,6 +19,8 @@ export const HOST_EVENT_NAMES = [
   "package.resourcesChanged",
   "package.diagnostic",
   "extensionUi.request",
+  "extensionUi.closed",
+  "extensionUi.groupClosed",
   "extensionUi.statusChanged",
   "extensionUi.widgetChanged",
   "extensionUi.widgetAttentionRequested",

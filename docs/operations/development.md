@@ -155,6 +155,11 @@ A→B→A acceptance runs in `workspace-package.integration.test.ts`.
 | `pnpm --filter @pideck/desktop tauri:dev` | Full desktop |
 | `pnpm dev:fast` | Reuse a compiled debug binary for faster Windows iteration (Windows only) |
 
+The weekly/manual `Extension compatibility latest audit` workflow checks the current
+npm release of the representative v2 questionnaire package. It runs outside the
+pull-request and `main` gates; per-commit compatibility uses the exact versions in the
+lockfile plus the repository behavior-class fixture.
+
 `verify:p0` is intentionally broader than the lightweight local gate, but it
 is still not installer evidence. It has run successfully on Apple Silicon
 macOS and is the tracked CI gate on Windows. See [P0 scope](./p0-scope.md).

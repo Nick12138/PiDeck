@@ -1,8 +1,32 @@
-import { useEffect, useId, useState, type KeyboardEvent } from "react";
-import { Check, CircleAlert, LoaderCircle, MessageCircleQuestion, Send, X } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Check, CircleAlert, LoaderCircle, MessageCircleQuestion, Search, Send, X } from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
 import type { ExtensionUiRequestState } from "../../lib/stores/app-store";
 import type { ExtensionUiResponseController } from "./use-extension-ui-response";
+
+type KnownExtensionUiOrigin = Exclude<
+  NonNullable<ExtensionUiRequestState["origin"]>,
+  { invocationKind: "unknown" }
+>;
+
+const OPTION_SEARCH_THRESHOLD = 12;
+const OPTION_VIRTUALIZATION_THRESHOLD = 100;
+
+function originActivity(origin: KnownExtensionUiOrigin): string | undefined {
+  switch (origin.invocationKind) {
+    case "tool":
+      return origin.toolName;
+    case "command":
+      return origin.commandName;
+    case "shortcut":
+      return origin.shortcut;
+    case "event":
+      return origin.eventType;
+    case "background":
+      return undefined;
+  }
+}
 
 function ExpiryLabel({ expiresAt }: { expiresAt?: number }) {
   const t = useT();
@@ -54,13 +78,52 @@ export function ExtensionUiRequestContent({
   const t = useT();
   const fieldId = useId();
   const errorId = useId();
+  const optionSearchId = useId();
   const { input, setInput, submitting, error, respond } = controller;
+  const [optionQuery, setOptionQuery] = useState("");
+  const optionScrollRef = useRef<HTMLDivElement>(null);
   const [selectSubmitSource, setSelectSubmitSource] = useState<
     { kind: "option"; id: string } | { kind: "freeform" } | null
   >(null);
   const highRisk = request.risk === "high";
+  const trustedOrigin =
+    request.origin?.invocationKind === "unknown" ? undefined : request.origin;
+  const sourceLabel = trustedOrigin?.extensionDisplayName ?? request.sourceLabel;
+  const sourceActivity = trustedOrigin ? originActivity(trustedOrigin) : undefined;
+  const sourceTitle = sourceActivity ? `${sourceLabel} · ${sourceActivity}` : sourceLabel;
+  const options = request.options ?? [];
+  const normalizedOptionQuery = optionQuery.trim().toLocaleLowerCase();
+  const filteredOptions = useMemo(
+    () =>
+      normalizedOptionQuery
+        ? options.filter((option) =>
+            [option.label, option.description]
+              .filter(Boolean)
+              .join("\n")
+              .toLocaleLowerCase()
+              .includes(normalizedOptionQuery),
+          )
+        : options,
+    [normalizedOptionQuery, options],
+  );
+  const virtualizeOptions = filteredOptions.length >= OPTION_VIRTUALIZATION_THRESHOLD;
+  const optionVirtualizer = useVirtualizer({
+    count: virtualizeOptions ? filteredOptions.length : 0,
+    getScrollElement: () => optionScrollRef.current,
+    estimateSize: (index) => (filteredOptions[index]?.description ? 58 : 44),
+    getItemKey: (index) => filteredOptions[index]?.id ?? index,
+    overscan: 6,
+    initialRect: { width: 640, height: 240 },
+  });
 
-  useEffect(() => setSelectSubmitSource(null), [request.requestId]);
+  useEffect(() => {
+    setSelectSubmitSource(null);
+    setOptionQuery("");
+  }, [request.requestId]);
+
+  useEffect(() => {
+    if (optionScrollRef.current) optionScrollRef.current.scrollTop = 0;
+  }, [optionQuery]);
 
   async function respondToSelect(
     source: NonNullable<typeof selectSubmitSource>,
@@ -79,6 +142,48 @@ export function ExtensionUiRequestContent({
     if (!shouldSubmit) return;
     event.preventDefault();
     void respond("resolved", input);
+  }
+
+  function renderOption(option: (typeof options)[number], index: number) {
+    const optionSubmitting =
+      submitting &&
+      selectSubmitSource?.kind === "option" &&
+      selectSubmitSource.id === option.id;
+    return (
+      <button
+        type="button"
+        aria-label={
+          option.description
+            ? `${option.label}. ${option.description}`
+            : option.label
+        }
+        aria-posinset={virtualizeOptions ? index + 1 : undefined}
+        aria-setsize={virtualizeOptions ? filteredOptions.length : undefined}
+        className={`flex min-h-10 w-full flex-col justify-center rounded-md border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed ${
+          optionSubmitting
+            ? option.destructive
+              ? "border-danger/50 bg-danger/10 text-danger disabled:opacity-100"
+              : "border-accent/45 bg-accent/8 text-foreground disabled:opacity-100"
+            : option.destructive
+              ? "border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-45"
+              : "border-border text-foreground/90 hover:bg-surface-overlay disabled:opacity-45"
+        }`}
+        onClick={() =>
+          void respondToSelect({ kind: "option", id: option.id }, option.id)
+        }
+      >
+        <span className="text-xs font-medium">{option.label}</span>
+        {option.description && (
+          <span className="mt-0.5 text-[11px] leading-4 text-muted">{option.description}</span>
+        )}
+        {optionSubmitting && (
+          <span role="status" className="mt-1 flex items-center gap-1 text-[11px] text-muted">
+            <LoaderCircle size={12} className="animate-spin" />
+            <span>{t("extUiSubmitting")}</span>
+          </span>
+        )}
+      </button>
+    );
   }
 
   const cancelButton = (
@@ -109,9 +214,9 @@ export function ExtensionUiRequestContent({
             >
               {request.title ?? t("extUiDefaultTitle")}
             </h2>
-            {request.sourceLabel && (
-              <span className="max-w-48 truncate text-[10px] text-muted" title={request.sourceLabel}>
-                {request.sourceLabel}
+            {sourceLabel && (
+              <span className="max-w-48 truncate text-[10px] text-muted" title={sourceTitle}>
+                {sourceLabel}
               </span>
             )}
             {highRisk && <span className="text-[10px] font-medium text-warning">{t("extUiHighRisk")}</span>}
@@ -160,49 +265,77 @@ export function ExtensionUiRequestContent({
             <legend className="mb-1.5 text-xs font-medium text-foreground/80">
               {t("extUiChooseOption")}
             </legend>
-            {(request.options ?? []).length > 0 ? (
-              <div className="max-h-60 space-y-1 overflow-y-auto pr-1">
-                {(request.options ?? []).map((option) => {
-                  const optionSubmitting =
-                    submitting &&
-                    selectSubmitSource?.kind === "option" &&
-                    selectSubmitSource.id === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      aria-label={
-                        option.description
-                          ? `${option.label}. ${option.description}`
-                          : option.label
-                      }
-                      className={`flex min-h-10 w-full flex-col justify-center rounded-md border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed ${
-                        optionSubmitting
-                          ? option.destructive
-                            ? "border-danger/50 bg-danger/10 text-danger disabled:opacity-100"
-                            : "border-accent/45 bg-accent/8 text-foreground disabled:opacity-100"
-                          : option.destructive
-                            ? "border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-45"
-                            : "border-border text-foreground/90 hover:bg-surface-overlay disabled:opacity-45"
-                      }`}
-                      onClick={() =>
-                        void respondToSelect({ kind: "option", id: option.id }, option.id)
-                      }
+            {options.length > 0 ? (
+              <>
+                {options.length >= OPTION_SEARCH_THRESHOLD ? (
+                  <div className="relative mb-2">
+                    <label htmlFor={optionSearchId} className="sr-only">
+                      {t("extUiSearchOptions")}
+                    </label>
+                    <Search
+                      size={13}
+                      className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id={optionSearchId}
+                      type="search"
+                      value={optionQuery}
+                      placeholder={t("extUiSearchOptions")}
+                      className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-8 text-xs outline-none focus:border-accent"
+                      onChange={(event) => setOptionQuery(event.target.value)}
+                    />
+                    {optionQuery ? (
+                      <button
+                        type="button"
+                        title={t("extUiClearOptionSearch")}
+                        aria-label={t("extUiClearOptionSearch")}
+                        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+                        onClick={() => setOptionQuery("")}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {filteredOptions.length === 0 ? (
+                  <p role="status" className="py-3 text-center text-xs text-muted">
+                    {t("extUiNoMatchingOptions")}
+                  </p>
+                ) : virtualizeOptions ? (
+                  <div
+                    ref={optionScrollRef}
+                    className="max-h-60 overflow-y-auto pr-1"
+                    data-extension-option-list="virtualized"
+                  >
+                    <div
+                      className="relative w-full"
+                      style={{ height: optionVirtualizer.getTotalSize() }}
                     >
-                      <span className="text-xs font-medium">{option.label}</span>
-                      {option.description && (
-                        <span className="mt-0.5 text-[11px] leading-4 text-muted">{option.description}</span>
-                      )}
-                      {optionSubmitting && (
-                        <span role="status" className="mt-1 flex items-center gap-1 text-[11px] text-muted">
-                          <LoaderCircle size={12} className="animate-spin" />
-                          <span>{t("extUiSubmitting")}</span>
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                      {optionVirtualizer.getVirtualItems().map((virtualOption) => {
+                        const option = filteredOptions[virtualOption.index]!;
+                        return (
+                          <div
+                            key={option.id}
+                            ref={optionVirtualizer.measureElement}
+                            data-index={virtualOption.index}
+                            className="absolute left-0 top-0 w-full pb-1"
+                            style={{ transform: `translateY(${virtualOption.start}px)` }}
+                          >
+                            {renderOption(option, virtualOption.index)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-60 space-y-1 overflow-y-auto pr-1">
+                    {filteredOptions.map((option, index) => (
+                      <div key={option.id}>{renderOption(option, index)}</div>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
               <p className="py-2 text-xs text-muted">{t("extUiNoOptions")}</p>
             )}

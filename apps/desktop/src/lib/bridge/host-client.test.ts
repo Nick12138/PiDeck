@@ -15,11 +15,11 @@ const RESPONSE_IDENTITY = {
 };
 
 function attachTestTransport(client: HostClient) {
-  const sent: Array<{ id: string; method: string }> = [];
+  const sent: Array<{ id: string; method: string; params: unknown }> = [];
   let messageHandler: ((line: string) => void) | null = null;
   client.attach({
     send: (line) => {
-      sent.push(JSON.parse(line) as { id: string; method: string });
+      sent.push(JSON.parse(line) as { id: string; method: string; params: unknown });
     },
     onMessage: (handler) => {
       messageHandler = handler;
@@ -36,6 +36,54 @@ function attachTestTransport(client: HostClient) {
     },
   };
 }
+
+describe("HostClient hello configuration", () => {
+  it("sends and accepts the persisted Extension decision mode", async () => {
+    const client = new HostClient();
+    const transport = attachTestTransport(client);
+    const pending = client.hello("pideck", "1.2.3", "inline-first");
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "system.hello",
+      params: {
+        clientName: "pideck",
+        clientVersion: "1.2.3",
+        protocolVersion: 1,
+        extensionDecisionPresentation: "inline-first",
+      },
+    });
+    transport.emit({
+      protocolVersion: 1,
+      ...RESPONSE_IDENTITY,
+      id: transport.sent[0]!.id,
+      method: "system.hello",
+      ok: true,
+      result: {
+        protocolVersion: 1,
+        ...RESPONSE_IDENTITY,
+        sdkVersion: "0.82.1",
+        nodeVersion: "v24.18.0",
+        agentDir: "/agent",
+        phase: "waitingForWorkspace",
+        capabilities: {
+          packageUpdateCheck: false,
+          extensionUi: true,
+          sessionExport: true,
+        },
+        modelConfigHealth: {
+          state: "ok",
+          source: "ModelRegistry.getError",
+        },
+        extensionDecisionPresentation: "inline-first",
+      },
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      extensionDecisionPresentation: "inline-first",
+    });
+    client.detach("test cleanup");
+  });
+});
 
 describe("HostClient response settlement", () => {
   it("rejects a no-timeout request when its response fails protocol validation", async () => {

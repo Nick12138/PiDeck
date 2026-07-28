@@ -183,6 +183,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "piSettings.get": null,
   "piSettings.patch": { patch: {} },
+  "extensionUi.configure": { extensionDecisionPresentation: "auto" },
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
@@ -324,6 +325,8 @@ function invalidParams(method: HostMethod): unknown {
       return { updates: [{ resourceId: "r", targetScope: "workspace", preference: "enabled" }] };
     case "piSettings.patch":
       return {};
+    case "extensionUi.configure":
+      return { extensionDecisionPresentation: "automatic" };
     case "extensionUi.respond":
       return { requestId: "r", status: "maybe" };
     case "extensionUi.customInput":
@@ -684,6 +687,15 @@ describe("protocol coverage — events", () => {
       requestId: EXTENSION_REQUEST_ID,
       kind: "confirm",
       title: "t",
+      origin: { invocationKind: "unknown" },
+    },
+    "extensionUi.closed": {
+      requestId: EXTENSION_REQUEST_ID,
+      reason: "aborted",
+    },
+    "extensionUi.groupClosed": {
+      groupKey: "tool:0123456789abcdef",
+      status: "completed",
     },
     "extensionUi.statusChanged": { text: "working" },
     "extensionUi.widgetChanged": { key: "k", widget: null, placement: "belowEditor" },
@@ -798,6 +810,19 @@ describe("protocol coverage — response discrimination", () => {
     });
     expect(env.method).toBe("system.hello");
     expect(env.id).toBe(RESPONSE_ID);
+  });
+
+  it("validates the Extension UI presentation configuration result", () => {
+    expect(
+      validateSuccessResult("extensionUi.configure", {
+        extensionDecisionPresentation: "inline-first",
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateSuccessResult("extensionUi.configure", {
+        extensionDecisionPresentation: "automatic",
+      }).ok,
+    ).toBe(false);
   });
   it("session.usageReport validates the complete report shape", () => {
     const usage = {

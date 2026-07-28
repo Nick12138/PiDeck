@@ -9,6 +9,24 @@ use uuid::Uuid;
 const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExtensionDecisionPresentation {
+    LegacyModal,
+    Auto,
+    InlineFirst,
+}
+
+impl Default for ExtensionDecisionPresentation {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
+    ExtensionDecisionPresentation::LegacyModal
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DesktopSettings {
@@ -23,6 +41,8 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_dir: Option<String>,
     pub auto_restart_host_once: bool,
+    #[serde(default = "legacy_extension_decision_presentation")]
+    pub extension_decision_presentation: ExtensionDecisionPresentation,
     pub terminal_profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
@@ -40,6 +60,7 @@ impl Default for DesktopSettings {
             last_session_path: None,
             agent_dir: None,
             auto_restart_host_once: true,
+            extension_decision_presentation: ExtensionDecisionPresentation::Auto,
             terminal_profile: "auto".into(),
             language: None,
             known_workspaces: Vec::new(),
@@ -73,6 +94,13 @@ pub struct DesktopSettingsStore {
 }
 
 impl DesktopSettingsStore {
+    fn recovery_defaults() -> DesktopSettings {
+        DesktopSettings {
+            extension_decision_presentation: ExtensionDecisionPresentation::LegacyModal,
+            ..DesktopSettings::default()
+        }
+    }
+
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let dir = match std::env::var_os("PIDECK_CONFIG_DIR") {
             Some(value) => {
@@ -119,7 +147,7 @@ impl DesktopSettingsStore {
                 let recovered_from = Self::quarantine_corrupt_file(&path)?;
                 let store = Self {
                     path,
-                    settings: DesktopSettings::default(),
+                    settings: Self::recovery_defaults(),
                     warning: Some(format!(
                         "Desktop settings were corrupt and defaults were restored: {parse_error}"
                     )),
@@ -293,6 +321,44 @@ mod tests {
     }
 
     #[test]
+    fn defaults_and_persists_extension_decision_presentation() {
+        let dir = test_dir("extension-decision-presentation");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            store.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::Auto
+        );
+
+        store
+            .patch(serde_json::json!({
+                "extensionDecisionPresentation": "inline-first"
+            }))
+            .unwrap();
+        assert_eq!(
+            store.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::InlineFirst
+        );
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            reloaded.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::InlineFirst
+        );
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({
+                "extensionDecisionPresentation": "automatic"
+            }))
+            .is_err());
+        assert_eq!(
+            invalid.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::InlineFirst
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn writes_versioned_settings_atomically_and_round_trips() {
         let dir = test_dir("roundtrip");
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
@@ -328,6 +394,10 @@ mod tests {
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         assert_eq!(loaded.settings.theme, "light");
         assert!(!loaded.settings.restore_last_session);
+        assert_eq!(
+            loaded.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::LegacyModal
+        );
         assert!(loaded.snapshot().warning.is_some());
         let migrated: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap())
@@ -344,6 +414,10 @@ mod tests {
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         let snapshot = loaded.snapshot();
         assert_eq!(loaded.settings.theme, "system");
+        assert_eq!(
+            loaded.settings.extension_decision_presentation,
+            ExtensionDecisionPresentation::LegacyModal
+        );
         assert!(snapshot.warning.unwrap().contains("corrupt"));
         let backup = PathBuf::from(snapshot.recovered_from.unwrap());
         assert!(backup.exists());
