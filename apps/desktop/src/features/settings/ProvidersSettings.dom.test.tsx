@@ -322,6 +322,82 @@ describe("ProvidersSettings key-removal safety", () => {
   });
 });
 
+describe("ProvidersSettings model catalog refresh coordination", () => {
+  it("delays chat model-list invalidation until Fetch settles", async () => {
+    const user = userEvent.setup();
+    let resolveFetch: (value: unknown) => void = () => undefined;
+    const pendingFetch = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+    const spy = await renderLoaded(
+      mockRequests({
+        "provider.fetchModels": () => pendingFetch,
+      }),
+    );
+    const revisionBefore = useAppStore.getState().providerConfigRevision;
+
+    await user.click(
+      screen.getByTitle("Save the Provider and fetch its model list"),
+    );
+    await waitFor(() => expect(callsFor(spy, "provider.fetchModels")).toHaveLength(1));
+
+    expect(useAppStore.getState().providerConfigRevision).toBe(revisionBefore);
+    resolveFetch(
+      envelope("provider.fetchModels", {
+        providerId: "prov-a",
+        models: [{ ...model(), thinkingSource: "configured", enabled: true }],
+      }),
+    );
+    await waitFor(() =>
+      expect(useAppStore.getState().providerConfigRevision).toBe(revisionBefore + 1),
+    );
+  });
+
+  it("delays chat model-list invalidation until Test settles", async () => {
+    const user = userEvent.setup();
+    let resolveTest: (value: unknown) => void = () => undefined;
+    const pendingTest = new Promise((resolve) => {
+      resolveTest = resolve;
+    });
+    const spy = await renderLoaded(
+      mockRequests({ "provider.checkConnection": () => pendingTest }),
+    );
+    const revisionBefore = useAppStore.getState().providerConfigRevision;
+
+    await user.click(screen.getByRole("button", { name: "Save & test" }));
+    await waitFor(() =>
+      expect(callsFor(spy, "provider.checkConnection")).toHaveLength(1),
+    );
+
+    expect(useAppStore.getState().providerConfigRevision).toBe(revisionBefore);
+    resolveTest(
+      envelope("provider.checkConnection", {
+        providerId: "prov-a",
+        modelId: "m1",
+        api: "openai-completions",
+        ok: true,
+        latencyMs: 7,
+        category: "ok",
+        message: "Generation succeeded",
+      }),
+    );
+    await waitFor(() =>
+      expect(useAppStore.getState().providerConfigRevision).toBe(revisionBefore + 1),
+    );
+  });
+
+  it("still invalidates the chat model list after an explicit Save", async () => {
+    const user = userEvent.setup();
+    const spy = await renderLoaded();
+    const revisionBefore = useAppStore.getState().providerConfigRevision;
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsFor(spy, "provider.save")).toHaveLength(1));
+
+    expect(useAppStore.getState().providerConfigRevision).toBe(revisionBefore + 1);
+  });
+});
+
 describe("ProvidersSettings model number fields", () => {
   it("lets a cleared field be retyped without snapping to 1", async () => {
     const user = userEvent.setup();

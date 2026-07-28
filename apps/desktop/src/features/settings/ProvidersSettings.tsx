@@ -564,11 +564,21 @@ export function ProvidersSettings() {
   }
 
   async function persistDraft(
-    options: { notify?: boolean; includeKeyRemoval?: boolean } = {},
+    options: {
+      notify?: boolean;
+      includeKeyRemoval?: boolean;
+      refreshModelCatalog?: boolean;
+    } = {},
   ): Promise<ProviderSnapshot | null> {
     // Implicit saves (before Test/Fetch) must never commit a pending stored-key
     // removal: that deletion is irreversible and belongs to the explicit Save.
-    const { notify = true, includeKeyRemoval = true } = options;
+    const {
+      notify = true,
+      includeKeyRemoval = true,
+      refreshModelCatalog = true,
+    } = options;
+    // Fetch/Test persist their own input, but delay waking the hidden chat model
+    // list until their follow-up request has released the same graph lock.
     if (!host || !draft || saving) return null;
     const errors = validateProviderDraft(draft);
     if (Object.keys(errors).length > 0) {
@@ -608,7 +618,7 @@ export function ProvidersSettings() {
           (left, right) => left.name.localeCompare(right.name),
         ),
       );
-      refreshProviderConfig();
+      if (refreshModelCatalog) refreshProviderConfig();
       if (epoch === draftEpochRef.current) {
         // Only touch draft-local state when this is still the same draft the
         // request was made for; the user may have switched providers mid-save.
@@ -642,7 +652,11 @@ export function ProvidersSettings() {
   async function fetchModels() {
     if (!host || !draft || fetching) return;
     const epoch = draftEpochRef.current;
-    const saved = await persistDraft({ notify: false, includeKeyRemoval: false });
+    const saved = await persistDraft({
+      notify: false,
+      includeKeyRemoval: false,
+      refreshModelCatalog: false,
+    });
     if (!saved) return;
     setFetching(true);
     try {
@@ -673,17 +687,23 @@ export function ProvidersSettings() {
       pushNotification(error instanceof Error ? error.message : t("notifFetchModelsFailed"), "error");
     } finally {
       setFetching(false);
+      refreshProviderConfig();
     }
   }
 
   async function testConnection() {
     if (!host || !draft || testing) return;
     const epoch = draftEpochRef.current;
-    const saved = await persistDraft({ notify: false, includeKeyRemoval: false });
+    const saved = await persistDraft({
+      notify: false,
+      includeKeyRemoval: false,
+      refreshModelCatalog: false,
+    });
     if (!saved) return;
     const modelId = saved.models[0]?.id;
     if (!modelId) {
       pushNotification(t("notifNeedModelToTest"), "error");
+      refreshProviderConfig();
       return;
     }
     setTesting(true);
@@ -707,6 +727,7 @@ export function ProvidersSettings() {
       pushNotification(error instanceof Error ? error.message : t("notifProviderTestFailed"), "error");
     } finally {
       setTesting(false);
+      refreshProviderConfig();
     }
   }
 

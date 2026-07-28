@@ -5,6 +5,8 @@ import { createHostError, type HostError, type HostIdentity } from "@pideck/prot
 import type { TryMutex } from "./locks.js";
 import type { IdentityState } from "./identity.js";
 
+const STABLE_GRAPH_READ_LOCK_TIMEOUT_MS = 250;
+
 export type StableReadOutcome<T> =
   | { ok: true; result: T; identity: HostIdentity }
   | { ok: false; error: HostError; identity: HostIdentity };
@@ -13,6 +15,7 @@ export async function withStableGraphRead<T>(args: {
   requestId: string;
   identity: IdentityState;
   serviceGraphLock: TryMutex;
+  lockTimeoutMs?: number;
   precheck?: () => HostError | null;
   /** Run under lock after second identity check; capture generation before await */
   run: () => Promise<T>;
@@ -25,12 +28,14 @@ export async function withStableGraphRead<T>(args: {
     }
   }
 
-  if (
-    !serviceGraphLock.tryAcquire({
+  const acquired = await serviceGraphLock.acquire(
+    {
       operationKind: "sdk.read",
       requestId,
-    })
-  ) {
+    },
+    args.lockTimeoutMs ?? STABLE_GRAPH_READ_LOCK_TIMEOUT_MS,
+  );
+  if (!acquired) {
     return {
       ok: false,
       error: createHostError("SERVICE_GRAPH_BUSY", "Service graph is busy", {

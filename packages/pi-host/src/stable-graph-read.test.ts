@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { createHostError } from "@pideck/protocol";
+import { describe, expect, it, vi } from "vitest";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import { IdentityState } from "./identity.js";
 import { TryMutex } from "./locks.js";
@@ -24,19 +25,89 @@ describe("withStableGraphRead", () => {
     expect(lock.isHeld()).toBe(false);
   });
 
-  it("returns SERVICE_GRAPH_BUSY when lock held", async () => {
+  it("waits for a current graph owner before reading", async () => {
     const identity = new IdentityState();
     const lock = new TryMutex();
     lock.tryAcquire({ operationKind: "package.mutation", requestId: "other" });
-    const out = await withStableGraphRead({
+    let readStarted = false;
+    const pending = withStableGraphRead({
       requestId: "r2",
       identity,
       serviceGraphLock: lock,
-      run: async () => 1,
+      run: async () => {
+        readStarted = true;
+        return 1;
+      },
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("SERVICE_GRAPH_BUSY");
+
+    await Promise.resolve();
+    expect(readStarted).toBe(false);
     lock.release("other");
+
+    const out = await pending;
+    expect(out.ok).toBe(true);
+    expect(readStarted).toBe(true);
+    expect(lock.isHeld()).toBe(false);
+  });
+
+  it("returns SERVICE_GRAPH_BUSY after the bounded lock wait expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const identity = new IdentityState();
+      const lock = new TryMutex();
+      lock.tryAcquire({ operationKind: "package.mutation", requestId: "other" });
+      let settled = false;
+      const pending = withStableGraphRead({
+        requestId: "r2-timeout",
+        identity,
+        serviceGraphLock: lock,
+        lockTimeoutMs: 50,
+        run: async () => 1,
+      }).then((out) => {
+        settled = true;
+        return out;
+      });
+
+      await vi.advanceTimersByTimeAsync(49);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      const out = await pending;
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.code).toBe("SERVICE_GRAPH_BUSY");
+      expect(lock.getOwner()?.requestId).toBe("other");
+      lock.release("other");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rechecks request validity after waiting for the graph lock", async () => {
+    const identity = new IdentityState();
+    const lock = new TryMutex();
+    lock.tryAcquire({ operationKind: "package.mutation", requestId: "other" });
+    let stale = false;
+    let readStarted = false;
+    const pending = withStableGraphRead({
+      requestId: "r2-stale",
+      identity,
+      serviceGraphLock: lock,
+      precheck: () =>
+        stale ? createHostError("STALE_REVISION", "Request identity changed") : null,
+      run: async () => {
+        readStarted = true;
+        return 1;
+      },
+    });
+
+    stale = true;
+    lock.release("other");
+
+    const out = await pending;
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("STALE_REVISION");
+    expect(readStarted).toBe(false);
+    expect(lock.isHeld()).toBe(false);
   });
 
   it("returns STALE_REVISION if graph revision changes during await", async () => {
