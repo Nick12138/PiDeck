@@ -80,13 +80,41 @@ describe("extension widget popover geometry", () => {
     const markup = renderToStaticMarkup(
       createElement(WidgetPanel, {
         entries: [{ key: "nano-context", widget: ["5 pattools"] }],
+        collapsedWidgetKeys: {},
         placementLabel: "above",
         position,
         onClose: () => undefined,
+        onToggleCollapsed: () => undefined,
       }),
     );
     expect(markup).toContain("fixed z-40");
     expect(markup).toContain('data-widget-popover-side="above"');
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain("5 pattools");
+  });
+
+  it("keeps a collapsed widget header accessible without rendering its body", () => {
+    const markup = renderToStaticMarkup(
+      createElement(WidgetPanel, {
+        entries: [{ key: "nano-context", widget: ["private snapshot"] }],
+        collapsedWidgetKeys: { "nano-context": true },
+        placementLabel: "above",
+        position: calculateWidgetPopoverPosition({
+          anchor,
+          viewportWidth: 1_000,
+          viewportHeight: 800,
+          preferredPlacement: "aboveEditor",
+          compact: false,
+        }),
+        onClose: () => undefined,
+        onToggleCollapsed: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain("aria-controls=");
+    expect(markup).toContain("nano-context");
+    expect(markup).not.toContain("private snapshot");
   });
 
   it("keeps below-editor widgets below when the viewport has room", () => {

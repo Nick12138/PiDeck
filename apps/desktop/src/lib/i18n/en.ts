@@ -719,6 +719,8 @@ export const en = {
   extWidgetsCloseBelowEditor: "Close extension widgets below editor",
   extWidgetsCloseAroundEditor: "Close extension widgets around editor",
   extWidgetLabel: "Extension widget {key}",
+  extWidgetCollapse: "Collapse extension widget {key}",
+  extWidgetExpand: "Expand extension widget {key}",
   extWidgetsToggle: "Toggle extension widgets",
   extWidgetsTitle: "Extension widgets: {names}",
 

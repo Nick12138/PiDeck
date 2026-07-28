@@ -313,6 +313,7 @@ export type AppState = EpochState & {
   extensionStatus: string | null;
   extensionStatuses: Record<string, string>;
   extensionWidgets: Record<string, ExtensionWidgetState>;
+  collapsedExtensionWidgetKeys: Record<string, true>;
   extensionWidgetsOpen: boolean;
   lastExtensionWidgetAttentionRunId: string | null;
   extensionTerminal: ExtensionTerminalState | null;
@@ -367,6 +368,7 @@ export type AppState = EpochState & {
   setDockOpen: (open: boolean) => void;
   setExtensionStatus: (key: string | undefined, text: string | null) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
+  toggleExtensionWidgetCollapsed: (key: string) => void;
   setExtensionWidgetsOpen: (open: boolean) => void;
   requestExtensionWidgetAttention: (runId: string, key: string) => void;
   setPackageProgress: (progress: PackageProgressState | null) => void;
@@ -426,6 +428,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionStatus: null,
   extensionStatuses: {},
   extensionWidgets: {},
+  collapsedExtensionWidgetKeys: {},
   extensionWidgetsOpen: false,
   lastExtensionWidgetAttentionRunId: null,
   extensionTerminal: null,
@@ -537,6 +540,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
+      collapsedExtensionWidgetKeys: {},
       extensionWidgetsOpen: false,
       lastExtensionWidgetAttentionRunId: null,
       ...resetExtensionTerminal(get()),
@@ -585,6 +589,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             extensionStatus: null,
             extensionStatuses: {},
             extensionWidgets: {},
+            collapsedExtensionWidgetKeys: {},
             extensionWidgetsOpen: false,
             lastExtensionWidgetAttentionRunId: null,
             ...resetExtensionTerminal(get()),
@@ -607,6 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
+      collapsedExtensionWidgetKeys: {},
       extensionWidgetsOpen: false,
       lastExtensionWidgetAttentionRunId: null,
       ...resetExtensionTerminal(get()),
@@ -661,6 +667,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             extensionStatus: null,
             extensionStatuses: {},
             extensionWidgets: {},
+            collapsedExtensionWidgetKeys: {},
             extensionWidgetsOpen: false,
             lastExtensionWidgetAttentionRunId: null,
             ...resetExtensionTerminal(current),
@@ -715,6 +722,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             extensionStatus: null,
             extensionStatuses: {},
             extensionWidgets: {},
+            collapsedExtensionWidgetKeys: {},
             extensionWidgetsOpen: false,
             lastExtensionWidgetAttentionRunId: null,
             ...resetExtensionTerminal(previous),
@@ -937,9 +945,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       const key = extensionWidget.key || "default";
       if (extensionWidget.widget === null) {
         const extensionWidgets = { ...state.extensionWidgets };
+        const collapsedExtensionWidgetKeys = { ...state.collapsedExtensionWidgetKeys };
         delete extensionWidgets[key];
+        delete collapsedExtensionWidgetKeys[key];
         return {
           extensionWidgets,
+          collapsedExtensionWidgetKeys,
           ...(Object.keys(extensionWidgets).length === 0
             ? { extensionWidgetsOpen: false }
             : {}),
@@ -951,6 +962,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           [key]: { ...extensionWidget, key },
         },
       };
+    }),
+  toggleExtensionWidgetCollapsed: (key) =>
+    set((state) => {
+      if (!state.extensionWidgets[key]) return {};
+      const collapsedExtensionWidgetKeys = { ...state.collapsedExtensionWidgetKeys };
+      if (collapsedExtensionWidgetKeys[key]) delete collapsedExtensionWidgetKeys[key];
+      else collapsedExtensionWidgetKeys[key] = true;
+      return { collapsedExtensionWidgetKeys };
     }),
   setExtensionWidgetsOpen: (extensionWidgetsOpen) => set({ extensionWidgetsOpen }),
   requestExtensionWidgetAttention: (runId, key) =>
@@ -1054,6 +1073,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
+      collapsedExtensionWidgetKeys: {},
       extensionWidgetsOpen: false,
       lastExtensionWidgetAttentionRunId: null,
       ...resetExtensionTerminal(current),
@@ -1071,6 +1091,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
+      collapsedExtensionWidgetKeys: {},
       extensionWidgetsOpen: false,
       lastExtensionWidgetAttentionRunId: null,
       ...resetExtensionTerminal(get()),

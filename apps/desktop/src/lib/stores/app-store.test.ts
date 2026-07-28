@@ -87,6 +87,7 @@ describe("app-store epoch wiring", () => {
       extensionStatus: null,
       extensionStatuses: {},
       extensionWidgets: {},
+      collapsedExtensionWidgetKeys: {},
       extensionWidgetsOpen: false,
       lastExtensionWidgetAttentionRunId: null,
       packageProgress: null,
@@ -342,13 +343,52 @@ describe("app-store epoch wiring", () => {
     });
     expect(useAppStore.getState().extensionWidgets.summary?.widget).toEqual({ text: "ready" });
     expect(useAppStore.getState().extensionWidgets.summary?.placement).toBe("belowEditor");
+    useAppStore.getState().toggleExtensionWidgetCollapsed("summary");
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({ summary: true });
+    useAppStore.getState().setExtensionWidgetsOpen(true);
+    useAppStore.getState().setExtensionWidgetsOpen(false);
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({ summary: true });
+    useAppStore.getState().setExtensionWidget({
+      ...useAppStore.getState().extensionWidgets.summary!,
+      widget: { text: "updated" },
+    });
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({ summary: true });
     useAppStore.getState().requestExtensionWidgetAttention("run-before-switch", "summary");
     expect(useAppStore.getState().extensionWidgetsOpen).toBe(true);
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({ summary: true });
 
     useAppStore.getState().applySessionSnapshot(session("s2"));
     expect(useAppStore.getState().extensionWidgets).toEqual({});
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({});
     expect(useAppStore.getState().extensionWidgetsOpen).toBe(false);
     expect(useAppStore.getState().lastExtensionWidgetAttentionRunId).toBeNull();
+  });
+
+  it("toggles collapse only for mounted widgets and prunes it on removal", () => {
+    const widget = {
+      key: "summary",
+      widget: ["active"],
+      hostInstanceId: "h1",
+      workspaceId: "w",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+    };
+
+    useAppStore.getState().toggleExtensionWidgetCollapsed("missing");
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({});
+
+    useAppStore.getState().setExtensionWidget(widget);
+    useAppStore.getState().toggleExtensionWidgetCollapsed("summary");
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({ summary: true });
+
+    useAppStore.getState().toggleExtensionWidgetCollapsed("summary");
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({});
+
+    useAppStore.getState().toggleExtensionWidgetCollapsed("summary");
+    useAppStore.getState().setExtensionWidget({ ...widget, widget: null });
+    expect(useAppStore.getState().extensionWidgets).toEqual({});
+    expect(useAppStore.getState().collapsedExtensionWidgetKeys).toEqual({});
   });
 
   it("opens once per widget attention run and closes on navigation or final clear", () => {

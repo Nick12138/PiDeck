@@ -686,6 +686,8 @@ export const zh: Record<MessageKey, string> = {
   extWidgetsCloseBelowEditor: "关闭编辑器下方的扩展组件",
   extWidgetsCloseAroundEditor: "关闭编辑器周围的扩展组件",
   extWidgetLabel: "扩展组件 {key}",
+  extWidgetCollapse: "收起扩展组件 {key}",
+  extWidgetExpand: "展开扩展组件 {key}",
   extWidgetsToggle: "切换扩展组件",
   extWidgetsTitle: "扩展组件：{names}",
 

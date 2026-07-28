@@ -1,6 +1,6 @@
-import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
+import { useId, useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { PanelsTopLeft, X } from "lucide-react";
+import { ChevronRight, PanelsTopLeft, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 
@@ -204,14 +204,18 @@ function useWidgetPopoverLayout(
 
 export function WidgetPanel({
   entries,
+  collapsedWidgetKeys,
   placementLabel,
   position,
   onClose,
+  onToggleCollapsed,
 }: {
   entries: Array<{ key: string; widget: unknown }>;
+  collapsedWidgetKeys: Readonly<Record<string, true>>;
   placementLabel: "above" | "below" | "around";
   position: WidgetPopoverPosition | null;
   onClose: () => void;
+  onToggleCollapsed: (key: string) => void;
 }) {
   const t = useT();
   if (entries.length === 0) return null;
@@ -255,21 +259,67 @@ export function WidgetPanel({
       >
         <X size={15} />
       </button>
-      {entries.map((entry) => (
-        <section
-          key={entry.key}
-          className="py-1 pr-8"
-          aria-label={t("extWidgetLabel", { key: entry.key })}
-        >
-          <div className="mb-1 text-[10px] font-medium uppercase text-muted">
-            {entry.key}
-          </div>
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-            {renderWidget(entry.widget)}
-          </pre>
-        </section>
-      ))}
+      {entries.map((entry) => {
+        const collapsed = collapsedWidgetKeys[entry.key] === true;
+        return (
+          <WidgetSection
+            key={entry.key}
+            entry={entry}
+            collapsed={collapsed}
+            onToggle={() => onToggleCollapsed(entry.key)}
+          />
+        );
+      })}
     </div>
+  );
+}
+
+function WidgetSection({
+  entry,
+  collapsed,
+  onToggle,
+}: {
+  entry: { key: string; widget: unknown };
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  const contentId = useId();
+  const toggleLabel = t(collapsed ? "extWidgetExpand" : "extWidgetCollapse", {
+    key: entry.key,
+  });
+
+  return (
+    <section className="py-1 pr-8" aria-label={t("extWidgetLabel", { key: entry.key })}>
+      <button
+        type="button"
+        className="group flex min-h-7 w-full items-center gap-1.5 rounded px-1 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+        onClick={onToggle}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          size={13}
+          className={`shrink-0 text-muted transition-transform duration-150 motion-reduce:transition-none ${
+            collapsed ? "" : "rotate-90"
+          }`}
+        />
+        <span className="min-w-0 break-words text-[10px] font-medium uppercase text-muted group-hover:text-foreground">
+          {entry.key}
+        </span>
+      </button>
+      {!collapsed && (
+        <pre
+          id={contentId}
+          className="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-xs text-foreground"
+        >
+          {renderWidget(entry.widget)}
+        </pre>
+      )}
+    </section>
   );
 }
 
@@ -284,6 +334,8 @@ export function ExtensionWidgetsPopover({
   onClose: () => void;
 }) {
   const widgets = useAppStore((state) => state.extensionWidgets);
+  const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
+  const onToggleCollapsed = useAppStore((state) => state.toggleExtensionWidgetCollapsed);
   const entries = Object.values(widgets);
   const { aboveEditor, belowEditor } = partitionExtensionWidgets(entries);
   const layout = useWidgetPopoverLayout(
@@ -300,23 +352,29 @@ export function ExtensionWidgetsPopover({
       {layout?.combined ? (
         <WidgetPanel
           entries={entries}
+          collapsedWidgetKeys={collapsedWidgetKeys}
           placementLabel="around"
           position={layout.combined}
           onClose={onClose}
+          onToggleCollapsed={onToggleCollapsed}
         />
       ) : (
         <>
           <WidgetPanel
             entries={aboveEditor}
+            collapsedWidgetKeys={collapsedWidgetKeys}
             placementLabel="above"
             position={layout?.above ?? null}
             onClose={onClose}
+            onToggleCollapsed={onToggleCollapsed}
           />
           <WidgetPanel
             entries={belowEditor}
+            collapsedWidgetKeys={collapsedWidgetKeys}
             placementLabel="below"
             position={layout?.below ?? null}
             onClose={onClose}
+            onToggleCollapsed={onToggleCollapsed}
           />
         </>
       )}
