@@ -5,6 +5,7 @@ mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
 mod shell_terminal;
+mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
 use pi_host::PiHostManager;
@@ -25,6 +26,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            system_tray::install(app)?;
+
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
             let host = PiHostManager::new(app.handle().clone(), &settings);
@@ -136,8 +139,18 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } if system_tray::should_hide_on_close(&label) => {
+                api.prevent_close();
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    let _ = window.hide();
+                }
+            }
+            tauri::RunEvent::Exit => {
                 let handle = app_handle.clone();
                 tauri::async_runtime::block_on(async move {
                     let state = handle.state::<AppState>();
@@ -151,6 +164,7 @@ pub fn run() {
                     host.shutdown().await;
                 });
             }
+            _ => {}
         });
 }
 use browser_surface::BrowserSurfaceManager;

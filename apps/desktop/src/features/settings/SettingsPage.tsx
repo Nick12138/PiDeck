@@ -398,6 +398,7 @@ export function SettingsPage({
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
       <header
         className="flex h-14 shrink-0 items-center border-b border-border px-4"
+        data-settings-header
         data-tauri-drag-region
       >
         <button

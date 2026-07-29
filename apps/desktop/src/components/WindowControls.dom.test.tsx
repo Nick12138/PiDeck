@@ -1,0 +1,86 @@
+/** @vitest-environment jsdom */
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
+
+const windowApi = vi.hoisted(() => ({
+  minimize: vi.fn(async () => undefined),
+  toggleMaximize: vi.fn(async () => undefined),
+  close: vi.fn(async () => undefined),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => windowApi,
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe("resolveWindowControlsPlatform", () => {
+  it("prefers the Tauri build platform and falls back to the browser user agent", () => {
+    expect(resolveWindowControlsPlatform("darwin", "Windows")).toBe("macos");
+    expect(resolveWindowControlsPlatform("macos", "Windows")).toBe("macos");
+    expect(resolveWindowControlsPlatform("windows", "Macintosh")).toBe("windows");
+    expect(resolveWindowControlsPlatform(undefined, "Mozilla/5.0 (Macintosh)")).toBe("macos");
+    expect(resolveWindowControlsPlatform(undefined, "Mozilla/5.0 (Windows NT 10.0)")).toBe(
+      "windows",
+    );
+  });
+});
+
+describe("WindowControls", () => {
+  it("renders macOS traffic lights at the top-left in native action order", () => {
+    render(<WindowControls platform="macos" />);
+
+    const controls = screen.getByRole("group", { name: "Window controls" });
+    expect(controls).toHaveAttribute("data-window-controls-platform", "macos");
+    expect(controls).toHaveClass("left-1", "top-1");
+    expect(within(controls).getAllByRole("button").map((button) => button.ariaLabel)).toEqual([
+      "Close window",
+      "Minimize window",
+      "Maximize or restore window",
+    ]);
+    expect(within(controls).getByRole("button", { name: "Close window" }).firstElementChild).toHaveClass(
+      "mac-window-control-dot--close",
+    );
+    expect(
+      within(controls).getByRole("button", { name: "Minimize window" }).firstElementChild,
+    ).toHaveClass("mac-window-control-dot--minimize");
+    expect(
+      within(controls).getByRole("button", { name: "Maximize or restore window" })
+        .firstElementChild,
+    ).toHaveClass("mac-window-control-dot--maximize");
+  });
+
+  it("preserves the Windows controls at the top-right in the existing order", () => {
+    render(<WindowControls platform="windows" />);
+
+    const controls = screen.getByRole("group", { name: "Window controls" });
+    expect(controls).toHaveAttribute("data-window-controls-platform", "windows");
+    expect(controls).toHaveClass("right-0", "top-0");
+    expect(within(controls).getAllByRole("button").map((button) => button.ariaLabel)).toEqual([
+      "Minimize window",
+      "Maximize or restore window",
+      "Close window",
+    ]);
+  });
+
+  it("routes macOS traffic-light clicks through the shared Tauri window actions", async () => {
+    const user = userEvent.setup();
+    render(<WindowControls platform="macos" />);
+
+    await user.click(screen.getByRole("button", { name: "Close window" }));
+    await user.click(screen.getByRole("button", { name: "Minimize window" }));
+    await user.click(screen.getByRole("button", { name: "Maximize or restore window" }));
+
+    await waitFor(() => {
+      expect(windowApi.close).toHaveBeenCalledOnce();
+      expect(windowApi.minimize).toHaveBeenCalledOnce();
+      expect(windowApi.toggleMaximize).toHaveBeenCalledOnce();
+    });
+  });
+});

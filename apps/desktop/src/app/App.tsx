@@ -5,7 +5,10 @@ import { createTauriTransport } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
-import { WindowControls } from "../components/WindowControls";
+import {
+  WindowControls,
+  resolveWindowControlsPlatform,
+} from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { Dialog } from "../components/Dialog";
@@ -504,6 +507,7 @@ export function handleHostEvent(
 }
 
 export function App() {
+  const windowControlsPlatform = resolveWindowControlsPlatform();
   const page = useAppStore((s) => s.page);
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
@@ -916,15 +920,14 @@ export function App() {
     <div
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
       data-pideck-app
+      data-window-platform={windowControlsPlatform}
       data-host-instance-id={hostInstanceId}
       data-session-id={sessionId}
       data-session-revision={sessionRevision}
       data-rehydrating={rehydrating ? "true" : "false"}
       data-desynchronized={desynchronized ? "true" : "false"}
     >
-      <div className="absolute right-0 top-0 z-50">
-        <WindowControls />
-      </div>
+      <WindowControls platform={windowControlsPlatform} />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col">

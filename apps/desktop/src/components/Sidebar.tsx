@@ -133,6 +133,7 @@ export function SidebarLayout({
   return (
     <aside
       style={{ marginLeft: sidebarCollapsed ? -268 : 0 }}
+      data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
       className="relative flex w-[268px] shrink-0 flex-col border-r border-border bg-sidebar transition-[margin-left] duration-200 ease-out"
     >
       <div className="group/sidebar-edge absolute -right-4 top-0 z-40 h-full w-4">
@@ -150,8 +151,12 @@ export function SidebarLayout({
 
       {sidebarCollapsed ? null : (
         <>
-      <div className="flex h-16 shrink-0 items-center gap-3 px-4" data-tauri-drag-region>
-        <PiMark className="size-8" />
+      <div
+        className="flex h-16 shrink-0 items-center gap-3 px-4"
+        data-sidebar-header
+        data-tauri-drag-region
+      >
+        <PiMark className="mac-sidebar-brand-mark size-8" />
         <span className="text-[15px] font-semibold">Pi Agent</span>
         <div className="ml-auto">
           <NotificationCenter />

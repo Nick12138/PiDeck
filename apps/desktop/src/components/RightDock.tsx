@@ -460,6 +460,7 @@ export function RightDock() {
 
       <div
         data-tauri-drag-region
+        data-dock-header
         className="flex h-11 shrink-0 items-center border-b border-border pl-2 pr-[180px]"
       >
         <div ref={tabBarRef} className="flex min-w-0 flex-1 items-center gap-1 self-stretch">

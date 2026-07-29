@@ -85,6 +85,71 @@ button {
   cursor: pointer;
 }
 
+.mac-window-control-dot {
+  display: flex;
+  width: 12px;
+  height: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+}
+
+.mac-window-control-dot--close {
+  border-color: #e0443e;
+  background: #ff5f57;
+}
+
+.mac-window-control-dot--minimize {
+  border-color: #dea123;
+  background: #febc2e;
+}
+
+.mac-window-control-dot--maximize {
+  border-color: #1aab29;
+  background: #28c840;
+}
+
+.mac-window-control-icon {
+  width: 7px;
+  height: 7px;
+  color: rgb(0 0 0 / 62%);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.mac-window-controls:hover .mac-window-control-icon,
+.mac-window-control:focus-visible .mac-window-control-icon {
+  opacity: 1;
+}
+
+[data-window-platform="macos"] [data-sidebar-header] {
+  padding-top: 24px;
+  padding-left: 16px;
+}
+
+[data-window-platform="macos"] .mac-sidebar-brand-mark {
+  width: 18px;
+  height: 18px;
+}
+
+[data-window-platform="macos"] [data-settings-header] {
+  padding-left: 76px;
+}
+
+[data-window-platform="macos"] [data-chat-header] {
+  padding-right: 20px;
+  transition: padding-left 200ms ease-out;
+}
+
+[data-window-platform="macos"] [data-sidebar-collapsed="true"] + main [data-chat-header] {
+  padding-left: 76px;
+}
+
+[data-window-platform="macos"] [data-dock-header] {
+  padding-right: 8px;
+}
+
 /* Multi-select checkboxes follow the app accent instead of the OS default. */
 input[type="checkbox"] {
   accent-color: var(--color-accent);

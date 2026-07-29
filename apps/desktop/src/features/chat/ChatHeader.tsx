@@ -18,6 +18,7 @@ export function ChatHeader() {
   return (
     <div
       className="flex h-11 shrink-0 items-center gap-4 border-b border-border pl-5 pr-[180px]"
+      data-chat-header
       data-tauri-drag-region
     >
       <div className="pointer-events-none min-w-0 flex-1">
