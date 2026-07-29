@@ -15,8 +15,33 @@ import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 
 const MODEL_MENU_MIN_WIDTH = 120;
-const MODEL_MENU_MAX_WIDTH = 280;
+const MODEL_MENU_DEFAULT_MAX_WIDTH = 280;
+const MODEL_MENU_RESIZE_MAX_WIDTH = 640;
 const MODEL_MENU_ROW_CONTROLS_WIDTH = 48;
+const MODEL_MENU_RESIZE_STEP = 20;
+const MODEL_MENU_VIEWPORT_GUTTER = 12;
+const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
+
+export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): number {
+  const viewportLimit =
+    viewportWidth - Math.max(0, menuLeft) - MODEL_MENU_VIEWPORT_GUTTER -
+    MODEL_MENU_THINKING_RESERVE_WIDTH;
+  return Math.max(
+    MODEL_MENU_MIN_WIDTH,
+    Math.min(MODEL_MENU_RESIZE_MAX_WIDTH, viewportLimit),
+  );
+}
+
+export function clampModelMenuWidth(
+  width: number,
+  menuLeft: number,
+  viewportWidth: number,
+): number {
+  return Math.min(
+    modelMenuMaxWidth(menuLeft, viewportWidth),
+    Math.max(MODEL_MENU_MIN_WIDTH, Math.round(width)),
+  );
+}
 
 /** Backwards-compatible alias; the shared helper lives in lib/bridge. */
 export { requestWithRetry as requestModelListWithRetry } from "../../lib/bridge/request-retry";
@@ -222,12 +247,19 @@ export function ModelControls() {
   const [enabledProviders, setEnabledProviders] = useState<string[] | undefined>();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuWidth, setModelMenuWidth] = useState(MODEL_MENU_MIN_WIDTH);
+  const [modelMenuResizeMax, setModelMenuResizeMax] = useState(MODEL_MENU_RESIZE_MAX_WIDTH);
   const [thinkingModelKey, setThinkingModelKey] = useState<string | null>(null);
   const [thinkingMenuTop, setThinkingMenuTop] = useState(0);
   const listRequest = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelMenuMeasureRef = useRef<HTMLSpanElement>(null);
   const modelMenuPanelRef = useRef<HTMLDivElement>(null);
+  const modelMenuManuallyResized = useRef(false);
+  const modelMenuResizeStart = useRef<{
+    pointerId: number;
+    x: number;
+    width: number;
+  } | null>(null);
   const hostInstanceId = host?.hostInstanceId;
   const workspaceId = workspace?.id;
   const workspaceRevision = workspace?.revision;
@@ -346,10 +378,11 @@ export function ModelControls() {
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
 
   useLayoutEffect(() => {
+    if (modelMenuManuallyResized.current) return;
     const contentWidth = modelMenuMeasureRef.current?.scrollWidth;
     if (contentWidth === undefined) return;
     const nextWidth = Math.min(
-      MODEL_MENU_MAX_WIDTH,
+      MODEL_MENU_DEFAULT_MAX_WIDTH,
       Math.max(
         MODEL_MENU_MIN_WIDTH,
         Math.ceil(contentWidth) + MODEL_MENU_ROW_CONTROLS_WIDTH,
@@ -357,6 +390,19 @@ export function ModelControls() {
     );
     setModelMenuWidth((current) => current === nextWidth ? current : nextWidth);
   }, [modelMenuMeasureKey]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const clampToViewport = () => {
+      const menuLeft = modelMenuPanelRef.current?.getBoundingClientRect().left ?? 0;
+      const maxWidth = modelMenuMaxWidth(menuLeft, window.innerWidth);
+      setModelMenuResizeMax(maxWidth);
+      setModelMenuWidth((current) => Math.min(current, maxWidth));
+    };
+    clampToViewport();
+    window.addEventListener("resize", clampToViewport);
+    return () => window.removeEventListener("resize", clampToViewport);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -435,6 +481,20 @@ export function ModelControls() {
     pushNotification(res.error?.message ?? t("modelThinkingSetFailed"), "error");
   }
 
+  function resizeModelMenu(width: number) {
+    const menuLeft = modelMenuPanelRef.current?.getBoundingClientRect().left ?? 0;
+    const maxWidth = modelMenuMaxWidth(menuLeft, window.innerWidth);
+    modelMenuManuallyResized.current = true;
+    setModelMenuResizeMax(maxWidth);
+    setModelMenuWidth(clampModelMenuWidth(width, menuLeft, window.innerWidth));
+  }
+
+  function finishModelMenuResize(target: HTMLDivElement, pointerId: number) {
+    if (modelMenuResizeStart.current?.pointerId !== pointerId) return;
+    modelMenuResizeStart.current = null;
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+  }
+
   return (
     <div className="flex min-w-0 items-center">
       <div ref={menuRef} className="relative flex h-7 min-w-0 max-w-[280px] items-center">
@@ -467,7 +527,7 @@ export function ModelControls() {
         </button>
         {menuOpen && (
           <div
-            className="absolute bottom-full left-0 z-50 mb-2 min-w-[120px] max-w-[280px]"
+            className="absolute bottom-full left-0 z-50 mb-2 min-w-[120px]"
             style={{ width: modelMenuWidth }}
           >
             <div
@@ -534,9 +594,55 @@ export function ModelControls() {
                 );
               })}
             </div>
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-label={t("modelMenuResize")}
+              aria-orientation="vertical"
+              aria-valuemin={MODEL_MENU_MIN_WIDTH}
+              aria-valuemax={modelMenuResizeMax}
+              aria-valuenow={modelMenuWidth}
+              title={t("modelMenuResize")}
+              className="group absolute -right-2 top-0 z-10 h-full w-2 cursor-col-resize touch-none rounded-sm outline-none"
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                modelMenuResizeStart.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  width: modelMenuWidth,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const start = modelMenuResizeStart.current;
+                if (!start || start.pointerId !== event.pointerId) return;
+                resizeModelMenu(start.width + event.clientX - start.x);
+              }}
+              onPointerUp={(event) =>
+                finishModelMenuResize(event.currentTarget, event.pointerId)}
+              onPointerCancel={(event) =>
+                finishModelMenuResize(event.currentTarget, event.pointerId)}
+              onLostPointerCapture={() => {
+                modelMenuResizeStart.current = null;
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                resizeModelMenu(
+                  modelMenuWidth +
+                    (event.key === "ArrowRight" ? MODEL_MENU_RESIZE_STEP : -MODEL_MENU_RESIZE_STEP),
+                );
+              }}
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-px -translate-x-1/2 -translate-y-1/2 bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent"
+              />
+            </div>
             {thinkingModel && (
               <div
-                className="absolute left-full ml-1 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                className="absolute left-full ml-2 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
                 style={{ top: thinkingMenuTop }}
                 role="menu"
                 aria-label={t("modelThinkingFor", { model: modelOptionLabel(thinkingModel) })}

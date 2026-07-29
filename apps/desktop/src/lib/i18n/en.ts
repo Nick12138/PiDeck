@@ -687,6 +687,7 @@ export const en = {
   modelSelect: "Select model",
   modelNone: "No model",
   modelMenuLabel: "Models",
+  modelMenuResize: "Resize model menu",
   modelThinkingFor: "Thinking level for {model}",
   modelNoThinkingLevels: "No levels",
   modelThinkingOff: "Off",

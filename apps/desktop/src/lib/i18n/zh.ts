@@ -654,6 +654,7 @@ export const zh: Record<MessageKey, string> = {
   modelSelect: "选择模型",
   modelNone: "未选择模型",
   modelMenuLabel: "模型",
+  modelMenuResize: "调整模型菜单宽度",
   modelThinkingFor: "设置 {model} 的思考级别",
   modelNoThinkingLevels: "没有可用级别",
   modelThinkingOff: "关闭",

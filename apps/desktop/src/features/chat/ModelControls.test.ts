@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelSummary } from "@pideck/protocol";
 import {
   canRequestModelList,
+  clampModelMenuWidth,
   includeCurrentModel,
+  modelMenuMaxWidth,
   modelOptionLabel,
   requestModelListWithRetry,
   thinkingLevelLabel,
@@ -54,6 +56,19 @@ describe("includeCurrentModel", () => {
 describe("modelOptionLabel", () => {
   it("prefixes the display name with the Provider ID", () => {
     expect(modelOptionLabel(current)).toBe("muapi/Grok 4.5");
+  });
+});
+
+describe("model menu resize geometry", () => {
+  it("keeps the current minimum while allowing a wider user-selected width", () => {
+    expect(clampModelMenuWidth(80, 100, 1_000)).toBe(120);
+    expect(clampModelMenuWidth(420, 100, 1_000)).toBe(420);
+    expect(clampModelMenuWidth(900, 100, 1_000)).toBe(640);
+  });
+
+  it("reserves viewport room for the thinking-level submenu", () => {
+    expect(modelMenuMaxWidth(100, 700)).toBe(468);
+    expect(clampModelMenuWidth(600, 100, 700)).toBe(468);
   });
 });
 
