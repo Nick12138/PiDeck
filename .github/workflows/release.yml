@@ -1,0 +1,63 @@
+name: Release Windows installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: ${{ runner.os }}-release-runtime-${{ hashFiles('scripts/release-runtime.lock.json') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:quick
+      - run: pnpm package:release
+      - name: Stage release assets and updater feed
+        shell: bash
+        run: node scripts/generate-update-manifest.mjs --tag "$RELEASE_TAG"
+      - name: Create draft GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(apps/desktop/src-tauri/target/release-staging/github-release/*)
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --title "PiDeck $RELEASE_TAG" \
+            --generate-notes \
+            "${assets[@]}"
