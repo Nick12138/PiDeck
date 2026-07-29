@@ -95,6 +95,10 @@ describe("environment-backed auth", () => {
   it("resolves a builtin provider from its ambient env var with no stored credential", async () => {
     const layout = layoutWithProviders({});
     const previous = process.env.ANTHROPIC_API_KEY;
+    // A developer machine may carry ANTHROPIC_AUTH_TOKEN, which the runtime
+    // prefers over ANTHROPIC_API_KEY — stash it so the test sees only the key.
+    const previousToken = process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
     process.env.ANTHROPIC_API_KEY = "sk-ambient-never-real";
     try {
       const { modelRuntime, modelRegistry } = await createTestModelServices(layout.agentDir);
@@ -106,6 +110,8 @@ describe("environment-backed auth", () => {
     } finally {
       if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = previous;
+      if (previousToken === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
+      else process.env.ANTHROPIC_AUTH_TOKEN = previousToken;
     }
   });
 });
