@@ -8,6 +8,7 @@ import { RightDock } from "../components/RightDock";
 import {
   WindowControls,
   resolveWindowControlsPlatform,
+  shouldRenderWindowControls,
 } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -509,6 +510,7 @@ export function handleHostEvent(
 export function App() {
   const windowControlsPlatform = resolveWindowControlsPlatform();
   const page = useAppStore((s) => s.page);
+  const settingsOverlayOpen = page !== "chat";
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
   const rehydrating = useAppStore((s) => s.rehydrating);
@@ -927,7 +929,9 @@ export function App() {
       data-rehydrating={rehydrating ? "true" : "false"}
       data-desynchronized={desynchronized ? "true" : "false"}
     >
-      <WindowControls platform={windowControlsPlatform} />
+      {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
+        <WindowControls platform={windowControlsPlatform} />
+      )}
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col">
@@ -946,7 +950,7 @@ export function App() {
         </main>
         <RightDock />
       </div>
-      {page !== "chat" && (
+      {settingsOverlayOpen && (
         <SettingsOverlay section={page === "packages" ? "packages" : "general"} />
       )}
       <ExtensionUiModal />

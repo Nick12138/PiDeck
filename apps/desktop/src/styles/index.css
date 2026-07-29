@@ -133,10 +133,6 @@ button {
   height: 18px;
 }
 
-[data-window-platform="macos"] [data-settings-header] {
-  padding-left: 76px;
-}
-
 [data-window-platform="macos"] [data-chat-header] {
   padding-right: 20px;
   transition: padding-left 200ms ease-out;

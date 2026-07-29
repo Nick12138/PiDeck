@@ -2,6 +2,13 @@ import { Maximize2, Minus, Square, X, type LucideIcon } from "lucide-react";
 
 export type WindowControlsPlatform = "macos" | "windows";
 
+export function shouldRenderWindowControls(
+  platform: WindowControlsPlatform,
+  settingsOverlayOpen: boolean,
+): boolean {
+  return platform !== "macos" || !settingsOverlayOpen;
+}
+
 export function resolveWindowControlsPlatform(
   tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM,
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,

@@ -3,7 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WindowControls, resolveWindowControlsPlatform } from "./WindowControls";
+import {
+  WindowControls,
+  resolveWindowControlsPlatform,
+  shouldRenderWindowControls,
+} from "./WindowControls";
 
 const windowApi = vi.hoisted(() => ({
   minimize: vi.fn(async () => undefined),
@@ -29,6 +33,15 @@ describe("resolveWindowControlsPlatform", () => {
     expect(resolveWindowControlsPlatform(undefined, "Mozilla/5.0 (Windows NT 10.0)")).toBe(
       "windows",
     );
+  });
+});
+
+describe("shouldRenderWindowControls", () => {
+  it("hides only macOS traffic lights while the settings overlay is open", () => {
+    expect(shouldRenderWindowControls("macos", true)).toBe(false);
+    expect(shouldRenderWindowControls("macos", false)).toBe(true);
+    expect(shouldRenderWindowControls("windows", true)).toBe(true);
+    expect(shouldRenderWindowControls("windows", false)).toBe(true);
   });
 });
 
