@@ -150,7 +150,6 @@ export type SessionRuntimeCacheContext = {
 };
 
 export class SessionRuntimeCache {
-  private static readonly MAX_RETAINED_SESSIONS = 3;
   private readonly runtimeStates = new WeakMap<AgentSession, SessionRuntimeState>();
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
@@ -357,63 +356,13 @@ export class SessionRuntimeCache {
     return runtime;
   }
 
-  async retainIdleSession(
-    graph: WorkspaceGraph,
-    previous: ActiveSessionState,
+  retainIdleSession(
+    _graph: WorkspaceGraph,
+    _previous: ActiveSessionState,
   ): Promise<BackgroundSessionRuntime | null> {
-    if (
-      !previous.sessionId ||
-      !previous.sessionManager ||
-      !previous.agentSession ||
-      !previous.resourceLoader ||
-      !previous.sessionSnapshot?.sessionPath ||
-      this.isSessionBusy(previous.agentSession)
-    ) {
-      return null;
-    }
-    try {
-      previous.unsubscribeAgent?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      previous.extensionUiCleanup?.();
-    } catch {
-      /* ignore */
-    }
-
-    const runtime: BackgroundSessionRuntime = {
-      sessionId: previous.sessionId,
-      sessionRevision: previous.sessionRevision,
-      sessionManager: previous.sessionManager,
-      agentSession: previous.agentSession,
-      resourceLoader: previous.resourceLoader,
-      extensionsResult: previous.extensionsResult,
-      toolRevision: previous.toolRevision,
-      sessionSnapshot: previous.sessionSnapshot,
-      unsubscribeAgent: null,
-      extensionUiActivate: null,
-      extensionUiCleanup: null,
-      extensionUiUpdateIdentity: null,
-      extensionUiReplayState: null,
-    };
-
-    const retainedSessions = this.retainedSessionRuntimes(graph);
-    const existing = retainedSessions.get(runtime.sessionId);
-    retainedSessions.delete(runtime.sessionId);
-    if (existing && existing !== runtime) {
-      await this.disposeRetainedSessionRuntime(graph, existing, false);
-    }
-    retainedSessions.set(runtime.sessionId, runtime);
-
-    while (retainedSessions.size > SessionRuntimeCache.MAX_RETAINED_SESSIONS) {
-      const oldestId = retainedSessions.keys().next().value;
-      if (oldestId === undefined) break;
-      const evicted = retainedSessions.get(oldestId);
-      retainedSessions.delete(oldestId);
-      if (evicted) await this.disposeRetainedSessionRuntime(graph, evicted, false);
-    }
-    return runtime;
+    // A retained idle hit reloads and recompiles every configured Extension,
+    // which can be materially slower than opening the Session from disk.
+    return Promise.resolve(null);
   }
 
   async disposeRetainedSessionRuntimes(graph: WorkspaceGraph): Promise<void> {

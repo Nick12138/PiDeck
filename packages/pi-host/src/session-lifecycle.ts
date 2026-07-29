@@ -865,6 +865,14 @@ export async function openSession(
         };
       }
 
+      // The candidate is authoritative once commit and Extension activation succeed.
+      // Publish it before awaiting outgoing idle shutdown so slow Extension cleanup
+      // cannot hold the visible conversation on the previous Session.
+      server.emit("session.snapshot", sessionSnapshot);
+      server.emit("agent.toolsChanged", sessionSnapshot.tools);
+      if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
+      publishExtensionUi();
+
       if (!retainedPrevious) {
         const retainedIdle = prev.agentSession?.isIdle
           ? await factory.retainIdleSession(g, prev)
@@ -891,10 +899,6 @@ export async function openSession(
       candidateExtensionUiUpdateIdentity = null;
       candidateExtensionUiReplayState = null;
       candidateUnsubscribeAgent = null;
-      server.emit("session.snapshot", sessionSnapshot);
-      server.emit("agent.toolsChanged", sessionSnapshot.tools);
-      if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
-      publishExtensionUi();
       return sessionSnapshot;
     } catch (err) {
       try {

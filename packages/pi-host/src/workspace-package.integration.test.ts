@@ -95,8 +95,12 @@ class HostProcess {
     throw new Error("timeout waiting for message");
   }
 
-  async waitForEvent(event: string, timeoutMs = 30_000): Promise<Record<string, unknown>> {
-    return this.waitFor((m) => m.event === event, timeoutMs);
+  async waitForEvent(
+    event: string,
+    timeoutMs = 30_000,
+    predicate: (message: Record<string, unknown>) => boolean = () => true,
+  ): Promise<Record<string, unknown>> {
+    return this.waitFor((m) => m.event === event && predicate(m), timeoutMs);
   }
 
   send(obj: unknown): void {
@@ -193,6 +197,20 @@ function projectWithStaleContextTimer(root: string, name: string): string {
       pi.on("session_shutdown", () => {
         if (timer) clearInterval(timer);
         timer = undefined;
+      });
+    }\n`,
+  );
+  return dir;
+}
+
+function projectWithSlowSessionShutdown(root: string, name: string): string {
+  const dir = emptyProject(root, name);
+  mkdirSync(join(dir, ".pi", "extensions"), { recursive: true });
+  writeFileSync(
+    join(dir, ".pi", "extensions", "slow-shutdown.ts"),
+    `export default function (pi) {
+      pi.on("session_shutdown", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       });
     }\n`,
   );
@@ -1179,6 +1197,73 @@ describe("package + workspace integration", () => {
     );
     expect(stillResponsive.ok).toBe(true);
   }, 180_000);
+
+  it("publishes the target snapshot before previous idle shutdown settles", async () => {
+    const project = projectWithSlowSessionShutdown(root, "session-open-slow-shutdown");
+    const status = await host.request(
+      "system.getStatus",
+      { expectedHostInstanceId: hostId },
+      null,
+    );
+    const selected = await host.request(
+      "workspace.setCurrent",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: status.workspaceId,
+        expectedWorkspaceRevision: status.workspaceRevision,
+      },
+      { cwd: project },
+    );
+    expect(selected.ok).toBe(true);
+
+    const workspace = (selected.result as {
+      workspace: { id: string; revision: number };
+    }).workspace;
+    const targetSessionId = randomUUID();
+    const targetSessionPath = join(
+      sessionDirFor(agentDir, project),
+      `${targetSessionId}.jsonl`,
+    );
+    mkdirSync(dirname(targetSessionPath), { recursive: true });
+    writeFileSync(
+      targetSessionPath,
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: targetSessionId,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: resolve(project),
+      }) + "\n",
+    );
+
+    const snapshotPromise = host.waitForEvent(
+      "session.snapshot",
+      5_000,
+      (message) => message.sessionId === targetSessionId,
+    );
+    const openPromise = host.request(
+      "session.open",
+      {
+        expectedHostInstanceId: hostId,
+        expectedWorkspaceId: workspace.id,
+        expectedWorkspaceRevision: workspace.revision,
+        expectedSessionId: selected.sessionId,
+        expectedSessionRevision: selected.sessionRevision,
+      },
+      { sessionPath: targetSessionPath },
+      60_000,
+    );
+    const earlySnapshot = await Promise.race([
+      snapshotPromise.then((event) => ({ event })),
+      new Promise<null>((resolveEarly) => setTimeout(() => resolveEarly(null), 500)),
+    ]);
+    const opened = await openPromise;
+    const snapshot = earlySnapshot?.event ?? (await snapshotPromise);
+
+    expect(opened.ok).toBe(true);
+    expect(snapshot.sessionId).toBe(targetSessionId);
+    expect(earlySnapshot).not.toBeNull();
+  }, 90_000);
 });
 
 // silence unused import if tree-shaken

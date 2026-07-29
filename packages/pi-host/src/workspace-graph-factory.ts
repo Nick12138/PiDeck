@@ -159,7 +159,7 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.retainBusySession(graph, previous);
   }
 
-  /** Park an idle runtime after the replacement Session has activated. */
+  /** Idle runtimes are intentionally cold-opened; busy runtimes use retainBusySession. */
   async retainIdleSession(
     graph: WorkspaceGraph,
     previous: ActiveSessionState,
