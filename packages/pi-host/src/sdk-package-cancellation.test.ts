@@ -48,6 +48,22 @@ function longRunningCommand(pidFile: string): string[] {
   ];
 }
 
+/** A successful parent whose detached descendant keeps its stdio pipes open. */
+function inheritedPipeCommand(pidFile: string, stdout = ""): string[] {
+  return [
+    process.execPath,
+    "-e",
+    'const { spawn } = require("node:child_process");' +
+      'const { writeFileSync } = require("node:fs");' +
+      (stdout ? `process.stdout.write(${JSON.stringify(stdout)});` : "") +
+      'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {' +
+      ' detached: true, stdio: "inherit" });' +
+      `writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));` +
+      "child.unref();",
+    "--",
+  ];
+}
+
 function createManager(npmCommand: string[]): {
   manager: DefaultPackageManager;
   cwd: string;
@@ -63,6 +79,7 @@ function createManager(npmCommand: string[]): {
     isProjectTrusted: () => true,
     getGlobalSettings: () => ({ packages: ["npm:never-finishes@^1.0.0"] }),
     getProjectSettings: () => ({ packages: [] }),
+    setPackages: () => undefined,
   };
   return {
     manager: new DefaultPackageManager({
@@ -107,6 +124,77 @@ async function waitForExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
 }
 
 describe("PiDeck package-manager cancellation patch", () => {
+  it("settles a successful install when a descendant inherits npm stdio", async () => {
+    const pidFile = join(tmpdir(), `pideck-inherited-stdio-${process.pid}-${Date.now()}`);
+    const { manager } = createManager(inheritedPipeCommand(pidFile));
+    let outcome: "pending" | "resolved" | "rejected" = "pending";
+    const installing = manager.installAndPersist("npm:never-finishes").then(
+      () => {
+        outcome = "resolved";
+      },
+      () => {
+        outcome = "rejected";
+      },
+    );
+    const pid = Number(await waitForFile(pidFile));
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      expect(outcome).toBe("resolved");
+    } finally {
+      if (processAlive(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The descendant may have exited between the probe and kill.
+        }
+      }
+      await installing;
+      await waitForExit(pid);
+      rmSync(pidFile, { force: true });
+    }
+  }, 10_000);
+
+  it("settles a successful captured npm query with inherited stdio", async () => {
+    const pidFile = join(tmpdir(), `pideck-captured-stdio-${process.pid}-${Date.now()}`);
+    const { manager, agentDir } = createManager(
+      inheritedPipeCommand(pidFile, JSON.stringify("1.1.0")),
+    );
+    const installed = join(agentDir, "npm", "node_modules", "never-finishes");
+    mkdirSync(installed, { recursive: true });
+    writeFileSync(
+      join(installed, "package.json"),
+      JSON.stringify({ name: "never-finishes", version: "1.0.0" }),
+    );
+
+    let outcome: "pending" | "resolved" | "rejected" = "pending";
+    const checking = manager.checkForAvailableUpdates().then(
+      () => {
+        outcome = "resolved";
+      },
+      () => {
+        outcome = "rejected";
+      },
+    );
+    const pid = Number(await waitForFile(pidFile));
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      expect(outcome).toBe("resolved");
+    } finally {
+      if (processAlive(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The descendant may have exited between the probe and kill.
+        }
+      }
+      await checking;
+      await waitForExit(pid);
+      rmSync(pidFile, { force: true });
+    }
+  }, 10_000);
+
   it("kills the package install child and settles the mutation", async () => {
     const pidFile = join(tmpdir(), `pideck-cancel-inherit-${process.pid}-${Date.now()}`);
     const { manager } = createManager(longRunningCommand(pidFile));

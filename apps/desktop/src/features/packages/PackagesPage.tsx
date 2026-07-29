@@ -95,6 +95,8 @@ type LoadState = "idle" | "loading" | "ready" | "error";
 
 // Host deadline (10m) plus cancellation/reconcile grace and transport margin.
 const PACKAGE_MUTATION_REQUEST_TIMEOUT_MS = 615_000;
+const PACKAGE_LIST_BUSY_RETRY_INITIAL_MS = 250;
+const PACKAGE_LIST_BUSY_RETRY_MAX_MS = 2_000;
 
 const inputClass =
   "h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-accent";
@@ -347,22 +349,41 @@ export function PackagesPage() {
       workspaceId: workspace.id,
       workspaceRevision: workspace.revision,
     };
+    const isCurrentRequest = () => {
+      const current = useAppStore.getState();
+      return (
+        request === refreshRequest.current &&
+        current.host?.hostInstanceId === expected.hostId &&
+        current.workspace?.id === expected.workspaceId &&
+        current.workspace?.revision === expected.workspaceRevision
+      );
+    };
     setLoadState("loading");
     setLoadError("");
     try {
-      const response = await hostClient.request(
-        "package.list",
-        workspaceContext(host, workspace),
-        PACKAGE_LIST_PARAMS,
-        60_000,
-      );
+      const requestList = () =>
+        hostClient.request(
+          "package.list",
+          workspaceContext(host, workspace),
+          PACKAGE_LIST_PARAMS,
+          60_000,
+        );
+      const retryDeadline = Date.now() + PACKAGE_MUTATION_REQUEST_TIMEOUT_MS;
+      let retryDelay = PACKAGE_LIST_BUSY_RETRY_INITIAL_MS;
+      let response = await requestList();
+      while (
+        !response.ok &&
+        response.error?.code === "SERVICE_GRAPH_BUSY" &&
+        response.error.retryable === true &&
+        Date.now() < retryDeadline
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelay));
+        if (!isCurrentRequest()) return;
+        retryDelay = Math.min(retryDelay * 2, PACKAGE_LIST_BUSY_RETRY_MAX_MS);
+        response = await requestList();
+      }
       const current = useAppStore.getState();
-      if (
-        request !== refreshRequest.current ||
-        current.host?.hostInstanceId !== expected.hostId ||
-        current.workspace?.id !== expected.workspaceId ||
-        current.workspace?.revision !== expected.workspaceRevision
-      ) return;
+      if (!isCurrentRequest()) return;
       if (!response.ok) throw new Error(response.error?.message ?? t("notifPackagesLoadFailed"));
       setPackages(response.result);
       const nextHost = current.host && mergeHostIdentity(current.host, response);
@@ -378,6 +399,9 @@ export function PackagesPage() {
 
   useEffect(() => {
     void refresh();
+    return () => {
+      refreshRequest.current += 1;
+    };
     // Package data is always loaded at all scope; controls below are local view filters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.hostInstanceId, workspace?.id, workspace?.revision]);

@@ -183,6 +183,27 @@ function envelope<M extends string, R>(method: M, result: R): HostResponseEnvelo
   } as HostResponseEnvelope;
 }
 
+function serviceGraphBusyEnvelope(method: string): HostResponseEnvelope {
+  return {
+    protocolVersion: 1,
+    id: `${method}-busy-test`,
+    method,
+    hostInstanceId: "h1",
+    workspaceId: "w1",
+    workspaceRevision: 1,
+    sessionId: "s1",
+    sessionRevision: 1,
+    packageRevision: 1,
+    ok: false,
+    error: {
+      code: "SERVICE_GRAPH_BUSY",
+      message: "Service graph is busy",
+      retryable: true,
+      details: { operationKind: "package.mutation" },
+    },
+  } as HostResponseEnvelope;
+}
+
 function mutationResult(current: PackageSnapshot): PackageMutationResult {
   return {
     operationId: "op-1",
@@ -625,6 +646,41 @@ describe("PackagesPage DOM workflows", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  });
+
+  it("recovers when remount refresh races an active package mutation", async () => {
+    let listRequests = 0;
+    request.mockImplementation(async (method: string) => {
+      if (method === "package.list") {
+        listRequests += 1;
+        return listRequests === 2
+          ? serviceGraphBusyEnvelope(method)
+          : envelope(method, currentSnapshot);
+      }
+      if (method === "package.checkUpdates") {
+        return envelope(method, { supported: true, updates: [] });
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+
+    const first = render(<PackagesPage />);
+    await waitFor(() => expect(listRequests).toBe(1));
+    first.unmount();
+
+    useAppStore.getState().setPackageProgress({
+      operationId: "install-in-flight",
+      type: "progress",
+      action: "install",
+      source: "npm:tools",
+      lastEventAt: Date.now(),
+    });
+    try {
+      render(<PackagesPage />);
+      await waitFor(() => expect(listRequests).toBe(3));
+      expect(screen.queryByText("Service graph is busy")).not.toBeInTheDocument();
+    } finally {
+      useAppStore.getState().setPackageProgress(null);
+    }
   });
 
   it("renders the initial loading state while the authoritative snapshot is pending", async () => {

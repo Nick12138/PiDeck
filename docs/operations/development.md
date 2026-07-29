@@ -33,6 +33,11 @@ Upstream has no such hook. `setOperationSignal` is declared as a **required**
 member of the `PackageManager` interface, which makes a silently skipped
 `pm.setOperationSignal?.(...)` a compile error rather than a no-op.
 
+Both asynchronous command paths capture diagnostics and settle through the
+SDK's `waitForChildProcess()`. That waiter observes process exit plus a short
+stdio-idle grace, so a successful npm parent cannot leave package mutation
+pending merely because a detached Windows descendant inherited its pipes.
+
 The synchronous global-npm-root lookup cannot be interrupted — `spawnSync`
 takes no signal — so the patch only makes it refuse to start a new child once
 the operation is aborted. Every long-running operation (npm install, uninstall,

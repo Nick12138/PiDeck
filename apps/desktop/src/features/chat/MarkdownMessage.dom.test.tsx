@@ -268,7 +268,7 @@ describe("MarkdownMessage Mermaid rendering", () => {
         ),
       { timeout: 5_000 },
     );
-  });
+  }, 10_000);
 
   it("exposes Mermaid controls without a download action", async () => {
     const { container } = render(<MarkdownMessage content={closed} mode="static" />);

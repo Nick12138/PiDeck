@@ -391,7 +391,8 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
 --- a/dist/core/package-manager.js
 +++ b/dist/core/package-manager.js
 @@ -29,7 +29,6 @@ import { CONFIG_DIR_NAME } from "../config.js";
- import { spawnProcess, spawnProcessSync } from "../utils/child-process.js";
+-import { spawnProcess, spawnProcessSync } from "../utils/child-process.js";
++import { spawnProcess, spawnProcessSync, waitForChildProcess } from "../utils/child-process.js";
  import { parseGitUrl } from "../utils/git.js";
  import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.js";
 -import { isStdoutTakenOver } from "./output-guard.js";
@@ -453,44 +454,112 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
          });
      }
      spawnCaptureCommand(command, args, options) {
-@@ -2064,6 +2075,7 @@ export class DefaultPackageManager {
+@@ -2064,62 +2075,65 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
              stdio: ["ignore", "pipe", "pipe"],
              env,
 +            signal: this.operationSignal,
          });
      }
-     runCommandCapture(command, args, options) {
-@@ -2108,14 +2120,24 @@ export class DefaultPackageManager {
-     runCommand(command, args, options) {
-         return new Promise((resolvePromise, reject) => {
-             const child = this.spawnCommand(command, args, options);
+-    runCommandCapture(command, args, options) {
+-        return new Promise((resolvePromise, reject) => {
+-            const child = this.spawnCaptureCommand(command, args, options);
+-            let stdout = "";
+-            let stderr = "";
+-            let timedOut = false;
+-            const timeout = typeof options?.timeoutMs === "number"
+-                ? setTimeout(() => {
+-                    timedOut = true;
+-                    child.kill();
+-                }, options.timeoutMs)
+-                : undefined;
+-            child.stdout?.on("data", (data) => {
+-                stdout += data.toString();
+-            });
+-            child.stderr?.on("data", (data) => {
+-                stderr += data.toString();
+-            });
+-            child.once("error", (error) => {
+-                if (timeout)
+-                    clearTimeout(timeout);
+-                reject(error);
+-            });
+-            child.once("close", (code, signal) => {
+-                if (timeout)
+-                    clearTimeout(timeout);
+-                if (timedOut) {
+-                    reject(new Error(`${command} ${args.join(" ")} timed out after ${options?.timeoutMs}ms`));
+-                    return;
+-                }
+-                if (code === 0) {
+-                    resolvePromise(stdout.trim());
+-                    return;
+-                }
+-                const exitStatus = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
+-                reject(new Error(`${command} ${args.join(" ")} failed with ${exitStatus}: ${stderr || stdout}`));
+-            });
++    async runCommandCapture(command, args, options) {
++        const child = this.spawnCaptureCommand(command, args, options);
++        let stdout = "";
++        let stderr = "";
++        let timedOut = false;
++        const timeout = typeof options?.timeoutMs === "number"
++            ? setTimeout(() => {
++                timedOut = true;
++                child.kill();
++            }, options.timeoutMs)
++            : undefined;
++        child.stdout?.on("data", (data) => {
++            stdout += data.toString();
++        });
++        child.stderr?.on("data", (data) => {
++            stderr += data.toString();
+         });
++        let code;
++        try {
++            code = await waitForChildProcess(child);
++        }
++        finally {
++            if (timeout)
++                clearTimeout(timeout);
++        }
++        if (timedOut) {
++            throw new Error(`${command} ${args.join(" ")} timed out after ${options?.timeoutMs}ms`);
++        }
++        if (code === 0) {
++            return stdout.trim();
++        }
++        const exitStatus = code === null ? `signal ${child.signalCode ?? "unknown"}` : `code ${code}`;
++        throw new Error(`${command} ${args.join(" ")} failed with ${exitStatus}: ${stderr || stdout}`);
+     }
+-    runCommand(command, args, options) {
+-        return new Promise((resolvePromise, reject) => {
+-            const child = this.spawnCommand(command, args, options);
 -            child.on("error", reject);
 -            child.on("exit", (code) => {
-+            let stdout = "";
-+            let stderr = "";
-+            child.stdout?.on("data", (data) => {
-+                stdout = `${stdout}${data.toString()}`.slice(-65536);
-+            });
-+            child.stderr?.on("data", (data) => {
-+                stderr = `${stderr}${data.toString()}`.slice(-65536);
-+            });
-+            child.once("error", reject);
-+            child.once("close", (code, signal) => {
-                 if (code === 0) {
-                     resolvePromise();
-                 }
-                 else {
+-                if (code === 0) {
+-                    resolvePromise();
+-                }
+-                else {
 -                    reject(new Error(`${command} ${args.join(" ")} failed with code ${code}`));
-+                    const exitStatus = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
-+                    const output = (stderr || stdout).trim();
-+                    reject(new Error(`${command} ${args.join(" ")} failed with ${exitStatus}${output ? `: ${output}` : ""}`));
-                 }
-             });
+-                }
+-            });
++    async runCommand(command, args, options) {
++        const child = this.spawnCommand(command, args, options);
++        let stdout = "";
++        let stderr = "";
++        child.stdout?.on("data", (data) => {
++            stdout = `${stdout}${data.toString()}`.slice(-65536);
          });
-     }
-@@ -2120,6 +2142,10 @@ export class DefaultPackageManager {
-         });
++        child.stderr?.on("data", (data) => {
++            stderr = `${stderr}${data.toString()}`.slice(-65536);
++        });
++        const code = await waitForChildProcess(child);
++        if (code === 0)
++            return;
++        const exitStatus = code === null ? `signal ${child.signalCode ?? "unknown"}` : `code ${code}`;
++        const output = (stderr || stdout).trim();
++        throw new Error(`${command} ${args.join(" ")} failed with ${exitStatus}${output ? `: ${output}` : ""}`);
      }
      runCommandSync(command, args) {
 +        // PiDeck patch: spawnSync cannot be interrupted, so an in-flight sync
