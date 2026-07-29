@@ -390,6 +390,14 @@ diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
 index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2e1df837a 100644
 --- a/dist/core/package-manager.js
 +++ b/dist/core/package-manager.js
+@@ -29,7 +29,6 @@ import { CONFIG_DIR_NAME } from "../config.js";
+ import { spawnProcess, spawnProcessSync } from "../utils/child-process.js";
+ import { parseGitUrl } from "../utils/git.js";
+ import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.js";
+-import { isStdoutTakenOver } from "./output-guard.js";
+ const NETWORK_TIMEOUT_MS = 10000;
+ const UPDATE_CHECK_CONCURRENCY = 4;
+ const GIT_UPDATE_CONCURRENCY = 4;
 @@ -603,6 +603,7 @@ export class DefaultPackageManager {
      globalNpmRoot;
      globalNpmRootCommandKey;
@@ -438,7 +446,8 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
                  continue;
 @@ -2055,6 +2065,7 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
-             stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
+-            stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
++            stdio: ["ignore", "pipe", "pipe"],
              env,
 +            signal: this.operationSignal,
          });
@@ -452,7 +461,35 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
          });
      }
      runCommandCapture(command, args, options) {
-@@ -2120,6 +2132,10 @@ export class DefaultPackageManager {
+@@ -2108,14 +2120,24 @@ export class DefaultPackageManager {
+     runCommand(command, args, options) {
+         return new Promise((resolvePromise, reject) => {
+             const child = this.spawnCommand(command, args, options);
+-            child.on("error", reject);
+-            child.on("exit", (code) => {
++            let stdout = "";
++            let stderr = "";
++            child.stdout?.on("data", (data) => {
++                stdout = `${stdout}${data.toString()}`.slice(-65536);
++            });
++            child.stderr?.on("data", (data) => {
++                stderr = `${stderr}${data.toString()}`.slice(-65536);
++            });
++            child.once("error", reject);
++            child.once("close", (code, signal) => {
+                 if (code === 0) {
+                     resolvePromise();
+                 }
+                 else {
+-                    reject(new Error(`${command} ${args.join(" ")} failed with code ${code}`));
++                    const exitStatus = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
++                    const output = (stderr || stdout).trim();
++                    reject(new Error(`${command} ${args.join(" ")} failed with ${exitStatus}${output ? `: ${output}` : ""}`));
+                 }
+             });
+         });
+     }
+@@ -2120,6 +2142,10 @@ export class DefaultPackageManager {
          });
      }
      runCommandSync(command, args) {

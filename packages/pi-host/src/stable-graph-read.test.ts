@@ -50,6 +50,59 @@ describe("withStableGraphRead", () => {
     expect(lock.isHeld()).toBe(false);
   });
 
+  it("allows a slower SDK read owner to finish without surfacing graph busy", async () => {
+    vi.useFakeTimers();
+    try {
+      const identity = new IdentityState();
+      const lock = new TryMutex();
+      lock.tryAcquire({ operationKind: "sdk.read", requestId: "first-read" });
+      let settled = false;
+      const pending = withStableGraphRead({
+        requestId: "queued-read",
+        identity,
+        serviceGraphLock: lock,
+        run: async () => "ready",
+      }).then((out) => {
+        settled = true;
+        return out;
+      });
+
+      await vi.advanceTimersByTimeAsync(251);
+      expect(settled).toBe(false);
+      lock.release("first-read");
+
+      const out = await pending;
+      expect(out.ok).toBe(true);
+      if (out.ok) expect(out.result).toBe("ready");
+      expect(lock.isHeld()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the short default deadline behind a graph mutation", async () => {
+    vi.useFakeTimers();
+    try {
+      const identity = new IdentityState();
+      const lock = new TryMutex();
+      lock.tryAcquire({ operationKind: "package.mutation", requestId: "install" });
+      const pending = withStableGraphRead({
+        requestId: "blocked-read",
+        identity,
+        serviceGraphLock: lock,
+        run: async () => 1,
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+      const out = await pending;
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.code).toBe("SERVICE_GRAPH_BUSY");
+      lock.release("install");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns SERVICE_GRAPH_BUSY after the bounded lock wait expires", async () => {
     vi.useFakeTimers();
     try {

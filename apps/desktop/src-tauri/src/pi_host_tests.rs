@@ -10,7 +10,8 @@ mod tests {
         build_shutdown_line, drain_complete_lines, extract_host_instance_id, finish_monitor_task,
         is_current_child_generation, push_stderr_tail, read_bounded_lossy_line,
         read_bounded_utf8_line, should_auto_restart, strip_verbatim_prefix, write_host_stdin,
-        AutoRestartEpoch, HostChildSession, MAX_HOST_STDOUT_LINE_BYTES,
+        AutoRestartEpoch, HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
+        MAX_HOST_STDOUT_LINE_BYTES,
     };
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -217,6 +218,12 @@ rl.on('line', (line) => {
         let line = build_shutdown_line("real-host-id", "shutdown");
         assert!(line.contains(r#""expectedHostInstanceId":"real-host-id""#));
         assert!(!line.contains(r#""*""#));
+    }
+
+    #[test]
+    fn app_exit_uses_a_shorter_host_grace_period_than_restart() {
+        assert_eq!(APP_EXIT_HOST_SHUTDOWN_GRACE, Duration::from_secs(1));
+        assert!(APP_EXIT_HOST_SHUTDOWN_GRACE < HOST_SHUTDOWN_GRACE);
     }
 
     #[test]

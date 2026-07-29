@@ -36,12 +36,12 @@
   },
   "pnpmLock": {
     "path": "pnpm-lock.yaml",
-    "sha256": "757ed8e1b0b8c6aa569c22844442e26c8ec327a1b8cb112fb43c0162a5132cb9"
+    "sha256": "f745ae17c6430dde7372200d1a76d6b591f066e1b7f140379c57d3d5850458ad"
   },
   "hostProductionDeps": {
     "strategy": "pnpm-deploy-from-frozen-lockfile",
     "manifest": "packages/pi-host/package.json",
-    "sdkPatchSha256": "71d38dceb333b2be187a529801cab257ae67310ac93a6cc3ea210d04e965559b",
+    "sdkPatchSha256": "651949980da3b3cdafb26e037a905fc13be76396645bae5199aca4eb79c3b132",
     "forbidUnlockedNpmInstall": true,
     "forbidGlobalNpmFallback": true,
     "forbidProcessExecPathAsRuntime": true

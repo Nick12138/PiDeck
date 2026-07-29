@@ -1,4 +1,5 @@
 const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_ID: &str = "pideck-tray";
 
 #[cfg(any(target_os = "windows", test))]
 const OPEN_MENU_ID: &str = "pideck-tray-open";
@@ -38,6 +39,10 @@ pub fn should_hide_on_close(label: &str) -> bool {
     should_hide_for_platform(label, cfg!(target_os = "windows"))
 }
 
+pub fn remove(app: &tauri::AppHandle) {
+    drop(app.remove_tray_by_id(TRAY_ID));
+}
+
 #[cfg(target_os = "windows")]
 pub fn install(app: &mut tauri::App) -> tauri::Result<()> {
     install_windows(app)
@@ -61,7 +66,7 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
         .text(QUIT_MENU_ID, "Quit PiDeck")
         .build()?;
 
-    let mut tray = TrayIconBuilder::with_id("pideck-tray")
+    let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .tooltip("PiDeck")
         .show_menu_on_left_click(false)

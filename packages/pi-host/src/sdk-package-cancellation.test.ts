@@ -34,6 +34,7 @@ afterEach(async () => {
   if (root) await removeTree(root);
   root = undefined;
   delete process.env.PI_OFFLINE;
+  delete process.env.PIDECK_TEST_NPM_STDERR;
 });
 
 /** A child that records its pid and then never exits on its own. */
@@ -106,7 +107,7 @@ async function waitForExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
 }
 
 describe("PiDeck package-manager cancellation patch", () => {
-  it("kills the inherited-stdio child and settles the mutation", async () => {
+  it("kills the package install child and settles the mutation", async () => {
     const pidFile = join(tmpdir(), `pideck-cancel-inherit-${process.pid}-${Date.now()}`);
     const { manager } = createManager(longRunningCommand(pidFile));
     const controller = new AbortController();
@@ -200,5 +201,20 @@ describe("PiDeck package-manager cancellation patch", () => {
     expect(() =>
       (manager as unknown as { getGlobalNpmRoot: () => string }).getGlobalNpmRoot(),
     ).toThrow();
+  });
+
+  it("includes npm stderr when an install command fails", async () => {
+    const marker = "registry request failed: certificate rejected";
+    process.env.PIDECK_TEST_NPM_STDERR = marker;
+    const { manager } = createManager([
+      process.execPath,
+      "-e",
+      'process.stderr.write(process.env.PIDECK_TEST_NPM_STDERR ?? ""); process.exit(7);',
+      "--",
+    ]);
+
+    const failure = await manager.installAndPersist("npm:never-finishes").catch((error) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain(marker);
   });
 });

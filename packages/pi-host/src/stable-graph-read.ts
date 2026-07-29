@@ -6,6 +6,14 @@ import type { TryMutex } from "./locks.js";
 import type { IdentityState } from "./identity.js";
 
 const STABLE_GRAPH_READ_LOCK_TIMEOUT_MS = 250;
+const QUEUED_SDK_READ_LOCK_TIMEOUT_MS = 2_000;
+
+function lockTimeoutMs(serviceGraphLock: TryMutex, configuredTimeoutMs?: number): number {
+  if (configuredTimeoutMs !== undefined) return configuredTimeoutMs;
+  return serviceGraphLock.getOwner()?.operationKind === "sdk.read"
+    ? QUEUED_SDK_READ_LOCK_TIMEOUT_MS
+    : STABLE_GRAPH_READ_LOCK_TIMEOUT_MS;
+}
 
 export type StableReadOutcome<T> =
   | { ok: true; result: T; identity: HostIdentity }
@@ -33,7 +41,7 @@ export async function withStableGraphRead<T>(args: {
       operationKind: "sdk.read",
       requestId,
     },
-    args.lockTimeoutMs ?? STABLE_GRAPH_READ_LOCK_TIMEOUT_MS,
+    lockTimeoutMs(serviceGraphLock, args.lockTimeoutMs),
   );
   if (!acquired) {
     return {

@@ -153,6 +153,7 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
+                system_tray::remove(app_handle);
                 let handle = app_handle.clone();
                 tauri::async_runtime::block_on(async move {
                     let state = handle.state::<AppState>();
@@ -163,7 +164,7 @@ pub fn run() {
                     terminals.shutdown_all();
                     drop(terminals);
                     let mut host = state.host.lock().await;
-                    host.shutdown().await;
+                    host.shutdown_for_app_exit().await;
                 });
             }
             _ => {}

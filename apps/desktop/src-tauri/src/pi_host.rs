@@ -12,6 +12,9 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+pub(crate) const APP_EXIT_HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
+
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 #[cfg(windows)]
@@ -1433,6 +1436,14 @@ impl PiHostManager {
     }
 
     pub async fn shutdown(&mut self) {
+        self.shutdown_with_grace(HOST_SHUTDOWN_GRACE).await;
+    }
+
+    pub async fn shutdown_for_app_exit(&mut self) {
+        self.shutdown_with_grace(APP_EXIT_HOST_SHUTDOWN_GRACE).await;
+    }
+
+    async fn shutdown_with_grace(&mut self, graceful_timeout: Duration) {
         self.shutting_down.store(true, Ordering::SeqCst);
         self.child_generation.fetch_add(1, Ordering::SeqCst);
         if self.stdin.is_some() {
@@ -1460,17 +1471,12 @@ impl PiHostManager {
             // Child::wait reaps on Unix, so graceful exit must be observed
             // without releasing the PID needed for process-group cleanup.
             let needs_force = !matches!(
-                wait_for_unix_child_exit_without_reaping(
-                    child.id(),
-                    std::time::Duration::from_secs(10),
-                )
-                .await,
+                wait_for_unix_child_exit_without_reaping(child.id(), graceful_timeout,).await,
                 Ok(true)
             );
             #[cfg(not(unix))]
             let needs_force = {
-                let wait =
-                    tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await;
+                let wait = tokio::time::timeout(graceful_timeout, child.wait()).await;
                 !matches!(wait, Ok(Ok(_)))
             };
             #[cfg(unix)]
