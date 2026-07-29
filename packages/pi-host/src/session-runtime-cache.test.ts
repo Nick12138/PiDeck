@@ -20,6 +20,7 @@ function activeSlots(seed: string): ActiveSessionState {
     extensionUiActivate: vi.fn(),
     extensionUiCleanup: vi.fn(),
     extensionUiUpdateIdentity: vi.fn(),
+    extensionUiReplayState: vi.fn(),
     unsubscribeAgent: vi.fn(),
     sessionId: seed,
     sessionRevision: seed === "next" ? 7 : 2,
@@ -37,6 +38,7 @@ function graphFrom(state: ActiveSessionState): WorkspaceGraph {
     extensionUiActivate: state.extensionUiActivate,
     extensionUiCleanup: state.extensionUiCleanup,
     extensionUiUpdateIdentity: state.extensionUiUpdateIdentity,
+    extensionUiReplayState: state.extensionUiReplayState,
     unsubscribeAgent: state.unsubscribeAgent,
   } as WorkspaceGraph;
 }

@@ -23,6 +23,7 @@ import { join, dirname } from "node:path";
 import { describe, it, expect, afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
 import {
+  type AgentSession,
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
@@ -34,6 +35,7 @@ import {
   respondExtensionUi,
   cancelAllPending,
   injectExtensionCustomInput,
+  type ExtensionUiBinding,
 } from "./extension-ui-bridge.js";
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
 
@@ -245,6 +247,171 @@ describe("extension UI real loader + bindExtensions path", () => {
       session.dispose?.();
     } catch {
       /* optional */
+    }
+  }, 60_000);
+
+  it("rebuilds a retained Runner before restoring a Todo-like factory widget", async () => {
+    const retainedRoot = mkdtempSync(join(tmpdir(), "pideck-ui-retained-"));
+    const agentDir = join(retainedRoot, "agent");
+    const cwd = join(retainedRoot, "project");
+    mkdirSync(join(agentDir, "extensions"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(join(agentDir, "auth.json"), "{}");
+    writeFileSync(join(agentDir, "models.json"), "{}");
+    writeFileSync(join(agentDir, "settings.json"), "{}");
+    writeFileSync(
+      join(agentDir, "todo-like-state.js"),
+      [
+        'let activeSession = "";',
+        "export const getActiveSession = () => activeSession;",
+        "export const setActiveSession = (sessionId) => { activeSession = sessionId; };",
+        'export const clearActiveSession = () => { activeSession = ""; };',
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(agentDir, "extensions", "todo-like-extension.js"),
+      [
+        'import { clearActiveSession, getActiveSession, setActiveSession } from "../todo-like-state.js";',
+        "export default function (pi) {",
+        "  let overlayCreated = false;",
+        "  let registered = false;",
+        "  let boundUi;",
+        '  pi.on("session_start", (_event, ctx) => {',
+        "    const sessionId = ctx.sessionManager.getSessionId();",
+        "    if (!ctx.hasUI) return;",
+        "    if (!overlayCreated) {",
+        "      overlayCreated = true;",
+        "      setActiveSession(sessionId);",
+        "    }",
+        "    if (sessionId !== getActiveSession()) return;",
+        "    if (boundUi !== ctx.ui) {",
+        "      boundUi = ctx.ui;",
+        "      registered = false;",
+        "    }",
+        "    if (registered) return;",
+        '    ctx.ui.setWidget("todo-like", () => ({',
+        '      render: () => [`todos:${sessionId}`],',
+        "      invalidate: () => {},",
+        "    }));",
+        "    registered = true;",
+        "  });",
+        '  pi.on("session_shutdown", (_event, ctx) => {',
+        "    const sessionId = ctx.sessionManager.getSessionId();",
+        "    if (sessionId !== getActiveSession()) return;",
+        "    overlayCreated = false;",
+        "    registered = false;",
+        "    clearActiveSession();",
+        "  });",
+        "}",
+      ].join("\n"),
+    );
+
+    const bindings: ExtensionUiBinding[] = [];
+    const sessions: AgentSession[] = [];
+    try {
+      const settingsManager = SettingsManager.create(cwd, agentDir, {
+        projectTrusted: true,
+      });
+      const { modelRuntime } = await createTestModelServices(agentDir);
+      const createSessionWithLoader = async (): Promise<AgentSession> => {
+        const resourceLoader = new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          settingsManager,
+        });
+        await resourceLoader.reload();
+        const created = await createAgentSession({
+          cwd,
+          agentDir,
+          modelRuntime,
+          settingsManager,
+          resourceLoader,
+          sessionManager: SessionManager.create(cwd),
+        });
+        sessions.push(created.session);
+        return created.session;
+      };
+      const identityFor = (sessionId: string, revision: number): HostIdentity => ({
+        hostInstanceId: "h-retained",
+        workspaceId: "w-retained",
+        workspaceRevision: 1,
+        sessionId,
+        sessionRevision: revision,
+        packageRevision: 0,
+      });
+      const bindAndPublish = async (
+        session: AgentSession,
+        identity: HostIdentity,
+        events: Array<{ e: HostEventName; p: unknown }>,
+      ): Promise<ExtensionUiBinding> => {
+        const binding = await bindExtensionUi(session, null, {
+          emit: (e, p) => events.push({ e, p }),
+          getIdentity: () => identity,
+        });
+        bindings.push(binding);
+        const publish = await binding.activate();
+        publish();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return binding;
+      };
+
+      const first = await createSessionWithLoader();
+      const firstSessionId = first.sessionId;
+      const firstEvents: Array<{ e: HostEventName; p: unknown }> = [];
+      const firstBinding = await bindAndPublish(
+        first,
+        identityFor(firstSessionId, 1),
+        firstEvents,
+      );
+      expect(firstEvents.some((event) => event.e === "extensionUi.widgetChanged")).toBe(
+        true,
+      );
+      firstBinding.cleanup();
+
+      const second = await createSessionWithLoader();
+      const secondEvents: Array<{ e: HostEventName; p: unknown }> = [];
+      await bindAndPublish(
+        second,
+        identityFor(second.sessionId, 2),
+        secondEvents,
+      );
+      expect(secondEvents.some((event) => event.e === "extensionUi.widgetChanged")).toBe(
+        true,
+      );
+
+      const staleEvents: Array<{ e: HostEventName; p: unknown }> = [];
+      const staleBinding = await bindAndPublish(
+        first,
+        identityFor(firstSessionId, 3),
+        staleEvents,
+      );
+      expect(staleEvents.some((event) => event.e === "extensionUi.widgetChanged")).toBe(
+        false,
+      );
+      staleBinding.cleanup();
+
+      const restoredEvents: Array<{ e: HostEventName; p: unknown }> = [];
+      const restoredBinding = await bindExtensionUi(first, null, {
+        emit: (e, p) => restoredEvents.push({ e, p }),
+        getIdentity: () => identityFor(firstSessionId, 4),
+      });
+      bindings.push(restoredBinding);
+      await first.reload();
+      const publishRestored = await restoredBinding.activate();
+      publishRestored();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const restoredWidget = restoredEvents.find(
+        (event) => event.e === "extensionUi.widgetChanged",
+      )?.p;
+      expect(restoredWidget).toEqual({
+        key: "todo-like",
+        widget: [`todos:${firstSessionId}`],
+      });
+    } finally {
+      for (const binding of bindings.reverse()) binding.cleanup();
+      for (const session of sessions.reverse()) session.dispose();
+      rmSync(retainedRoot, { recursive: true, force: true });
     }
   }, 60_000);
 });

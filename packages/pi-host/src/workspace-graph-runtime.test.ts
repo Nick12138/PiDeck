@@ -62,6 +62,7 @@ function fakeSession(isIdle: boolean, sessionId = "session"): AgentSession {
     getAvailableThinkingLevels: () => ["off"],
     subscribe: vi.fn(() => vi.fn()),
     bindExtensions: vi.fn(async () => {}),
+    reload: vi.fn(async () => {}),
     extensionRunner: {
       hasHandlers: vi.fn(() => true),
       emit: vi.fn(async () => undefined),
@@ -207,6 +208,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiActivate: null,
       extensionUiCleanup,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     });
 
     expect(runtime?.agentSession).toBe(session);
@@ -240,6 +242,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiActivate: null,
       extensionUiCleanup,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     });
 
     expect(runtime).toBeNull();
@@ -490,6 +493,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         extensionUiActivate: null,
         extensionUiCleanup: vi.fn(),
         extensionUiUpdateIdentity: null,
+        extensionUiReplayState: null,
       } as unknown as BackgroundSessionRuntime;
       const graph = {
         workspaceId: WORKSPACE_ID,
@@ -562,6 +566,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       factory.getSessionOperationLock(backgroundSession).tryAcquire("in-flight-prompt"),
     ).toBe(true);
     const updateIdentity = vi.fn();
+    const replayState = vi.fn(() => emitted.push("extensionUi.widgetChanged"));
     const runtime = {
       sessionId: BACKGROUND_SESSION_ID,
       sessionRevision: 3,
@@ -579,6 +584,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiActivate: null,
       extensionUiCleanup: vi.fn(),
       extensionUiUpdateIdentity: updateIdentity,
+      extensionUiReplayState: replayState,
     } as unknown as BackgroundSessionRuntime;
     const graph = {
       workspaceId: WORKSPACE_ID,
@@ -592,6 +598,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
       unsubscribeAgent: null,
       backgroundSessions: new Map([[BACKGROUND_SESSION_ID, runtime]]),
     } as unknown as WorkspaceGraph;
@@ -615,12 +622,14 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     expect(updateIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: BACKGROUND_SESSION_ID, sessionRevision: 6 }),
     );
+    expect(replayState).toHaveBeenCalledOnce();
     expect(foreground.dispose).not.toHaveBeenCalled();
     expect(graph.retainedSessions?.has(ACTIVE_SESSION_ID)).toBe(true);
     expect(emitted).toEqual([
       "session.snapshot",
       "agent.toolsChanged",
       "session.runtimeChanged",
+      "extensionUi.widgetChanged",
     ]);
     expect(server.emit).toHaveBeenLastCalledWith(
       "session.runtimeChanged",
@@ -754,6 +763,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         extensionUiActivate: null,
         extensionUiCleanup: vi.fn(),
         extensionUiUpdateIdentity: null,
+        extensionUiReplayState: null,
       });
       expect(runtime).not.toBeNull();
 
@@ -837,6 +847,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiActivate: null,
       extensionUiCleanup: vi.fn(),
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     });
     expect(runtime).not.toBeNull();
 
@@ -849,7 +860,11 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     expect(active.dispose).not.toHaveBeenCalled();
     expect(activeCleanup).toHaveBeenCalledTimes(1);
     expect(activeUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(retained.reload).toHaveBeenCalledTimes(1);
     expect(retained.bindExtensions).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(retained.bindExtensions).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(retained.reload).mock.invocationCallOrder[0]!,
+    );
     expect(emitted).toEqual([
       "session.snapshot",
       "agent.toolsChanged",
@@ -878,6 +893,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
         extensionUiActivate: null,
         extensionUiCleanup: vi.fn(),
         extensionUiUpdateIdentity: null,
+        extensionUiReplayState: null,
       });
     }
 

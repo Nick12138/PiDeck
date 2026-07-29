@@ -415,6 +415,7 @@ export class WorkspaceLifecycle {
     }
     graph.extensionUiCleanup = null;
     graph.extensionUiUpdateIdentity = null;
+    graph.extensionUiReplayState = null;
     // The switch path may already have parked this owner before building the
     // incoming graph. Preserve that pre-merge snapshot when retention finishes.
     this.suspendGraphProviders(graph);
@@ -536,6 +537,7 @@ export class WorkspaceLifecycle {
       graph.extensionUiActivate = binding.activate;
       graph.extensionUiCleanup = binding.cleanup;
       graph.extensionUiUpdateIdentity = binding.updateIdentity;
+      graph.extensionUiReplayState = binding.replayState;
       binding.updateIdentity(candidateIdentity);
       graph.packageSnapshot = await buildPackageSnapshot({
         revision: args.packageRevision,
@@ -645,6 +647,7 @@ export class WorkspaceLifecycle {
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
       resourceReloadRequired: false,
       backgroundSessions: new Map(),
       retainedSessions: new Map(),
@@ -752,6 +755,7 @@ export class WorkspaceLifecycle {
         extensionUiActivate: null,
         extensionUiCleanup: null,
         extensionUiUpdateIdentity: null,
+        extensionUiReplayState: null,
         resourceReloadRequired: false,
         backgroundSessions: new Map(),
         retainedSessions: new Map(),
@@ -774,6 +778,7 @@ export class WorkspaceLifecycle {
       graph.extensionUiActivate = extensionUiBinding.activate;
       graph.extensionUiCleanup = extensionUiBinding.cleanup;
       graph.extensionUiUpdateIdentity = extensionUiBinding.updateIdentity;
+      graph.extensionUiReplayState = extensionUiBinding.replayState;
       candidateExtensionUiCleanup = extensionUiBinding.cleanup;
       graph.unsubscribeAgent = session.subscribe((event) => {
         this.sessionRuntimeCache.handleAgentEvent(graph, session, event);

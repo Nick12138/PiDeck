@@ -1146,6 +1146,51 @@ describe("extension-ui-bridge", () => {
     binding.cleanup();
   });
 
+  it("replays the latest widget and status state after identity promotion", async () => {
+    const promoted = { ...id, sessionRevision: id.sessionRevision + 1 };
+    const events: Array<{ identity: HostIdentity; e: HostEventName; p: unknown }> = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => {},
+      emitForIdentity: (identity, e, p) => events.push({ identity, e, p }),
+      getIdentity: () => id,
+    });
+    const publish = await binding.activate();
+    publish();
+
+    ui!.setWidget("todos", ["first"]);
+    ui!.setWidget("todos", ["latest"], { placement: "belowEditor" });
+    ui!.setWidget("removed", ["old"]);
+    ui!.setWidget("removed", undefined);
+    ui!.setStatus("todo-status", "running");
+    ui!.setStatus("cleared-status", "old");
+    ui!.setStatus("cleared-status", undefined);
+    ui!.notify("do not replay", "info");
+
+    events.length = 0;
+    binding.updateIdentity(promoted);
+    binding.replayState();
+
+    expect(events).toEqual([
+      {
+        identity: promoted,
+        e: "extensionUi.widgetChanged",
+        p: { key: "todos", widget: ["latest"], placement: "belowEditor" },
+      },
+      {
+        identity: promoted,
+        e: "extensionUi.statusChanged",
+        p: { key: "todo-status", text: "running" },
+      },
+    ]);
+    binding.cleanup();
+  });
+
   it("migrates pending requests and future events to a promoted Session identity", async () => {
     const promoted = { ...id, sessionRevision: id.sessionRevision + 1 };
     const events: Array<{ identity: HostIdentity; e: HostEventName; p: unknown }> = [];

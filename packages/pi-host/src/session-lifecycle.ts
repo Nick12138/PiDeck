@@ -461,6 +461,7 @@ export async function createSession(
   let extensionUiActivate: (() => Promise<() => void>) | null = null;
   let extensionUiCleanup: (() => void) | null = null;
   let extensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null = null;
+  let extensionUiReplayState: (() => void) | null = null;
   let unsubscribeAgent: (() => void) | null = null;
 
   try {
@@ -505,6 +506,7 @@ export async function createSession(
       extensionUiActivate = extensionUiBinding.activate;
       extensionUiCleanup = extensionUiBinding.cleanup;
       extensionUiUpdateIdentity = extensionUiBinding.updateIdentity;
+      extensionUiReplayState = extensionUiBinding.replayState;
       unsubscribeAgent = session.subscribe((event) => {
         factory.handleAgentEvent(g, session, event);
       });
@@ -560,6 +562,7 @@ export async function createSession(
       extensionUiActivate,
       extensionUiCleanup,
       extensionUiUpdateIdentity,
+      extensionUiReplayState,
       unsubscribeAgent,
       sessionId,
       sessionRevision,
@@ -583,6 +586,7 @@ export async function createSession(
       extensionUiActivate = null;
       extensionUiCleanup = null;
       extensionUiUpdateIdentity = null;
+      extensionUiReplayState = null;
       unsubscribeAgent = null;
       return {
         error: createHostError(
@@ -621,6 +625,7 @@ export async function createSession(
     extensionUiActivate = null;
     extensionUiCleanup = null;
     extensionUiUpdateIdentity = null;
+    extensionUiReplayState = null;
     unsubscribeAgent = null;
 
     server.emit("session.snapshot", sessionSnapshot);
@@ -762,6 +767,7 @@ export async function openSession(
     let candidateSession: AgentSession | null = null;
     let candidateExtensionUiCleanup: (() => void) | null = null;
     let candidateExtensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null = null;
+    let candidateExtensionUiReplayState: (() => void) | null = null;
     let candidateUnsubscribeAgent: (() => void) | null = null;
     try {
       await Promise.resolve(factory.deps.refreshModelHealth());
@@ -796,6 +802,7 @@ export async function openSession(
       const candidateExtensionUiActivate = extensionUiBinding.activate;
       candidateExtensionUiCleanup = extensionUiBinding.cleanup;
       candidateExtensionUiUpdateIdentity = extensionUiBinding.updateIdentity;
+      candidateExtensionUiReplayState = extensionUiBinding.replayState;
       candidateUnsubscribeAgent = session.subscribe((event) => {
         factory.handleAgentEvent(g, session, event);
       });
@@ -824,6 +831,7 @@ export async function openSession(
         extensionUiActivate: candidateExtensionUiActivate,
         extensionUiCleanup: candidateExtensionUiCleanup,
         extensionUiUpdateIdentity: candidateExtensionUiUpdateIdentity,
+        extensionUiReplayState: candidateExtensionUiReplayState,
         unsubscribeAgent: candidateUnsubscribeAgent,
         sessionId,
         sessionRevision,
@@ -846,6 +854,7 @@ export async function openSession(
         candidateSession = null;
         candidateExtensionUiCleanup = null;
         candidateExtensionUiUpdateIdentity = null;
+        candidateExtensionUiReplayState = null;
         candidateUnsubscribeAgent = null;
         return {
           error: createHostError(
@@ -880,6 +889,7 @@ export async function openSession(
       candidateSession = null;
       candidateExtensionUiCleanup = null;
       candidateExtensionUiUpdateIdentity = null;
+      candidateExtensionUiReplayState = null;
       candidateUnsubscribeAgent = null;
       server.emit("session.snapshot", sessionSnapshot);
       server.emit("agent.toolsChanged", sessionSnapshot.tools);

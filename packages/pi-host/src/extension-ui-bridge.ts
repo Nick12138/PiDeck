@@ -174,6 +174,7 @@ export type ExtensionUiBinding = {
   activate: () => Promise<() => void>;
   cleanup: () => void;
   updateIdentity: (identity: HostIdentity) => void;
+  replayState: () => void;
 };
 
 function stripAnsi(text: string): string {
@@ -1045,6 +1046,10 @@ export async function bindExtensionUi(
   let disposed = false;
   const contextCleanups = new Set<() => void>();
   const queuedEvents: Array<{ event: HostEventName; payload: unknown }> = [];
+  const replayableState = new Map<
+    string,
+    { event: HostEventName; payload: unknown }
+  >();
   let releaseActivation!: () => void;
   const activation = new Promise<void>((resolve) => {
     releaseActivation = resolve;
@@ -1072,8 +1077,30 @@ export async function bindExtensionUi(
     }
     queuedEvents.push({ event, payload });
   };
+  const updateReplayableState = (event: HostEventName, payload: unknown) => {
+    if (event === "extensionUi.widgetChanged") {
+      const widget = payload as { key?: unknown; widget?: unknown };
+      const stateKey = `widget:${String(widget.key ?? "")}`;
+      if (widget.widget === null || widget.widget === undefined) {
+        replayableState.delete(stateKey);
+      } else {
+        replayableState.set(stateKey, { event, payload });
+      }
+      return;
+    }
+    if (event === "extensionUi.statusChanged") {
+      const status = payload as { key?: unknown; text?: unknown };
+      const stateKey = `status:${String(status.key ?? "")}`;
+      if (status.text === null || status.text === undefined || status.text === "") {
+        replayableState.delete(stateKey);
+      } else {
+        replayableState.set(stateKey, { event, payload });
+      }
+    }
+  };
   const emit = (event: HostEventName, payload: unknown) => {
     if (disposed) return;
+    updateReplayableState(event, payload);
     if (!activated || (!readyForEvents && !BLOCKING_EXTENSION_EVENTS.has(event))) {
       queueEvent(event, payload);
       return;
@@ -1148,12 +1175,19 @@ export async function bindExtensionUi(
       contextCleanups.clear();
       disposed = true;
       queuedEvents.length = 0;
+      replayableState.clear();
       releaseActivation();
     },
     updateIdentity: (identity) => {
       const next = { ...identity };
       migrateExtensionUiIdentity(bindingIdentity, next);
       bindingIdentity = next;
+    },
+    replayState: () => {
+      if (disposed || !activated || !readyForEvents) return;
+      for (const state of replayableState.values()) {
+        publishEvent(state.event, state.payload);
+      }
     },
   };
 }

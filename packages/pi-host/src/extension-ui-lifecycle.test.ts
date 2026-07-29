@@ -9,6 +9,7 @@ describe("Extension UI lifecycle", () => {
       extensionUiActivate: activate,
       extensionUiCleanup: vi.fn(),
       extensionUiUpdateIdentity: vi.fn(),
+      extensionUiReplayState: vi.fn(),
     };
 
     await expect(activateOnce(slots)).resolves.toBe(publish);
@@ -25,6 +26,7 @@ describe("Extension UI lifecycle", () => {
       }),
       extensionUiCleanup: cleanup,
       extensionUiUpdateIdentity: vi.fn(),
+      extensionUiReplayState: vi.fn(),
     };
 
     await expect(activateOnce(slots)).rejects.toThrow("activation failed");
@@ -33,6 +35,7 @@ describe("Extension UI lifecycle", () => {
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     });
   });
 
@@ -43,6 +46,7 @@ describe("Extension UI lifecycle", () => {
         throw new Error("cleanup failed");
       }),
       extensionUiUpdateIdentity: vi.fn(),
+      extensionUiReplayState: vi.fn(),
     };
 
     expect(() => clearSlots(slots)).toThrow("cleanup failed");
@@ -50,6 +54,7 @@ describe("Extension UI lifecycle", () => {
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     });
   });
 });

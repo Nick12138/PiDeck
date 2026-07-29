@@ -10,6 +10,7 @@ export type ExtensionUiSlots = {
   extensionUiActivate: (() => Promise<() => void>) | null;
   extensionUiCleanup: (() => void) | null;
   extensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null;
+  extensionUiReplayState: (() => void) | null;
 };
 
 /** Bind the existing bridge to a not-yet-committed Host identity. */
@@ -52,5 +53,6 @@ export function clearSlots(slots: ExtensionUiSlots): void {
   } finally {
     slots.extensionUiCleanup = null;
     slots.extensionUiUpdateIdentity = null;
+    slots.extensionUiReplayState = null;
   }
 }

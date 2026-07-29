@@ -12,6 +12,7 @@ import { bindForCandidate, activateOnce, clearSlots } from "./extension-ui-lifec
 import { normalizeAgentEvent } from "./event-normalize.js";
 import { AgentOperationLock } from "./locks.js";
 import { logger } from "./logger.js";
+import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { pruneQueuedImages } from "./queue-attachments.js";
 import {
   beginQueueTransaction,
@@ -85,6 +86,7 @@ type ActiveSessionSlots = Pick<
   | "extensionUiActivate"
   | "extensionUiCleanup"
   | "extensionUiUpdateIdentity"
+  | "extensionUiReplayState"
   | "unsubscribeAgent"
 >;
 
@@ -112,6 +114,7 @@ export function captureActiveSessionState(
     extensionUiActivate: graph.extensionUiActivate,
     extensionUiCleanup: graph.extensionUiCleanup,
     extensionUiUpdateIdentity: graph.extensionUiUpdateIdentity,
+    extensionUiReplayState: graph.extensionUiReplayState,
     unsubscribeAgent: graph.unsubscribeAgent,
     sessionId: identity.sessionId,
     sessionRevision: identity.sessionRevision,
@@ -133,6 +136,7 @@ export function commitActiveSessionState(
   graph.extensionUiActivate = state.extensionUiActivate;
   graph.extensionUiCleanup = state.extensionUiCleanup;
   graph.extensionUiUpdateIdentity = state.extensionUiUpdateIdentity;
+  graph.extensionUiReplayState = state.extensionUiReplayState;
   graph.unsubscribeAgent = state.unsubscribeAgent;
   identity.sessionId = state.sessionId;
   identity.sessionRevision = state.sessionRevision;
@@ -347,6 +351,7 @@ export class SessionRuntimeCache {
       extensionUiActivate: previous.extensionUiActivate,
       extensionUiCleanup: previous.extensionUiCleanup,
       extensionUiUpdateIdentity: previous.extensionUiUpdateIdentity,
+      extensionUiReplayState: previous.extensionUiReplayState,
     };
     graph.backgroundSessions.set(runtime.sessionId, runtime);
     return runtime;
@@ -390,6 +395,7 @@ export class SessionRuntimeCache {
       extensionUiActivate: null,
       extensionUiCleanup: null,
       extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
     };
 
     const retainedSessions = this.retainedSessionRuntimes(graph);
@@ -512,6 +518,7 @@ export class SessionRuntimeCache {
       extensionUiActivate: runtime.extensionUiActivate,
       extensionUiCleanup: runtime.extensionUiCleanup,
       extensionUiUpdateIdentity: runtime.extensionUiUpdateIdentity,
+      extensionUiReplayState: runtime.extensionUiReplayState,
       unsubscribeAgent: runtime.unsubscribeAgent,
       sessionId: runtime.sessionId,
       sessionRevision,
@@ -547,6 +554,7 @@ export class SessionRuntimeCache {
       state: this.isSessionBusy(runtime.agentSession) ? "running" : "idle",
       updatedAt: Date.now(),
     });
+    runtime.extensionUiReplayState?.();
     return snapshot;
   }
 
@@ -567,7 +575,7 @@ export class SessionRuntimeCache {
       sessionRevision,
     };
 
-    let binding: Awaited<ReturnType<typeof bindForCandidate>>;
+    let binding: Awaited<ReturnType<typeof bindForCandidate>> | undefined;
     try {
       binding = await bindForCandidate(
         runtime.agentSession,
@@ -575,8 +583,15 @@ export class SessionRuntimeCache {
         server,
         candidateIdentity,
       );
+      await withoutImplicitPackageInstall(() => runtime.agentSession.reload());
+      signal?.throwIfAborted();
     } catch (err) {
-      logger.warn("retained Session Extension rebind failed; reopening from disk", {
+      try {
+        binding?.cleanup();
+      } catch {
+        /* ignore candidate binding cleanup failure */
+      }
+      logger.warn("retained Session Extension rebuild failed; reopening from disk", {
         sessionId: runtime.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -602,6 +617,7 @@ export class SessionRuntimeCache {
     runtime.extensionUiActivate = binding.activate;
     runtime.extensionUiCleanup = binding.cleanup;
     runtime.extensionUiUpdateIdentity = binding.updateIdentity;
+    runtime.extensionUiReplayState = binding.replayState;
     binding.updateIdentity(candidateIdentity);
     const snapshot = buildSessionSnapshot({
       session: runtime.agentSession,
@@ -624,6 +640,7 @@ export class SessionRuntimeCache {
       extensionUiActivate: runtime.extensionUiActivate,
       extensionUiCleanup: runtime.extensionUiCleanup,
       extensionUiUpdateIdentity: runtime.extensionUiUpdateIdentity,
+      extensionUiReplayState: runtime.extensionUiReplayState,
       unsubscribeAgent: runtime.unsubscribeAgent,
       sessionId: runtime.sessionId,
       sessionRevision,
@@ -648,6 +665,7 @@ export class SessionRuntimeCache {
       runtime.extensionUiActivate = null;
       runtime.extensionUiCleanup = null;
       runtime.extensionUiUpdateIdentity = null;
+      runtime.extensionUiReplayState = null;
       retainedSessions.set(runtime.sessionId, runtime);
       commitActiveSessionState(graph, server.identity, previous);
       return {

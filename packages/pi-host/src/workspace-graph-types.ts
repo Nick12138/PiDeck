@@ -44,6 +44,7 @@ export type WorkspaceGraph = {
   extensionUiActivate: (() => Promise<() => void>) | null;
   extensionUiCleanup: (() => void) | null;
   extensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null;
+  extensionUiReplayState: (() => void) | null;
   /** After package mutation reload failure — block prompts until reload succeeds */
   resourceReloadRequired: boolean;
   backgroundSessions: Map<string, BackgroundSessionRuntime>;
@@ -70,6 +71,7 @@ export type BackgroundSessionRuntime = {
   extensionUiActivate: (() => Promise<() => void>) | null;
   extensionUiCleanup: (() => void) | null;
   extensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null;
+  extensionUiReplayState: (() => void) | null;
 };
 
 export type ManagedSessionInfo = SessionInfo & { archived: boolean };
