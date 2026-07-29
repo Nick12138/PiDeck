@@ -9,6 +9,7 @@ import { HostSettings } from "./HostSettings";
 
 const invokeMock = vi.fn(async () => undefined);
 const openMock = vi.fn<() => Promise<string | null>>();
+const checkForAppUpdateMock = vi.fn<() => Promise<unknown>>();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...(args as [])),
@@ -19,6 +20,9 @@ vi.mock("@tauri-apps/api/app", () => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: (...args: unknown[]) => openMock(...(args as [])),
+}));
+vi.mock("../../lib/updater", () => ({
+  checkForAppUpdate: () => checkForAppUpdateMock(),
 }));
 
 function host(): HostStatusSnapshot {
@@ -46,6 +50,7 @@ function host(): HostStatusSnapshot {
 beforeEach(() => {
   invokeMock.mockClear();
   openMock.mockReset();
+  checkForAppUpdateMock.mockReset();
   useAppStore.getState().setHost(host());
   useAppStore.getState().clearNotifications();
   useAppStore.getState().setHostFatal(null);
@@ -89,6 +94,52 @@ describe("HostSettings", () => {
     const reopened = screen.getByRole("dialog", { name: "Restart Pi Host?" });
     await user.click(within(reopened).getByRole("button", { name: "Restart Host" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("pi_host_restart"));
+  });
+
+  it("reports up to date after a manual check that finds nothing", async () => {
+    const user = userEvent.setup();
+    checkForAppUpdateMock.mockResolvedValue(null);
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("PiDeck is up to date.")).toBeInTheDocument();
+    expect(checkForAppUpdateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers install-and-restart when a manual check finds an update", async () => {
+    const user = userEvent.setup();
+    const install = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("disk full"));
+    checkForAppUpdateMock.mockResolvedValue({ version: "0.2.0", install });
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("Version 0.2.0 is available.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Download and restart" }));
+    expect(install).toHaveBeenCalledTimes(1);
+    // A failed install keeps the update offer instead of losing it.
+    expect(await screen.findByRole("button", { name: "Download and restart" })).toBeEnabled();
+    expect(
+      useAppStore
+        .getState()
+        .notifications.some((item) => item.message.includes("Update install failed")),
+    ).toBe(true);
+  });
+
+  it("surfaces a failed update check as a notification and stays retryable", async () => {
+    const user = userEvent.setup();
+    checkForAppUpdateMock.mockRejectedValue(new Error("feed unreachable"));
+    render(<HostSettings />);
+
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .notifications.some((item) => item.message.includes("Update check failed")),
+      ).toBe(true),
+    );
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeEnabled();
   });
 
   it("changes the agent directory through the folder picker", async () => {

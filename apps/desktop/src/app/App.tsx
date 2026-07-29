@@ -27,8 +27,9 @@ import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-co
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
+import { checkForAppUpdate } from "../lib/updater";
 import { applyLanguage } from "../lib/i18n";
-import { useT } from "../lib/i18n/use-t";
+import { tCurrent, useT } from "../lib/i18n/use-t";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -895,6 +896,24 @@ export function App() {
   useEffect(() => {
     applyLanguage(desktopSettings?.language);
   }, [desktopSettings?.language]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Startup check is best-effort: offline or a bad feed stays silent, and
+    // the manual check in Settings → Host surfaces errors instead.
+    void checkForAppUpdate()
+      .then((update) => {
+        if (update && !cancelled) {
+          useAppStore
+            .getState()
+            .pushNotification(tCurrent("notifUpdateAvailable", { version: update.version }));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (

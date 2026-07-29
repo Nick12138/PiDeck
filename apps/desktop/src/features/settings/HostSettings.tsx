@@ -4,6 +4,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { getAppVersion } from "../../lib/app-version";
+import { checkForAppUpdate, type AppUpdate } from "../../lib/updater";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
@@ -14,12 +15,20 @@ const CAPABILITY_LABELS: Record<string, MessageKey> = {
   sessionExport: "hostCapSessionExport",
 };
 
+type UpdatePhase =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "upToDate" }
+  | { state: "available"; update: AppUpdate }
+  | { state: "installing"; update: AppUpdate };
+
 export function HostSettings() {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [updatePhase, setUpdatePhase] = useState<UpdatePhase>({ state: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +63,34 @@ export function HostSettings() {
     } catch (err) {
       pushNotification(
         err instanceof Error ? err.message : t("notifAgentDirChangeFailed"),
+        "error",
+      );
+    }
+  }
+
+  async function checkForUpdates() {
+    setUpdatePhase({ state: "checking" });
+    try {
+      const update = await checkForAppUpdate();
+      setUpdatePhase(update ? { state: "available", update } : { state: "upToDate" });
+    } catch (err) {
+      setUpdatePhase({ state: "idle" });
+      pushNotification(
+        err instanceof Error ? `${t("notifUpdateCheckFailed")}: ${err.message}` : t("notifUpdateCheckFailed"),
+        "error",
+      );
+    }
+  }
+
+  async function installUpdate(update: AppUpdate) {
+    setUpdatePhase({ state: "installing", update });
+    try {
+      // On success the app relaunches, so this promise never settles visibly.
+      await update.install();
+    } catch (err) {
+      setUpdatePhase({ state: "available", update });
+      pushNotification(
+        err instanceof Error ? `${t("notifUpdateInstallFailed")}: ${err.message}` : t("notifUpdateInstallFailed"),
         "error",
       );
     }
@@ -166,6 +203,39 @@ export function HostSettings() {
               <div className="flex justify-between">
                 <span className="text-muted">PiDeck</span>
                 <span className="font-mono">{appVersion ?? "—"}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {updatePhase.state === "available" || updatePhase.state === "installing" ? (
+                  <button
+                    type="button"
+                    className={secondaryButton}
+                    disabled={updatePhase.state === "installing"}
+                    onClick={() => void installUpdate(updatePhase.update)}
+                  >
+                    {updatePhase.state === "installing"
+                      ? t("hostUpdateInstalling")
+                      : t("hostUpdateInstall")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={secondaryButton}
+                    disabled={updatePhase.state === "checking"}
+                    onClick={() => void checkForUpdates()}
+                  >
+                    {updatePhase.state === "checking"
+                      ? t("hostUpdateChecking")
+                      : t("hostUpdateCheck")}
+                  </button>
+                )}
+                {updatePhase.state === "upToDate" && (
+                  <span className="text-xs text-muted">{t("hostUpdateUpToDate")}</span>
+                )}
+                {(updatePhase.state === "available" || updatePhase.state === "installing") && (
+                  <span className="text-xs text-muted">
+                    {t("hostUpdateAvailable", { version: updatePhase.update.version })}
+                  </span>
+                )}
               </div>
             </div>
           </section>
