@@ -2,6 +2,39 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
+@font-face {
+  font-family: "PiDeck PingFang SC";
+  src: url("../assets/fonts/pingfang-sc/PingFangSC-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF,
+    U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+}
+
+@font-face {
+  font-family: "PiDeck PingFang SC";
+  src: url("../assets/fonts/pingfang-sc/PingFangSC-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  unicode-range: U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF,
+    U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+}
+
+@font-face {
+  font-family: "PiDeck PingFang SC";
+  src: url("../assets/fonts/pingfang-sc/PingFangSC-Semibold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF,
+    U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @source "../../node_modules/streamdown/dist/*.js";
@@ -25,8 +58,8 @@
   --color-danger: #ef4444;
   --color-background: var(--color-surface);
   --color-muted-foreground: var(--color-muted);
-  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", monospace;
+  --font-sans: "Inter Variable", "PiDeck PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "PiDeck PingFang SC", ui-monospace, "Cascadia Code", monospace;
 }
 
 :root {
