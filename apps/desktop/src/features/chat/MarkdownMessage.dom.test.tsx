@@ -110,6 +110,35 @@ Inline \(x+y\).
 });
 
 describe("MarkdownMessage code block expansion", () => {
+  it("overlays the copy control without changing the code content layout", async () => {
+    const source = "const answer = 42;\nreturn answer;";
+    const { container } = render(
+      <MarkdownMessage content={`\`\`\`\n${source}\n\`\`\``} mode="static" />,
+    );
+
+    const copy = await screen.findByRole("button", { name: "Copy code" });
+    const shell = copy.closest(".markdown-code-shell");
+    const codeBlock = container.querySelector<HTMLElement>('[data-streamdown="code-block"]');
+    const codeHeader = container.querySelector<HTMLElement>(
+      '[data-streamdown="code-block-header"]',
+    );
+    const code = container.querySelector('[data-streamdown="code-block-body"] code');
+
+    expect(shell).toContainElement(codeBlock);
+    expect(copy).toHaveClass("markdown-code-copy-button", "absolute", "right-4");
+    expect(codeBlock).toHaveAttribute("data-language", "");
+    expect(codeHeader).toHaveAttribute("data-language", "");
+    expect(codeBlock).toContainElement(copy);
+    expect(
+      container.querySelector<HTMLElement>('[data-streamdown="code-block-body"]'),
+    ).not.toContainElement(copy);
+    expect(
+      Array.from(code?.querySelectorAll(":scope > span") ?? []).map(
+        (line) => line.textContent,
+      ),
+    ).toEqual(source.split("\n"));
+  });
+
   it.each(["python", "markdown"])(
     "expands every line in a long %s fence and can collapse it again",
     async (language) => {
@@ -152,6 +181,36 @@ describe("MarkdownMessage code block expansion", () => {
       expect(codeContent).toHaveAttribute("data-collapsed", "true");
     },
   );
+});
+
+describe("MarkdownMessage tables", () => {
+  it("keeps a lightweight table semantic structure without an action toolbar", async () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={[
+          "| Model | Context | Notes |",
+          "| --- | ---: | --- |",
+          "| Pi | 32K | General purpose |",
+          "| Sonnet | 200K | Long context |",
+        ].join("\n")}
+        mode="static"
+      />,
+    );
+
+    const table = await screen.findByRole("table");
+    const wrapper = container.querySelector<HTMLElement>(
+      '[data-streamdown="table-wrapper"]',
+    );
+
+    expect(wrapper).toContainElement(table);
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Model",
+      "Context",
+      "Notes",
+    ]);
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+    expect(wrapper?.querySelector("button")).not.toBeInTheDocument();
+  });
 });
 
 describe("MarkdownMessage Mermaid rendering", () => {

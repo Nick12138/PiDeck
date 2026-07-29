@@ -12,9 +12,12 @@ import {
   type ReactNode,
   useCallback,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import remarkBreaks from "remark-breaks";
 import remarkMathExtended from "remark-math-extended";
 import {
@@ -296,6 +299,14 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
   const contentId = useId();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [copyTarget, setCopyTarget] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    setCopyTarget(
+      shellRef.current?.querySelector<HTMLElement>('[data-streamdown="code-block"]') ?? null,
+    );
+  }, [content]);
 
   if (!child) return children;
   const codeBlock = cloneElement(child, { "data-block": "true" });
@@ -315,17 +326,21 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
     }
   }
 
+  const copyButton = (
+    <button
+      type="button"
+      onClick={() => void copyCode()}
+      className="markdown-code-copy-button absolute right-4 z-10 flex size-7 cursor-pointer items-center justify-center rounded-md bg-surface/90 text-muted hover:bg-surface-overlay hover:text-foreground"
+      title={copied ? t("markdownCopied") : t("markdownCopyCode")}
+      aria-label={copied ? t("markdownCopied") : t("markdownCopyCode")}
+      data-copied={copied || undefined}
+    >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+
   return (
-    <div className="markdown-code-shell relative w-full">
-      <button
-        type="button"
-        onClick={() => void copyCode()}
-        className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md bg-surface/90 text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-        title={copied ? t("markdownCopied") : t("markdownCopyCode")}
-        aria-label={copied ? t("markdownCopied") : t("markdownCopyCode")}
-      >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </button>
+    <div ref={shellRef} className="markdown-code-shell w-full">
       <div
         id={contentId}
         className="markdown-code-content whitespace-pre"
@@ -333,6 +348,7 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
       >
         {codeBlock}
       </div>
+      {copyTarget ? createPortal(copyButton, copyTarget) : null}
       {collapsible && (
         <button
           type="button"

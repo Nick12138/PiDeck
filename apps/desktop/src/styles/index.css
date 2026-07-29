@@ -352,6 +352,8 @@ textarea:focus-visible {
 }
 
 .chat-markdown [data-streamdown="code-block"] {
+  --markdown-code-header-height: 2rem;
+
   position: relative;
   margin: 1rem 0;
   width: 100%;
@@ -362,7 +364,7 @@ textarea:focus-visible {
 }
 
 .chat-markdown [data-streamdown="code-block-header"] {
-  min-height: 2rem;
+  min-height: var(--markdown-code-header-height);
   border: 0;
   background: transparent;
   padding: 0 0.5rem 0.35rem;
@@ -370,6 +372,39 @@ textarea:focus-visible {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0;
+}
+
+.chat-markdown [data-streamdown="code-block-header"][data-language=""] {
+  display: none;
+}
+
+.markdown-code-copy-button {
+  top: calc(var(--markdown-code-header-height) + 1.5rem);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.chat-markdown [data-streamdown="code-block"][data-language=""]
+  > .markdown-code-copy-button {
+  top: 1rem;
+}
+
+.chat-markdown [data-streamdown="code-block"]:hover > .markdown-code-copy-button,
+.chat-markdown [data-streamdown="code-block"]:focus-within > .markdown-code-copy-button,
+.markdown-code-copy-button[data-copied="true"] {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .markdown-code-copy-button {
+    pointer-events: auto;
+    opacity: 1;
+  }
 }
 
 .chat-markdown [data-streamdown="code-block-body"] {
@@ -539,10 +574,14 @@ svg[data-pideck-mermaid-theme="neutral"] {
   margin: 1rem 0;
   width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
+  overflow: hidden;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 7px !important;
+  background: color-mix(
+    in srgb,
+    var(--color-surface-overlay) 32%,
+    transparent
+  ) !important;
   padding: 0 !important;
   box-shadow: none !important;
 }
@@ -550,6 +589,8 @@ svg[data-pideck-mermaid-theme="neutral"] {
 .chat-markdown [data-streamdown="table-wrapper"] > div {
   width: 100% !important;
   min-width: 0 !important;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -560,28 +601,74 @@ svg[data-pideck-mermaid-theme="neutral"] {
 .chat-markdown table,
 .chat-markdown [data-streamdown="table"] {
   width: 100%;
-  min-width: 32rem;
-  border-collapse: collapse;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
   font-size: 13px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-markdown thead,
+.chat-markdown [data-streamdown="table-header"] {
+  background: color-mix(
+    in srgb,
+    var(--color-surface-overlay) 72%,
+    transparent
+  );
 }
 
 .chat-markdown th,
 .chat-markdown td,
 .chat-markdown [data-streamdown="table-header-cell"],
 .chat-markdown [data-streamdown="table-cell"] {
+  min-width: 6.5rem;
   border-bottom: 1px solid var(--color-border);
-  padding: 0.5rem 1rem 0.5rem 0;
-  text-align: left;
+  padding: 0.625rem 0.75rem;
+  text-align: start;
   vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chat-markdown th,
 .chat-markdown [data-streamdown="table-header-cell"] {
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 600;
+}
+
+.chat-markdown tbody tr:last-child > td,
+.chat-markdown [data-streamdown="table-body"]
+  [data-streamdown="table-row"]:last-child
+  > [data-streamdown="table-cell"] {
+  border-bottom: 0;
+}
+
+.chat-markdown td code,
+.chat-markdown [data-streamdown="table-cell"] code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+@media (hover: hover) {
+  .chat-markdown tbody tr,
+  .chat-markdown [data-streamdown="table-body"] [data-streamdown="table-row"] {
+    transition: background-color 140ms ease;
+  }
+
+  .chat-markdown tbody tr:hover,
+  .chat-markdown [data-streamdown="table-body"] [data-streamdown="table-row"]:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-surface-overlay) 46%,
+      transparent
+    );
+  }
 }
 
 .chat-markdown hr,
