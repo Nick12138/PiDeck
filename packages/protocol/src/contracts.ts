@@ -54,6 +54,7 @@ import type {
   CommandSummary,
   RehydrateSnapshot,
   QueueSnapshot,
+  AttachmentSnapshot,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -66,6 +67,10 @@ export type HostContextMap = {
   "workspace.searchFiles": WorkspaceContext;
   "workspace.listDirectory": WorkspaceContext;
   "workspace.setDirectoryWatches": WorkspaceContext;
+  "attachment.create": ActiveSessionContext;
+  "attachment.createText": ActiveSessionContext;
+  "attachment.get": ActiveSessionContext;
+  "attachment.remove": ActiveSessionContext;
   "session.list": WorkspaceContext;
   "session.create": NullableSessionContext;
   "session.open": NullableSessionContext;
@@ -149,6 +154,10 @@ export type HostRequestParams = {
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };
   "workspace.setDirectoryWatches": { paths: string[] };
+  "attachment.create": { path: string };
+  "attachment.createText": { text: string };
+  "attachment.get": { attachmentId: string };
+  "attachment.remove": { attachmentId: string };
   "session.list": null;
   "session.create": { name?: string };
   "session.open": { sessionPath: string };
@@ -171,13 +180,14 @@ export type HostRequestParams = {
   "agent.prompt": {
     text: string;
     images?: SerializableImage[];
+    attachmentIds?: string[];
     streamingBehavior?: "steer" | "followUp";
     /** Re-attach images remembered for this text in the host's queue
      * attachment table (used by run-now on queued items). */
     attachQueuedImages?: boolean;
   };
-  "agent.steer": { text: string; images?: SerializableImage[] };
-  "agent.followUp": { text: string; images?: SerializableImage[] };
+  "agent.steer": { text: string; images?: SerializableImage[]; attachmentIds?: string[] };
+  "agent.followUp": { text: string; images?: SerializableImage[]; attachmentIds?: string[] };
   "agent.abort": null;
   "agent.clearQueue": { expectedRevision: number };
   "agent.setQueue": {
@@ -258,6 +268,10 @@ export type HostResultMap = {
     entries: WorkspaceDirectoryEntry[];
   };
   "workspace.setDirectoryWatches": { paths: string[] };
+  "attachment.create": AttachmentSnapshot;
+  "attachment.createText": AttachmentSnapshot;
+  "attachment.get": AttachmentSnapshot;
+  "attachment.remove": { attachmentId: string; removed: true };
   "session.list": { workspaceId: string; items: SessionSummary[] };
   "session.create": SessionSnapshot;
   "session.open": SessionSnapshot;
@@ -373,6 +387,7 @@ export type HostEventPayloadMap = {
   "host.fatal": { error: HostError };
   "workspace.changed": WorkspaceSnapshot;
   "workspace.filesChanged": { directories: string[] };
+  "attachment.changed": { attachment: AttachmentSnapshot };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };
   "session.runtimeChanged": {

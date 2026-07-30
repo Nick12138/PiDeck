@@ -123,6 +123,7 @@ pub fn run() {
             commands::desktop_settings_get,
             commands::desktop_settings_patch,
             commands::desktop_open_path,
+            commands::desktop_read_small_file,
             commands::pi_host_send,
             commands::pi_host_restart,
             commands::pi_host_status,

@@ -6,7 +6,9 @@ import {
 } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
+  buildAttachmentReferenceBlock,
   createHostError,
+  stripAttachmentReferenceBlocks,
   type HostError,
   type ModelSummary,
   type QueueSnapshot,
@@ -37,6 +39,8 @@ import {
   withExtensionCommandOrigin,
 } from "./extension-invocation-context.js";
 import { logger } from "./logger.js";
+import { attachmentHostError } from "./attachment-controller.js";
+import { READ_ATTACHMENT_TOOL_NAME } from "./attachment-tool.js";
 
 /** Protocol images ({mediaType,data}) → SDK ImageContent ({type,mimeType,data}). */
 function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | undefined {
@@ -86,10 +90,11 @@ function startDetachedPrompt(args: {
   try {
     const runId = randomUUID();
     const runIdentity = args.server.getIdentity();
+    const visibleText = stripAttachmentReferenceBlocks(args.text);
     const provisionalTitle =
-      args.session.sessionName?.trim() || !args.text.trim()
+      args.session.sessionName?.trim() || !visibleText.trim()
         ? null
-        : createProvisionalSessionTitle(args.text);
+        : createProvisionalSessionTitle(visibleText);
     const titleSessionId = args.server.identity.sessionId;
     const extensionCommandInvocation = resolveExtensionCommandInvocation(
       args.session,
@@ -159,6 +164,41 @@ function startDetachedPrompt(args: {
   } finally {
     if (!detachedTaskStarted) cleanup();
   }
+}
+
+async function buildPromptWithAttachments(args: {
+  factory: WorkspaceGraphFactory;
+  sessionId: string;
+  text: string;
+  attachmentIds?: string[];
+}): Promise<{ text: string; attachmentIds: string[] }> {
+  if (!args.attachmentIds?.length) return { text: args.text, attachmentIds: [] };
+  const store = args.factory.deps.attachmentStore;
+  if (!store) throw new Error("Attachment service is not available");
+  const attachments = await store.prepareForPrompt(args.attachmentIds, args.sessionId);
+  return {
+    text: [args.text.trimEnd(), buildAttachmentReferenceBlock(attachments)]
+      .filter(Boolean)
+      .join("\n\n"),
+    attachmentIds: attachments.map((attachment) => attachment.id),
+  };
+}
+
+function commitPromptAttachments(
+  factory: WorkspaceGraphFactory,
+  sessionId: string,
+  attachmentIds: readonly string[],
+): void {
+  if (attachmentIds.length === 0) return;
+  void factory.deps.attachmentStore
+    ?.commitToSession(attachmentIds, sessionId)
+    .catch((error: unknown) => {
+      logger.warn("Failed to mark attachment references as committed", {
+        sessionId,
+        attachmentIds,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 
 type QueueTexts = Pick<QueueSnapshot, "steering" | "followUp">;
@@ -312,9 +352,22 @@ export function createAgentHandlers(
       const params = ctx.params as {
         text: string;
         images?: SerializableImage[];
+        attachmentIds?: string[];
         streamingBehavior?: "steer" | "followUp";
         attachQueuedImages?: boolean;
       };
+      let prompt: { text: string; attachmentIds: string[] };
+      try {
+        prompt = await buildPromptWithAttachments({
+          factory,
+          sessionId: server.identity.sessionId!,
+          text: params.text,
+          attachmentIds: params.attachmentIds,
+        });
+      } catch (error) {
+        operationLock.release(ctx.id);
+        return { error: attachmentHostError(error) };
+      }
       const promptImages =
         toSdkImages(params.images) ??
         (params.attachQueuedImages
@@ -326,10 +379,11 @@ export function createAgentHandlers(
         server,
         session: g.agentSession,
         operationLock,
-        text: params.text,
+        text: prompt.text,
         images: promptImages,
         streamingBehavior: params.streamingBehavior,
       });
+      commitPromptAttachments(factory, server.identity.sessionId!, prompt.attachmentIds);
 
       return { result: { accepted: true, runId } };
     },
@@ -339,7 +393,11 @@ export function createAgentHandlers(
       if (!server) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
-      const params = ctx.params as { text: string; images?: SerializableImage[] };
+      const params = ctx.params as {
+        text: string;
+        images?: SerializableImage[];
+        attachmentIds?: string[];
+      };
       const out = await withStableGraphRead({
         requestId: ctx.id,
         identity: server.identity,
@@ -352,18 +410,25 @@ export function createAgentHandlers(
         run: async () => {
           const session = factory.getGraph()?.agentSession;
           if (!session) throw new Error("No active session");
+          const prompt = await buildPromptWithAttachments({
+            factory,
+            sessionId: server.identity.sessionId!,
+            text: params.text,
+            attachmentIds: params.attachmentIds,
+          });
           factory.syncQueueState(session);
           const images = toSdkImages(params.images);
-          await session.steer(params.text, images);
+          await session.steer(prompt.text, images);
           if (images?.length) {
             // Key by the template-expanded mirror text — that is what
             // setQueue rebuilds send back.
             recordQueuedImages(
               session,
-              session.getSteeringMessages().at(-1) ?? params.text,
+              session.getSteeringMessages().at(-1) ?? prompt.text,
               images,
             );
           }
+          commitPromptAttachments(factory, server.identity.sessionId!, prompt.attachmentIds);
           factory.syncQueueState(session);
           return { accepted: true as const };
         },
@@ -378,7 +443,11 @@ export function createAgentHandlers(
       if (!server) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
-      const params = ctx.params as { text: string; images?: SerializableImage[] };
+      const params = ctx.params as {
+        text: string;
+        images?: SerializableImage[];
+        attachmentIds?: string[];
+      };
       const out = await withStableGraphRead({
         requestId: ctx.id,
         identity: server.identity,
@@ -391,16 +460,23 @@ export function createAgentHandlers(
         run: async () => {
           const session = factory.getGraph()?.agentSession;
           if (!session) throw new Error("No active session");
+          const prompt = await buildPromptWithAttachments({
+            factory,
+            sessionId: server.identity.sessionId!,
+            text: params.text,
+            attachmentIds: params.attachmentIds,
+          });
           factory.syncQueueState(session);
           const images = toSdkImages(params.images);
-          await session.followUp(params.text, images);
+          await session.followUp(prompt.text, images);
           if (images?.length) {
             recordQueuedImages(
               session,
-              session.getFollowUpMessages().at(-1) ?? params.text,
+              session.getFollowUpMessages().at(-1) ?? prompt.text,
               images,
             );
           }
+          commitPromptAttachments(factory, server.identity.sessionId!, prompt.attachmentIds);
           factory.syncQueueState(session);
           return { accepted: true as const };
         },
@@ -1101,7 +1177,10 @@ export function createAgentHandlers(
         }
 
         const params = ctx.params as { names: string[] };
-        g.agentSession.setActiveToolsByName(params.names);
+        const names = factory.deps.attachmentStore
+          ? [...new Set([...params.names, READ_ATTACHMENT_TOOL_NAME])]
+          : params.names;
+        g.agentSession.setActiveToolsByName(names);
         g.toolRevision += 1;
         const tools = buildToolSnapshot({
           session: g.agentSession,

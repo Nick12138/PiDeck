@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SerializableAgentMessage } from "@pideck/protocol";
+import {
+  buildAttachmentReferenceBlock,
+  type SerializableAgentMessage,
+} from "@pideck/protocol";
 import {
   buildAttachedFileBlock,
   buildTranscriptRows,
@@ -27,7 +30,31 @@ describe("attached file blocks", () => {
 
   it("passes through plain text untouched", () => {
     const parsed = parseUserAttachments("just a message");
-    expect(parsed).toEqual({ text: "just a message", files: [] });
+    expect(parsed).toEqual({ text: "just a message", files: [], documents: [] });
+  });
+
+  it("hides managed attachment markers and returns document cards", () => {
+    const marker = buildAttachmentReferenceBlock([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "manual.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 1024,
+        status: "ready",
+        unit: "page",
+        unitCount: 12,
+      },
+    ]);
+    const parsed = parseUserAttachments(`review this\n\n${marker}`);
+    expect(parsed.text).toBe("review this");
+    expect(parsed.documents).toEqual([
+      expect.objectContaining({
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "manual.pdf",
+        unit: "page",
+        unitCount: 12,
+      }),
+    ]);
   });
 });
 

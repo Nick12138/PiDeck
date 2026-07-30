@@ -10,7 +10,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function createSessionFile(options: { name?: string } = {}) {
+function createSessionFile(options: { name?: string; secondText?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "pideck-fork-"));
   roots.push(root);
   const cwd = resolve(join(root, "workspace"));
@@ -60,7 +60,7 @@ function createSessionFile(options: { name?: string } = {}) {
         id: "u2",
         parentId: "a1",
         timestamp: stamp(3),
-        message: { role: "user", content: "second ask" },
+        message: { role: "user", content: options.secondText ?? "second ask" },
       }),
     ].join("\n") + "\n",
   );
@@ -105,6 +105,23 @@ describe("prepareForkFile", () => {
     expect(forked).toContain("Fork · Investigation");
     // The source file keeps its own name untouched.
     expect(readFileSync(sessionPath, "utf8")).not.toContain("Fork ·");
+  });
+
+  it("does not leak managed attachment markers into the restored composer draft", () => {
+    const marker = `<pideck-attachments version="1">\n[{"id":"66666666-6666-4666-8666-666666666666","name":"brief.pdf","mediaType":"application/pdf","unit":"page","unitCount":2}]\n</pideck-attachments>`;
+    const { cwd, sessionPath } = createSessionFile({
+      secondText: `review this\n\n${marker}`,
+    });
+
+    const prepared = prepareForkFile({
+      sessionFile: sessionPath,
+      canonicalCwd: cwd,
+      entryId: "u2",
+    });
+
+    expect("error" in prepared).toBe(false);
+    if ("error" in prepared) return;
+    expect(prepared.selectedText).toBe("review this");
   });
 
   it("forks at an assistant entry keeping history through it", () => {

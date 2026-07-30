@@ -30,6 +30,10 @@ export function sessionArchiveRoot(agentDir: string): string {
   return join(pideckDataDir(agentDir), "session-archive");
 }
 
+export function attachmentRoot(agentDir: string): string {
+  return join(pideckDataDir(agentDir), "attachments");
+}
+
 export function sessionArchiveDir(agentDir: string, cwd: string): string {
   return join(sessionArchiveRoot(agentDir), workspaceStorageKey(cwd));
 }

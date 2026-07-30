@@ -4,6 +4,8 @@ use crate::shell_terminal::{
     shell_profile_catalog, ShellProfileCatalog, ShellTerminalCreateResult, ShellTerminalEvent,
 };
 use crate::AppState;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, AppHandle, State};
@@ -35,6 +37,122 @@ pub async fn desktop_settings_patch(
 pub async fn desktop_open_path(path: String) -> Result<(), String> {
     let target = validate_open_path(&path)?;
     open_in_file_manager(target)
+}
+
+const MAX_SMALL_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_SMALL_TEXT_BYTES: u64 = 256 * 1024;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopSmallFile {
+    kind: &'static str,
+    name: String,
+    size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_type: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+#[tauri::command]
+pub fn desktop_read_small_file(path: String) -> Result<DesktopSmallFile, String> {
+    read_small_file(&path)
+}
+
+fn read_small_file(raw: &str) -> Result<DesktopSmallFile, String> {
+    let path = validate_local_file(raw)?;
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("file is not accessible: {e}"))?;
+    let size_bytes = metadata.len();
+    if size_bytes > MAX_SMALL_IMAGE_BYTES {
+        return Err(format!(
+            "file exceeds the {} MiB local-read limit",
+            MAX_SMALL_IMAGE_BYTES / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("could not read file: {e}"))?;
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "file name is not valid UTF-8".to_string())?
+        .to_string();
+
+    if let Some(media_type) = sniff_image_media_type(&bytes) {
+        return Ok(DesktopSmallFile {
+            kind: "image",
+            name,
+            size_bytes,
+            media_type: Some(media_type),
+            data: Some(BASE64_STANDARD.encode(bytes)),
+            text: None,
+        });
+    }
+
+    if size_bytes > MAX_SMALL_TEXT_BYTES {
+        return Err(format!(
+            "text file exceeds the {} KiB local-read limit",
+            MAX_SMALL_TEXT_BYTES / 1024
+        ));
+    }
+    let text = String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8 text".to_string())?;
+    if looks_binary_text(&text) {
+        return Err("binary file type is not supported".to_string());
+    }
+    Ok(DesktopSmallFile {
+        kind: "text",
+        name,
+        size_bytes,
+        media_type: None,
+        data: None,
+        text: Some(text),
+    })
+}
+
+fn validate_local_file(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("path is empty".into());
+    }
+    if trimmed.starts_with("\\\\") || trimmed.starts_with("//") {
+        return Err("network (UNC) paths are not allowed".into());
+    }
+    let path = Path::new(trimmed);
+    if !path.is_absolute() {
+        return Err("path must be absolute".into());
+    }
+    let resolved = path
+        .canonicalize()
+        .map_err(|e| format!("path does not exist: {e}"))?;
+    let resolved = crate::pi_host::strip_verbatim_prefix(resolved);
+    if resolved.to_string_lossy().starts_with(r"\\") {
+        return Err("network (UNC) paths are not allowed".into());
+    }
+    let metadata =
+        std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
+    if !metadata.is_file() {
+        return Err("path is not a regular file".into());
+    }
+    Ok(resolved)
+}
+
+fn sniff_image_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+fn looks_binary_text(text: &str) -> bool {
+    text.contains('\0')
 }
 
 #[tauri::command]
@@ -283,6 +401,14 @@ fn open_in_file_manager(target: OpenTarget) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn temp_test_file(name: &str, bytes: &[u8]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pideck-small-file-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
     #[test]
     fn rejects_empty_and_relative_paths() {
         assert!(validate_open_path("").is_err());
@@ -337,5 +463,36 @@ mod tests {
             macos_open_args(&OpenTarget::Reveal(file.clone())),
             vec![std::ffi::OsString::from("-R"), file.into_os_string()],
         );
+    }
+
+    #[test]
+    fn reads_small_utf8_text() {
+        let path = temp_test_file("notes.txt", "hello 世界".as_bytes());
+        let file = read_small_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(file.kind, "text");
+        assert_eq!(file.name, "notes.txt");
+        assert_eq!(file.text.as_deref(), Some("hello 世界"));
+        assert!(file.data.is_none());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn sniffs_images_instead_of_trusting_extension() {
+        let path = temp_test_file("not-an-image.txt", b"\x89PNG\r\n\x1a\nrest");
+        let file = read_small_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(file.kind, "image");
+        assert_eq!(file.media_type, Some("image/png"));
+        assert!(file.data.as_deref().is_some_and(|value| !value.is_empty()));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn rejects_binary_and_oversized_text() {
+        let binary = temp_test_file("binary.dat", b"abc\0def");
+        assert!(read_small_file(binary.to_str().unwrap()).is_err());
+        let oversized = temp_test_file("large.txt", &vec![b'a'; MAX_SMALL_TEXT_BYTES as usize + 1]);
+        assert!(read_small_file(oversized.to_str().unwrap()).is_err());
+        let _ = std::fs::remove_dir_all(binary.parent().unwrap());
+        let _ = std::fs::remove_dir_all(oversized.parent().unwrap());
     }
 }

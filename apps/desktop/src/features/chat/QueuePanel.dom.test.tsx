@@ -9,6 +9,7 @@ import type {
   SessionSnapshot,
   WorkspaceSnapshot,
 } from "@pideck/protocol";
+import { buildAttachmentReferenceBlock } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { QueuePanel } from "./QueuePanel";
@@ -181,5 +182,41 @@ describe("QueuePanel Run Now", () => {
       steering: ["steer"],
       followUp: ["already advanced"],
     });
+  });
+
+  it("hides and preserves managed attachment references while editing", async () => {
+    const marker = buildAttachmentReferenceBlock([
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        name: "brief.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 2048,
+        status: "ready",
+        unit: "page",
+        unitCount: 2,
+      },
+    ]);
+    useAppStore.getState().applySessionSnapshot(
+      session(SESSION_A, [`review this\n\n${marker}`]),
+    );
+    const request = vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      result: { queue: { revision: 8, steering: ["steer"], followUp: [] } },
+    } as never);
+    const user = userEvent.setup();
+    render(<QueuePanel />);
+
+    expect(screen.getByText("review this")).toBeVisible();
+    expect(screen.queryByText(/pideck-attachments/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = screen.getByRole("textbox", { name: "Edit queued message" });
+    await user.clear(editor);
+    await user.type(editor, "review carefully");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const queued = request.mock.calls[0]?.[2] as { followUp: string[] };
+    expect(queued.followUp[0]).toContain("review carefully");
+    expect(queued.followUp[0]).toContain("<pideck-attachments");
+    expect(queued.followUp[0]).toContain("brief.pdf");
   });
 });

@@ -707,6 +707,27 @@ export type SerializableImage = {
   data: string;
 };
 
+export type AttachmentStatus = "copying" | "parsing" | "ready" | "needs_ocr" | "failed";
+
+export type AttachmentMediaType =
+  | "application/pdf"
+  | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  | "text/plain";
+
+export type AttachmentUnit = "page" | "chunk";
+
+export type AttachmentSnapshot = {
+  id: string;
+  name: string;
+  mediaType: AttachmentMediaType;
+  sizeBytes: number;
+  status: AttachmentStatus;
+  unit?: AttachmentUnit;
+  unitCount?: number;
+  processedUnits?: number;
+  error?: string;
+};
+
 export type SerializableCompactionResult = {
   summary?: string;
   tokensBefore?: number;

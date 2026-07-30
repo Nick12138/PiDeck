@@ -12,7 +12,7 @@ import {
   MAX_EXTENSION_UI_TITLE_LENGTH,
 } from "./limits.js";
 import type { HostMethod } from "./methods.js";
-import type { RehydrateSnapshot, ToolSnapshot } from "./types.js";
+import type { AttachmentSnapshot, RehydrateSnapshot, ToolSnapshot } from "./types.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1120,6 +1120,32 @@ function isSessionTreeNode(value: unknown): boolean {
   );
 }
 
+export function isAttachmentSnapshot(value: unknown): value is AttachmentSnapshot {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["id", "name", "mediaType", "sizeBytes", "status"],
+      ["unit", "unitCount", "processedUnits", "error"],
+    ) &&
+    isUuid(value.id) &&
+    isBoundedNonEmptyString(value.name, 1_024) &&
+    [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ].includes(String(value.mediaType)) &&
+    isSafeRevision(value.sizeBytes) &&
+    ["copying", "parsing", "ready", "needs_ocr", "failed"].includes(
+      String(value.status),
+    ) &&
+    (value.unit === undefined || value.unit === "page" || value.unit === "chunk") &&
+    (value.unitCount === undefined || isSafeRevision(value.unitCount)) &&
+    (value.processedUnits === undefined || isSafeRevision(value.processedUnits)) &&
+    isOptionalString(value.error)
+  );
+}
+
 export function validateMethodResultShape(method: HostMethod, result: unknown): string | null {
   const exactAccepted = () =>
     isPlainObject(result) && hasExactKeys(result, ["accepted"]) && result.accepted === true;
@@ -1140,6 +1166,17 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid workspace.setCurrent result";
     case "workspace.getCurrent":
       return result === null || isWorkspaceSnapshot(result) ? null : "invalid workspace snapshot";
+    case "attachment.create":
+    case "attachment.createText":
+    case "attachment.get":
+      return isAttachmentSnapshot(result) ? null : `invalid ${method} result`;
+    case "attachment.remove":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["attachmentId", "removed"]) &&
+        isUuid(result.attachmentId) &&
+        result.removed === true
+        ? null
+        : "invalid attachment.remove result";
     case "session.list":
       return isPlainObject(result) &&
         hasExactKeys(result, ["workspaceId", "items"]) &&
@@ -1597,6 +1634,12 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         payload.directories.every(isString)
         ? null
         : "invalid workspace.filesChanged payload";
+    case "attachment.changed":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["attachment"]) &&
+        isAttachmentSnapshot(payload.attachment)
+        ? null
+        : "invalid attachment.changed payload";
     case "session.snapshot":
       return payload === null || isSessionSnapshot(payload) ? null : "invalid session.snapshot payload";
     case "session.infoChanged":

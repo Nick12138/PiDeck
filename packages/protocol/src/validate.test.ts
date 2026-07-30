@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { HOST_METHODS, METHOD_CONTEXT_SCOPE } from "./methods.js";
 import {
   MAX_AGENT_IMAGE_BYTES,
+  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
+  MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
   MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
   MAX_EXTENSION_UI_MESSAGE_LENGTH,
@@ -207,6 +209,25 @@ describe("parseHostRequest", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("validates attachment.createText using UTF-8 bytes and exact fields", () => {
+    const request = (text: string, extra?: Record<string, unknown>) =>
+      parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method: "attachment.createText",
+        context: activeSessionContext,
+        params: { text, ...extra },
+      });
+
+    expect(request("界".repeat(Math.floor(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 3))).ok).toBe(true);
+    expect(request("界".repeat(Math.floor(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 3) + 1)).ok).toBe(
+      false,
+    );
+    expect(request("   ").ok).toBe(false);
+    expect(request("text\u0000data").ok).toBe(false);
+    expect(request("text", { name: "forbidden.txt" }).ok).toBe(false);
+  });
+
   it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
     "rejects a fifth image for %s",
     (method) => {
@@ -228,6 +249,41 @@ describe("parseHostRequest", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+    },
+  );
+
+  it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
+    "accepts managed attachment IDs and rejects overflow, duplicates, or unknown fields for %s",
+    (method) => {
+      const base = {
+        protocolVersion: 1 as const,
+        id: REQUEST_ID,
+        method,
+        context: activeSessionContext,
+      };
+      expect(
+        parseHostRequest({
+          ...base,
+          params: { text: "docs", attachmentIds: [RUN_ID] },
+        }).ok,
+      ).toBe(true);
+      for (const params of [
+        {
+          text: "docs",
+          attachmentIds: Array.from(
+            { length: MAX_AGENT_REQUEST_ATTACHMENTS + 1 },
+            (_, index) => `00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+          ),
+        },
+        { text: "docs", attachmentIds: [RUN_ID, RUN_ID] },
+        { text: "docs", attachmentIds: ["not-a-uuid"] },
+        { text: "docs", attachmentIds: [RUN_ID], fileData: "forbidden" },
+      ]) {
+        expect(parseHostRequest({ ...base, params })).toMatchObject({
+          ok: false,
+          error: { code: "INVALID_REQUEST" },
+        });
+      }
     },
   );
 

@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
+  stripAttachmentReferenceBlocks,
   type HostError,
   type HostIdentity,
   type SessionSnapshot,
@@ -30,6 +31,7 @@ import {
 } from "./session-runtime-cache.js";
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
+import { createReadAttachmentTool } from "./attachment-tool.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
   return resolveSessionStorageDirs(factory.deps.agentDir, g.canonicalCwd);
@@ -225,6 +227,12 @@ export async function deleteSession(
     await factory.disposeRetainedSessionRuntimeIfPresent(g, sessionId, sessionPath);
     await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await unlink(session.path);
+    await factory.deps.attachmentStore?.releaseSession(sessionId).catch((error: unknown) => {
+      logger.warn("Failed to release deleted Session attachments", {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     return { sessionId, deleted: true as const };
   });
 }
@@ -243,6 +251,7 @@ export async function cleanupArchivedSessions(
     for (const session of sessions) {
       try {
         await unlink(session.path);
+        await factory.deps.attachmentStore?.releaseSession(session.id);
         deletedCount += 1;
       } catch (error) {
         failedCount += 1;
@@ -484,6 +493,9 @@ export async function createSession(
       settingsManager: g.settingsManager,
       resourceLoader: candidateResourceLoader,
       sessionManager,
+      ...(factory.deps.attachmentStore
+        ? { customTools: [createReadAttachmentTool(factory.deps.attachmentStore)] }
+        : {}),
     });
     const session = created.session;
     const extensionsResult = created.extensionsResult;
@@ -632,6 +644,9 @@ export async function createSession(
     server.emit("agent.toolsChanged", sessionSnapshot.tools);
     if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
     publishExtensionUi();
+    if (prev.sessionId && prev.sessionId !== sessionId) {
+      await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
+    }
     return sessionSnapshot;
   } catch (err) {
     try {
@@ -781,11 +796,18 @@ export async function openSession(
         settingsManager: g.settingsManager,
         resourceLoader: candidateResourceLoader,
         sessionManager,
+        ...(factory.deps.attachmentStore
+          ? { customTools: [createReadAttachmentTool(factory.deps.attachmentStore)] }
+          : {}),
       });
       candidateSession = created.session;
       const session = created.session;
       const extensionsResult = created.extensionsResult;
       const sessionId = sessionManager.getSessionId() || session.sessionId || randomUUID();
+      await factory.deps.attachmentStore?.reconcileSession(
+        sessionId,
+        sessionManager.getSessionFile(),
+      );
       const sessionRevision = server.identity.sessionRevision + 1;
 
       const candidateIdentity: HostIdentity = {
@@ -872,6 +894,9 @@ export async function openSession(
       server.emit("agent.toolsChanged", sessionSnapshot.tools);
       if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
       publishExtensionUi();
+      if (prev.sessionId && prev.sessionId !== sessionId) {
+        await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
+      }
 
       if (!retainedPrevious) {
         const retainedIdle = prev.agentSession?.isIdle
@@ -937,7 +962,7 @@ export async function openSession(
 }
 
 function forkedUserText(content: unknown): string | undefined {
-  if (typeof content === "string") return content;
+  if (typeof content === "string") return stripAttachmentReferenceBlocks(content);
   if (!Array.isArray(content)) return undefined;
   for (const block of content) {
     if (
@@ -946,7 +971,7 @@ function forkedUserText(content: unknown): string | undefined {
       (block as { type?: unknown }).type === "text" &&
       typeof (block as { text?: unknown }).text === "string"
     ) {
-      return (block as { text: string }).text;
+      return stripAttachmentReferenceBlocks((block as { text: string }).text);
     }
   }
   return undefined;

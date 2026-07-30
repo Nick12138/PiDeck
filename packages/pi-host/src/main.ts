@@ -39,6 +39,8 @@ import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
 import { migrateLegacyPideckData } from "./pideck-data.js";
+import { AttachmentStore } from "./attachment-store.js";
+import { createAttachmentHandlers } from "./attachment-controller.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -139,6 +141,8 @@ async function main(): Promise<void> {
   // Keep the shared Pi directory native-compatible: adopt PiDeck-owned data
   // into one private namespace before recovery reads any persisted state.
   await migrateLegacyPideckData(agentDir, MIGRATION_ID);
+  const attachmentStore = new AttachmentStore({ agentDir });
+  await attachmentStore.initialize();
 
   // Before anything can rewrite user data. The 0.82.1 runtime introduces
   // models-store.json and recomposes providers, so a downgrade is only safe
@@ -197,6 +201,7 @@ async function main(): Promise<void> {
 
   const graphFactory = new WorkspaceGraphFactory({
     agentDir,
+    attachmentStore,
     credentialStore,
     modelRuntime,
     modelRegistry,
@@ -229,6 +234,7 @@ async function main(): Promise<void> {
 
   const handlers = {
     ...createWorkspaceHandlers(graphFactory, workspaceFiles),
+    ...createAttachmentHandlers(graphFactory),
     ...createSessionHandlers(graphFactory),
     ...createAgentHandlers(graphFactory),
     ...createProviderHandlers(graphFactory),

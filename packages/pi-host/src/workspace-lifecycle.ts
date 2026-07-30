@@ -24,6 +24,7 @@ import { logger } from "./logger.js";
 import { buildPackageSnapshot } from "./package-snapshot.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
+import { createReadAttachmentTool } from "./attachment-tool.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type {
@@ -332,6 +333,14 @@ export class WorkspaceLifecycle {
       }
 
       if (previousGraph) await this.retainGraph(previousGraph, operation.signal);
+      if (
+        previousIdentity.sessionId &&
+        previousIdentity.sessionId !== server.identity.sessionId
+      ) {
+        await this.context.deps.attachmentStore?.discardSessionDrafts(
+          previousIdentity.sessionId,
+        );
+      }
       server.setPhase("ready");
       server.setLastError(undefined);
       const workspace = this.buildWorkspaceSnapshot(built.graph);
@@ -603,6 +612,14 @@ export class WorkspaceLifecycle {
     }
 
     if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
+    if (
+      previousIdentity.sessionId &&
+      previousIdentity.sessionId !== server.identity.sessionId
+    ) {
+      await this.context.deps.attachmentStore?.discardSessionDrafts(
+        previousIdentity.sessionId,
+      );
+    }
     server.setPhase("ready");
     server.setLastError(undefined);
     const workspace = this.buildWorkspaceSnapshot(graph);
@@ -730,6 +747,9 @@ export class WorkspaceLifecycle {
             settingsManager,
             resourceLoader,
             sessionManager,
+            ...(this.context.deps.attachmentStore
+              ? { customTools: [createReadAttachmentTool(this.context.deps.attachmentStore)] }
+              : {}),
           }),
       );
       candidateSession = session;

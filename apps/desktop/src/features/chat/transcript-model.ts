@@ -1,11 +1,16 @@
 import type {
+  AttachmentReference,
   ExtensionPresentation,
   SerializableAgentContent,
   SerializableAgentMessage,
   SerializableSessionEntry,
   SerializableUsage,
 } from "@pideck/protocol";
-import { parseExtensionPresentation } from "@pideck/protocol";
+import {
+  parseAttachmentReferences,
+  parseExtensionPresentation,
+  stripAttachmentReferenceBlocks,
+} from "@pideck/protocol";
 import { isAbortedToolResult } from "../../lib/chat/tool-result-status";
 
 export type ToolTraceStatus = "waiting" | "running" | "done" | "error" | "aborted";
@@ -1183,18 +1188,20 @@ export function buildAttachedFileBlock(name: string, content: string): string {
 export type ParsedUserText = {
   text: string;
   files: { name: string; content: string }[];
+  documents: AttachmentReference[];
 };
 
 export function parseUserAttachments(raw: string): ParsedUserText {
   const files: ParsedUserText["files"] = [];
+  const documents = parseAttachmentReferences(raw);
   const pattern = /<attached-file name="([^"]*)">\n?([\s\S]*?)\n?<\/attached-file>/g;
-  const text = raw
+  const text = stripAttachmentReferenceBlocks(raw)
     .replace(pattern, (_match, name: string, content: string) => {
       files.push({ name, content });
       return "";
     })
     .trim();
-  return { text, files };
+  return { text, files, documents };
 }
 
 /**

@@ -86,6 +86,10 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "workspace.searchFiles": { query: "src" },
   "workspace.listDirectory": { path: "src" },
   "workspace.setDirectoryWatches": { paths: ["", "src"] },
+  "attachment.create": { path: "/tmp/report.pdf" },
+  "attachment.createText": { text: "pasted text" },
+  "attachment.get": { attachmentId: RUN_ID },
+  "attachment.remove": { attachmentId: RUN_ID },
   "session.list": null,
   "session.create": {},
   "session.open": { sessionPath: "/s.jsonl" },
@@ -249,6 +253,13 @@ function invalidParams(method: HostMethod): unknown {
       return { path: 1 };
     case "workspace.setDirectoryWatches":
       return { paths: ["src", 1] };
+    case "attachment.create":
+      return { path: "" };
+    case "attachment.createText":
+      return { text: "" };
+    case "attachment.get":
+    case "attachment.remove":
+      return { attachmentId: "not-a-uuid" };
     case "session.create":
       return "nope";
     case "session.open":
@@ -630,6 +641,18 @@ describe("protocol coverage — events", () => {
       servicesReady: true,
     },
     "workspace.filesChanged": { directories: ["", "src"] },
+    "attachment.changed": {
+      attachment: {
+        id: RUN_ID,
+        name: "report.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 1_024,
+        status: "ready",
+        unit: "page",
+        unitCount: 2,
+        processedUnits: 2,
+      },
+    },
     "session.snapshot": null,
     "session.infoChanged": { sessionId: SESSION_ID, name: "n" },
     "session.runtimeChanged": {

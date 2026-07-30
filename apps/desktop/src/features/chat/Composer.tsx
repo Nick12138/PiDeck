@@ -1,15 +1,20 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import {
   Bug,
+  CircleAlert,
+  CircleCheck,
   FileText,
   FolderSearch,
+  LoaderCircle,
   MessageCircleQuestion,
   PencilLine,
   Plus,
   Puzzle,
+  RefreshCw,
   Send,
   Square,
   TestTube,
+  Undo2,
   X,
 } from "lucide-react";
 import {
@@ -18,8 +23,14 @@ import {
 } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
+  MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_IMAGE_BYTES,
+  MAX_AGENT_REQUEST_ATTACHMENT_BYTES,
+  MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
+  MAX_PASTED_TEXT_ATTACHMENT_BYTES,
+  PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES,
+  type AttachmentSnapshot,
   type SerializableImage,
 } from "@pideck/protocol";
 import { buildAttachedFileBlock } from "./transcript-model";
@@ -44,6 +55,12 @@ import { requestTreePanel } from "../../lib/dock-tree";
 import { requestExport } from "../../lib/export-actions";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
+import {
+  isDesktopRuntime,
+  isDocumentPath,
+  pickDesktopAttachmentPaths,
+  readDesktopSmallFile,
+} from "../../lib/desktop-file-access";
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
@@ -92,6 +109,84 @@ function ExtensionStatusStrip() {
 
 type PendingImage = SerializableImage & { id: string };
 type PendingFile = { id: string; name: string; size: number; text: string };
+type PasteRecovery = {
+  sessionId: string;
+  text: string;
+  draft: string;
+  selectionStart: number;
+  selectionEnd: number;
+};
+type PendingPathDocument = AttachmentSnapshot & {
+  kind: "path";
+  sourcePath: string;
+};
+type PendingPastedText = AttachmentSnapshot & {
+  kind: "pasted-text";
+  remote: boolean;
+  recovery: PasteRecovery;
+};
+type PendingDocument = PendingPathDocument | PendingPastedText;
+
+function localPathName(path: string): string {
+  return path.split(/[\\/]/u).filter(Boolean).at(-1) ?? path;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
+}
+
+function localizedDocumentError(message: string | undefined, t: Translate): string {
+  if (!message) return t("composerDocumentParseFailed");
+  if (/100 mib|message limit/iu.test(message)) {
+    return t("composerDocumentTotalTooLarge", {
+      max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
+    });
+  }
+  if (/password|encrypted/iu.test(message)) return t("composerDocumentEncrypted");
+  if (/scanned|ocr|visible text/iu.test(message)) return t("composerDocumentNeedsOcr");
+  if (/genuine|valid docx|only.*pdf|unsupported.*type/iu.test(message)) {
+    return t("composerDocumentTypeMismatch");
+  }
+  if (/damaged|invalid pdf|bad xref|formaterror|structure/iu.test(message)) {
+    return t("composerDocumentDamaged");
+  }
+  if (/exceed|too large|50 mib|100 mib/iu.test(message)) {
+    return t("composerDocumentTooLarge", {
+      max: Math.round(MAX_AGENT_ATTACHMENT_BYTES / 1024 / 1024),
+    });
+  }
+  return t("composerDocumentParseFailedDetail", { error: message });
+}
+
+function documentStatusText(document: PendingDocument, t: Translate): string {
+  if (document.status === "copying") {
+    return document.kind === "pasted-text"
+      ? t("composerPastedTextSaving")
+      : t("composerDocumentCopying");
+  }
+  if (document.status === "parsing") {
+    if (document.unitCount !== undefined && document.processedUnits !== undefined) {
+      return t("composerDocumentParsingProgress", {
+        done: document.processedUnits,
+        total: document.unitCount,
+      });
+    }
+    return t("composerDocumentParsing");
+  }
+  if (document.status === "needs_ocr") return t("composerDocumentNeedsOcr");
+  if (document.status === "failed") return localizedDocumentError(document.error, t);
+  const count = document.unitCount ?? 0;
+  return document.unit === "page"
+    ? t("composerDocumentPages", { count })
+    : t("composerDocumentChunks", { count });
+}
 
 function fileToImage(file: File): Promise<PendingImage | null> {
   return new Promise((resolve) => {
@@ -220,6 +315,7 @@ export function Composer({
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [images, setImages] = useState<PendingImage[]>([]);
   const [files, setFiles] = useState<PendingFile[]>([]);
+  const [documents, setDocuments] = useState<PendingDocument[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -227,6 +323,8 @@ export function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousBlockedSessionRef = useRef<string | null>(null);
+  const documentsRef = useRef<PendingDocument[]>([]);
+  const recoveringPastedTextRef = useRef(new Set<string>());
   const decisionHintId = useId();
   const extensionWidgetAnchorRef = useRef<HTMLDivElement>(null);
   const templatesRef = useRef<{ key: string; items: CompletionItem[] } | null>(null);
@@ -245,6 +343,35 @@ export function Composer({
     sessionId,
   );
   const blockedSessionId = decisionBlocked ? sessionId : null;
+
+  function updateDocuments(
+    updater: (current: PendingDocument[]) => PendingDocument[],
+  ): PendingDocument[] {
+    const next = updater(documentsRef.current);
+    documentsRef.current = next;
+    setDocuments(next);
+    return next;
+  }
+
+  function insertRecoveredText(recovery: PasteRecovery) {
+    const state = useAppStore.getState();
+    if (state.session?.sessionId !== recovery.sessionId) return;
+    const currentDraft = state.sessionDrafts[recovery.sessionId] ?? "";
+    const textarea = textareaRef.current;
+    const draftIsUnchanged = currentDraft === recovery.draft;
+    const start = draftIsUnchanged
+      ? recovery.selectionStart
+      : (textarea?.selectionStart ?? currentDraft.length);
+    const end = draftIsUnchanged ? recovery.selectionEnd : start;
+    const next = currentDraft.slice(0, start) + recovery.text + currentDraft.slice(end);
+    state.setSessionDraft(recovery.sessionId, next);
+    setCompletion(null);
+    const caret = start + recovery.text.length;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
+  }
 
   useEffect(() => {
     const previousBlockedSessionId = previousBlockedSessionRef.current;
@@ -292,12 +419,66 @@ export function Composer({
   useEffect(() => {
     setImages([]);
     setFiles([]);
+    documentsRef.current = [];
+    setDocuments([]);
+    recoveringPastedTextRef.current.clear();
     setDragOver(false);
     setCompletion(null);
     setStatsOpen(false);
     setForkOpen(false);
     fileSnapshotRef.current = null;
   }, [sessionId]);
+
+  useEffect(
+    () =>
+      hostClient.onEvent((event) => {
+        if (event.event !== "attachment.changed" || event.sessionId !== sessionId) return;
+        const current = documentsRef.current.find(
+          (document) => document.id === event.payload.attachment.id,
+        );
+        if (
+          current?.kind === "pasted-text" &&
+          event.payload.attachment.status === "failed"
+        ) {
+          void recoverFailedPastedText(current, event.payload.attachment.error);
+          return;
+        }
+        updateDocuments((current) =>
+          current.map((document) =>
+            document.id === event.payload.attachment.id
+              ? { ...document, ...event.payload.attachment }
+              : document,
+          ),
+        );
+      }),
+    [sessionId],
+  );
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void isDesktopRuntime()
+      .then(async (isDesktop) => {
+        if (!isDesktop || cancelled) return;
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+          if (cancelled || disabled) return;
+          if (event.payload.type === "enter" || event.payload.type === "over") {
+            setDragOver(true);
+          } else if (event.payload.type === "leave") {
+            setDragOver(false);
+          } else if (event.payload.type === "drop") {
+            setDragOver(false);
+            void addLocalPaths(event.payload.paths);
+          }
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [disabled, sessionId]);
 
   function closeExtensionWidgets() {
     setExtensionWidgetsOpen(false);
@@ -452,10 +633,324 @@ export function Composer({
     }
   }
 
+  async function addDocumentPath(path: string) {
+    if (!host || !workspace || !session) return;
+    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
+      pushNotification(
+        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
+        "warning",
+      );
+      return;
+    }
+    const context = activeSessionContext(host, workspace, session);
+    const generation = captureRequestGeneration(host);
+    try {
+      const response = await hostClient.request(
+        "attachment.create",
+        context,
+        { path },
+        120_000,
+      );
+      if (!response.ok) {
+        pushNotification(localizedDocumentError(response.error?.message, t), "error");
+        return;
+      }
+      if (
+        !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
+          session: true,
+        })
+      ) {
+        return;
+      }
+      const totalBytes = documentsRef.current.reduce(
+        (total, document) => total + document.sizeBytes,
+        response.result.sizeBytes,
+      );
+      if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
+        await hostClient
+          .request("attachment.remove", context, { attachmentId: response.result.id })
+          .catch(() => undefined);
+        pushNotification(
+          t("composerDocumentTotalTooLarge", {
+            max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
+          }),
+          "warning",
+        );
+        return;
+      }
+      updateDocuments((current) => [
+        ...current,
+        { ...response.result, kind: "path", sourcePath: path },
+      ]);
+
+      // Parsing can finish before the create response reaches the renderer.
+      // Fetch once after insertion so no final state event can be lost.
+      void hostClient
+        .request("attachment.get", context, { attachmentId: response.result.id })
+        .then((latest) => {
+          if (!latest.ok) return;
+          updateDocuments((current) =>
+            current.map((document) =>
+              document.id === latest.result.id
+                ? { ...document, ...latest.result }
+                : document,
+            ),
+          );
+        })
+        .catch(() => undefined);
+    } catch (error) {
+      pushNotification(
+        localizedDocumentError(error instanceof Error ? error.message : String(error), t),
+        "error",
+      );
+    }
+  }
+
+  async function removeDocument(document: PendingDocument): Promise<boolean> {
+    if (!host || !workspace || !session) return false;
+    try {
+      const response = await hostClient.request(
+        "attachment.remove",
+        activeSessionContext(host, workspace, session),
+        { attachmentId: document.id },
+      );
+      if (!response.ok) {
+        pushNotification(response.error?.message ?? t("composerDocumentRemoveFailed"), "error");
+        return false;
+      }
+      updateDocuments((current) => current.filter((item) => item.id !== document.id));
+      return true;
+    } catch (error) {
+      pushNotification(
+        error instanceof Error ? error.message : t("composerDocumentRemoveFailed"),
+        "error",
+      );
+      return false;
+    }
+  }
+
+  async function retryDocument(document: PendingPathDocument) {
+    if (!(await removeDocument(document))) return;
+    await addDocumentPath(document.sourcePath);
+  }
+
+  async function recoverFailedPastedText(
+    document: PendingPastedText,
+    error?: string,
+  ): Promise<void> {
+    if (recoveringPastedTextRef.current.has(document.id)) return;
+    recoveringPastedTextRef.current.add(document.id);
+    try {
+      if (document.remote && host && workspace && session) {
+        await hostClient
+          .request(
+            "attachment.remove",
+            activeSessionContext(host, workspace, session),
+            { attachmentId: document.id },
+          )
+          .catch(() => undefined);
+      }
+      updateDocuments((current) => current.filter((item) => item.id !== document.id));
+      insertRecoveredText(document.recovery);
+      pushNotification(
+        t("composerPastedTextCreateFailed", {
+          error: error || t("composerDocumentParseFailed"),
+        }),
+        "error",
+      );
+    } finally {
+      recoveringPastedTextRef.current.delete(document.id);
+    }
+  }
+
+  async function restorePastedText(document: PendingPastedText): Promise<void> {
+    if (!document.remote) return;
+    if (!(await removeDocument(document))) return;
+    insertRecoveredText(document.recovery);
+  }
+
+  async function addPastedText(recovery: PasteRecovery) {
+    if (!host || !workspace || !session) return;
+    const localId = crypto.randomUUID();
+    const pending: PendingPastedText = {
+      id: localId,
+      name: t("composerPastedTextName"),
+      mediaType: "text/plain",
+      sizeBytes: utf8ByteLength(recovery.text),
+      status: "copying",
+      unit: "chunk",
+      kind: "pasted-text",
+      remote: false,
+      recovery,
+    };
+    updateDocuments((current) => [...current, pending]);
+    const context = activeSessionContext(host, workspace, session);
+    const generation = captureRequestGeneration(host);
+    const generationIsCurrent = () =>
+      isCurrentRequestGeneration(useAppStore.getState().host, generation, {
+        session: true,
+      });
+    try {
+      const response = await hostClient.request(
+        "attachment.createText",
+        context,
+        { text: recovery.text },
+        120_000,
+      );
+      if (!response.ok) {
+        if (!generationIsCurrent()) {
+          updateDocuments((current) => current.filter((item) => item.id !== localId));
+          return;
+        }
+        await recoverFailedPastedText(pending, response.error?.message);
+        return;
+      }
+      if (!generationIsCurrent()) {
+        await hostClient
+          .request("attachment.remove", context, { attachmentId: response.result.id })
+          .catch(() => undefined);
+        updateDocuments((current) => current.filter((item) => item.id !== localId));
+        return;
+      }
+      const totalBytes = documentsRef.current.reduce(
+        (total, document) => total + (document.id === localId ? 0 : document.sizeBytes),
+        response.result.sizeBytes,
+      );
+      if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
+        await hostClient
+          .request("attachment.remove", context, { attachmentId: response.result.id })
+          .catch(() => undefined);
+        updateDocuments((current) => current.filter((item) => item.id !== localId));
+        insertRecoveredText(recovery);
+        pushNotification(
+          t("composerDocumentTotalTooLarge", {
+            max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
+          }),
+          "warning",
+        );
+        return;
+      }
+      const created: PendingPastedText = {
+        ...response.result,
+        kind: "pasted-text",
+        remote: true,
+        recovery,
+      };
+      updateDocuments((current) =>
+        current.map((document) => (document.id === localId ? created : document)),
+      );
+
+      void hostClient
+        .request("attachment.get", context, { attachmentId: created.id })
+        .then((latest) => {
+          if (!latest.ok) return;
+          const current = documentsRef.current.find(
+            (document) => document.id === latest.result.id,
+          );
+          if (current?.kind === "pasted-text" && latest.result.status === "failed") {
+            void recoverFailedPastedText(current, latest.result.error);
+            return;
+          }
+          updateDocuments((documents) =>
+            documents.map((document) =>
+              document.id === latest.result.id
+                ? { ...document, ...latest.result }
+                : document,
+            ),
+          );
+        })
+        .catch(() => undefined);
+    } catch (error) {
+      if (!generationIsCurrent()) {
+        updateDocuments((current) => current.filter((item) => item.id !== localId));
+        return;
+      }
+      await recoverFailedPastedText(
+        pending,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  async function addLocalPaths(paths: readonly string[]) {
+    for (const path of paths) {
+      if (isDocumentPath(path)) {
+        await addDocumentPath(path);
+        continue;
+      }
+      try {
+        const file = await readDesktopSmallFile(path);
+        if (file.kind === "image") {
+          setImages((current) => {
+            if (current.length >= MAX_AGENT_REQUEST_IMAGES) {
+              pushNotification(
+                t("composerImageLimit", { max: MAX_AGENT_REQUEST_IMAGES }),
+                "warning",
+              );
+              return current;
+            }
+            return [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                mediaType: file.mediaType,
+                data: file.data,
+              },
+            ];
+          });
+        } else {
+          setFiles((current) => {
+            if (current.length >= MAX_FILES) {
+              pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
+              return current;
+            }
+            return [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                name: file.name,
+                size: file.sizeBytes,
+                text: file.text,
+              },
+            ];
+          });
+        }
+      } catch (error) {
+        pushNotification(
+          t("composerReadFileFailedDetail", {
+            name: localPathName(path),
+            error: error instanceof Error ? error.message : String(error),
+          }),
+          "warning",
+        );
+      }
+    }
+  }
+
+  async function chooseAttachments() {
+    try {
+      const paths = await pickDesktopAttachmentPaths();
+      if (paths === null) {
+        fileInputRef.current?.click();
+        return;
+      }
+      await addLocalPaths(paths);
+    } catch (error) {
+      pushNotification(
+        error instanceof Error ? error.message : t("composerFilePickerFailed"),
+        "error",
+      );
+    }
+  }
+
   async function addFiles(incoming: Iterable<File>) {
     const imageFiles: File[] = [];
     const textFiles: File[] = [];
     for (const file of incoming) {
+      if (/\.(?:pdf|docx)$/iu.test(file.name)) {
+        pushNotification(t("composerDocumentDesktopOnly", { name: file.name }), "warning");
+        continue;
+      }
       if (file.type.startsWith("image/")) {
         if (file.size > MAX_AGENT_IMAGE_BYTES) {
           pushNotification(
@@ -529,9 +1024,75 @@ export function Composer({
     }
   }
 
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedFiles = [...event.clipboardData.items]
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (pastedFiles.length > 0) {
+      event.preventDefault();
+      void addFiles(pastedFiles);
+      return;
+    }
+
+    const pastedText = event.clipboardData.getData("text/plain");
+    const sizeBytes = utf8ByteLength(pastedText);
+    if (sizeBytes < PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES) return;
+
+    event.preventDefault();
+    if (pastedText.trim().length === 0 || pastedText.includes("\u0000")) {
+      pushNotification(t("composerPastedTextInvalid"), "warning");
+      return;
+    }
+    if (sizeBytes > MAX_PASTED_TEXT_ATTACHMENT_BYTES) {
+      pushNotification(
+        t("composerPastedTextTooLarge", {
+          max: Math.round(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 1024 / 1024),
+        }),
+        "warning",
+      );
+      return;
+    }
+    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
+      pushNotification(
+        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
+        "warning",
+      );
+      return;
+    }
+    const totalBytes = documentsRef.current.reduce(
+      (total, document) => total + document.sizeBytes,
+      sizeBytes,
+    );
+    if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
+      pushNotification(
+        t("composerDocumentTotalTooLarge", {
+          max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
+        }),
+        "warning",
+      );
+      return;
+    }
+    if (!session) return;
+    const selectionStart = event.currentTarget.selectionStart ?? text.length;
+    const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
+    void addPastedText({
+      sessionId: session.sessionId,
+      text: pastedText,
+      draft: text,
+      selectionStart,
+      selectionEnd,
+    });
+  }
+
   async function send() {
     if (!host || !workspace || !session || disabled || decisionBlocked) return;
-    if (!text.trim() && images.length === 0 && files.length === 0) return;
+    if (
+      documents.some((document) => document.status !== "ready") ||
+      (!text.trim() && images.length === 0 && files.length === 0 && documents.length === 0)
+    ) {
+      return;
+    }
 
     const builtin = matchBuiltinCommand(text);
     if (builtin?.name === "session") {
@@ -582,10 +1143,13 @@ export function Composer({
     const value = text;
     const sentImages = images;
     const sentFiles = files;
+    const sentDocuments = documents;
     const targetSessionId = session.sessionId;
     setSessionDraft(targetSessionId, "");
     setImages([]);
     setFiles([]);
+    documentsRef.current = [];
+    setDocuments([]);
     const context = activeSessionContext(host, workspace, session);
     const outgoingText =
       sentFiles.length > 0
@@ -597,10 +1161,16 @@ export function Composer({
       sentImages.length > 0
         ? { images: sentImages.map(({ mediaType, data }) => ({ mediaType, data })) }
         : {};
+    const attachmentParams =
+      sentDocuments.length > 0
+        ? { attachmentIds: sentDocuments.map((document) => document.id) }
+        : {};
     const restoreDraft = () => {
       setSessionDraft(targetSessionId, value);
       setImages(sentImages);
       setFiles(sentFiles);
+      documentsRef.current = sentDocuments;
+      setDocuments(sentDocuments);
     };
 
     try {
@@ -609,6 +1179,7 @@ export function Composer({
         const res = await hostClient.request("agent.followUp", context, {
           text: outgoingText,
           ...imageParams,
+          ...attachmentParams,
         });
         if (!res.ok) {
           pushNotification(res.error?.message ?? t("composerSendFailed"), "error");
@@ -620,7 +1191,7 @@ export function Composer({
       const res = await hostClient.request(
         "agent.prompt",
         context,
-        { text: outgoingText, ...imageParams },
+        { text: outgoingText, ...imageParams, ...attachmentParams },
         null,
       );
       if (!res.ok) {
@@ -661,8 +1232,10 @@ export function Composer({
     }
   }
 
-  const hasDraftContent = Boolean(text.trim()) || images.length > 0 || files.length > 0;
-  const canSend = !disabled && !decisionBlocked && hasDraftContent;
+  const hasDraftContent =
+    Boolean(text.trim()) || images.length > 0 || files.length > 0 || documents.length > 0;
+  const documentsReady = documents.every((document) => document.status === "ready");
+  const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
   function selectStarterPrompt(prompt: string) {
     if (!session || disabled) return;
@@ -717,6 +1290,103 @@ export function Composer({
             void addFiles(event.dataTransfer.files);
           }}
         >
+        {documents.length > 0 && (
+          <div
+            className="grid gap-1.5 px-2 pt-1.5 sm:grid-cols-2"
+            aria-live="polite"
+            aria-label={t("composerDocuments")}
+          >
+            {documents.map((document) => {
+              const active = document.status === "copying" || document.status === "parsing";
+              const failed = document.status === "failed" || document.status === "needs_ocr";
+              const progress =
+                document.unitCount && document.processedUnits !== undefined
+                  ? Math.min(100, Math.round((document.processedUnits / document.unitCount) * 100))
+                  : 0;
+              const status = documentStatusText(document, t);
+              return (
+                <div
+                  key={document.id}
+                  className={`relative min-w-0 overflow-hidden rounded-md border bg-surface px-2 py-1.5 text-xs ${
+                    failed ? "border-danger/35" : "border-border"
+                  }`}
+                  title={`${document.name} · ${formatFileSize(document.sizeBytes)} · ${status}`}
+                  {...(failed ? { role: "alert" as const } : {})}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {active ? (
+                      <LoaderCircle
+                        size={14}
+                        className="shrink-0 animate-spin text-accent motion-reduce:animate-none"
+                      />
+                    ) : failed ? (
+                      <CircleAlert size={14} className="shrink-0 text-danger" />
+                    ) : (
+                      <CircleCheck size={14} className="shrink-0 text-success" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{document.name}</div>
+                      <div className={`truncate text-[10px] ${failed ? "text-danger" : "text-muted"}`}>
+                        {formatFileSize(document.sizeBytes)} · {status}
+                      </div>
+                    </div>
+                    {document.kind === "path" && document.status === "failed" && (
+                      <button
+                        type="button"
+                        title={t("composerDocumentRetry")}
+                        aria-label={t("composerDocumentRetryNamed", { name: document.name })}
+                        className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+                        onClick={() => void retryDocument(document)}
+                      >
+                        <RefreshCw size={12} />
+                      </button>
+                    )}
+                    {document.kind === "pasted-text" &&
+                      document.remote &&
+                      document.status === "ready" && (
+                        <button
+                          type="button"
+                          title={t("composerPastedTextRestore")}
+                          aria-label={t("composerPastedTextRestoreNamed", {
+                            name: document.name,
+                          })}
+                          className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+                          onClick={() => void restorePastedText(document)}
+                        >
+                          <Undo2 size={12} />
+                        </button>
+                      )}
+                    <button
+                      type="button"
+                      title={t("composerRemoveFile")}
+                      aria-label={t("composerRemoveNamedFile", { name: document.name })}
+                      className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={document.kind === "pasted-text" && !document.remote}
+                      onClick={() => void removeDocument(document)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  {active && document.unitCount !== undefined && (
+                    <div
+                      className="mt-1 h-0.5 overflow-hidden rounded-full bg-surface-overlay"
+                      role="progressbar"
+                      aria-label={status}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progress}
+                    >
+                      <div
+                        className="h-full bg-accent"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-2 pt-1.5">
             {files.map((file) => (
@@ -824,16 +1494,7 @@ export function Composer({
               );
             }}
             onBlur={() => setCompletion(null)}
-            onPaste={(event) => {
-              const pasted = [...event.clipboardData.items]
-                .filter((item) => item.kind === "file")
-                .map((item) => item.getAsFile())
-                .filter((file): file is File => file !== null);
-              if (pasted.length > 0) {
-                event.preventDefault();
-                void addFiles(pasted);
-              }
-            }}
+            onPaste={handleComposerPaste}
             onCompositionStart={ime.onCompositionStart}
             onCompositionEnd={ime.onCompositionEnd}
             onKeyDown={(event) => {
@@ -877,6 +1538,7 @@ export function Composer({
             ref={fileInputRef}
             type="file"
             multiple
+            accept="image/*,.pdf,.docx,text/*,.md,.mdx,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.sh,.sql,.log"
             className="hidden"
             onChange={(event) => {
               if (event.target.files) void addFiles(event.target.files);
@@ -890,9 +1552,11 @@ export function Composer({
             className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
             disabled={
               disabled ||
-              (images.length >= MAX_AGENT_REQUEST_IMAGES && files.length >= MAX_FILES)
+              (images.length >= MAX_AGENT_REQUEST_IMAGES &&
+                files.length >= MAX_FILES &&
+                documents.length >= MAX_AGENT_REQUEST_ATTACHMENTS)
             }
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => void chooseAttachments()}
           >
             <Plus size={16} />
           </button>

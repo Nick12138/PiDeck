@@ -228,6 +228,50 @@ describe("session-bound agent handlers", () => {
     expect(outcome.identity).toEqual(fixture.server.getIdentity());
     expect(fixture.serviceGraphLock.isHeld()).toBe(false);
   });
+
+  it("queues only a compact attachment reference and commits after acceptance", async () => {
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const prepareForPrompt = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "manual.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 1024,
+        status: "ready",
+        unit: "page",
+        unitCount: 3,
+      },
+    ]);
+    const commitToSession = vi.fn().mockResolvedValue(undefined);
+    (fixture.factory as unknown as { deps: unknown }).deps = {
+      attachmentStore: { prepareForPrompt, commitToSession },
+    };
+
+    const outcome = await createAgentHandlers(fixture.factory)["agent.followUp"]!({
+      id: "attachment-follow-up",
+      context: {},
+      params: {
+        text: "review this",
+        attachmentIds: ["44444444-4444-4444-8444-444444444444"],
+      },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    expect(fixture.session.followUp).toHaveBeenCalledWith(
+      expect.stringContaining("<pideck-attachments version=\"1\">"),
+      undefined,
+    );
+    expect(fixture.session.followUp).toHaveBeenCalledWith(
+      expect.stringContaining("manual.pdf"),
+      undefined,
+    );
+    await vi.waitFor(() => {
+      expect(commitToSession).toHaveBeenCalledWith(
+        ["44444444-4444-4444-8444-444444444444"],
+        "33333333-3333-4333-8333-333333333333",
+      );
+    });
+  });
 });
 
 describe("agent.prompt startup", () => {

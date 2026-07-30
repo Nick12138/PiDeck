@@ -1,4 +1,9 @@
-import { createHostError, toJsonValue, type JsonValue } from "@pideck/protocol";
+import {
+  createHostError,
+  stripAttachmentReferenceBlocks,
+  toJsonValue,
+  type JsonValue,
+} from "@pideck/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
@@ -346,7 +351,10 @@ export function createSessionHandlers(
           return {
             items: g.agentSession
               .getUserMessagesForForking()
-              .map(({ entryId, text }) => ({ entryId, text })),
+              .map(({ entryId, text }) => ({
+                entryId,
+                text: stripAttachmentReferenceBlocks(text),
+              })),
           };
         },
       });

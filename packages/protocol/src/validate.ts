@@ -1,5 +1,10 @@
 import type { HostContextMap, HostRequestParams } from "./contracts.js";
-import { MAX_AGENT_IMAGE_BYTES, MAX_AGENT_REQUEST_IMAGES } from "./limits.js";
+import {
+  MAX_AGENT_IMAGE_BYTES,
+  MAX_AGENT_REQUEST_ATTACHMENTS,
+  MAX_AGENT_REQUEST_IMAGES,
+  MAX_PASTED_TEXT_ATTACHMENT_BYTES,
+} from "./limits.js";
 import {
   hasExactKeys,
   isHostErrorRecord,
@@ -45,6 +50,15 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function isValidAttachmentText(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    !value.includes("\u0000") &&
+    new TextEncoder().encode(value).byteLength <= MAX_PASTED_TEXT_ATTACHMENT_BYTES
+  );
+}
+
 function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
@@ -84,6 +98,16 @@ function validateImages(value: unknown): boolean {
           isNonEmptyString(image.data) &&
           validateBase64ImageData(image.data),
       ))
+  );
+}
+
+function validateAttachmentIds(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.length <= MAX_AGENT_REQUEST_ATTACHMENTS &&
+      new Set(value).size === value.length &&
+      value.every(isUuid))
   );
 }
 
@@ -281,6 +305,19 @@ export function validateRequestParams<M extends HostMethod>(
         params.paths.every(isString)
         ? ok(params)
         : fail("invalid workspace.setDirectoryWatches params", { method });
+    case "attachment.create":
+      return exactObject(params, ["path"]) && isNonEmptyString(params.path)
+        ? ok(params)
+        : fail("invalid attachment.create params", { method });
+    case "attachment.createText":
+      return exactObject(params, ["text"]) && isValidAttachmentText(params.text)
+        ? ok(params)
+        : fail("invalid attachment.createText params", { method });
+    case "attachment.get":
+    case "attachment.remove":
+      return exactObject(params, ["attachmentId"]) && isUuid(params.attachmentId)
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "workspace.setCurrent":
       return exactObject(params, ["cwd"]) && isNonEmptyString(params.cwd)
         ? ok(params)
@@ -320,9 +357,14 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid session.getEntries params", { method });
     case "agent.prompt":
-      return exactObject(params, ["text"], ["images", "streamingBehavior", "attachQueuedImages"]) &&
+      return exactObject(
+        params,
+        ["text"],
+        ["images", "attachmentIds", "streamingBehavior", "attachQueuedImages"],
+      ) &&
         isString(params.text) &&
         validateImages(params.images) &&
+        validateAttachmentIds(params.attachmentIds) &&
         (params.attachQueuedImages === undefined ||
           typeof params.attachQueuedImages === "boolean") &&
         (params.streamingBehavior === undefined ||
@@ -332,9 +374,10 @@ export function validateRequestParams<M extends HostMethod>(
         : fail("invalid agent.prompt params", { method });
     case "agent.steer":
     case "agent.followUp":
-      return exactObject(params, ["text"], ["images"]) &&
+      return exactObject(params, ["text"], ["images", "attachmentIds"]) &&
         isString(params.text) &&
-        validateImages(params.images)
+        validateImages(params.images) &&
+        validateAttachmentIds(params.attachmentIds)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "agent.clearQueue":

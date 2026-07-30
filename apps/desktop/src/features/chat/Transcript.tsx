@@ -28,6 +28,7 @@ import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { PiMark } from "../../components/PiMark";
+import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import {
   buildTranscriptRows,
   executionTraceIsActive,
@@ -356,6 +357,25 @@ const TranscriptRowView = memo(function TranscriptRowView({
             ))}
           </div>
         )}
+        {parsed.documents.length > 0 && (
+          <div className="mb-1 flex flex-wrap justify-end gap-1.5">
+            {parsed.documents.map((document) => (
+              <div
+                key={document.id}
+                className="flex h-8 max-w-full items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs"
+                title={document.name}
+              >
+                <FileText size={12} className="shrink-0 text-accent" />
+                <span className="max-w-48 truncate">{document.name}</span>
+                <span className="shrink-0 text-[10px] text-muted">
+                  {document.unit === "page"
+                    ? t("composerDocumentPages", { count: document.unitCount })
+                    : t("composerDocumentChunks", { count: document.unitCount })}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {parsed.text && (
           <div className="whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
             {parsed.text}
@@ -363,7 +383,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
         )}
         <div className="mt-1 flex h-7 items-center justify-end">
           <CopyMessageButton
-            text={row.copyText}
+            text={stripAttachmentReferenceBlocks(row.copyText)}
             className="opacity-0 group-hover:opacity-100"
           />
         </div>

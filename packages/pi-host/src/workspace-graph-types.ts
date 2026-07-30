@@ -22,6 +22,7 @@ import type {
   SessionSnapshot,
 } from "@pideck/protocol";
 import type { ResourceIdMap } from "./package-snapshot.js";
+import type { AttachmentStore } from "./attachment-store.js";
 
 export type WorkspaceGraph = {
   workspaceId: string;
@@ -78,6 +79,8 @@ export type ManagedSessionInfo = SessionInfo & { archived: boolean };
 
 export type GraphFactoryDeps = {
   agentDir: string;
+  /** Host-owned managed document store. Optional in isolated controller tests. */
+  attachmentStore?: AttachmentStore;
   /** Persistent auth.json store injected into the Host-owned runtime. */
   credentialStore: FileCredentialStore;
   /**

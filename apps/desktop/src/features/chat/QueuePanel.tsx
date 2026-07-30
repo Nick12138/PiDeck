@@ -1,10 +1,15 @@
 import { useState } from "react";
-import { ChevronDown, Pencil, Play, Trash2, ArrowUp, Check, X } from "lucide-react";
+import { ChevronDown, Pencil, Play, Trash2, ArrowUp, Check, Paperclip, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { activeSessionContext } from "../../lib/bridge/host-context";
 import { useImeComposition } from "../../lib/use-ime-composition";
-import type { ActiveSessionContext } from "@pideck/protocol";
+import {
+  parseAttachmentReferences,
+  preserveAttachmentReferenceBlocks,
+  stripAttachmentReferenceBlocks,
+  type ActiveSessionContext,
+} from "@pideck/protocol";
 import { useT } from "../../lib/i18n/use-t";
 
 /**
@@ -16,6 +21,25 @@ import { useT } from "../../lib/i18n/use-t";
 /** Transient conditions worth a short retry — e.g. the operation lock of an
  * aborted run releases a beat after agent.abort responds. */
 const RETRYABLE_CODES = new Set(["AGENT_BUSY", "SERVICE_GRAPH_BUSY", "PACKAGE_MUTATION_BUSY"]);
+
+function QueueText({ raw }: { raw: string }) {
+  const t = useT();
+  const visible = stripAttachmentReferenceBlocks(raw).trim();
+  const attachments = parseAttachmentReferences(raw);
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs" title={visible}>
+      <span className="min-w-0 flex-1 truncate">
+        {visible || t("queueAttachmentOnly")}
+      </span>
+      {attachments.length > 0 && (
+        <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted">
+          <Paperclip size={10} />
+          {attachments.length}
+        </span>
+      )}
+    </span>
+  );
+}
 
 async function setQueueWithRetry(
   context: ActiveSessionContext,
@@ -39,7 +63,11 @@ export function QueuePanel() {
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [collapsed, setCollapsed] = useState(false);
   const [busyOp, setBusyOp] = useState(false);
-  const [editing, setEditing] = useState<{ index: number; text: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    index: number;
+    text: string;
+    original: string;
+  } | null>(null);
   const ime = useImeComposition();
 
   const steering = session?.pending.steering ?? [];
@@ -130,9 +158,7 @@ export function QueuePanel() {
               <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] text-warning">
                 {t("queueSteering")}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs" title={text}>
-                {text}
-              </span>
+              <QueueText raw={text} />
               <span className="shrink-0 opacity-0 group-hover:opacity-100">
                 <button
                   type="button"
@@ -157,7 +183,7 @@ export function QueuePanel() {
                   aria-label={t("queueEditMessage")}
                   className="min-h-[52px] flex-1 rounded border border-accent bg-surface px-2 py-1 text-xs outline-none"
                   value={editing.text}
-                  onChange={(event) => setEditing({ index, text: event.target.value })}
+                  onChange={(event) => setEditing({ ...editing, text: event.target.value })}
                   onCompositionStart={ime.onCompositionStart}
                   onCompositionEnd={ime.onCompositionEnd}
                   onKeyDown={(event) => {
@@ -165,7 +191,12 @@ export function QueuePanel() {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
                       const next = [...followUp];
-                      if (editing.text.trim()) next[index] = editing.text;
+                      if (editing.text.trim()) {
+                        next[index] = preserveAttachmentReferenceBlocks(
+                          editing.original,
+                          editing.text,
+                        );
+                      }
                       void applyQueue([...steering], next);
                       setEditing(null);
                     }
@@ -179,7 +210,12 @@ export function QueuePanel() {
                   className={itemButton}
                   onClick={() => {
                     const next = [...followUp];
-                    if (editing.text.trim()) next[index] = editing.text;
+                    if (editing.text.trim()) {
+                      next[index] = preserveAttachmentReferenceBlocks(
+                        editing.original,
+                        editing.text,
+                      );
+                    }
                     void applyQueue([...steering], next);
                     setEditing(null);
                   }}
@@ -199,9 +235,7 @@ export function QueuePanel() {
             ) : (
               <li key={`fu:${index}`} className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-surface-overlay/50">
                 <span className="mt-1 size-1 shrink-0 rounded-full bg-muted" />
-                <span className="min-w-0 flex-1 truncate text-xs" title={text}>
-                  {text}
-                </span>
+                <QueueText raw={text} />
                 <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
                   <button
                     type="button"
@@ -223,7 +257,13 @@ export function QueuePanel() {
                     aria-label={t("queueEdit")}
                     className={itemButton}
                     disabled={busyOp}
-                    onClick={() => setEditing({ index, text })}
+                    onClick={() =>
+                      setEditing({
+                        index,
+                        text: stripAttachmentReferenceBlocks(text).trim(),
+                        original: text,
+                      })
+                    }
                   >
                     <Pencil size={12} />
                   </button>

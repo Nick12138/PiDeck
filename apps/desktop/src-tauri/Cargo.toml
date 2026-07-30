@@ -25,6 +25,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 thiserror = "2"
 portable-pty = "0.9"
+base64 = "0.22.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

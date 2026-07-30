@@ -9,6 +9,10 @@ export const HOST_METHODS = [
   "workspace.searchFiles",
   "workspace.listDirectory",
   "workspace.setDirectoryWatches",
+  "attachment.create",
+  "attachment.createText",
+  "attachment.get",
+  "attachment.remove",
   "session.list",
   "session.create",
   "session.open",
@@ -156,6 +160,10 @@ export type WorkspaceOnlyMethod =
   | "piSettings.get";
 export type NullableSessionMethod = "session.create" | "session.open" | "piSettings.patch";
 export type ActiveSessionMethod =
+  | "attachment.create"
+  | "attachment.createText"
+  | "attachment.get"
+  | "attachment.remove"
   | "session.setName"
   | "session.reload"
   | "session.getEntries"
@@ -238,6 +246,10 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "workspace.searchFiles": "workspace",
   "workspace.listDirectory": "workspace",
   "workspace.setDirectoryWatches": "workspace",
+  "attachment.create": "activeSession",
+  "attachment.createText": "activeSession",
+  "attachment.get": "activeSession",
+  "attachment.remove": "activeSession",
   "session.list": "workspace",
   "session.create": "nullableSession",
   "session.open": "nullableSession",
