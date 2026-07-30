@@ -32,6 +32,7 @@ import {
   deriveReleaseProductionDependencies,
   loadReleaseSdkEvidence,
 } from "./release-sdk-evidence.mjs";
+import { releaseRuntimeImportSpecifiers } from "./release-runtime-imports.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDist = join(root, "packages/pi-host/dist");
@@ -159,7 +160,9 @@ if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
 
 function proveRuntimeImports(hostDir) {
   const nodeExe = join(nodeDir, process.platform === "win32" ? "node.exe" : "node");
-  const modules = Object.keys(sdkEvidence.hostManifest.productionDependencies);
+  const modules = releaseRuntimeImportSpecifiers(
+    sdkEvidence.hostManifest.productionDependencies,
+  );
   const prove = spawnSync(
     nodeExe,
     [

@@ -11,6 +11,7 @@ import {
   deriveReleaseProductionDependencies,
   loadReleaseSdkEvidence,
 } from "./release-sdk-evidence.mjs";
+import { releaseRuntimeImportSpecifiers } from "./release-runtime-imports.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -37,6 +38,23 @@ test("derives the release manifest from every Host production dependency", () =>
     evidence,
     { "@pideck/protocol": protocolVersion },
   );
+});
+
+test("probes Node-safe runtime entries for every Host production dependency", () => {
+  const evidence = loadReleaseSdkEvidence(root);
+  const dependencyNames = Object.keys(evidence.hostManifest.productionDependencies);
+  const specifiers = releaseRuntimeImportSpecifiers(
+    evidence.hostManifest.productionDependencies,
+  );
+
+  assert.equal(specifiers.length, dependencyNames.length);
+  assert.deepEqual(
+    specifiers,
+    dependencyNames.map((name) =>
+      name === "pdfjs-dist" ? "pdfjs-dist/legacy/build/pdf.mjs" : name,
+    ),
+  );
+  assert.ok(!specifiers.includes("pdfjs-dist"));
 });
 
 test("rejects drifted runtime-lock and staged evidence", () => {
