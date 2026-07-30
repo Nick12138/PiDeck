@@ -10,7 +10,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { ModelRuntime, type ModelRegistry } from "@earendil-works/pi-coding-agent";
+import {
+  ModelRuntime,
+  type AgentSession,
+  type ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 import {
   InMemoryCredentialStore,
   type AuthEvent,
@@ -478,26 +482,30 @@ async function restoreModelsConfig(path: string, original: string | null): Promi
   await writeFile(path, original, { encoding: "utf8", mode: 0o600 });
 }
 
-function currentModelConflict(
+function providerMutationConflict(
   factory: WorkspaceGraphFactory,
-  originalId: string,
-  draft?: ProviderDraft,
-  managesModelList = true,
+  providerIds: Iterable<string>,
+  message: string,
 ): HostError | null {
-  const current = factory.getGraph()?.agentSession?.model;
-  if (!current || current.provider !== originalId) return null;
-  if (
-    !draft ||
-    draft.id !== originalId ||
-    (managesModelList && !draft.models.some((model) => model.id === current.id))
-  ) {
-    return createHostError(
-      "AGENT_BUSY",
-      `The current session uses ${current.provider}/${current.id}. Select another model before changing its Provider entry.`,
-      { retryable: true },
-    );
-  }
-  return null;
+  const graph = factory.getGraph();
+  if (!graph) return null;
+  const affected = new Set(providerIds);
+  const sessions: AgentSession[] = [
+    ...(graph.agentSession ? [graph.agentSession] : []),
+    ...[...graph.backgroundSessions.values()].map((runtime) => runtime.agentSession),
+  ];
+  const conflict = sessions.find((session) => {
+    const providerId = session.model?.provider;
+    return providerId !== undefined && affected.has(providerId) && factory.isSessionBusy(session);
+  });
+  if (!conflict) return null;
+  return createHostError("AGENT_BUSY", message, {
+    retryable: true,
+    details: {
+      providerId: conflict.model?.provider ?? null,
+      modelId: conflict.model?.id ?? null,
+    },
+  });
 }
 
 async function refreshRegistry(factory: WorkspaceGraphFactory, rebindCurrentModel = false): Promise<void> {
@@ -513,20 +521,64 @@ async function invalidateRetainedRuntimes(factory: WorkspaceGraphFactory): Promi
   await factory.invalidateRetainedRuntimeCaches?.();
 }
 
-async function alignCurrentSessionModel(
+async function reconcileIdleActiveSessionModel(
   factory: WorkspaceGraphFactory,
-  targetProvider: string | undefined,
-  preferredModelIds: string[] = [],
+  enabledProviderIds: Iterable<string>,
+  options: {
+    remapProvider?: { from: string; to: string };
+    preferredModelIds?: ReadonlyMap<string, readonly string[]>;
+    allowedModelIds?: ReadonlyMap<string, ReadonlySet<string>>;
+  } = {},
 ): Promise<void> {
-  if (!targetProvider) return;
   const session = factory.getGraph()?.agentSession;
-  if (!session?.isIdle || session.model?.provider === targetProvider) return;
+  const current = session?.model;
+  if (!session?.isIdle || !current) return;
   const registry = factory.deps.modelRegistry;
-  const model = preferredModelIds
-    .map((id) => registry.find(targetProvider, id))
-    .find((item) => item !== undefined)
-    ?? registry.getAll().find((item) => item.provider === targetProvider);
-  if (model) await session.setModel(model);
+  const enabled = [...new Set(enabledProviderIds)];
+  const enabledSet = new Set(enabled);
+  const currentProvider =
+    options.remapProvider?.from === current.provider
+      ? options.remapProvider.to
+      : current.provider;
+  const candidates: Model<Api>[] = [];
+  const add = (model: Model<Api> | undefined) => {
+    if (!model || !enabledSet.has(model.provider)) return;
+    const allowed = options.allowedModelIds?.get(model.provider);
+    if (allowed && !allowed.has(model.id)) return;
+    if (
+      candidates.some(
+        (candidate) => candidate.provider === model.provider && candidate.id === model.id,
+      )
+    ) {
+      return;
+    }
+    candidates.push(model);
+  };
+
+  add(registry.find(currentProvider, current.id));
+  for (const providerId of enabled) {
+    for (const modelId of options.preferredModelIds?.get(providerId) ?? []) {
+      add(registry.find(providerId, modelId));
+    }
+  }
+  for (const providerId of enabled) {
+    for (const model of registry.getAll()) {
+      if (model.provider !== providerId) continue;
+      const before = candidates.length;
+      add(model);
+      if (candidates.length > before) break;
+    }
+  }
+
+  const model = candidates[0];
+  if (!model) {
+    throw new Error("Enable at least one Provider model before changing the current Provider");
+  }
+  if (model.provider === current.provider && model.id === current.id) {
+    rebindCurrentSessionModel(session, registry);
+    return;
+  }
+  await session.setModel(model);
 }
 
 const ANTHROPIC_COMPAT_PATH_SUFFIXES = [
@@ -942,9 +994,12 @@ async function persistDetectedAuthHeader(
   requestId: string,
   factory: WorkspaceGraphFactory,
 ): Promise<{ error: HostError } | { identity: HostIdentity }> {
-  if (factory.hasBusySessions()) {
-    throw new Error("Stop running sessions before applying detected Provider authentication");
-  }
+  const conflict = providerMutationConflict(
+    factory,
+    [providerId],
+    "Stop sessions using this Provider before applying detected authentication",
+  );
+  if (conflict) return { error: conflict };
   const server = factory.getServer();
   if (!server) throw new Error("Server not bound");
   return withRegisteredGraphMutation({
@@ -952,6 +1007,12 @@ async function persistDetectedAuthHeader(
     operationKind: "provider.mutation",
     requestId,
     run: async ({ signal }) => {
+      const conflictUnderLock = providerMutationConflict(
+        factory,
+        [providerId],
+        "Stop sessions using this Provider before applying detected authentication",
+      );
+      if (conflictUnderLock) return { error: conflictUnderLock };
       const config = await readModelsConfig(modelsPath);
       const identity = server.getIdentity();
       if (
@@ -1041,13 +1102,12 @@ async function applyProviderEnabledMutation(
   | { result: { providerId: string; enabled: boolean }; identity?: HostIdentity }
   | { error: HostError; identity?: HostIdentity }
 > {
-  if (factory.hasBusySessions()) {
-    return {
-      error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
-        retryable: true,
-      }),
-    };
-  }
+  const conflict = providerMutationConflict(
+    factory,
+    [providerId],
+    "Stop sessions using this Provider before changing whether it is enabled",
+  );
+  if (conflict) return { error: conflict };
   const server = factory.getServer();
   if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
   return withRegisteredGraphMutation({
@@ -1056,13 +1116,12 @@ async function applyProviderEnabledMutation(
     requestId,
     run: async ({ signal }) => {
       try {
-        if (factory.hasBusySessions()) {
-          return {
-            error: createHostError("AGENT_BUSY", "Stop running sessions before changing enabled Providers", {
-              retryable: true,
-            }),
-          };
-        }
+        const conflictUnderLock = providerMutationConflict(
+          factory,
+          [providerId],
+          "Stop sessions using this Provider before changing whether it is enabled",
+        );
+        if (conflictUnderLock) return { error: conflictUnderLock };
         const config = await readModelsConfig(modelsPath);
         const raw = config.providers[providerId];
         if (!isObject(raw) && !runtimeProviderIds(factory).includes(providerId)) {
@@ -1082,18 +1141,20 @@ async function applyProviderEnabledMutation(
         await commitModelsConfig(modelsPath, config.root, factory);
         try {
           await refreshRegistry(factory, true);
-          const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
-          if (!currentProvider || !nextEnabled.has(currentProvider)) {
-            const targetProvider = enabled ? providerId : [...nextEnabled][0];
-            const targetRaw = targetProvider ? config.providers[targetProvider] : undefined;
+          const preferredModelIds = new Map<string, string[]>();
+          for (const targetProvider of nextEnabled) {
+            const targetRaw = config.providers[targetProvider];
             const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
               ? targetRaw.models
                   .filter((model): model is JsonObject => isObject(model))
                   .map((model) => model.id)
                   .filter((id): id is string => typeof id === "string")
               : [];
-            await alignCurrentSessionModel(factory, targetProvider, modelIds);
+            preferredModelIds.set(targetProvider, modelIds);
           }
+          await reconcileIdleActiveSessionModel(factory, nextEnabled, {
+            preferredModelIds,
+          });
         } catch (error) {
           await restoreModelsConfig(modelsPath, config.original);
           await refreshRegistry(factory, true);
@@ -1390,13 +1451,12 @@ export function createProviderHandlers(
       const originalId = params.originalId?.trim() || draft.id;
       const invalid = validateDraft(draft);
       if (invalid) return { error: invalid };
-      if (factory.hasBusySessions()) {
-        return {
-          error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider configuration", {
-            retryable: true,
-          }),
-        };
-      }
+      const conflict = providerMutationConflict(
+        factory,
+        [originalId, draft.id],
+        "Stop sessions using this Provider before changing its configuration",
+      );
+      if (conflict) return { error: conflict };
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       return withRegisteredGraphMutation({
@@ -1407,13 +1467,12 @@ export function createProviderHandlers(
           try {
             const loginConflict = loginInProgressError();
             if (loginConflict) return { error: loginConflict };
-            if (factory.hasBusySessions()) {
-              return {
-                error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider configuration", {
-                  retryable: true,
-                }),
-              };
-            }
+            const conflictUnderLock = providerMutationConflict(
+              factory,
+              [originalId, draft.id],
+              "Stop sessions using this Provider before changing its configuration",
+            );
+            if (conflictUnderLock) return { error: conflictUnderLock };
             const config = await readModelsConfig(modelsPath);
             const enabledBefore = resolveEnabledProviders(
               config,
@@ -1425,13 +1484,6 @@ export function createProviderHandlers(
               return { error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`) };
             }
             const existing = isObject(config.providers[originalId]) ? config.providers[originalId] : {};
-            const modelConflict = currentModelConflict(
-              factory,
-              originalId,
-              draft,
-              Array.isArray(existing.models),
-            );
-            if (modelConflict) return { error: modelConflict };
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
             const merged = mergeProvider(existing, draft);
@@ -1474,13 +1526,14 @@ export function createProviderHandlers(
               // Both durable writes landed; only reconciliation is left.
               await journal.markCommitted();
               await refreshRegistry(factory, true);
-              const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
-              const targetProvider = currentProvider && enabledAfter.includes(currentProvider)
-                ? undefined
-                : enabledAfter[0];
-              await alignCurrentSessionModel(factory, targetProvider, targetProvider === draft.id
-                ? draft.models.map((model) => model.id)
-                : []);
+              await reconcileIdleActiveSessionModel(factory, enabledAfter, {
+                ...(draft.id !== originalId
+                  ? { remapProvider: { from: originalId, to: draft.id } }
+                  : {}),
+                preferredModelIds: new Map([
+                  [draft.id, draft.models.map((model) => model.id)],
+                ]),
+              });
             } catch (error) {
               // Restores both files from the journal copies. A journal that
               // survives this means recovery failed and startup will report
@@ -1510,11 +1563,12 @@ export function createProviderHandlers(
 
     "provider.remove": async (ctx) => {
       const { providerId } = ctx.params as { providerId: string };
-      const conflict = currentModelConflict(factory, providerId);
+      const conflict = providerMutationConflict(
+        factory,
+        [providerId],
+        "Stop sessions using this Provider before deleting it",
+      );
       if (conflict) return { error: conflict };
-      if (factory.hasBusySessions()) {
-        return { error: createHostError("AGENT_BUSY", "Stop running sessions before deleting a Provider", { retryable: true }) };
-      }
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       return withRegisteredGraphMutation({
@@ -1525,11 +1579,12 @@ export function createProviderHandlers(
           try {
             const loginConflict = loginInProgressError();
             if (loginConflict) return { error: loginConflict };
-            const conflictUnderLock = currentModelConflict(factory, providerId);
+            const conflictUnderLock = providerMutationConflict(
+              factory,
+              [providerId],
+              "Stop sessions using this Provider before deleting it",
+            );
             if (conflictUnderLock) return { error: conflictUnderLock };
-            if (factory.hasBusySessions()) {
-              return { error: createHostError("AGENT_BUSY", "Stop running sessions before deleting a Provider", { retryable: true }) };
-            }
             const config = await readModelsConfig(modelsPath);
             if (config.providers[providerId] === undefined) {
               return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
@@ -1542,7 +1597,8 @@ export function createProviderHandlers(
               runtimeProviderIds(factory),
             );
             delete config.providers[providerId];
-            config.root[ENABLED_PROVIDERS_KEY] = enabledBefore.filter((id) => id !== providerId);
+            const enabledAfter = enabledBefore.filter((id) => id !== providerId);
+            config.root[ENABLED_PROVIDERS_KEY] = enabledAfter;
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
             const journal = await ProviderMutationJournal.begin({
               agentDir: factory.deps.agentDir,
@@ -1557,6 +1613,7 @@ export function createProviderHandlers(
               await factory.deps.credentialStore.delete(providerId);
               await journal.markCommitted();
               await refreshRegistry(factory, true);
+              await reconcileIdleActiveSessionModel(factory, enabledAfter);
             } catch (error) {
               await journal.rollback();
               await refreshRegistry(factory, true);
@@ -1934,15 +1991,12 @@ export function createProviderHandlers(
 
     "provider.logout": async (ctx) => {
       const { providerId } = ctx.params as { providerId: string };
-      const conflict = currentModelConflict(factory, providerId);
+      const conflict = providerMutationConflict(
+        factory,
+        [providerId],
+        "Stop sessions using this Provider before logging out",
+      );
       if (conflict) return { error: conflict };
-      if (factory.hasBusySessions()) {
-        return {
-          error: createHostError("AGENT_BUSY", "Stop running sessions before logging out of a Provider", {
-            retryable: true,
-          }),
-        };
-      }
       const server = factory.getServer();
       if (!server) return { error: createHostError("HOST_NOT_READY", "Server not bound") };
       return withRegisteredGraphMutation({
@@ -1953,15 +2007,12 @@ export function createProviderHandlers(
           try {
             const loginConflict = loginInProgressError();
             if (loginConflict) return { error: loginConflict };
-            const conflictUnderLock = currentModelConflict(factory, providerId);
+            const conflictUnderLock = providerMutationConflict(
+              factory,
+              [providerId],
+              "Stop sessions using this Provider before logging out",
+            );
             if (conflictUnderLock) return { error: conflictUnderLock };
-            if (factory.hasBusySessions()) {
-              return {
-                error: createHostError("AGENT_BUSY", "Stop running sessions before logging out of a Provider", {
-                  retryable: true,
-                }),
-              };
-            }
             const stored = await factory.deps.credentialStore.readRaw(providerId);
             if (!stored) {
               return {
@@ -1992,6 +2043,7 @@ export function createProviderHandlers(
               await factory.deps.credentialStore.delete(providerId);
               await journal.markCommitted();
               await refreshRegistry(factory, true);
+              await reconcileIdleActiveSessionModel(factory, nextEnabled);
             } catch (error) {
               await journal.rollback();
               await refreshRegistry(factory, true);
@@ -2058,13 +2110,12 @@ export function createProviderHandlers(
         requestId: ctx.id,
         run: async ({ signal }) => {
           try {
-            if (factory.hasBusySessions()) {
-              return {
-                error: createHostError("AGENT_BUSY", "Stop running sessions before changing Provider models", {
-                  retryable: true,
-                }),
-              };
-            }
+            const conflict = providerMutationConflict(
+              factory,
+              [providerId],
+              "Stop sessions using this Provider before changing its model list",
+            );
+            if (conflict) return { error: conflict };
             const runtime = factory.deps.modelRuntime;
             if (!runtime.getProviders().some((candidate) => candidate.id === providerId)) {
               return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
@@ -2090,6 +2141,26 @@ export function createProviderHandlers(
             if (Object.keys(lists).length === 0) delete config.root[PROVIDER_MODELS_KEY];
             else config.root[PROVIDER_MODELS_KEY] = lists;
             await commitModelsConfig(modelsPath, config.root, factory);
+            try {
+              const enabledProviders = resolveEnabledProviders(
+                config,
+                factory.getGraph()?.agentSession?.model?.provider,
+                runtimeProviderIds(factory),
+              );
+              const preferredModelIds = new Map<string, string[]>(
+                Object.entries(lists),
+              );
+              preferredModelIds.set(providerId, [...selected]);
+              await reconcileIdleActiveSessionModel(factory, enabledProviders, {
+                preferredModelIds,
+                allowedModelIds: new Map(
+                  Object.entries(lists).map(([id, ids]) => [id, new Set(ids)]),
+                ),
+              });
+            } catch (error) {
+              await restoreModelsConfig(modelsPath, config.original);
+              throw error;
+            }
             const models = catalog
               .map((model) => ({
                 id: model.id,

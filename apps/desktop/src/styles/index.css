@@ -181,6 +181,135 @@ html.light .pi-mark-dark {
   display: none;
 }
 
+.startup-screen {
+  position: absolute;
+  z-index: 45;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #101211;
+  color: #f3f1ed;
+  opacity: 1;
+  transition: opacity 200ms ease-out;
+}
+
+html.light .startup-screen {
+  background: #f7f7f8;
+  color: #171918;
+}
+
+.startup-screen--exiting {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.startup-drag-region {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 44px;
+}
+
+.startup-content {
+  display: flex;
+  width: 180px;
+  align-items: center;
+  flex-direction: column;
+  transform: translateY(0);
+  transition: transform 200ms ease-out;
+}
+
+.startup-screen--exiting .startup-content {
+  transform: translateY(-4px);
+}
+
+.startup-mark {
+  width: 58px;
+  height: 58px;
+  animation: startup-mark-breathe 1.8s ease-in-out infinite;
+}
+
+.startup-wordmark {
+  margin-top: 17px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.startup-progress {
+  width: 104px;
+  height: 2px;
+  margin-top: 22px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: #2b2e2c;
+}
+
+html.light .startup-progress {
+  background: #dedfe1;
+}
+
+.startup-progress-value {
+  display: block;
+  width: 34px;
+  height: 100%;
+  background: #e06b35;
+  animation: startup-progress 1.25s ease-in-out infinite;
+}
+
+html.light .startup-progress-value {
+  background: #d45d2d;
+}
+
+.startup-status {
+  min-height: 16px;
+  margin-top: 11px;
+  color: #8f938f;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+html.light .startup-status {
+  color: #70736f;
+}
+
+@keyframes startup-mark-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes startup-progress {
+  from {
+    transform: translateX(-38px);
+  }
+  to {
+    transform: translateX(110px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-screen,
+  .startup-content {
+    transition-duration: 0ms;
+  }
+  .startup-mark,
+  .startup-progress-value {
+    animation: none;
+  }
+  .startup-progress-value {
+    transform: translateX(35px);
+  }
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

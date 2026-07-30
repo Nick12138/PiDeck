@@ -1,4 +1,15 @@
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Activity,
   ArrowDown,
@@ -98,8 +109,35 @@ export function Transcript() {
   );
   prevRowsRef.current = rows;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
+
+  const cancelScheduledScroll = useCallback(() => {
+    if (scrollFrameRef.current === null) return;
+    cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = null;
+  }, []);
+
+  const alignToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, []);
+
+  const scheduleBottomAlignment = useCallback(() => {
+    cancelScheduledScroll();
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      if (followingRef.current) alignToBottom();
+    });
+  }, [alignToBottom, cancelScheduledScroll]);
+
+  const updateFollowing = useCallback((next: boolean) => {
+    followingRef.current = next;
+    setFollowing((current) => (current === next ? current : next));
+  }, []);
 
   // Top-anchored window: `hidden` rows stay unmounted above the fold. New
   // rows stream in at the tail without disturbing what is on screen.
@@ -166,63 +204,56 @@ export function Transcript() {
       ? tailRow.key
       : undefined;
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    setFollowing(true);
-    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
-    scrollFrameRef.current = requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      element.scrollTop = element.scrollHeight;
-    });
-    return () => {
-      if (scrollFrameRef.current !== null) {
-        cancelAnimationFrame(scrollFrameRef.current);
-        scrollFrameRef.current = null;
-      }
-    };
-  }, [session?.sessionId]);
+  useLayoutEffect(() => {
+    updateFollowing(true);
+    alignToBottom();
+    scheduleBottomAlignment();
+  }, [alignToBottom, scheduleBottomAlignment, sessionKey, updateFollowing]);
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element || !following) return;
-    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
-    scrollFrameRef.current = requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      element.scrollTop = element.scrollHeight;
+  useLayoutEffect(() => {
+    if (followingRef.current) scheduleBottomAlignment();
+  }, [messages, scheduleBottomAlignment]);
+
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) scheduleBottomAlignment();
     });
-    return () => {
-      if (scrollFrameRef.current !== null) {
-        cancelAnimationFrame(scrollFrameRef.current);
-        scrollFrameRef.current = null;
-      }
-    };
-  }, [following, messages]);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scheduleBottomAlignment]);
+
+  useEffect(() => cancelScheduledScroll, [cancelScheduledScroll]);
 
   function scrollToBottom() {
     const element = scrollRef.current;
     if (!element) return;
+    updateFollowing(true);
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-    setFollowing(true);
   }
 
   return (
     <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
+        data-transcript-scroll
         className="h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
         onScroll={(event) => {
           const element = event.currentTarget;
           const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
           const shouldFollow = distance < 80;
           if (!shouldFollow && scrollFrameRef.current !== null) {
-            cancelAnimationFrame(scrollFrameRef.current);
-            scrollFrameRef.current = null;
+            cancelScheduledScroll();
           }
-          setFollowing(shouldFollow);
+          updateFollowing(shouldFollow);
         }}
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 sm:gap-6">
+        <div
+          ref={contentRef}
+          data-transcript-content
+          className="mx-auto flex max-w-3xl flex-col gap-5 sm:gap-6"
+        >
           {hidden > 0 && (
             <button
               type="button"

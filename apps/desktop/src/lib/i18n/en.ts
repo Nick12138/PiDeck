@@ -16,6 +16,14 @@ export const en = {
   commonSystem: "System",
   commonDismiss: "Dismiss",
 
+  // Startup
+  startupPreparing: "Preparing PiDeck",
+  startupStartingHost: "Starting Pi Host",
+  startupRestoringWorkspace: "Restoring workspace",
+  startupRestoringSession: "Restoring session",
+  startupReconnecting: "Reconnecting to Pi Host",
+  startupReady: "Ready",
+
   // Settings shell
   settingsTitle: "Settings",
   settingsSubtitle: "Configure PiDeck and its runtime",

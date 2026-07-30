@@ -31,6 +31,11 @@ import { checkForAppUpdate } from "../lib/updater";
 import { applyLanguage } from "../lib/i18n";
 import { tCurrent, useT } from "../lib/i18n/use-t";
 import {
+  StartupScreen,
+  resolveStartupStage,
+  useInitialStartupScreen,
+} from "./StartupScreen";
+import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
   persistRecentDesktopLocation,
@@ -522,6 +527,19 @@ export function App() {
   const sessionRevision = useAppStore((s) => s.session?.revision ?? 0);
   const workspacePath = useAppStore((s) => s.workspace?.canonicalCwd);
   const activeSessionPath = useAppStore((s) => s.session?.sessionPath);
+  const startupSettled =
+    desktopSettings !== null && !connecting && !rehydrating && !desynchronized;
+  const startupPhase = useInitialStartupScreen(startupSettled);
+  const startupVisible = startupPhase !== "complete";
+  const startupStage = resolveStartupStage({
+    settingsReady: desktopSettings !== null,
+    hostReady: hostInstanceId !== "",
+    workspaceReady: Boolean(workspacePath),
+    sessionReady: sessionId !== "",
+    connecting,
+    rehydrating,
+    desynchronized,
+  });
 
   useEffect(() => {
     let unsub = () => {};
@@ -951,7 +969,10 @@ export function App() {
       {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
         <WindowControls platform={windowControlsPlatform} />
       )}
-      <div className="flex min-h-0 flex-1">
+      <div
+        className={`flex min-h-0 flex-1 ${startupVisible ? "pointer-events-none" : ""}`}
+        aria-hidden={startupVisible ? true : undefined}
+      >
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col">
           {hostFatal ? (
@@ -973,6 +994,12 @@ export function App() {
         <SettingsOverlay section={page === "packages" ? "packages" : "general"} />
       )}
       <ExtensionUiModal />
+      {startupVisible && (
+        <StartupScreen
+          stage={startupStage}
+          exiting={startupPhase === "exiting"}
+        />
+      )}
     </div>
   );
 }

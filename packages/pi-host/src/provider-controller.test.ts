@@ -3,6 +3,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import {
   createProviderHandlers,
   getEnabledProviderIds,
@@ -13,6 +15,7 @@ import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp
 import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
 import { modelBackupDir } from "./pideck-data.js";
 
 const layouts: TempAgentLayout[] = [];
@@ -66,6 +69,8 @@ async function setup(initialModels: unknown) {
   return {
     layout,
     credentialStore,
+    factory,
+    modelRegistry,
     modelRuntime,
     server,
     handlers: createProviderHandlers(factory),
@@ -97,6 +102,53 @@ function draft(models: ProviderDraft["models"]): ProviderDraft {
     },
     models,
   };
+}
+
+function configuredModel(id: string): ProviderDraft["models"][number] {
+  return {
+    id,
+    name: id,
+    reasoning: false,
+    input: ["text"],
+    contextWindow: 128_000,
+    maxTokens: 16_384,
+  };
+}
+
+function runtimeSession(model: Model<Api>, isIdle: boolean) {
+  const state = { model };
+  const setModel = vi.fn(async (next: Model<Api>) => {
+    state.model = next;
+  });
+  const session = {
+    isIdle,
+    get model() {
+      return state.model;
+    },
+    state,
+    thinkingLevel: "off",
+    setThinkingLevel: vi.fn(),
+    setModel,
+  } as unknown as AgentSession;
+  return { session, setModel, state };
+}
+
+function attachRuntimeGraph(
+  factory: WorkspaceGraphFactory,
+  active: AgentSession | null,
+  background: AgentSession[] = [],
+): void {
+  const backgroundSessions = new Map(
+    background.map((session, index) => [
+      `background-${index}`,
+      { agentSession: session } as BackgroundSessionRuntime,
+    ]),
+  );
+  Reflect.set(factory, "graph", {
+    agentSession: active,
+    backgroundSessions,
+    retainedSessions: new Map(),
+  } as WorkspaceGraph);
 }
 
 function writeAnthropicSuccess(response: import("node:http").ServerResponse): void {
@@ -182,6 +234,326 @@ describe("Provider controller", () => {
       expect(providers.filter((provider) => provider.enabled).map((provider) => provider.id).sort())
         .toEqual(["custom", "other"]);
     }
+  });
+
+  it("renames the Provider used by an idle session and migrates its current model", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.save"]!({
+      id: "rename-idle-provider",
+      params: {
+        originalId: "custom",
+        provider: {
+          ...draft([configuredModel("primary")]),
+          id: "renamed",
+        },
+      },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({ provider: "renamed", id: "primary" });
+    expect(active.setModel).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "renamed", id: "primary" }),
+    );
+  });
+
+  it("moves an idle session to another model when saving removes its current model", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "current" }, { id: "fallback" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "current");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.save"]!({
+      id: "remove-idle-current-model",
+      params: {
+        originalId: "custom",
+        provider: draft([configuredModel("fallback")]),
+      },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({ provider: "custom", id: "fallback" });
+  });
+
+  it("still rejects a Provider save while a session using it is running", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    attachRuntimeGraph(factory, runtimeSession(current, false).session);
+
+    const outcome = await handlers["provider.save"]!({
+      id: "save-running-provider",
+      params: {
+        originalId: "custom",
+        provider: draft([configuredModel("primary")]),
+      },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("AGENT_BUSY");
+  });
+
+  it("still rejects a Provider save while its idle session has an operation in flight", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+    const operationLock = factory.getSessionOperationLock(active.session);
+    expect(operationLock.tryAcquire("provider-operation-in-flight")).toBe(true);
+
+    try {
+      const outcome = await handlers["provider.save"]!({
+        id: "save-operation-locked-provider",
+        params: {
+          originalId: "custom",
+          provider: draft([configuredModel("primary")]),
+        },
+      } as never);
+
+      expect("error" in outcome && outcome.error.code).toBe("AGENT_BUSY");
+    } finally {
+      operationLock.release("provider-operation-in-flight");
+    }
+  });
+
+  it("allows a Provider save while an unrelated Provider runs in the background", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom", "other"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-responses",
+          models: [{ id: "other-model" }],
+        },
+      },
+    });
+    const other = modelRegistry.find("other", "other-model");
+    if (!other) throw new Error("Missing background model fixture");
+    attachRuntimeGraph(factory, null, [runtimeSession(other, false).session]);
+
+    const outcome = await handlers["provider.save"]!({
+      id: "save-unrelated-running-provider",
+      params: {
+        originalId: "custom",
+        provider: {
+          ...draft([configuredModel("primary")]),
+          name: "Updated Custom",
+        },
+      },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+  });
+
+  it("rejects a Provider save used by a running background session", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing background model fixture");
+    attachRuntimeGraph(factory, null, [runtimeSession(current, false).session]);
+
+    const outcome = await handlers["provider.save"]!({
+      id: "save-related-running-provider",
+      params: {
+        originalId: "custom",
+        provider: draft([configuredModel("primary")]),
+      },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("AGENT_BUSY");
+  });
+
+  it("moves an idle session to another enabled Provider before removing its Provider", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom", "other"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-responses",
+          models: [{ id: "fallback" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.remove"]!({
+      id: "remove-idle-provider",
+      params: { providerId: "custom" },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({ provider: "other", id: "fallback" });
+  });
+
+  it("rolls back Provider removal when an idle session has no fallback model", async () => {
+    const { credentialStore, factory, handlers, layout, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    await putApiKey(credentialStore, "custom", "sk-custom");
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.remove"]!({
+      id: "remove-only-idle-provider",
+      params: { providerId: "custom" },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("SETTINGS_WRITE_FAILED");
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.providers.custom).toBeDefined();
+    expect(persisted.pideckEnabledProviders).toEqual(["custom"]);
+    expect(await credentialStore.readRaw("custom")).toEqual({
+      type: "api_key",
+      key: "sk-custom",
+    });
+    expect(active.state.model).toMatchObject({ provider: "custom", id: "primary" });
+  });
+
+  it("moves an idle session when its current Provider is disabled", async () => {
+    const { factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom", "other"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-responses",
+          models: [{ id: "fallback" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.setEnabled"]!({
+      id: "disable-idle-provider",
+      params: { providerId: "custom", enabled: false },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({ provider: "other", id: "fallback" });
+  });
+
+  it("moves an idle session when logging out of its current Provider", async () => {
+    const { credentialStore, factory, handlers, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom", "other"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+        other: {
+          name: "Other",
+          baseUrl: "https://other.example/v1",
+          api: "openai-responses",
+          models: [{ id: "fallback" }],
+        },
+      },
+    });
+    await putApiKey(credentialStore, "custom", "sk-custom");
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.logout"]!({
+      id: "logout-idle-provider",
+      params: { providerId: "custom" },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({ provider: "other", id: "fallback" });
+    expect(await credentialStore.readRaw("custom")).toBeUndefined();
   });
 
   it("rejects Provider listing while a Provider mutation owns the graph", async () => {
@@ -1486,6 +1858,30 @@ describe("Builtin provider models", () => {
     persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.pideckProviderModels).toBeUndefined();
     expect(await getProviderModelAllowLists(layout.agentDir)).toBeUndefined();
+  });
+
+  it("moves an idle session when its builtin model is removed from the allow-list", async () => {
+    const { factory, handlers, modelRegistry, modelRuntime } = await setup({
+      pideckEnabledProviders: ["anthropic"],
+      providers: {},
+    });
+    const catalog = modelRuntime.getModels("anthropic");
+    expect(catalog.length).toBeGreaterThan(1);
+    const current = modelRegistry.find("anthropic", catalog[0]!.id);
+    if (!current) throw new Error("Missing builtin current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.setBuiltinModels"]!({
+      id: "builtin-models-migrate-idle",
+      params: { providerId: "anthropic", modelIds: [catalog[1]!.id] },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.state.model).toMatchObject({
+      provider: "anthropic",
+      id: catalog[1]!.id,
+    });
   });
 
   it("rejects custom Providers and unknown ids", async () => {

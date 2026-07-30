@@ -14,6 +14,14 @@ export const zh: Record<MessageKey, string> = {
   commonSystem: "跟随系统",
   commonDismiss: "关闭",
 
+  // Startup
+  startupPreparing: "正在准备 PiDeck",
+  startupStartingHost: "正在启动 Pi Host",
+  startupRestoringWorkspace: "正在恢复工作区",
+  startupRestoringSession: "正在恢复会话",
+  startupReconnecting: "正在重新连接 Pi Host",
+  startupReady: "准备完成",
+
   // Settings shell
   settingsTitle: "设置",
   settingsSubtitle: "配置 PiDeck 与其运行时",

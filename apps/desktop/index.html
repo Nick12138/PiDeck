@@ -3,10 +3,160 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#121214" />
     <title>PiDeck</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --boot-bg: #101211;
+        --boot-fg: #f3f1ed;
+        --boot-muted: #8f938f;
+        --boot-track: #2b2e2c;
+        --boot-accent: #e06b35;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --boot-bg: #f7f7f8;
+          --boot-fg: #171918;
+          --boot-muted: #70736f;
+          --boot-track: #dedfe1;
+          --boot-accent: #d45d2d;
+        }
+        :root:not(.dark) .pideck-bootstrap-mark--light {
+          display: block;
+        }
+        :root:not(.dark) .pideck-bootstrap-mark--dark {
+          display: none;
+        }
+      }
+      html.dark {
+        color-scheme: dark;
+        --boot-bg: #101211;
+        --boot-fg: #f3f1ed;
+        --boot-muted: #8f938f;
+        --boot-track: #2b2e2c;
+        --boot-accent: #e06b35;
+      }
+      html.light {
+        color-scheme: light;
+        --boot-bg: #f7f7f8;
+        --boot-fg: #171918;
+        --boot-muted: #70736f;
+        --boot-track: #dedfe1;
+        --boot-accent: #d45d2d;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        overflow: hidden;
+        background: var(--boot-bg);
+      }
+      #pideck-bootstrap {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: var(--boot-bg);
+        color: var(--boot-fg);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .pideck-bootstrap-drag {
+        position: absolute;
+        inset: 0 0 auto;
+        height: 44px;
+      }
+      .pideck-bootstrap-content {
+        display: flex;
+        width: 180px;
+        align-items: center;
+        flex-direction: column;
+      }
+      .pideck-bootstrap-mark {
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+        animation: pideck-bootstrap-breathe 1.8s ease-in-out infinite;
+      }
+      .pideck-bootstrap-mark--light {
+        display: none;
+      }
+      html.light .pideck-bootstrap-mark--light {
+        display: block;
+      }
+      html.light .pideck-bootstrap-mark--dark {
+        display: none;
+      }
+      .pideck-bootstrap-wordmark {
+        margin-top: 17px;
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      .pideck-bootstrap-track {
+        width: 104px;
+        height: 2px;
+        margin-top: 22px;
+        overflow: hidden;
+        border-radius: 1px;
+        background: var(--boot-track);
+      }
+      .pideck-bootstrap-track::after {
+        display: block;
+        width: 34px;
+        height: 100%;
+        background: var(--boot-accent);
+        content: "";
+        animation: pideck-bootstrap-progress 1.25s ease-in-out infinite;
+      }
+      @keyframes pideck-bootstrap-breathe {
+        0%,
+        100% { opacity: 0.72; transform: scale(0.985); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+      @keyframes pideck-bootstrap-progress {
+        from { transform: translateX(-38px); }
+        to { transform: translateX(110px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pideck-bootstrap-mark,
+        .pideck-bootstrap-track::after {
+          animation: none;
+        }
+        .pideck-bootstrap-track::after {
+          transform: translateX(35px);
+        }
+      }
+    </style>
+    <script type="module" src="/src/bootstrap-theme.ts"></script>
   </head>
   <body class="bg-surface text-foreground">
-    <div id="root"></div>
+    <div id="root">
+      <div id="pideck-bootstrap" role="status" aria-label="Starting PiDeck" aria-busy="true">
+        <div class="pideck-bootstrap-drag" data-tauri-drag-region></div>
+        <div class="pideck-bootstrap-content">
+          <img
+            class="pideck-bootstrap-mark pideck-bootstrap-mark--light"
+            src="/src/assets/pi-mark-light.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <img
+            class="pideck-bootstrap-mark pideck-bootstrap-mark--dark"
+            src="/src/assets/pi-mark-dark.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <span class="pideck-bootstrap-wordmark">PiDeck</span>
+          <span class="pideck-bootstrap-track" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
