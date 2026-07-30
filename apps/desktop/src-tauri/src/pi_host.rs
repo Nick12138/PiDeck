@@ -898,6 +898,12 @@ impl PiHostManager {
         }
     }
 
+    #[cfg(not(windows))]
+    fn resolve_portable_git(_app: &AppHandle) -> Result<Option<PathBuf>, String> {
+        Ok(None)
+    }
+
+    #[cfg(windows)]
     fn resolve_portable_git(app: &AppHandle) -> Result<Option<PathBuf>, String> {
         let mut candidates = Vec::new();
         if let Ok(res_dir) = app.path().resource_dir() {
@@ -916,12 +922,9 @@ impl PiHostManager {
             }
         }
 
-        #[cfg(debug_assertions)]
-        {
+        if cfg!(debug_assertions) {
             Ok(None)
-        }
-        #[cfg(not(debug_assertions))]
-        {
+        } else {
             Err("Release build: bundled Portable Git not found under resource_dir. Re-run prepare:runtime.".into())
         }
     }
@@ -1038,7 +1041,11 @@ impl PiHostManager {
         if let Ok(system_root) = std::env::var("SystemRoot") {
             controlled_path.push(PathBuf::from(system_root).join("System32"));
         }
-        #[cfg(debug_assertions)]
+        #[cfg(not(windows))]
+        if let Some(existing) = std::env::var_os("PATH") {
+            controlled_path.extend(std::env::split_paths(&existing));
+        }
+        #[cfg(all(windows, debug_assertions))]
         if portable_git_cmd.is_none() {
             if let Some(existing) = std::env::var_os("PATH") {
                 controlled_path.extend(std::env::split_paths(&existing));

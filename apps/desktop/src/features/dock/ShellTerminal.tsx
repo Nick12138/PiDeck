@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalProfileId } from "@pideck/protocol";
+import { useT, type Translate } from "../../lib/i18n/use-t";
 import { XtermSurface } from "./XtermSurface";
 
 const INPUT_FLUSH_MS = 8;
@@ -77,11 +78,12 @@ async function attachShell(
   terminal: Terminal,
   cwd: string,
   profileId: TerminalProfileId,
+  t: Translate,
   onStatus: (status: ShellTerminalStatus) => void,
   onWarning?: (message: string) => void,
 ): Promise<() => Promise<void>> {
   let terminalId: string | undefined;
-  let shellTitle = "Shell";
+  let shellTitle = t("dockShell");
   let disposed = false;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let inputTimer: ReturnType<typeof setTimeout> | undefined;
@@ -130,9 +132,11 @@ async function attachShell(
       onStatus({ state: "error", title: shellTitle, cwd, message: event.message });
       return;
     }
-    terminal.writeln(
-      `\r\n[Process exited${event.exitCode === null ? "" : ` with code ${event.exitCode}`}]`,
-    );
+    const exitMessage =
+      event.exitCode === null
+        ? t("dockProcessExited")
+        : t("dockProcessExitedWithCode", { code: event.exitCode });
+    terminal.writeln(`\r\n[${exitMessage}]`);
     onStatus({
       state: "exited",
       title: shellTitle,
@@ -190,11 +194,14 @@ export function ShellTerminal({
   onStatus,
   onWarning,
 }: ShellTerminalProps) {
+  const t = useT();
   return (
     <XtermSurface
       sessionKey={`shell:${generation}`}
       visible={visible}
-      connect={(terminal) => attachShell(terminal, cwd, profileId, onStatus, onWarning)}
+      connect={(terminal) =>
+        attachShell(terminal, cwd, profileId, t, onStatus, onWarning)
+      }
     />
   );
 }

@@ -79,6 +79,68 @@ export type WorkspaceDirectoryEntry = {
   symlink: boolean;
 };
 
+export type GitChangeKind =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type_changed"
+  | "untracked"
+  | "conflicted";
+
+export type GitFileChange = {
+  path: string;
+  originalPath?: string;
+  staged: GitChangeKind | null;
+  unstaged: GitChangeKind | null;
+  conflict: boolean;
+  submodule: boolean;
+  pathSupported: boolean;
+};
+
+export type GitStatusSnapshot =
+  | {
+      state: "ready";
+      revision: number;
+      repositoryRoot: string;
+      workspaceIsRepositoryRoot: boolean;
+      branch: string | null;
+      detached: boolean;
+      unborn: boolean;
+      headSha: string | null;
+      upstream: string | null;
+      ahead: number;
+      behind: number;
+      indexGeneration: string;
+      files: GitFileChange[];
+      warnings: string[];
+    }
+  | { state: "not_repository"; revision: number }
+  | { state: "unavailable"; revision: number; message: string }
+  | { state: "error"; revision: number; message: string };
+
+export type GitDiffSnapshot = {
+  path: string;
+  area: "staged" | "unstaged";
+  patch: string;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  truncated: boolean;
+  contentGeneration: string;
+};
+
+export type GitMutationResult = {
+  applied: true;
+  snapshot?: GitStatusSnapshot;
+  warning?: string;
+};
+
+export type GitCommitResult = GitMutationResult & {
+  commitSha: string | null;
+};
+
 export type SessionSummary = {
   sessionId: string;
   sessionPath: string;

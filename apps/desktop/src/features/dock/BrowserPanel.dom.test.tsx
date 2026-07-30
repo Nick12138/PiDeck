@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAppStore } from "../../lib/stores/app-store";
 
 type TestBrowserEvent = {
   payload: {
@@ -54,6 +55,7 @@ function emitBrowserEvent(payload: TestBrowserEvent["payload"]) {
 }
 
 beforeEach(() => {
+  useAppStore.setState({ desktopSettings: { language: "en" } as never });
   mocks.invoke.mockReset();
   mocks.openSystem.mockReset().mockResolvedValue(undefined);
   mocks.unlisten.mockReset();
@@ -92,6 +94,26 @@ afterEach(async () => {
 });
 
 describe("BrowserPanel native lifecycle", () => {
+  it("localizes browser controls in Chinese", async () => {
+    useAppStore.setState({ desktopSettings: { language: "zh" } as never });
+    render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "browser_surface_create",
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByRole("region", { name: "浏览器" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "前进" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重新加载" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "浏览器地址" })).toHaveAttribute(
+      "placeholder",
+      "搜索或输入网址",
+    );
+  });
+
   it("loads an initial URL and keeps the native snapshot authoritative", async () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "browser_surface_create") {

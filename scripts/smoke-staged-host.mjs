@@ -8,8 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { spawn } from "node:child_process";
+import { delimiter, dirname, join } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   assertPiPackageTree,
@@ -40,9 +40,14 @@ assertReleaseProductionManifest(
   "staged release Host manifest",
 );
 const nodePath =
-  process.env.PIDECK_STAGED_NODE ?? join(resources, "node", "node.exe");
+  process.env.PIDECK_STAGED_NODE ??
+  (process.platform === "win32" ? join(resources, "node", "node.exe") : process.execPath);
 const hostEntry =
   process.env.PIDECK_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
+const portableGit = join(resources, "git", "cmd", "git.exe");
+const gitExecutable =
+  process.env.PIDECK_STAGED_GIT ??
+  (process.platform === "win32" && existsSync(portableGit) ? portableGit : "git");
 const expectedNodeVersion =
   process.env.PIDECK_EXPECT_NODE_VERSION ?? lock.node.version;
 const timeoutMs = parseTimeout(process.env.PIDECK_STAGED_SMOKE_TIMEOUT_MS, 180_000);
@@ -70,9 +75,31 @@ assert(existsSync(hostEntry), `Staged Host entry is missing: ${hostEntry}`);
 
 const tempRoot = mkdtempSync(join(tmpdir(), "pideck-staged-smoke-"));
 const agentDir = join(tempRoot, "agent");
+const workspaceDir = join(tempRoot, "workspace");
 mkdirSync(agentDir, { recursive: true, mode: 0o700 });
+mkdirSync(workspaceDir, { recursive: true, mode: 0o700 });
 for (const name of ["auth.json", "models.json", "settings.json"]) {
   writeFileSync(join(agentDir, name), "{}\n", { encoding: "utf8", mode: 0o600 });
+}
+if (process.platform === "win32") {
+  assert(existsSync(portableGit), `Staged Portable Git is missing: ${portableGit}`);
+}
+execFileSync(gitExecutable, ["init", workspaceDir], { stdio: "pipe" });
+writeFileSync(join(workspaceDir, "smoke.txt"), "staged host Git smoke\n", "utf8");
+
+const controlledPath = [dirname(nodePath)];
+if (existsSync(portableGit)) {
+  const gitRoot = dirname(dirname(portableGit));
+  controlledPath.push(
+    dirname(portableGit),
+    join(gitRoot, "bin"),
+    join(gitRoot, "mingw64", "bin"),
+  );
+}
+if (process.platform === "win32" && process.env.SystemRoot) {
+  controlledPath.push(join(process.env.SystemRoot, "System32"));
+} else if (process.env.PATH) {
+  controlledPath.push(process.env.PATH);
 }
 
 const child = spawn(nodePath, [hostEntry], {
@@ -80,6 +107,7 @@ const child = spawn(nodePath, [hostEntry], {
   env: {
     ...process.env,
     PI_CODING_AGENT_DIR: agentDir,
+    PATH: controlledPath.join(delimiter),
   },
   stdio: ["pipe", "pipe", "pipe"],
   windowsHide: true,
@@ -224,6 +252,38 @@ try {
   assert(Number.isSafeInteger(rehydrate.result?.watermark), "rehydrate watermark is missing");
   assert(rehydrate.result?.host?.hostInstanceId === hostInstanceId, "rehydrate identity mismatch");
 
+  const selected = await request(
+    "workspace.setCurrent",
+    {
+      expectedHostInstanceId: hostInstanceId,
+      expectedWorkspaceId: status.result.workspaceId,
+      expectedWorkspaceRevision: status.result.workspaceRevision,
+    },
+    { cwd: workspaceDir },
+    deadline,
+  );
+  assert(selected.ok === true, `workspace.setCurrent failed: ${JSON.stringify(selected.error)}`);
+  const selectedWorkspace = selected.result?.workspace;
+  assert(typeof selectedWorkspace?.id === "string", "workspace.setCurrent did not return an id");
+  assert(Number.isSafeInteger(selectedWorkspace?.revision), "workspace revision is missing");
+  const gitContext = {
+    expectedHostInstanceId: hostInstanceId,
+    expectedWorkspaceId: selectedWorkspace.id,
+    expectedWorkspaceRevision: selectedWorkspace.revision,
+  };
+  const gitStatus = await request("git.getStatus", gitContext, null, deadline);
+  assert(gitStatus.ok === true, `git.getStatus failed: ${JSON.stringify(gitStatus.error)}`);
+  assert(
+    gitStatus.result?.state === "ready",
+    `git.getStatus was not ready: ${JSON.stringify(gitStatus.result)}`,
+  );
+  assert(
+    gitStatus.result.files?.some(
+      (file) => file.path === "smoke.txt" && file.unstaged === "untracked",
+    ),
+    "git.getStatus did not report the smoke file",
+  );
+
   const shutdown = await request("system.shutdown", context, null, deadline);
   assert(shutdown.ok === true, `system.shutdown failed: ${JSON.stringify(shutdown.error)}`);
   assert(shutdown.result?.accepted === true, "system.shutdown was not accepted");
@@ -236,6 +296,7 @@ try {
       status: "ok",
       sdkVersion: readyStatus.sdkVersion,
       nodeVersion: readyStatus.nodeVersion,
+      gitStatus: gitStatus.result.state,
       rehydrateWatermark: rehydrate.result.watermark,
       exitCode: exited.code,
     }),

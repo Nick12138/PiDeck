@@ -12,7 +12,12 @@ import {
   MAX_EXTENSION_UI_TITLE_LENGTH,
 } from "./limits.js";
 import type { HostMethod } from "./methods.js";
-import type { AttachmentSnapshot, RehydrateSnapshot, ToolSnapshot } from "./types.js";
+import type {
+  AttachmentSnapshot,
+  GitStatusSnapshot,
+  RehydrateSnapshot,
+  ToolSnapshot,
+} from "./types.js";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1146,6 +1151,121 @@ export function isAttachmentSnapshot(value: unknown): value is AttachmentSnapsho
   );
 }
 
+const GIT_CHANGE_KINDS = new Set([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+  "copied",
+  "type_changed",
+  "untracked",
+  "conflicted",
+]);
+
+function isGitChangeKind(value: unknown): boolean {
+  return value === null || (typeof value === "string" && GIT_CHANGE_KINDS.has(value));
+}
+
+function isGitFileChange(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["path", "staged", "unstaged", "conflict", "submodule", "pathSupported"],
+      ["originalPath"],
+    ) &&
+    isString(value.path) &&
+    (value.originalPath === undefined || isString(value.originalPath)) &&
+    isGitChangeKind(value.staged) &&
+    isGitChangeKind(value.unstaged) &&
+    isBoolean(value.conflict) &&
+    isBoolean(value.submodule) &&
+    isBoolean(value.pathSupported)
+  );
+}
+
+export function isGitStatusSnapshot(value: unknown): value is GitStatusSnapshot {
+  if (!isPlainObject(value) || !isSafeRevision(value.revision) || !isString(value.state)) {
+    return false;
+  }
+  if (value.state === "not_repository") {
+    return hasExactKeys(value, ["state", "revision"]);
+  }
+  if (value.state === "unavailable" || value.state === "error") {
+    return hasExactKeys(value, ["state", "revision", "message"]) && isString(value.message);
+  }
+  return (
+    value.state === "ready" &&
+    hasExactKeys(value, [
+      "state",
+      "revision",
+      "repositoryRoot",
+      "workspaceIsRepositoryRoot",
+      "branch",
+      "detached",
+      "unborn",
+      "headSha",
+      "upstream",
+      "ahead",
+      "behind",
+      "indexGeneration",
+      "files",
+      "warnings",
+    ]) &&
+    isString(value.repositoryRoot) &&
+    isBoolean(value.workspaceIsRepositoryRoot) &&
+    (value.branch === null || isString(value.branch)) &&
+    isBoolean(value.detached) &&
+    isBoolean(value.unborn) &&
+    (value.headSha === null || isString(value.headSha)) &&
+    (value.upstream === null || isString(value.upstream)) &&
+    isSafeRevision(value.ahead) &&
+    isSafeRevision(value.behind) &&
+    isString(value.indexGeneration) &&
+    /^[0-9a-f]{64}$/.test(value.indexGeneration) &&
+    Array.isArray(value.files) &&
+    value.files.every(isGitFileChange) &&
+    isStringArray(value.warnings)
+  );
+}
+
+function isGitDiffSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "path",
+      "area",
+      "patch",
+      "additions",
+      "deletions",
+      "binary",
+      "truncated",
+      "contentGeneration",
+    ]) &&
+    isString(value.path) &&
+    (value.area === "staged" || value.area === "unstaged") &&
+    isString(value.patch) &&
+    isSafeRevision(value.additions) &&
+    isSafeRevision(value.deletions) &&
+    isBoolean(value.binary) &&
+    isBoolean(value.truncated) &&
+    isString(value.contentGeneration) &&
+    /^[0-9a-f]{64}$/.test(value.contentGeneration)
+  );
+}
+
+function isGitMutationResult(value: unknown, commit: boolean): boolean {
+  if (!isPlainObject(value)) return false;
+  const required = commit ? ["applied", "commitSha"] : ["applied"];
+  if (!hasExactKeys(value, required, ["snapshot", "warning"])) return false;
+  return (
+    value.applied === true &&
+    (!commit || value.commitSha === null || isString(value.commitSha)) &&
+    (value.snapshot === undefined || isGitStatusSnapshot(value.snapshot)) &&
+    (value.warning === undefined || isString(value.warning))
+  );
+}
+
 export function validateMethodResultShape(method: HostMethod, result: unknown): string | null {
   const exactAccepted = () =>
     isPlainObject(result) && hasExactKeys(result, ["accepted"]) && result.accepted === true;
@@ -1279,6 +1399,22 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.paths.every(isString)
         ? null
         : "invalid workspace.setDirectoryWatches result";
+    case "git.getStatus":
+      return isGitStatusSnapshot(result) ? null : "invalid git.getStatus result";
+    case "git.setWatching":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["watching", "snapshot"]) &&
+        isBoolean(result.watching) &&
+        (result.snapshot === null || isGitStatusSnapshot(result.snapshot))
+        ? null
+        : "invalid git.setWatching result";
+    case "git.getDiff":
+      return isGitDiffSnapshot(result) ? null : "invalid git.getDiff result";
+    case "git.stage":
+    case "git.unstage":
+      return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
+    case "git.commit":
+      return isGitMutationResult(result, true) ? null : "invalid git.commit result";
     case "session.getCommands":
       return isPlainObject(result) &&
         hasExactKeys(result, ["commands"]) &&
@@ -1634,6 +1770,12 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         payload.directories.every(isString)
         ? null
         : "invalid workspace.filesChanged payload";
+    case "git.changed":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["snapshot"]) &&
+        isGitStatusSnapshot(payload.snapshot)
+        ? null
+        : "invalid git.changed payload";
     case "attachment.changed":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["attachment"]) &&

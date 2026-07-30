@@ -188,8 +188,17 @@ if (existsSync(join(res, "git/RUNTIME.json"))) {
     archiveSha256: r.archiveSha256,
     versionOutput: r.versionOutput,
   };
-  if (!String(r.versionOutput ?? "").startsWith("git version ")) {
+  const windowsProbe = String(r.versionOutput ?? "").startsWith("git version ");
+  const deferredCrossPlatformProbe =
+    process.platform !== "win32" &&
+    r.versionOutput === "cross-platform staging; Windows probe deferred";
+  if (!windowsProbe && !deferredCrossPlatformProbe) {
     errors.push("Portable Git runtime version probe missing or invalid");
+  }
+  if (r.gitVersion !== runtimeLock.git?.portable?.version) {
+    errors.push(
+      `Portable Git runtime version ${r.gitVersion ?? "missing"} !== ${runtimeLock.git?.portable?.version ?? "missing"}`,
+    );
   }
 }
 

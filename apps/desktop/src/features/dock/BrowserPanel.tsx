@@ -127,7 +127,7 @@ export function BrowserPanel({
   const ensureSurface = useCallback(async () => {
     if (createdRef.current || creatingRef.current || !visible) return;
     if (!isTauriRuntime()) {
-      setError("Native browser surfaces are available in the desktop app");
+      setError(t("dockBrowserNativeOnly"));
       return;
     }
     const bounds = elementBounds(bodyRef.current);
@@ -154,7 +154,7 @@ export function BrowserPanel({
     } finally {
       creatingRef.current = false;
     }
-  }, [surfaceId, currentUrl, nativeVisible, visible]);
+  }, [surfaceId, currentUrl, nativeVisible, t, visible]);
 
   const syncBounds = useCallback(() => {
     const bounds = elementBounds(bodyRef.current);
@@ -231,12 +231,15 @@ export function BrowserPanel({
   };
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-surface" aria-label="Browser">
+    <section
+      className="flex min-h-0 flex-1 flex-col bg-surface"
+      aria-label={t("dockBrowser")}
+    >
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
         <button
           type="button"
-          title="Back"
-          aria-label="Back"
+          title={t("dockBrowserBack")}
+          aria-label={t("dockBrowserBack")}
           className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
           disabled={!created || currentUrl === "about:blank"}
           onClick={() => control("back")}
@@ -245,8 +248,8 @@ export function BrowserPanel({
         </button>
         <button
           type="button"
-          title="Forward"
-          aria-label="Forward"
+          title={t("dockBrowserForward")}
+          aria-label={t("dockBrowserForward")}
           className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
           disabled={!created || currentUrl === "about:blank"}
           onClick={() => control("forward")}
@@ -255,8 +258,8 @@ export function BrowserPanel({
         </button>
         <button
           type="button"
-          title={loading ? "Stop loading" : "Reload"}
-          aria-label={loading ? "Stop loading" : "Reload"}
+          title={loading ? t("dockBrowserStopLoading") : t("dockBrowserReload")}
+          aria-label={loading ? t("dockBrowserStopLoading") : t("dockBrowserReload")}
           className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
           disabled={!created || currentUrl === "about:blank"}
           onClick={() => control(loading ? "stop" : "reload")}
@@ -288,9 +291,9 @@ export function BrowserPanel({
           )}
           <input
             type="text"
-            aria-label="Browser address"
+            aria-label={t("dockBrowserAddress")}
             value={address}
-            placeholder="Search or enter address"
+            placeholder={t("dockBrowserAddressPlaceholder")}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}

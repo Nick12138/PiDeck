@@ -9,6 +9,12 @@ export const HOST_METHODS = [
   "workspace.searchFiles",
   "workspace.listDirectory",
   "workspace.setDirectoryWatches",
+  "git.getStatus",
+  "git.setWatching",
+  "git.getDiff",
+  "git.stage",
+  "git.unstage",
+  "git.commit",
   "attachment.create",
   "attachment.createText",
   "attachment.get",
@@ -147,6 +153,12 @@ export type WorkspaceOnlyMethod =
   | "workspace.searchFiles"
   | "workspace.listDirectory"
   | "workspace.setDirectoryWatches"
+  | "git.getStatus"
+  | "git.setWatching"
+  | "git.getDiff"
+  | "git.stage"
+  | "git.unstage"
+  | "git.commit"
   | "session.list"
   | "session.archive"
   | "session.restore"
@@ -246,6 +258,12 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "workspace.searchFiles": "workspace",
   "workspace.listDirectory": "workspace",
   "workspace.setDirectoryWatches": "workspace",
+  "git.getStatus": "workspace",
+  "git.setWatching": "workspace",
+  "git.getDiff": "workspace",
+  "git.stage": "workspace",
+  "git.unstage": "workspace",
+  "git.commit": "workspace",
   "attachment.create": "activeSession",
   "attachment.createText": "activeSession",
   "attachment.get": "activeSession",

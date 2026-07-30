@@ -10,6 +10,7 @@ import {
 import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
+import { useT } from "../../lib/i18n/use-t";
 import { flattenSessionTree, type TreeRow } from "./tree-model";
 
 const ROW_H = 28;
@@ -90,6 +91,7 @@ function RowRail({ row, laneCount }: { row: TreeRow; laneCount: number }) {
 }
 
 export function TreePanel({ visible }: { visible: boolean }) {
+  const t = useT();
   const session = useAppStore((state) => state.session);
   const applySessionSnapshot = useAppStore((state) => state.applySessionSnapshot);
   const setSessionDraft = useAppStore((state) => state.setSessionDraft);
@@ -144,7 +146,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? "Could not load the session tree");
+          setError(res.error?.message ?? t("dockTreeLoadFailed"));
           return;
         }
         setNodes(res.result.tree);
@@ -152,7 +154,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Could not load the session tree");
+        setError(err instanceof Error ? err.message : t("dockTreeLoadFailed"));
       });
     return () => {
       cancelled = true;
@@ -166,6 +168,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
     sessionRevision,
     busy,
     refreshSeq,
+    t,
   ]);
 
   // The tree belongs to the active session; drop it when the session changes.
@@ -199,11 +202,11 @@ export function TreePanel({ visible }: { visible: boolean }) {
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? "Could not switch branch", "error");
+        pushNotification(res.error?.message ?? t("dockTreeSwitchFailed"), "error");
         return;
       }
       if (res.result.cancelled) {
-        pushNotification("Branch switch was cancelled", "info");
+        pushNotification(t("dockTreeSwitchCancelled"), "info");
         return;
       }
       applySessionSnapshot(res.result.session);
@@ -213,7 +216,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
       setRefreshSeq((seq) => seq + 1);
     } catch (err) {
       pushNotification(
-        err instanceof Error ? err.message : "Could not switch branch",
+        err instanceof Error ? err.message : t("dockTreeSwitchFailed"),
         "error",
       );
     } finally {
@@ -224,7 +227,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
   if (!session) {
     return (
       <div className="flex flex-1 items-center justify-center p-4 text-sm text-muted">
-        No active session.
+        {t("dockTreeNoSession")}
       </div>
     );
   }
@@ -238,14 +241,12 @@ export function TreePanel({ visible }: { visible: boolean }) {
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <GitBranch size={13} className="shrink-0 text-muted" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted">
-          {busy
-            ? "Agent is busy — navigation disabled"
-            : "Click an entry to switch the session to that point"}
+          {busy ? t("dockTreeBusy") : t("dockTreeHint")}
         </span>
         <button
           type="button"
-          title="Refresh tree"
-          aria-label="Refresh tree"
+          title={t("dockTreeRefresh")}
+          aria-label={t("dockTreeRefresh")}
           className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
           onClick={() => setRefreshSeq((seq) => seq + 1)}
         >
@@ -257,10 +258,10 @@ export function TreePanel({ visible }: { visible: boolean }) {
           <p className="px-3 py-2 text-xs text-danger">{error}</p>
         ) : nodes === null ? (
           <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
-            <LoaderCircle size={12} className="animate-spin" /> Loading session tree…
+            <LoaderCircle size={12} className="animate-spin" /> {t("dockTreeLoading")}
           </p>
         ) : rows.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-muted">No entries yet.</p>
+          <p className="px-3 py-2 text-xs text-muted">{t("dockTreeEmpty")}</p>
         ) : (
           rows.map((row) => {
             const actionLocked = busy || navigating !== null || forking !== null;
@@ -299,7 +300,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
                   )}
                   {row.isCurrent && (
                     <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
-                      current
+                      {t("dockTreeCurrent")}
                     </span>
                   )}
                 </button>
@@ -307,8 +308,8 @@ export function TreePanel({ visible }: { visible: boolean }) {
                   <button
                     type="button"
                     disabled={actionLocked}
-                    title="Fork from here"
-                    aria-label={`Fork from: ${row.excerpt}`}
+                    title={t("dockTreeFork")}
+                    aria-label={t("dockTreeForkFrom", { excerpt: row.excerpt })}
                     className="hidden shrink-0 items-center justify-center px-2 text-muted hover:text-foreground disabled:opacity-40 group-hover:flex"
                     onClick={() => {
                       setForking(row.id);

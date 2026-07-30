@@ -23,6 +23,7 @@ export type GraphOperationKind =
   | "resource.setPreference"
   | "resource.setPreferences"
   | "piSettings.patch"
+  | "git.mutation"
   | "sdk.read";
 
 export type LockOwner = {

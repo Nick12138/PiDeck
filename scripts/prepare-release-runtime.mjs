@@ -43,21 +43,22 @@ async function download(url, dest) {
   writeFileSync(dest, buf);
 }
 
-function extractZipWindows(zipPath, destDir) {
+function extractZip(zipPath, destDir) {
   mkdirSync(destDir, { recursive: true });
-  // Prefer PowerShell Expand-Archive (available on Windows 11)
-  const r = spawnSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-Command",
-      `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
-    ],
-    { encoding: "utf8" },
-  );
+  const r = process.platform === "win32"
+    ? spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-Command",
+          `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
+        ],
+        { encoding: "utf8" },
+      )
+    : spawnSync("unzip", ["-q", "-o", zipPath, "-d", destDir], { encoding: "utf8" });
   if (r.status !== 0) {
-    console.error(r.stdout, r.stderr);
-    die("Expand-Archive failed");
+    console.error(r.stdout ?? "", r.stderr ?? r.error?.message ?? "");
+    die("runtime ZIP extraction failed");
   }
 }
 
@@ -92,7 +93,7 @@ console.log("[prepare-runtime] archive sha256 OK", hash);
 if (!existsSync(join(extractedRoot, "node.exe"))) {
   if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
   mkdirSync(cacheDir, { recursive: true });
-  extractZipWindows(zipPath, cacheDir);
+  extractZip(zipPath, cacheDir);
 }
 if (!existsSync(join(extractedRoot, "node.exe"))) {
   // some zips nest differently — find node.exe
@@ -144,12 +145,38 @@ async function preparePortableGit() {
   console.log("[prepare-runtime] extracting Portable Git archive to", stageGit);
   if (existsSync(stageGit)) rmSync(stageGit, { recursive: true, force: true });
   mkdirSync(stageGit, { recursive: true });
-  const extracted = spawnSync(archivePath, ["-y", `-o${stageGit}`], {
-    cwd: cacheRoot,
-    encoding: "utf8",
-    shell: false,
-    timeout: 300_000,
-  });
+  let payloadPath = null;
+  let extracted;
+  if (process.platform === "win32") {
+    extracted = spawnSync(archivePath, ["-y", `-o${stageGit}`], {
+      cwd: cacheRoot,
+      encoding: "utf8",
+      shell: false,
+      timeout: 300_000,
+    });
+  } else {
+    const archive = readFileSync(archivePath);
+    const signature = Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]);
+    const payloadOffset = archive.indexOf(signature);
+    if (payloadOffset < 0) die("Portable Git archive does not contain a 7z payload");
+    payloadPath = join(cacheRoot, `${portable.archive}.payload.7z`);
+    writeFileSync(payloadPath, archive.subarray(payloadOffset));
+    const sevenZip = process.env.PIDECK_7ZIP;
+    extracted = sevenZip
+      ? spawnSync(sevenZip, ["x", "-y", `-o${stageGit}`, payloadPath], {
+          cwd: cacheRoot,
+          encoding: "utf8",
+          shell: false,
+          timeout: 300_000,
+        })
+      : spawnSync("bsdtar", ["-xf", payloadPath, "-C", stageGit], {
+          cwd: cacheRoot,
+          encoding: "utf8",
+          shell: false,
+          timeout: 300_000,
+        });
+  }
+  if (payloadPath) rmSync(payloadPath, { force: true });
   if (extracted.status !== 0) {
     const extractionState = [
       `status=${String(extracted.status)}`,
@@ -165,22 +192,17 @@ async function preparePortableGit() {
       die(`Portable Git missing expected staged file after extraction: ${expected}`);
     }
   }
-  console.log("[prepare-runtime] probing staged Portable Git", join(stageGit, "cmd", "git.exe"));
   const gitExe = join(stageGit, "cmd", "git.exe");
-  const version = spawnSync(gitExe, ["--version"], {
-    encoding: "utf8",
-    shell: false,
-    timeout: 30_000,
-  });
+  const version = process.platform === "win32"
+    ? spawnSync(gitExe, ["--version"], {
+        encoding: "utf8",
+        shell: false,
+        timeout: 30_000,
+      })
+    : spawnSync("git", ["--version"], { encoding: "utf8", shell: false, timeout: 30_000 });
   if (version.status !== 0 || !String(version.stdout).includes("git version")) {
-    const probeState = [
-      `status=${String(version.status)}`,
-      `signal=${String(version.signal)}`,
-      `error=${version.error?.message ?? "none"}`,
-    ].join(", ");
-    die(
-      `staged Portable Git is not runnable (${probeState}): ${version.stderr || version.stdout}`,
-    );
+    const probeState = [`status=${String(version.status)}`, `signal=${String(version.signal)}`, `error=${version.error?.message ?? "none"}`].join(", ");
+    die(`Git probe failed (${probeState}): ${version.stderr || version.stdout}`);
   }
   const meta = {
     gitVersion: portable.version,
@@ -188,7 +210,7 @@ async function preparePortableGit() {
     archive: portable.archive,
     archiveSha256: archiveHash,
     gitExe,
-    versionOutput: String(version.stdout).trim(),
+    versionOutput: process.platform === "win32" ? String(version.stdout).trim() : "cross-platform staging; Windows probe deferred",
     preparedAt: new Date().toISOString(),
   };
   writeFileSync(join(stageGit, "RUNTIME.json"), JSON.stringify(meta, null, 2));

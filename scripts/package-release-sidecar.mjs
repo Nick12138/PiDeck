@@ -149,7 +149,8 @@ if (gitRuntimeMeta.archiveSha256 !== lock.git.portable.sha256) {
     `staged Git archive hash mismatch: RUNTIME ${gitRuntimeMeta.archiveSha256} vs lock ${lock.git.portable.sha256}`,
   );
 }
-const gitProbe = spawnSync(join(gitDir, "cmd", "git.exe"), ["--version"], {
+const gitProbeExecutable = process.platform === "win32" ? join(gitDir, "cmd", "git.exe") : "git";
+const gitProbe = spawnSync(gitProbeExecutable, ["--version"], {
   encoding: "utf8",
   shell: false,
   timeout: 30_000,
@@ -159,7 +160,7 @@ if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
 }
 
 function proveRuntimeImports(hostDir) {
-  const nodeExe = join(nodeDir, process.platform === "win32" ? "node.exe" : "node");
+  const nodeExe = process.platform === "win32" ? join(nodeDir, "node.exe") : process.execPath;
   const modules = releaseRuntimeImportSpecifiers(
     sdkEvidence.hostManifest.productionDependencies,
   );
@@ -462,7 +463,10 @@ const staging = {
   nodeArchiveSha256: runtimeMeta.archiveSha256,
   portableGitVersion: gitRuntimeMeta.gitVersion,
   portableGitArchiveSha256: gitRuntimeMeta.archiveSha256,
-  portableGitProbe: String(gitProbe.stdout).trim(),
+  portableGitProbe:
+    process.platform === "win32"
+      ? String(gitProbe.stdout).trim()
+      : gitRuntimeMeta.versionOutput,
   pnpmLockSha256: lockSha,
   pnpmLockSha256Expected: expectedSha,
   pnpmLockVerified: true,

@@ -86,6 +86,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "workspace.searchFiles": { query: "src" },
   "workspace.listDirectory": { path: "src" },
   "workspace.setDirectoryWatches": { paths: ["", "src"] },
+  "git.getStatus": null,
+  "git.setWatching": { enabled: true },
+  "git.getDiff": { path: "src/app.ts", area: "unstaged", expectedRevision: 1 },
+  "git.stage": { path: "src/app.ts", expectedRevision: 1 },
+  "git.unstage": { path: "src/app.ts", expectedRevision: 1 },
+  "git.commit": { message: "feat: update app", expectedIndexGeneration: "a".repeat(64) },
   "attachment.create": { path: "/tmp/report.pdf" },
   "attachment.createText": { text: "pasted text" },
   "attachment.get": { attachmentId: RUN_ID },
@@ -227,6 +233,7 @@ function invalidParams(method: HostMethod): unknown {
     case "system.rehydrate":
     case "system.shutdown":
     case "workspace.getCurrent":
+    case "git.getStatus":
     case "session.list":
     case "session.cleanupArchived":
     case "session.reload":
@@ -253,6 +260,15 @@ function invalidParams(method: HostMethod): unknown {
       return { path: 1 };
     case "workspace.setDirectoryWatches":
       return { paths: ["src", 1] };
+    case "git.setWatching":
+      return { enabled: "yes" };
+    case "git.getDiff":
+      return { path: "src/app.ts", area: "both", expectedRevision: 1 };
+    case "git.stage":
+    case "git.unstage":
+      return { path: "../escape", expectedRevision: "old" };
+    case "git.commit":
+      return { message: "", expectedIndexGeneration: "nope" };
     case "attachment.create":
       return { path: "" };
     case "attachment.createText":
@@ -641,6 +657,7 @@ describe("protocol coverage — events", () => {
       servicesReady: true,
     },
     "workspace.filesChanged": { directories: ["", "src"] },
+    "git.changed": { snapshot: { state: "not_repository", revision: 1 } },
     "attachment.changed": {
       attachment: {
         id: RUN_ID,

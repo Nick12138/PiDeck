@@ -20,6 +20,7 @@ import {
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { requestComposerInsert } from "../../lib/composer-insert";
+import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 
 type FlatNode = { entry: WorkspaceDirectoryEntry; depth: number };
@@ -49,6 +50,7 @@ export function flattenVisibleFiles(
 }
 
 export function FilesPanel({ visible }: { visible: boolean }) {
+  const t = useT();
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
   const setPage = useAppStore((state) => state.setPage);
@@ -100,7 +102,9 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           workspaceContext(host, workspace),
           { path },
         );
-        if (!response.ok) throw new Error(response.error?.message ?? "Unable to list directory");
+        if (!response.ok) {
+          throw new Error(response.error?.message ?? t("dockFilesListFailed"));
+        }
         if (!isCurrentWorkspace()) return;
         setDirectories((items) => new Map(items).set(response.result.path, response.result.entries));
         setErrors((items) => {
@@ -111,7 +115,10 @@ export function FilesPanel({ visible }: { visible: boolean }) {
       } catch (error) {
         if (!isCurrentWorkspace()) return;
         setErrors((items) =>
-          new Map(items).set(path, error instanceof Error ? error.message : "Unable to list directory"),
+          new Map(items).set(
+            path,
+            error instanceof Error ? error.message : t("dockFilesListFailed"),
+          ),
         );
       } finally {
         if (isCurrentWorkspace()) {
@@ -123,7 +130,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         }
       }
     },
-    [host, workspace],
+    [host, t, workspace],
   );
 
   useEffect(() => {
@@ -254,9 +261,9 @@ export function FilesPanel({ visible }: { visible: boolean }) {
   const copyPath = async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
-      pushNotification("Path copied", "info");
+      pushNotification(t("dockFilesPathCopied"), "info");
     } catch {
-      pushNotification("Could not copy path", "warning");
+      pushNotification(t("dockFilesCopyFailed"), "warning");
     }
   };
 
@@ -267,7 +274,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         path: workspaceAbsolutePath(workspace.canonicalCwd, path),
       });
     } catch {
-      pushNotification("Could not open path in the file manager", "warning");
+      pushNotification(t("dockFilesRevealFailed"), "warning");
     }
   };
 
@@ -308,7 +315,10 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
   const rootError = errors.get("");
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-surface" aria-label="Workspace files">
+    <section
+      className="flex min-h-0 flex-1 flex-col bg-surface"
+      aria-label={t("dockFilesRegion")}
+    >
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -317,17 +327,17 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           />
           <input
             type="search"
-            aria-label="Search workspace files"
+            aria-label={t("dockFilesSearch")}
             value={query}
-            placeholder="Search files"
+            placeholder={t("dockFilesSearchPlaceholder")}
             className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-7 text-xs outline-none focus:border-accent"
             onChange={(event) => setQuery(event.target.value)}
           />
           {query && (
             <button
               type="button"
-              title="Clear search"
-              aria-label="Clear file search"
+              title={t("dockFilesClearSearch")}
+              aria-label={t("dockFilesClearSearchAria")}
               className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center text-muted hover:text-foreground"
               onClick={() => setQuery("")}
             >
@@ -337,8 +347,8 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         </div>
         <button
           type="button"
-          title="Refresh files"
-          aria-label="Refresh files"
+          title={t("dockFilesRefresh")}
+          aria-label={t("dockFilesRefresh")}
           className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
           onClick={refresh}
         >
@@ -346,8 +356,8 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         </button>
         <button
           type="button"
-          title="Collapse all folders"
-          aria-label="Collapse all folders"
+          title={t("dockFilesCollapseAll")}
+          aria-label={t("dockFilesCollapseAll")}
           disabled={expanded.size === 0}
           className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-35"
           onClick={() => setExpanded(new Set())}
@@ -358,7 +368,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
       {!host || !workspace ? (
         <div className="flex flex-1 items-center justify-center text-xs text-muted">
-          No workspace open
+          {t("dockNoWorkspace")}
         </div>
       ) : rootError && !directories.has("") ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted">
@@ -368,7 +378,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
             className="rounded border border-border px-2 py-1 text-foreground hover:bg-surface-overlay"
             onClick={() => void loadDirectory("")}
           >
-            Retry
+            {t("dockRetry")}
           </button>
         </div>
       ) : loading.has("") && !directories.has("") ? (
@@ -380,14 +390,14 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           ref={scrollRef}
           role="tree"
           tabIndex={0}
-          aria-label="Workspace file tree"
+          aria-label={t("dockFilesTree")}
           aria-activedescendant={selectedPath ? `file-tree-${encodeURIComponent(selectedPath)}` : undefined}
           className="min-h-0 flex-1 overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
           onKeyDown={onTreeKeyDown}
         >
           {rows.length === 0 ? (
             <div className="flex h-full items-center justify-center text-xs text-muted">
-              {query ? "No matching files" : "This folder is empty"}
+              {query ? t("dockFilesNoMatches") : t("dockFilesEmpty")}
             </div>
           ) : (
             <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
@@ -422,7 +432,16 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                     <button
                       type="button"
                       tabIndex={-1}
-                      aria-label={isDirectory ? `${isExpanded ? "Collapse" : "Expand"} ${entry.name}` : undefined}
+                      aria-label={
+                        isDirectory
+                          ? t(
+                              isExpanded
+                                ? "dockFilesCollapseNamed"
+                                : "dockFilesExpandNamed",
+                              { name: entry.name },
+                            )
+                          : undefined
+                      }
                       className="flex size-5 shrink-0 items-center justify-center text-muted"
                       disabled={!isDirectory}
                       onClick={(event) => {
@@ -454,8 +473,10 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       {!isDirectory && (
                         <button
                           type="button"
-                          title="Insert file reference"
-                          aria-label={`Insert reference to ${entry.path}`}
+                          title={t("dockFilesInsertReference")}
+                          aria-label={t("dockFilesInsertReferenceTo", {
+                            path: entry.path,
+                          })}
                           className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-raised hover:text-foreground"
                           onClick={(event) => {
                             event.stopPropagation();
@@ -467,8 +488,8 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       )}
                       <button
                         type="button"
-                        title="Copy relative path"
-                        aria-label={`Copy path ${entry.path}`}
+                        title={t("dockFilesCopyRelativePath")}
+                        aria-label={t("dockFilesCopyPath", { path: entry.path })}
                         className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-raised hover:text-foreground"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -479,8 +500,16 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       </button>
                       <button
                         type="button"
-                        title={isDirectory ? "Open folder" : "Reveal in file manager"}
-                        aria-label={`${isDirectory ? "Open folder" : "Reveal"} ${entry.path}`}
+                        title={
+                          isDirectory
+                            ? t("dockFilesOpenFolder")
+                            : t("dockFilesReveal")
+                        }
+                        aria-label={
+                          isDirectory
+                            ? t("dockFilesOpenFolderNamed", { path: entry.path })
+                            : t("dockFilesRevealNamed", { path: entry.path })
+                        }
                         className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-raised hover:text-foreground"
                         onClick={(event) => {
                           event.stopPropagation();

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FolderTree,
   GitBranch,
+  GitCompareArrows,
   Globe2,
   LoaderCircle,
   Plus,
@@ -28,12 +29,16 @@ import {
 import { FilesPanel } from "../features/dock/FilesPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
+import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { subscribeDockBrowser } from "../lib/dock-browser";
+import { subscribeChangesPanel } from "../lib/dock-changes";
 import { subscribeTreePanel } from "../lib/dock-tree";
+import { useT } from "../lib/i18n/use-t";
 
 export type DockTabId =
   | "files"
   | "tree"
+  | "changes"
   | `browser:${number}`
   | `shell:${number}`
   | `extension:${string}`;
@@ -73,8 +78,8 @@ function extensionTabId(requestId: string): DockTabId {
   return `extension:${requestId}`;
 }
 
-function shellTitle(tab: ShellDockTab): string {
-  const title = tab.status?.title ?? "Shell";
+function shellTitle(tab: ShellDockTab, fallback: string): string {
+  const title = tab.status?.title ?? fallback;
   const cwd = shellTerminalLabel(tab.status?.cwd ?? tab.cwd);
   return `${title} - ${cwd}`;
 }
@@ -131,6 +136,7 @@ function initialDockWidth(): number {
 }
 
 export function RightDock() {
+  const t = useT();
   const dockOpen = useAppStore((state) => state.dockOpen);
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
@@ -269,6 +275,12 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
+  const createChanges = () => {
+    setTabOrder((current) => (current.includes("changes") ? current : [...current, "changes"]));
+    setActiveTab("changes");
+    setAddMenuOpen(false);
+  };
+
   useEffect(
     () =>
       subscribeTreePanel(() => {
@@ -285,10 +297,25 @@ export function RightDock() {
     [],
   );
 
+  useEffect(
+    () =>
+      subscribeChangesPanel(() => {
+        createChanges();
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("pideck.dock.open", true);
+        }
+        return true;
+      }),
+    // The singleton handler has no render-owned mutable state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const createBrowserTab = (initialUrl = "about:blank"): boolean => {
     if (browserTabsRef.current.length >= MAX_BROWSER_TABS) return false;
     const id = nextBrowserId.current++;
-    updateBrowserTabs((current) => [...current, { id, title: "Browser", initialUrl }]);
+    updateBrowserTabs((current) => [...current, { id, title: "", initialUrl }]);
     const tabId = browserTabId(id);
     setTabOrder((current) => [...current, tabId]);
     setActiveTab(tabId);
@@ -365,14 +392,14 @@ export function RightDock() {
       if (useAppStore.getState().extensionTerminal?.requestId !== requestId) return;
       setExtensionClosing((current) => (current === requestId ? null : current));
       pushNotification(
-        "Extension did not respond to close; use the panel's own exit shortcut",
+        t("dockExtensionCloseTimeout"),
         "warning",
       );
     }, 1_500);
   };
 
   const closeTab = (tabId: DockTabId) => {
-    if (tabId === "files" || tabId === "tree") {
+    if (tabId === "files" || tabId === "tree" || tabId === "changes") {
       closeOrderTab(tabId);
       return;
     }
@@ -388,21 +415,25 @@ export function RightDock() {
   };
 
   const tabInfo = (tabId: DockTabId) => {
-    if (tabId === "files") return { label: "Files", Icon: FolderTree };
-    if (tabId === "tree") return { label: "Tree", Icon: GitBranch };
+    if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
+    if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
+    if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
-        label: browserTabs.find((tab) => tab.id === id)?.title ?? "Browser",
+        label: browserTabs.find((tab) => tab.id === id)?.title || t("dockBrowser"),
         Icon: Globe2,
       };
     }
     if (tabId.startsWith("shell:")) {
       const id = Number(tabId.slice("shell:".length));
       const shell = shellTabs.find((tab) => tab.id === id);
-      return { label: shell ? shellTitle(shell) : "Shell", Icon: SquareTerminal };
+      return {
+        label: shell ? shellTitle(shell, t("dockShell")) : t("dockShell"),
+        Icon: SquareTerminal,
+      };
     }
-    return { label: panel?.title ?? "Extension", Icon: SquareTerminal };
+    return { label: panel?.title ?? t("dockExtension"), Icon: SquareTerminal };
   };
 
   const finishResize = (target: HTMLDivElement, pointerId: number) => {
@@ -428,7 +459,7 @@ export function RightDock() {
         <div
           role="separator"
           tabIndex={0}
-          aria-label="Resize right dock"
+          aria-label={t("dockResize")}
           aria-orientation="vertical"
           aria-valuemin={MIN_DOCK_WIDTH}
           aria-valuemax={MAX_DOCK_WIDTH}
@@ -481,8 +512,8 @@ export function RightDock() {
 
       <button
         type="button"
-        title={dockOpen ? "Collapse panel" : "Open panel"}
-        aria-label={dockOpen ? "Collapse right panel" : "Open right panel"}
+        title={dockOpen ? t("dockCollapsePanel") : t("dockOpenPanel")}
+        aria-label={dockOpen ? t("dockCollapseRightPanel") : t("dockOpenRightPanel")}
         aria-expanded={dockOpen}
         className={`absolute -left-4 top-1/2 z-40 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-border bg-surface-raised hover:text-foreground ${
           !dockOpen && panel ? "text-accent" : "text-muted"
@@ -500,7 +531,7 @@ export function RightDock() {
         <div ref={tabBarRef} className="flex min-w-0 flex-1 items-center gap-1 self-stretch">
           <div
             role="tablist"
-            aria-label="Dock pages"
+            aria-label={t("dockPages")}
             className="flex min-w-0 items-end gap-1 self-stretch overflow-hidden pt-1.5"
           >
             {visibleTabIds.map((tabId) => {
@@ -542,8 +573,8 @@ export function RightDock() {
                   {restartable && shell && (
                     <button
                       type="button"
-                      title="Restart shell"
-                      aria-label={`Restart ${label}`}
+                      title={t("dockRestartShell")}
+                      aria-label={t("dockRestartNamed", { label })}
                       className="shrink-0 p-1 text-muted hover:text-foreground"
                       onClick={() => restartShell(shell.id)}
                     >
@@ -552,8 +583,8 @@ export function RightDock() {
                   )}
                   <button
                     type="button"
-                    title={`Close ${label}`}
-                    aria-label={`Close ${label}`}
+                    title={t("dockCloseNamed", { label })}
+                    aria-label={t("dockCloseNamed", { label })}
                     disabled={closing}
                     className="shrink-0 p-1 text-muted hover:text-foreground disabled:opacity-60"
                     onClick={() => closeTab(tabId)}
@@ -576,8 +607,8 @@ export function RightDock() {
               }}
             >
               <summary
-                title="More tabs"
-                aria-label="More tabs"
+                title={t("dockMoreTabs")}
+                aria-label={t("dockMoreTabs")}
                 className="flex size-7 cursor-pointer list-none items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground [&::-webkit-details-marker]:hidden"
               >
                 <ChevronDown size={14} />
@@ -601,8 +632,8 @@ export function RightDock() {
                       </button>
                       <button
                         type="button"
-                        title={`Close ${label}`}
-                        aria-label={`Close ${label}`}
+                        title={t("dockCloseNamed", { label })}
+                        aria-label={t("dockCloseNamed", { label })}
                         className="mr-1 flex size-6 shrink-0 items-center justify-center rounded hover:bg-surface-raised hover:text-foreground"
                         onClick={() => closeTab(tabId)}
                       >
@@ -619,8 +650,8 @@ export function RightDock() {
             <button
               ref={addButtonRef}
               type="button"
-              title="New dock page"
-              aria-label="New dock page"
+              title={t("dockNewPage")}
+              aria-label={t("dockNewPage")}
               aria-haspopup="menu"
               aria-expanded={addMenuOpen}
               className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -667,7 +698,7 @@ export function RightDock() {
                   onClick={createFiles}
                 >
                   <FolderTree size={14} />
-                  Files
+                  {t("dockFiles")}
                 </button>
                 <button
                   type="button"
@@ -676,7 +707,17 @@ export function RightDock() {
                   onClick={createTree}
                 >
                   <GitBranch size={14} />
-                  Session tree
+                  {t("dockSessionTree")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!workspaceCwd}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  onClick={createChanges}
+                >
+                  <GitCompareArrows size={14} />
+                  {t("gitChanges")}
                 </button>
                 <button
                   type="button"
@@ -686,7 +727,7 @@ export function RightDock() {
                   onClick={createBrowser}
                 >
                   <Globe2 size={14} />
-                  Browser
+                  {t("dockBrowser")}
                 </button>
                 <button
                   type="button"
@@ -696,7 +737,7 @@ export function RightDock() {
                   onClick={createShell}
                 >
                   <SquareTerminal size={14} />
-                  Terminal
+                  {t("dockTerminal")}
                 </button>
               </div>
             )}
@@ -723,6 +764,16 @@ export function RightDock() {
             className={`min-h-0 flex-1 ${activeTab === "tree" ? "flex" : "hidden"}`}
           >
             <TreePanel visible={activeTab === "tree" && dockOpen} />
+          </div>
+        )}
+        {tabOrder.includes("changes") && (
+          <div
+            role="tabpanel"
+            id="dock-panel-changes"
+            aria-labelledby="dock-tab-changes"
+            className={`min-h-0 flex-1 ${activeTab === "changes" ? "flex" : "hidden"}`}
+          >
+            <ChangesPanel visible={activeTab === "changes" && dockOpen} />
           </div>
         )}
         {browserTabs.map((tab) => (
@@ -777,42 +828,57 @@ export function RightDock() {
               <div className="flex w-full flex-col gap-1">
                 <button
                   type="button"
-                  aria-label="Open Files"
+                  aria-label={t("dockOpenNamed", { label: t("dockFiles") })}
                   className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                   onClick={createFiles}
                 >
                   <FolderTree size={17} className="shrink-0" />
-                  <span>Files</span>
+                  <span>{t("dockFiles")}</span>
                 </button>
                 <button
                   type="button"
-                  aria-label="Open Session tree"
+                  aria-label={t("dockOpenNamed", { label: t("dockSessionTree") })}
                   className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                   onClick={createTree}
                 >
                   <GitBranch size={17} className="shrink-0" />
-                  <span>Session tree</span>
+                  <span>{t("dockSessionTree")}</span>
                 </button>
                 <button
                   type="button"
-                  aria-label="Open Browser"
+                  aria-label={t("dockOpenNamed", { label: t("gitChanges") })}
+                  title={workspaceCwd ? undefined : t("dockWorkspaceForChanges")}
+                  disabled={!workspaceCwd}
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                  onClick={createChanges}
+                >
+                  <GitCompareArrows size={17} className="shrink-0" />
+                  <span>{t("gitChanges")}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("dockOpenNamed", { label: t("dockBrowser") })}
                   disabled={browserTabs.length >= MAX_BROWSER_TABS}
                   className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
                   onClick={createBrowser}
                 >
                   <Globe2 size={17} className="shrink-0" />
-                  <span>Browser</span>
+                  <span>{t("dockBrowser")}</span>
                 </button>
                 <button
                   type="button"
-                  aria-label="Open Terminal"
-                  title={workspaceCwd ? "Open Terminal" : "Open a workspace to use Terminal"}
+                  aria-label={t("dockOpenNamed", { label: t("dockTerminal") })}
+                  title={
+                    workspaceCwd
+                      ? t("dockOpenNamed", { label: t("dockTerminal") })
+                      : t("dockWorkspaceForTerminal")
+                  }
                   disabled={!workspaceCwd}
                   className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
                   onClick={createShell}
                 >
                   <SquareTerminal size={17} className="shrink-0" />
-                  <span>Terminal</span>
+                  <span>{t("dockTerminal")}</span>
                 </button>
               </div>
             </div>

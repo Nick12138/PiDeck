@@ -42,6 +42,34 @@ function windowsBsdTar() {
   return systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
 }
 
+function createNodeModulesZip() {
+  if (process.platform === "win32") {
+    return spawnSync(
+      windowsBsdTar(),
+      ["-a", "-c", "-h", "-f", zipPath, "-C", hostDir, "node_modules"],
+      { encoding: "utf8", shell: false },
+    );
+  }
+
+  // BSD tar can infer zip from the extension. This keeps local macOS release
+  // verification equivalent to the Windows staging path without weakening the
+  // packaged Windows runtime checks.
+  const tar = spawnSync(
+    "tar",
+    ["-a", "-c", "-h", "-f", zipPath, "-C", hostDir, "node_modules"],
+    { encoding: "utf8", shell: false },
+  );
+  if (tar.status === 0) return tar;
+
+  // GNU tar cannot create zip archives, so use Info-ZIP when available. Its
+  // default behavior follows symlinks, matching tar's -h behavior above.
+  return spawnSync("zip", ["-q", "-r", zipPath, "node_modules"], {
+    cwd: hostDir,
+    encoding: "utf8",
+    shell: false,
+  });
+}
+
 if (!existsSync(join(hostDir, "main.js")) && !existsSync(join(hostDir, "host-main.js"))) {
   die("pi-host main.js missing — run package:sidecar first");
 }
@@ -52,16 +80,11 @@ if (!zipOk) {
   if (!existsSync(nm)) die("node_modules missing and no valid zip");
   if (existsSync(zipPath)) rmSync(zipPath, { force: true });
   console.log("[compact] creating node_modules.zip via tar -h (dereference junctions)...");
-  // tar -a uses zip format on Windows when extension is .zip
-  // -h / --dereference: follow junctions/symlinks so zip contains real SDK files
-  // (Windows junctions from pnpm deploy are absolute and useless after extract)
-  const tar = spawnSync(
-    windowsBsdTar(),
-    ["-a", "-c", "-h", "-f", zipPath, "-C", hostDir, "node_modules"],
-    { encoding: "utf8", shell: false },
-  );
+  // -h / --dereference follows junctions/symlinks so the archive contains real
+  // SDK files. Windows junctions from pnpm deploy are unusable after extract.
+  const tar = createNodeModulesZip();
   if (tar.status !== 0 || !existsSync(zipPath) || statSync(zipPath).size < MIN_ZIP_BYTES) {
-    console.error(tar.stdout, tar.stderr);
+    console.error(tar.stdout ?? "", tar.stderr ?? tar.error?.message ?? "");
     die(`tar zip failed size=${existsSync(zipPath) ? statSync(zipPath).size : 0}`);
   }
   console.log("[compact] zip bytes", statSync(zipPath).size);
@@ -108,31 +131,51 @@ if (!existsSync(join(nmDir, "@earendil-works", "pi-coding-agent", "package.json"
     process.exit(1);
   }
   mkdirSync(nmDir, { recursive: true });
-  // Extract with Windows bsdtar (System32) — a bare "tar.exe" may resolve to
-  // GNU tar, which rejects C:\ paths as remote hosts.
-  const systemTar = process.env.SystemRoot
-    ? join(process.env.SystemRoot, "System32", "tar.exe")
-    : null;
-  const tarExe = systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
-  // -C into host dir so paths match archive root "node_modules/"
-  const r = spawnSync(
-    tarExe,
-    ["-x", "-f", zip, "-C", __dirname],
-    { encoding: "utf8", shell: false },
-  );
-  if (r.status !== 0) {
-    // Fallback: PowerShell Expand-Archive (zip root may be node_modules/)
-    const ps = spawnSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-Command",
-        \`Expand-Archive -LiteralPath '\${zip.replace(/'/g, "''")}' -DestinationPath '\${__dirname.replace(/'/g, "''")}' -Force\`,
-      ],
-      { encoding: "utf8" },
+  let r;
+  if (process.platform === "win32") {
+    // Extract with Windows bsdtar (System32) — a bare "tar.exe" may resolve to
+    // GNU tar, which rejects C:\ paths as remote hosts.
+    const systemTar = process.env.SystemRoot
+      ? join(process.env.SystemRoot, "System32", "tar.exe")
+      : null;
+    const tarExe = systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
+    r = spawnSync(
+      tarExe,
+      ["-x", "-f", zip, "-C", __dirname],
+      { encoding: "utf8", shell: false },
     );
-    if (ps.status !== 0) {
-      console.error("[pi-host bootstrap] extract failed", r.stderr || ps.stderr || r.stdout || ps.stdout);
+  } else {
+    r = spawnSync(
+      "unzip",
+      ["-q", "-o", zip, "-d", __dirname],
+      { encoding: "utf8", shell: false },
+    );
+    if (r.status !== 0) {
+      r = spawnSync(
+        "tar",
+        ["-x", "-f", zip, "-C", __dirname],
+        { encoding: "utf8", shell: false },
+      );
+    }
+  }
+  if (r.status !== 0) {
+    if (process.platform === "win32") {
+      // Fallback: PowerShell Expand-Archive (zip root may be node_modules/)
+      const ps = spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-Command",
+          \`Expand-Archive -LiteralPath '\${zip.replace(/'/g, "''")}' -DestinationPath '\${__dirname.replace(/'/g, "''")}' -Force\`,
+        ],
+        { encoding: "utf8" },
+      );
+      if (ps.status !== 0) {
+        console.error("[pi-host bootstrap] extract failed", r.stderr || ps.stderr || r.stdout || ps.stdout);
+        process.exit(1);
+      }
+    } else {
+      console.error("[pi-host bootstrap] extract failed", r.stderr || r.stdout || r.error?.message);
       process.exit(1);
     }
   }

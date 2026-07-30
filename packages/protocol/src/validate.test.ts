@@ -4,6 +4,8 @@ import {
   MAX_AGENT_IMAGE_BYTES,
   MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
+  MAX_GIT_COMMIT_MESSAGE_BYTES,
+  MAX_GIT_PATH_BYTES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
   MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
@@ -74,6 +76,11 @@ describe("parseHostRequest", () => {
     expectedWorkspaceRevision: 1,
     expectedSessionId: SESSION_ID,
     expectedSessionRevision: 1,
+  };
+  const workspaceContext = {
+    expectedHostInstanceId: HOST_ID,
+    expectedWorkspaceId: WORKSPACE_ID,
+    expectedWorkspaceRevision: 1,
   };
 
   it("accepts system.hello with empty context", () => {
@@ -226,6 +233,38 @@ describe("parseHostRequest", () => {
     expect(request("   ").ok).toBe(false);
     expect(request("text\u0000data").ok).toBe(false);
     expect(request("text", { name: "forbidden.txt" }).ok).toBe(false);
+  });
+
+  it("validates Git paths, revisions, and exact fields", () => {
+    const request = (method: "git.getDiff" | "git.stage" | "git.unstage", params: unknown) =>
+      parseHostRequest({ protocolVersion: 1, id: REQUEST_ID, method, context: workspaceContext, params });
+
+    expect(request("git.stage", { path: "a".repeat(MAX_GIT_PATH_BYTES), expectedRevision: 1 }).ok).toBe(true);
+    expect(request("git.getDiff", { path: "src/app.ts", area: "unstaged", expectedRevision: 2 }).ok).toBe(true);
+    for (const path of ["/etc/passwd", "C:\\repo\\file.txt", "../file", "src/../../file", "\\\\server\\share\\file", "bad\u0000path"]) {
+      expect(request("git.stage", { path, expectedRevision: 1 }).ok).toBe(false);
+    }
+    expect(request("git.stage", { path: "a".repeat(MAX_GIT_PATH_BYTES + 1), expectedRevision: 1 }).ok).toBe(false);
+    expect(request("git.unstage", { path: "src/app.ts", expectedRevision: -1 }).ok).toBe(false);
+    expect(request("git.stage", { path: "src/app.ts", expectedRevision: 1, force: true }).ok).toBe(false);
+  });
+
+  it("validates Git commit messages by UTF-8 bytes and index generation", () => {
+    const request = (message: string, extra?: Record<string, unknown>) =>
+      parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method: "git.commit",
+        context: workspaceContext,
+        params: { message, expectedIndexGeneration: "a".repeat(64), ...extra },
+      });
+
+    expect(request("界".repeat(Math.floor(MAX_GIT_COMMIT_MESSAGE_BYTES / 3))).ok).toBe(true);
+    expect(request("界".repeat(Math.floor(MAX_GIT_COMMIT_MESSAGE_BYTES / 3) + 1)).ok).toBe(false);
+    expect(request("   ").ok).toBe(false);
+    expect(request("bad\u0000message").ok).toBe(false);
+    expect(request("message", { expectedIndexGeneration: "short" }).ok).toBe(false);
+    expect(request("message", { amend: true }).ok).toBe(false);
   });
 
   it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
@@ -980,6 +1019,60 @@ describe("toJsonValue", () => {
     expect(v).toEqual({ role: "toolResult", isError: false });
     expect(toJsonValue(undefined)).toBeNull();
     expect(toJsonValue([1, undefined, 2])).toEqual([1, null, 2]);
+  });
+});
+
+describe("Git DTO validation", () => {
+  const ready = {
+    state: "ready",
+    revision: 4,
+    repositoryRoot: "/repo",
+    workspaceIsRepositoryRoot: true,
+    branch: "main",
+    detached: false,
+    unborn: false,
+    headSha: "a".repeat(40),
+    upstream: "origin/main",
+    ahead: 1,
+    behind: 0,
+    indexGeneration: "b".repeat(64),
+    files: [{
+      path: "src/app.ts",
+      staged: "modified",
+      unstaged: null,
+      conflict: false,
+      submodule: false,
+      pathSupported: true,
+    }],
+    warnings: [],
+  } as const;
+
+  it("accepts each Git status state and rejects unknown fields", () => {
+    expect(validateSuccessResult("git.getStatus", ready).ok).toBe(true);
+    expect(validateSuccessResult("git.getStatus", { state: "not_repository", revision: 1 }).ok).toBe(true);
+    expect(validateSuccessResult("git.getStatus", { state: "unavailable", revision: 1, message: "missing" }).ok).toBe(true);
+    expect(validateSuccessResult("git.getStatus", { ...ready, localPath: "/secret" }).ok).toBe(false);
+    expect(validateSuccessResult("git.getStatus", { ...ready, indexGeneration: "short" }).ok).toBe(false);
+  });
+
+  it("validates diff, mutation, commit, and changed event shapes exactly", () => {
+    const diff = {
+      path: "src/app.ts",
+      area: "staged",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      contentGeneration: "c".repeat(64),
+    } as const;
+    expect(validateSuccessResult("git.getDiff", diff).ok).toBe(true);
+    expect(validateSuccessResult("git.getDiff", { ...diff, area: "working" }).ok).toBe(false);
+    expect(validateSuccessResult("git.stage", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.commit", { applied: true, commitSha: "d".repeat(40), snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.commit", { applied: true, snapshot: ready }).ok).toBe(false);
+    expect(validateEventPayload("git.changed", { snapshot: ready }).ok).toBe(true);
+    expect(validateEventPayload("git.changed", { snapshot: ready, path: "/repo" }).ok).toBe(false);
   });
 });
 

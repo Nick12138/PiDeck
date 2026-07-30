@@ -19,6 +19,24 @@ export const PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES = 4 * 1024;
 /** Maximum UTF-8 bytes accepted by attachment.createText. */
 export const MAX_PASTED_TEXT_ATTACHMENT_BYTES = 1024 * 1024;
 
+/** Maximum UTF-8 bytes accepted for one repository-relative Git path. */
+export const MAX_GIT_PATH_BYTES = 16 * 1024;
+
+/** Maximum UTF-8 bytes accepted for a Git commit message. */
+export const MAX_GIT_COMMIT_MESSAGE_BYTES = 16 * 1024;
+
+/** Maximum changed entries returned by one Git status snapshot. */
+export const MAX_GIT_STATUS_ENTRIES = 20_000;
+
+/** Maximum stdout bytes collected from one Git status command. */
+export const MAX_GIT_STATUS_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+/** Maximum patch bytes returned by one Git diff request. */
+export const MAX_GIT_DIFF_OUTPUT_BYTES = 2 * 1024 * 1024;
+
+/** Maximum patch lines returned by one Git diff request. */
+export const MAX_GIT_DIFF_LINES = 20_000;
+
 /** Maximum UTF-8 bytes in one Host-to-Desktop JSONL frame, including newline. */
 export const MAX_HOST_JSONL_FRAME_BYTES = 32 * 1024 * 1024;
 

@@ -7,6 +7,7 @@ import type { DesktopSettings, WorkspaceSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";
+import { clearPendingChangesPanelForTest, requestChangesPanel } from "../lib/dock-changes";
 import { clearPendingTreePanelForTest, requestTreePanel } from "../lib/dock-tree";
 
 vi.mock("../features/dock/ShellTerminal", () => ({
@@ -27,6 +28,12 @@ vi.mock("../features/dock/BrowserPanel", () => ({
   ),
 }));
 
+vi.mock("../features/dock/ChangesPanel", () => ({
+  ChangesPanel: ({ visible }: { visible: boolean }) => (
+    <div data-testid="changes-panel" hidden={!visible} />
+  ),
+}));
+
 import { RightDock } from "./RightDock";
 
 class ResizeObserverStub {
@@ -34,8 +41,11 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-function settings(terminalProfile: string): DesktopSettings {
-  return { terminalProfile } as DesktopSettings;
+function settings(
+  terminalProfile: string,
+  language: "en" | "zh" = "en",
+): DesktopSettings {
+  return { terminalProfile, language } as DesktopSettings;
 }
 
 beforeEach(() => {
@@ -57,6 +67,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   clearPendingTreePanelForTest();
+  clearPendingChangesPanelForTest();
 });
 
 async function openAddMenu(user: ReturnType<typeof userEvent.setup>) {
@@ -70,8 +81,36 @@ describe("RightDock pages", () => {
 
     expect(screen.queryByRole("tab")).toBeNull();
     expect(screen.getByRole("button", { name: "Open Files" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open Changes" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Browser" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Terminal" })).toBeVisible();
+  });
+
+  it("localizes Dock navigation and shortcuts in Chinese", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ desktopSettings: settings("auto", "zh") });
+    render(<RightDock />);
+
+    expect(screen.getByRole("button", { name: "收起右侧面板" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：会话树" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：浏览器" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：终端" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "新建 Dock 页面" }));
+    expect(screen.getByRole("menuitem", { name: "文件" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "会话树" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "浏览器" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
+
+    await user.click(screen.getByRole("menuitem", { name: "浏览器" }));
+    expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
   });
 
   it("opens each tool from the empty-state shortcuts", async () => {
@@ -81,6 +120,10 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("button", { name: "Open Files" }));
     expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Files" }));
+
+    await user.click(screen.getByRole("button", { name: "Open Changes" }));
+    expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "Close Changes" }));
 
     await user.click(screen.getByRole("button", { name: "Open Browser" }));
     expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute(
@@ -202,6 +245,8 @@ describe("RightDock pages", () => {
     await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Session tree" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Changes" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Browser" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(screen.getByRole("menuitem", { name: "Terminal" })).toHaveFocus();
@@ -222,5 +267,21 @@ describe("RightDock pages", () => {
 
     act(() => requestTreePanel());
     expect(screen.getAllByRole("tab", { name: "Tree" })).toHaveLength(1);
+  });
+
+  it("opens the Changes page as a singleton via requestChangesPanel", async () => {
+    useAppStore.setState({ dockOpen: false });
+    render(<RightDock />);
+
+    act(() => requestChangesPanel());
+    expect(await screen.findByRole("tab", { name: "Changes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("changes-panel")).toBeVisible();
+    expect(useAppStore.getState().dockOpen).toBe(true);
+
+    act(() => requestChangesPanel());
+    expect(screen.getAllByRole("tab", { name: "Changes" })).toHaveLength(1);
   });
 });

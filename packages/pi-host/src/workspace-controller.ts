@@ -2,10 +2,12 @@ import { createHostError } from "@pideck/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { WorkspaceFileService } from "./workspace-files.js";
+import type { GitService } from "./git-service.js";
 
 export function createWorkspaceHandlers(
   factory: WorkspaceGraphFactory,
   fileService = new WorkspaceFileService(),
+  gitService?: GitService,
 ): Partial<Record<string, MethodHandler>> {
   return {
     "workspace.setCurrent": async (ctx) => {
@@ -37,6 +39,7 @@ export function createWorkspaceHandlers(
       fileService.dispose();
       const result = await factory.setCurrent(params.cwd, ctx.id);
       if ("error" in result) return { error: result.error };
+      gitService?.stopWatching();
       return { result };
     },
 

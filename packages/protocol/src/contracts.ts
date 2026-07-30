@@ -55,6 +55,10 @@ import type {
   RehydrateSnapshot,
   QueueSnapshot,
   AttachmentSnapshot,
+  GitStatusSnapshot,
+  GitDiffSnapshot,
+  GitMutationResult,
+  GitCommitResult,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -67,6 +71,12 @@ export type HostContextMap = {
   "workspace.searchFiles": WorkspaceContext;
   "workspace.listDirectory": WorkspaceContext;
   "workspace.setDirectoryWatches": WorkspaceContext;
+  "git.getStatus": WorkspaceContext;
+  "git.setWatching": WorkspaceContext;
+  "git.getDiff": WorkspaceContext;
+  "git.stage": WorkspaceContext;
+  "git.unstage": WorkspaceContext;
+  "git.commit": WorkspaceContext;
   "attachment.create": ActiveSessionContext;
   "attachment.createText": ActiveSessionContext;
   "attachment.get": ActiveSessionContext;
@@ -154,6 +164,12 @@ export type HostRequestParams = {
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };
   "workspace.setDirectoryWatches": { paths: string[] };
+  "git.getStatus": null;
+  "git.setWatching": { enabled: boolean };
+  "git.getDiff": { path: string; area: "staged" | "unstaged"; expectedRevision: number };
+  "git.stage": { path: string; expectedRevision: number };
+  "git.unstage": { path: string; expectedRevision: number };
+  "git.commit": { message: string; expectedIndexGeneration: string };
   "attachment.create": { path: string };
   "attachment.createText": { text: string };
   "attachment.get": { attachmentId: string };
@@ -268,6 +284,12 @@ export type HostResultMap = {
     entries: WorkspaceDirectoryEntry[];
   };
   "workspace.setDirectoryWatches": { paths: string[] };
+  "git.getStatus": GitStatusSnapshot;
+  "git.setWatching": { watching: boolean; snapshot: GitStatusSnapshot | null };
+  "git.getDiff": GitDiffSnapshot;
+  "git.stage": GitMutationResult;
+  "git.unstage": GitMutationResult;
+  "git.commit": GitCommitResult;
   "attachment.create": AttachmentSnapshot;
   "attachment.createText": AttachmentSnapshot;
   "attachment.get": AttachmentSnapshot;
@@ -387,6 +409,7 @@ export type HostEventPayloadMap = {
   "host.fatal": { error: HostError };
   "workspace.changed": WorkspaceSnapshot;
   "workspace.filesChanged": { directories: string[] };
+  "git.changed": { snapshot: GitStatusSnapshot };
   "attachment.changed": { attachment: AttachmentSnapshot };
   "session.snapshot": SessionSnapshot | null;
   "session.infoChanged": { sessionId: string; name?: string };

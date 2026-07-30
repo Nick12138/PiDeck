@@ -41,6 +41,8 @@ import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
 import { migrateLegacyPideckData } from "./pideck-data.js";
 import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
+import { createGitHandlers } from "./git-controller.js";
+import { GitService } from "./git-service.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -231,9 +233,11 @@ async function main(): Promise<void> {
     () => graphFactory.getGraph()?.providerOwner ?? null,
   );
   const workspaceFiles = new WorkspaceFileService();
+  const gitService = new GitService();
 
   const handlers = {
-    ...createWorkspaceHandlers(graphFactory, workspaceFiles),
+    ...createWorkspaceHandlers(graphFactory, workspaceFiles, gitService),
+    ...createGitHandlers(graphFactory, gitService),
     ...createAttachmentHandlers(graphFactory),
     ...createSessionHandlers(graphFactory),
     ...createAgentHandlers(graphFactory),
@@ -261,6 +265,7 @@ async function main(): Promise<void> {
     },
     onShutdown: async () => {
       workspaceFiles.dispose();
+      gitService.dispose();
       const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");
       const g = graphFactory.getGraph();

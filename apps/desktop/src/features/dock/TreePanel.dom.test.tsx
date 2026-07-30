@@ -155,6 +155,7 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
 
 describe("TreePanel", () => {
   beforeEach(() => {
+    useAppStore.setState({ desktopSettings: { language: "en" } as never });
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applySessionSnapshot(null);
@@ -167,6 +168,14 @@ describe("TreePanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     cleanup();
+  });
+
+  it("localizes the empty session state in Chinese", () => {
+    useAppStore.setState({ desktopSettings: { language: "zh" } as never });
+    useAppStore.getState().applySessionSnapshot(null);
+    render(<TreePanel visible />);
+
+    expect(screen.getByText("当前没有活动会话。")).toBeVisible();
   });
 
   it("loads the tree and navigates to an abandoned branch", async () => {

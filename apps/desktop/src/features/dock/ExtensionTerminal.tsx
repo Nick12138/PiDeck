@@ -8,6 +8,7 @@ import {
   clearExtensionTerminal,
   subscribeExtensionTerminal,
 } from "../../lib/chat/extension-terminal-bus";
+import { tCurrent, useT } from "../../lib/i18n/use-t";
 import { XtermSurface } from "./XtermSurface";
 
 /**
@@ -33,19 +34,20 @@ export async function cancelExtensionTerminal(
       requestId: panel.requestId,
       data: "\u0003",
     });
-    return res.ok ? null : (res.error?.message ?? "Could not close extension panel");
+    return res.ok ? null : (res.error?.message ?? tCurrent("dockExtensionCloseFailed"));
   } catch (error) {
-    return error instanceof Error ? error.message : "Could not close extension panel";
+    return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
   }
 }
 
 export function ExtensionTerminal({ visible = true }: { visible?: boolean }) {
+  const t = useT();
   const panel = useAppStore((s) => s.extensionTerminal);
 
   if (!panel) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted">
-        Extension panels (e.g. /mcp) will open here.
+        {t("dockExtensionEmpty")}
       </div>
     );
   }

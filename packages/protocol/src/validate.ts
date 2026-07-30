@@ -4,6 +4,8 @@ import {
   MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
+  MAX_GIT_COMMIT_MESSAGE_BYTES,
+  MAX_GIT_PATH_BYTES,
 } from "./limits.js";
 import {
   hasExactKeys,
@@ -56,6 +58,33 @@ function isValidAttachmentText(value: unknown): value is string {
     value.trim().length > 0 &&
     !value.includes("\u0000") &&
     new TextEncoder().encode(value).byteLength <= MAX_PASTED_TEXT_ATTACHMENT_BYTES
+  );
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function isValidGitPath(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const segments = value.split(/[\\/]/);
+  return (
+    value.length > 0 &&
+    !value.includes("\u0000") &&
+    utf8Bytes(value) <= MAX_GIT_PATH_BYTES &&
+    !value.startsWith("/") &&
+    !value.startsWith("\\") &&
+    !/^[A-Za-z]:[\\/]/.test(value) &&
+    !segments.includes("..")
+  );
+}
+
+function isValidCommitMessage(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    !value.includes("\u0000") &&
+    utf8Bytes(value) <= MAX_GIT_COMMIT_MESSAGE_BYTES
   );
 }
 
@@ -264,6 +293,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "system.rehydrate":
     case "system.shutdown":
     case "workspace.getCurrent":
+    case "git.getStatus":
     case "session.list":
     case "session.cleanupArchived":
     case "session.reload":
@@ -305,6 +335,31 @@ export function validateRequestParams<M extends HostMethod>(
         params.paths.every(isString)
         ? ok(params)
         : fail("invalid workspace.setDirectoryWatches params", { method });
+    case "git.setWatching":
+      return exactObject(params, ["enabled"]) && isBoolean(params.enabled)
+        ? ok(params)
+        : fail("invalid git.setWatching params", { method });
+    case "git.getDiff":
+      return exactObject(params, ["path", "area", "expectedRevision"]) &&
+        isValidGitPath(params.path) &&
+        (params.area === "staged" || params.area === "unstaged") &&
+        isSafeRevision(params.expectedRevision)
+        ? ok(params)
+        : fail("invalid git.getDiff params", { method });
+    case "git.stage":
+    case "git.unstage":
+      return exactObject(params, ["path", "expectedRevision"]) &&
+        isValidGitPath(params.path) &&
+        isSafeRevision(params.expectedRevision)
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
+    case "git.commit":
+      return exactObject(params, ["message", "expectedIndexGeneration"]) &&
+        isValidCommitMessage(params.message) &&
+        typeof params.expectedIndexGeneration === "string" &&
+        /^[0-9a-f]{64}$/.test(params.expectedIndexGeneration)
+        ? ok(params)
+        : fail("invalid git.commit params", { method });
     case "attachment.create":
       return exactObject(params, ["path"]) && isNonEmptyString(params.path)
         ? ok(params)
