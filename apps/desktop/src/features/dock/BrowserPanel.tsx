@@ -4,12 +4,15 @@ import { listen } from "@tauri-apps/api/event";
 import {
   ArrowLeft,
   ArrowRight,
+  ExternalLink,
   Globe2,
   LoaderCircle,
   RefreshCw,
   Search,
   X,
 } from "lucide-react";
+import { useT } from "../../lib/i18n/use-t";
+import { openSystemUrl } from "../../lib/open-system-url";
 import { useAppStore } from "../../lib/stores/app-store";
 
 type BrowserBounds = { x: number; y: number; width: number; height: number };
@@ -50,15 +53,18 @@ function isTauriRuntime(): boolean {
 
 export function BrowserPanel({
   id,
+  initialUrl = "about:blank",
   visible,
   blocked,
   onTitle,
 }: {
   id: number;
+  initialUrl?: string;
   visible: boolean;
   blocked: boolean;
   onTitle: (title: string) => void;
 }) {
+  const t = useT();
   const surfaceId = `dock-browser-${id}`;
   const pushNotification = useAppStore((state) => state.pushNotification);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -69,8 +75,8 @@ export function BrowserPanel({
   const onTitleRef = useRef(onTitle);
   const lastBoundsRef = useRef("");
   const [created, setCreated] = useState(false);
-  const [address, setAddress] = useState("");
-  const [currentUrl, setCurrentUrl] = useState("about:blank");
+  const [address, setAddress] = useState(initialUrl === "about:blank" ? "" : initialUrl);
+  const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nativeVisible = visible && !blocked;
@@ -141,6 +147,7 @@ export function BrowserPanel({
       createdRef.current = true;
       setCreated(true);
       setCurrentUrl(snapshot.url);
+      setAddress(snapshot.url === "about:blank" ? "" : snapshot.url);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -298,16 +305,28 @@ export function BrowserPanel({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-surface px-6 text-center text-xs text-muted">
             <Globe2 size={20} />
             <span>{error}</span>
-            <button
-              type="button"
-              className="rounded border border-border px-2 py-1 text-foreground hover:bg-surface-overlay"
-              onClick={() => {
-                setError(null);
-                void ensureSurface();
-              }}
-            >
-              Retry
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                className="rounded border border-border px-2 py-1 text-foreground hover:bg-surface-overlay"
+                onClick={() => {
+                  setError(null);
+                  void ensureSurface();
+                }}
+              >
+                {t("browserRetry")}
+              </button>
+              {currentUrl !== "about:blank" && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-foreground hover:bg-surface-overlay"
+                  onClick={() => void openSystemUrl(currentUrl)}
+                >
+                  <ExternalLink size={12} aria-hidden="true" />
+                  {t("browserOpenSystem")}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

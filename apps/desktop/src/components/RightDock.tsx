@@ -28,6 +28,7 @@ import {
 import { FilesPanel } from "../features/dock/FilesPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
+import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeTreePanel } from "../lib/dock-tree";
 
 export type DockTabId =
@@ -48,6 +49,7 @@ type ShellDockTab = {
 type BrowserDockTab = {
   id: number;
   title: string;
+  initialUrl: string;
 };
 
 const DOCK_WIDTH_KEY = "pideck.dock.width.v1";
@@ -153,12 +155,23 @@ export function RightDock() {
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
   const nextBrowserId = useRef(1);
+  const browserTabsRef = useRef<BrowserDockTab[]>([]);
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const dockWidthRef = useRef(dockWidth);
   dockWidthRef.current = dockWidth;
+  browserTabsRef.current = browserTabs;
+
+  const updateBrowserTabs = (
+    updater: (current: BrowserDockTab[]) => BrowserDockTab[],
+  ) => {
+    const next = updater(browserTabsRef.current);
+    browserTabsRef.current = next;
+    setBrowserTabs(next);
+    return next;
+  };
 
   const closeOrderTab = (tabId: DockTabId) => {
     setTabOrder((current) => {
@@ -272,15 +285,36 @@ export function RightDock() {
     [],
   );
 
-  const createBrowser = () => {
-    if (browserTabs.length >= MAX_BROWSER_TABS) return;
+  const createBrowserTab = (initialUrl = "about:blank"): boolean => {
+    if (browserTabsRef.current.length >= MAX_BROWSER_TABS) return false;
     const id = nextBrowserId.current++;
-    setBrowserTabs((current) => [...current, { id, title: "Browser" }]);
+    updateBrowserTabs((current) => [...current, { id, title: "Browser", initialUrl }]);
     const tabId = browserTabId(id);
     setTabOrder((current) => [...current, tabId]);
     setActiveTab(tabId);
     setAddMenuOpen(false);
+    return true;
   };
+
+  const createBrowser = () => {
+    createBrowserTab();
+  };
+
+  useEffect(
+    () =>
+      subscribeDockBrowser(({ url }) => {
+        if (!createBrowserTab(url)) return false;
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("pideck.dock.open", true);
+        }
+        return true;
+      }),
+    // The handler reads browser state through browserTabsRef so rapid requests
+    // stay bounded without resubscribing between renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const createShell = () => {
     if (!workspaceCwd) return;
@@ -303,7 +337,7 @@ export function RightDock() {
   };
 
   const closeBrowser = (id: number) => {
-    setBrowserTabs((current) => current.filter((tab) => tab.id !== id));
+    updateBrowserTabs((current) => current.filter((tab) => tab.id !== id));
     closeOrderTab(browserTabId(id));
   };
 
@@ -701,10 +735,11 @@ export function RightDock() {
           >
             <BrowserPanel
               id={tab.id}
+              initialUrl={tab.initialUrl}
               visible={activeTab === browserTabId(tab.id) && dockOpen}
               blocked={addMenuOpen || overflowMenuOpen}
               onTitle={(title) =>
-                setBrowserTabs((current) =>
+                updateBrowserTabs((current) =>
                   current.map((candidate) =>
                     candidate.id === tab.id ? { ...candidate, title } : candidate,
                   ),

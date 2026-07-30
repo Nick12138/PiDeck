@@ -741,8 +741,12 @@ export const en = {
   queueRunNow: "Interrupt current run and run this now",
   queueAttachmentOnly: "Document attachment",
 
+  // Browser controls
+  browserRetry: "Retry",
+  browserOpenSystem: "Open in system browser",
+
   // Markdown controls
-  markdownOpenExternalLink: "Open external link?\n\n{url}",
+  markdownOpenInDockBrowser: "Open in Dock browser: {url}",
   markdownImageLabel: "Image: {label}",
   markdownMermaidFailed: "Mermaid diagram failed to render",
   markdownRetryDiagram: "Retry diagram",

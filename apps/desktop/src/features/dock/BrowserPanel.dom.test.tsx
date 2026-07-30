@@ -16,11 +16,13 @@ type TestBrowserEvent = {
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  openSystem: vi.fn(),
   unlisten: vi.fn(),
   listeners: [] as Array<(event: TestBrowserEvent) => void>,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.openSystem }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (_event: string, listener: (event: TestBrowserEvent) => void) => {
     mocks.listeners.push(listener);
@@ -53,6 +55,7 @@ function emitBrowserEvent(payload: TestBrowserEvent["payload"]) {
 
 beforeEach(() => {
   mocks.invoke.mockReset();
+  mocks.openSystem.mockReset().mockResolvedValue(undefined);
   mocks.unlisten.mockReset();
   mocks.listeners.length = 0;
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
@@ -89,6 +92,57 @@ afterEach(async () => {
 });
 
 describe("BrowserPanel native lifecycle", () => {
+  it("loads an initial URL and keeps the native snapshot authoritative", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "browser_surface_create") {
+        return { surfaceId: "dock-browser-7", url: "https://example.com/path/" };
+      }
+      return undefined;
+    });
+    render(
+      <BrowserPanel
+        id={7}
+        initialUrl="https://example.com/path"
+        visible
+        blocked={false}
+        onTitle={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "browser_surface_create",
+        expect.objectContaining({ url: "https://example.com/path" }),
+      ),
+    );
+    expect(screen.getByRole("textbox", { name: "Browser address" })).toHaveValue(
+      "https://example.com/path/",
+    );
+  });
+
+  it("offers the system browser when initial surface creation fails", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "browser_surface_create") throw new Error("surface unavailable");
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(
+      <BrowserPanel
+        id={7}
+        initialUrl="https://example.com/fallback"
+        visible
+        blocked={false}
+        onTitle={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("surface unavailable")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open in system browser" }));
+    await waitFor(() =>
+      expect(mocks.openSystem).toHaveBeenCalledWith("https://example.com/fallback"),
+    );
+  });
+
   it("creates lazily, hides behind overlays, navigates, and closes", async () => {
     const user = userEvent.setup();
     const onTitle = vi.fn();

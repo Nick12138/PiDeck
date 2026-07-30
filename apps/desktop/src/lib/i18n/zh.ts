@@ -706,8 +706,12 @@ export const zh: Record<MessageKey, string> = {
   queueRunNow: "中断当前任务并立即运行这条消息",
   queueAttachmentOnly: "文档附件",
 
+  // Browser controls
+  browserRetry: "重试",
+  browserOpenSystem: "在系统浏览器中打开",
+
   // Markdown controls
-  markdownOpenExternalLink: "要打开外部链接吗？\n\n{url}",
+  markdownOpenInDockBrowser: "在 Dock 浏览器中打开：{url}",
   markdownImageLabel: "图片：{label}",
   markdownMermaidFailed: "Mermaid 图表渲染失败",
   markdownRetryDiagram: "重试图表",

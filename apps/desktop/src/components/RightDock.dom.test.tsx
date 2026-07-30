@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import type { DesktopSettings, WorkspaceSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
+import { requestDockBrowser } from "../lib/dock-browser";
 import { clearPendingTreePanelForTest, requestTreePanel } from "../lib/dock-tree";
 
 vi.mock("../features/dock/ShellTerminal", () => ({
@@ -21,7 +22,9 @@ vi.mock("../features/dock/ExtensionTerminal", () => ({
 }));
 
 vi.mock("../features/dock/BrowserPanel", () => ({
-  BrowserPanel: () => <div data-testid="browser-panel" />,
+  BrowserPanel: ({ initialUrl }: { initialUrl?: string }) => (
+    <div data-testid="browser-panel" data-initial-url={initialUrl} />
+  ),
 }));
 
 import { RightDock } from "./RightDock";
@@ -37,6 +40,10 @@ function settings(terminalProfile: string): DesktopSettings {
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    value: {},
+    configurable: true,
+  });
   useAppStore.setState({
     dockOpen: true,
     extensionTerminal: null,
@@ -48,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   clearPendingTreePanelForTest();
 });
 
@@ -124,6 +132,26 @@ describe("RightDock pages", () => {
 
     expect(screen.getAllByRole("button", { name: "Close Browser" })).toHaveLength(8);
     expect(screen.getByRole("menuitem", { name: "Browser" })).toBeDisabled();
+    expect(requestDockBrowser({ url: "https://example.com/ninth" })).toBe(false);
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(8);
+  });
+
+  it("opens consecutive URL requests in new active Browser pages", async () => {
+    useAppStore.setState({ dockOpen: false });
+    render(<RightDock />);
+
+    act(() => {
+      expect(requestDockBrowser({ url: "https://one.example/path" })).toBe(true);
+      expect(requestDockBrowser({ url: "https://two.example/path" })).toBe(true);
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId("browser-panel")).toHaveLength(2));
+    expect(
+      screen.getAllByTestId("browser-panel").map((panel) => panel.dataset.initialUrl),
+    ).toEqual(["https://one.example/path", "https://two.example/path"]);
+    const tabs = screen.getAllByRole("tab", { name: "Browser" });
+    expect(tabs.at(-1)).toHaveAttribute("aria-selected", "true");
+    expect(useAppStore.getState().dockOpen).toBe(true);
   });
 
   it("activates the adjacent page after closing the current page", async () => {

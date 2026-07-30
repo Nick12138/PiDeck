@@ -7,7 +7,12 @@ import { AssistantOrderedContent } from "./Transcript";
 import type { TranscriptBlock } from "./transcript-model";
 import { MarkdownMessage } from "./MarkdownMessage";
 
-const { mermaidRender } = vi.hoisted(() => ({ mermaidRender: vi.fn() }));
+const { mermaidRender, openChatLink } = vi.hoisted(() => ({
+  mermaidRender: vi.fn(),
+  openChatLink: vi.fn(),
+}));
+
+vi.mock("./chat-link", () => ({ openChatLink }));
 
 vi.mock("@streamdown/mermaid", () => ({
   createMermaidPlugin: () => ({
@@ -20,6 +25,10 @@ vi.mock("@streamdown/mermaid", () => ({
     }),
   }),
 }));
+
+function middleClick(target: Element): void {
+  fireEvent(target, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+}
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -57,6 +66,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  openChatLink.mockReset().mockReturnValue(true);
   mermaidRender.mockReset();
   mermaidRender.mockResolvedValue({
     svg: '<svg viewBox="0 0 100 40"><text>diagram</text></svg>',
@@ -321,10 +331,16 @@ describe("MarkdownMessage Mermaid rendering", () => {
     expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute("href");
     expect((window as Window & { __mermaidRan?: boolean }).__mermaidRan).not.toBe(true);
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     fireEvent.click(container.querySelector("[data-pideck-mermaid-href]")!);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("https://example.com/path"));
-    confirm.mockRestore();
+    expect(openChatLink).toHaveBeenLastCalledWith(
+      "https://example.com/path",
+      expect.objectContaining({ button: 0 }),
+    );
+    middleClick(container.querySelector("[data-pideck-mermaid-href]")!);
+    expect(openChatLink).toHaveBeenLastCalledWith(
+      "https://example.com/path",
+      expect.objectContaining({ button: 1 }),
+    );
   });
 });
 
@@ -410,6 +426,17 @@ describe("MarkdownMessage safety and footnotes", () => {
     const external = screen.getByRole("link", { name: "external" });
     expect(external).toHaveAttribute("href", "https://example.com/");
     expect(external).toHaveAttribute("target", "_blank");
+    expect(external).toHaveAttribute("title", expect.stringContaining("Open in Dock browser"));
+    fireEvent.click(external);
+    expect(openChatLink).toHaveBeenLastCalledWith(
+      "https://example.com/",
+      expect.objectContaining({ button: 0 }),
+    );
+    middleClick(external);
+    expect(openChatLink).toHaveBeenLastCalledWith(
+      "https://example.com/",
+      expect.objectContaining({ button: 1 }),
+    );
     expect(container.querySelectorAll("a")).toHaveLength(1);
     expect(container.querySelector("img")).not.toBeInTheDocument();
     expect(container).toHaveTextContent("Image: diagram");

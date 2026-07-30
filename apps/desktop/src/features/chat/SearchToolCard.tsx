@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { ChevronRight, ExternalLink, Search } from "lucide-react";
+import { ChevronRight, PanelRightOpen, Search } from "lucide-react";
+import { openChatLink } from "./chat-link";
 import { isSafeExternalUrl } from "./markdown-utils";
 import {
   formatDuration,
@@ -151,13 +152,6 @@ export function isWebSearchTool(name: string): boolean {
   );
 }
 
-async function openSearchResult(url: string, confirmation: string) {
-  if (!window.confirm(confirmation)) return;
-  await import("@tauri-apps/plugin-shell")
-    .then(({ open }) => open(url))
-    .catch(() => window.open(url, "_blank", "noopener,noreferrer"));
-}
-
 export function SearchToolCard(props: ToolCardProps) {
   const t = useT();
   const results = useMemo(() => extractSearchResults(props.result), [props.result]);
@@ -216,13 +210,17 @@ export function SearchToolCard(props: ToolCardProps) {
               key={result.url}
               href={result.url}
               className="group/result block min-w-0 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-overlay/55"
-              title={result.url}
+              title={t("markdownOpenInDockBrowser", { url: result.url })}
+              target="_blank"
+              rel="noreferrer noopener"
               onClick={(event) => {
                 event.preventDefault();
-                void openSearchResult(
-                  result.url,
-                  t("markdownOpenExternalLink", { url: result.url }),
-                );
+                openChatLink(result.url, event);
+              }}
+              onAuxClick={(event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                openChatLink(result.url, event);
               }}
             >
               <div className="flex min-w-0 items-center gap-2">
@@ -230,7 +228,7 @@ export function SearchToolCard(props: ToolCardProps) {
                   {result.title}
                 </span>
                 <span className="shrink-0 text-[10px] text-muted">{result.site}</span>
-                <ExternalLink size={11} className="shrink-0 text-muted" />
+                <PanelRightOpen size={11} className="shrink-0 text-muted" aria-hidden="true" />
               </div>
               {result.snippet && (
                 <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted">

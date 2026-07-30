@@ -34,7 +34,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  ExternalLink,
+  PanelRightOpen,
   RotateCw,
 } from "lucide-react";
 import {
@@ -46,6 +46,7 @@ import {
   sanitizeAgentText,
   sanitizeMermaidSvg,
 } from "./markdown-utils";
+import { openChatLink, type ChatLinkActivation } from "./chat-link";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 
 type MarkdownMessageProps = {
@@ -193,13 +194,6 @@ function ImageFallback({ alt, title }: MarkdownImageProps) {
   ) : null;
 }
 
-function openExternalLink(safeHref: string, t: Translate) {
-  if (!window.confirm(t("markdownOpenExternalLink", { url: safeHref }))) return;
-  void import("@tauri-apps/plugin-shell")
-    .then(({ open }) => open(safeHref))
-    .catch(() => window.open(safeHref, "_blank", "noopener,noreferrer"));
-}
-
 function safeLink(
   { children, href, title, node, target: _target, rel: _rel, ...props }: MarkdownLinkProps,
   footnotePrefix: string,
@@ -227,16 +221,21 @@ function safeLink(
     <a
       {...props}
       href={safeHref}
-      title={title ?? safeHref}
+      title={title ?? t("markdownOpenInDockBrowser", { url: safeHref })}
       target="_blank"
       rel="noreferrer noopener"
       onClick={(event) => {
         event.preventDefault();
-        openExternalLink(safeHref, t);
+        openChatLink(safeHref, event);
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        openChatLink(safeHref, event);
       }}
     >
       {children}
-      <ExternalLink className="ml-1 inline size-3" aria-hidden="true" />
+      <PanelRightOpen className="ml-1 inline size-3" aria-hidden="true" />
     </a>
   );
 }
@@ -404,15 +403,18 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     },
     [footnotePrefix],
   );
-  const openMermaidLink = useCallback((target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false;
-    const anchor = target.closest<Element>("[data-pideck-mermaid-href]");
-    if (!anchor || !anchor.closest('[data-streamdown="mermaid"]')) return false;
-    const href = anchor.getAttribute("data-pideck-mermaid-href");
-    if (!href || !isSafeExternalUrl(href)) return true;
-    openExternalLink(href, t);
-    return true;
-  }, [t]);
+  const openMermaidLink = useCallback(
+    (target: EventTarget | null, activation: ChatLinkActivation = {}) => {
+      if (!(target instanceof Element)) return false;
+      const anchor = target.closest<Element>("[data-pideck-mermaid-href]");
+      if (!anchor || !anchor.closest('[data-streamdown="mermaid"]')) return false;
+      const href = anchor.getAttribute("data-pideck-mermaid-href");
+      if (!href || !isSafeExternalUrl(href)) return true;
+      openChatLink(href, activation);
+      return true;
+    },
+    [],
+  );
   const normalized = useMemo(
     () => deferIncompleteMermaid(sanitizeAgentText(content)),
     [content],
@@ -426,7 +428,12 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     <div
       className="min-w-0 max-w-full"
       onClickCapture={(event) => {
-        if (!openMermaidLink(event.target)) return;
+        if (!openMermaidLink(event.target, event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onAuxClickCapture={(event) => {
+        if (event.button !== 1 || !openMermaidLink(event.target, event)) return;
         event.preventDefault();
         event.stopPropagation();
       }}
