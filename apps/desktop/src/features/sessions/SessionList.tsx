@@ -72,9 +72,10 @@ export function includeActiveSession(
   return [current, ...items.filter((item) => item.sessionId !== active.sessionId)];
 }
 
+/** Callers must pass the localized untitled label so search/render match the UI locale. */
 export function sessionDisplayName(
   item: Pick<SessionSummary, "name">,
-  fallback = "新会话",
+  fallback: string,
 ): string {
   return item.name?.trim() || fallback;
 }
@@ -101,12 +102,13 @@ export function filterSessionItems(
   items: SessionCatalogEntry[],
   query: string,
   filter: SessionFilter,
+  untitledLabel: string,
 ): SessionCatalogEntry[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return items.filter((item) => {
     if (filter === "archived" ? !item.archived : item.archived) return false;
     if (!normalizedQuery) return true;
-    return [sessionDisplayName(item), item.cwd, item.sessionId]
+    return [sessionDisplayName(item, untitledLabel), item.cwd, item.sessionId]
       .join("\n")
       .toLocaleLowerCase()
       .includes(normalizedQuery);
@@ -470,7 +472,6 @@ export function SessionList({
     const target = sessionCatalogItems(currentAtStart.sessionCatalog).find(
       (item) => item.sessionPath === path,
     );
-    const startedAt = performance.now();
     try {
       const authorization = {
         expectedHostInstanceId: currentHost.hostInstanceId,
@@ -507,9 +508,6 @@ export function SessionList({
         },
       );
       if (!res) return;
-      console.info(
-        `[session] open took ${Math.round(performance.now() - startedAt)}ms ok=${res.ok}`,
-      );
       if (
         request !== mutationRequest.current ||
         !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
@@ -878,7 +876,7 @@ export function SessionList({
     sessionCatalogItems(sessionCatalog),
     pinnedSessionIds,
   );
-  const visibleItems = filterSessionItems(allItems, query, filter);
+  const visibleItems = filterSessionItems(allItems, query, filter, t("sessionsUntitled"));
   const archivedCount = allItems.filter((item) => item.archived).length;
   const extensionUiWaitingBySession = useMemo(
     () =>

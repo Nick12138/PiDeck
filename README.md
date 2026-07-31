@@ -26,7 +26,7 @@ PiDeck currently pins the Pi SDK to `0.82.1`.
 | Windows 11 x64 | Supported; tracked CI gate | Unsigned NSIS development candidate |
 | macOS Apple Silicon | Supported for early testing | Not yet implemented |
 
-Both platforms can run the full application with `tauri:dev`. The optimized `dev:fast` workflow and `package:release` remain Windows-only. On macOS, revealing a local path in Finder is a known limitation because the current native command still expects `xdg-open`.
+Both platforms can run the full application with `tauri:dev`. The optimized `dev:fast` workflow and `package:release` remain Windows-only. Revealing a local path uses the native file manager on each platform (Explorer `/select`, Finder `open -R`).
 
 ## Quick start
 

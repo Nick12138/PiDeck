@@ -23,11 +23,12 @@ Landed behavior updates these pages in the same change.
 4. [Chat runtime](./architecture/chat-runtime.md)
 5. [Extension presentation](./architecture/extension-presentation.md)
 6. [Packages & workspaces](./architecture/packages-workspaces.md)
-7. [Source map](./architecture/source-map.md)
-8. [P0 scope and verification](./operations/p0-scope.md)
-9. [Development](./operations/development.md)
-10. [Release](./operations/release.md)
-11. [Remediation / completion report](./operations/remediation-report.md)
+7. [Pi settings files](./architecture/pi-settings.md)
+8. [Source map](./architecture/source-map.md)
+9. [P0 scope and verification](./operations/p0-scope.md)
+10. [Development](./operations/development.md)
+11. [Release](./operations/release.md)
+12. [Remediation / completion report](./operations/remediation-report.md)
 
 ## Document index
 
@@ -49,4 +50,6 @@ Landed behavior updates these pages in the same change.
 | [history/2026-07-18-full-review.md](./history/2026-07-18-full-review.md) | Archived | Round-1 full project review |
 | [history/2026-07-18-review-round2.md](./history/2026-07-18-review-round2.md) | Archived | Round-2 verification review (N1–N9) |
 | [history/2026-07-18-remediation-todo.md](./history/2026-07-18-remediation-todo.md) | Historical | Review remediation record; current scope lives in `operations/p0-scope.md` |
+| [history/2026-07-27-independent-review.md](./history/2026-07-27-independent-review.md) | Archived | Independent full-project reliability review (34 findings) |
+| [history/2026-07-30-product-ux-review.md](./history/2026-07-30-product-ux-review.md) | Archived | Product / UX review: UI, Pi SDK coverage, interaction quality |
 | [history/pi-web-p0-roadmap.md](./history/pi-web-p0-roadmap.md) | Historical | Point-in-time pi-web comparison; superseded as a P0 definition |

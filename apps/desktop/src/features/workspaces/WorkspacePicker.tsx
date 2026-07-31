@@ -97,7 +97,6 @@ export function WorkspacePicker() {
 
     const request = ++requestRef.current;
     const generation = captureRequestGeneration(host);
-    const startedAt = performance.now();
     setPending(true);
     try {
       const res = await hostClient.request(
@@ -109,9 +108,6 @@ export function WorkspacePicker() {
         },
         { cwd },
         60_000,
-      );
-      console.info(
-        `[workspace] setCurrent ${cwd} took ${Math.round(performance.now() - startedAt)}ms ok=${res.ok}`,
       );
 
       if (

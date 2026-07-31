@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented:** Session list/create/open, prompt/steer/follow-up/abort, manual/auto compaction controls, model/thinking selectors, transcript rendering, tool cards, Extension UI modal, and AUTH_REQUIRED banner.
+**Implemented:** Session list/create/open, prompt/follow-up/abort (steer host-side only, not wired to the UI), manual/auto compaction controls, model/thinking selectors, transcript rendering, tool cards, Extension UI modal, and AUTH_REQUIRED banner.
 
 ## Session
 
@@ -22,7 +22,7 @@
 | UI action | Method |
 |---|---|
 | Send (idle) | `agent.prompt` |
-| Send (busy) | `agent.steer` or `agent.followUp` |
+| Send (busy) | `agent.followUp` (`agent.steer` exists host-side but is not wired to the UI) |
 | Stop | `agent.abort` |
 | Stop (compacting) | `agent.abortCompaction` |
 | `/compact [instructions]` or Compact now | `agent.compact` |
