@@ -150,4 +150,30 @@ describe("App Host fatal event handling", () => {
     expect(agentEvents.flush).not.toHaveBeenCalled();
     expect(requestRecovery).not.toHaveBeenCalled();
   });
+
+  it("settles a fatal that arrives while desynchronized so startup can complete", () => {
+    useAppStore.setState({
+      desynchronized: true,
+      desyncReason: "sequence gap 7 -> 9",
+      rehydrating: true,
+      connecting: true,
+    });
+    const requestRecovery = vi.fn();
+    const agentEvents = eventBuffer();
+    const event = JSON.parse(
+      fatal(ACTIVE_HOST_ID, "host died mid-recovery"),
+    ) as HostEventEnvelope<"host.fatal">;
+    event.sequence = 8;
+
+    handleHostEvent(event, requestRecovery, agentEvents);
+
+    const state = useAppStore.getState();
+    expect(state.hostFatal).toContain("host died mid-recovery");
+    expect(state).toMatchObject({
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+    });
+    expect(state.desyncReason).toBeUndefined();
+  });
 });

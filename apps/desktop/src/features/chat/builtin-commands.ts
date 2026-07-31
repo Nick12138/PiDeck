@@ -29,6 +29,10 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     description: "Export session to a file (HTML default)",
     argumentHint: "[html|jsonl]",
   },
+  {
+    name: "login",
+    description: "Sign in to a model provider (opens Settings → Providers)",
+  },
 ];
 
 export type BuiltinCommandMatch = { name: string; args?: string };

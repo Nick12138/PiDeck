@@ -349,6 +349,34 @@ export function createAgentHandlers(
         return { error: stale2 };
       }
 
+      // Pre-flight auth check: without credentials the SDK fails deep inside
+      // the detached task below, and its CLI-era guidance ("/login") loops in
+      // the GUI. checkAuth resolves stored/config/env credentials the same way
+      // the request path does, so env-provided keys pass silently. A throw
+      // means the check itself failed (e.g. a network probe) — fall through
+      // and let the real request surface the truth instead of blocking on a
+      // false negative.
+      const currentModel = g.agentSession.model;
+      if (currentModel) {
+        let authConfigured: boolean | undefined;
+        try {
+          authConfigured =
+            (await factory.deps.modelRuntime.checkAuth(currentModel.provider)) !== undefined;
+        } catch {
+          authConfigured = undefined;
+        }
+        if (authConfigured === false) {
+          operationLock.release(ctx.id);
+          return {
+            error: createHostError(
+              "AUTH_REQUIRED",
+              `No credentials configured for provider "${currentModel.provider}". Sign in from Settings → Providers, then try again.`,
+              { details: { providerId: currentModel.provider } },
+            ),
+          };
+        }
+      }
+
       const params = ctx.params as {
         text: string;
         images?: SerializableImage[];

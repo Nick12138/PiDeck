@@ -66,6 +66,12 @@ export const zh: Record<MessageKey, string> = {
   generalShellAutomatic: "自动",
   generalShellUnavailable: "{id}（不可用）",
   generalDetectShells: "重新检测 Shell",
+  generalAdvancedGroup: "更多设置",
+  generalAdvancedDesc:
+    "Pi 会从 agent 目录下的 settings.json 读取高级选项,例如 httpProxy、compaction、retry、npmCommand。可打开文件手动编辑。",
+  generalAdvancedOpenFile: "打开 settings.json",
+  generalAdvancedRestartHint: "更改将在重启 Host 后生效。",
+  notifSettingsFileOpenFailed: "无法打开设置文件",
 
   // Host section
   hostSubtitle: "Pi Host 运行时、能力与应用信息",
@@ -510,8 +516,10 @@ export const zh: Record<MessageKey, string> = {
   chatSelectWorkspaceTitle: "选择工作区以开始",
   chatSelectWorkspaceHint: "请使用侧边栏中的文件夹选择器。",
   chatWorkspaceServicesNotReady: "工作区服务尚未就绪。",
-  chatAuthRequired:
-    "需要身份验证。请在 Pi Agent 目录（{agentDir}）中配置凭据。对话已禁用，仍可使用包管理和设置。",
+  chatAuthRequired: "当前模型未配置凭据。请登录提供商后再发送消息。",
+  chatAuthRequiredProvider: "“{provider}” 未配置凭据。登录后即可发送消息。",
+  chatAuthOpenProviders: "打开提供商设置",
+  chatAuthDismiss: "关闭",
   chatPackageReconcileRequired: "继续对话前，请先在包管理页面协调包状态。",
   chatPackageReloadRequired: "继续对话前，请先在包管理页面重新加载包资源。",
   chatNoSession: "请从侧边栏创建或打开一个会话。",
@@ -614,6 +622,7 @@ export const zh: Record<MessageKey, string> = {
   composerBuiltinTree: "浏览会话树（切换分支）",
   composerBuiltinFork: "从之前的用户消息创建新分叉",
   composerBuiltinExport: "将会话导出到文件（默认 HTML）",
+  composerBuiltinLogin: "登录模型提供商（打开设置 → 提供商）",
   composerBuiltinInstructionsHint: "[说明]",
   composerImageTooLarge: "图片过大（最大 {max} MB）",
   composerFileTooLarge: "{name}：文件过大（最大 {max} KB）",
@@ -652,6 +661,7 @@ export const zh: Record<MessageKey, string> = {
   composerExportUsage: "用法：/export [html|jsonl]",
   composerSendFailed: "发送失败",
   composerPromptFailed: "提交提示失败",
+  composerLoginGuidance: "PiDeck 在设置中管理凭据——请选择提供商并登录。",
   composerAbortFailed: "停止失败",
   composerRemoveFile: "移除文件",
   composerRemoveNamedFile: "移除 {name}",

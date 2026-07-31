@@ -31,6 +31,7 @@ import {
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES,
   type AttachmentSnapshot,
+  type JsonValue,
   type SerializableImage,
 } from "@pideck/protocol";
 import { buildAttachedFileBlock } from "./transcript-model";
@@ -226,6 +227,7 @@ function builtinCompletionItems(t: Translate): CompletionItem[] {
     tree: "composerBuiltinTree",
     fork: "composerBuiltinFork",
     export: "composerBuiltinExport",
+    login: "composerBuiltinLogin",
   } as const;
   return BUILTIN_COMMANDS.map((command) => ({
     insert: `/${command.name} `,
@@ -313,6 +315,8 @@ export function Composer({
   const setSession = useAppStore((s) => s.applySessionSnapshot);
   const setSessionDraft = useAppStore((s) => s.setSessionDraft);
   const pushNotification = useAppStore((s) => s.pushNotification);
+  const openSettingsSection = useAppStore((s) => s.openSettingsSection);
+  const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
   const [images, setImages] = useState<PendingImage[]>([]);
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [documents, setDocuments] = useState<PendingDocument[]>([]);
@@ -1139,6 +1143,16 @@ export function Composer({
       }
       return;
     }
+    if (builtin?.name === "login") {
+      // The Pi CLI's /login has no meaning here — without this interception it
+      // would go to the model as plain text and, in the no-credentials case,
+      // echo back the same "run /login" guidance forever.
+      setSessionDraft(session.sessionId, "");
+      setCompletion(null);
+      openSettingsSection("providers");
+      pushNotification(t("composerLoginGuidance"), "info");
+      return;
+    }
 
     const value = text;
     const sentImages = images;
@@ -1172,6 +1186,27 @@ export function Composer({
       documentsRef.current = sentDocuments;
       setDocuments(sentDocuments);
     };
+    // AUTH_REQUIRED gets the persistent banner (with a Providers-settings
+    // path) instead of a vanishing toast; anything else keeps the toast.
+    const handleSendFailure = (
+      error: { code: string; message: string; details?: JsonValue } | undefined,
+      fallback: string,
+    ) => {
+      if (error?.code === "AUTH_REQUIRED") {
+        const details = error.details;
+        setAuthBlocked({
+          providerId:
+            details && typeof details === "object" && !Array.isArray(details)
+              ? typeof details.providerId === "string"
+                ? details.providerId
+                : null
+              : null,
+        });
+      } else {
+        pushNotification(error?.message ?? fallback, "error");
+      }
+      restoreDraft();
+    };
 
     try {
       if (busy) {
@@ -1182,8 +1217,7 @@ export function Composer({
           ...attachmentParams,
         });
         if (!res.ok) {
-          pushNotification(res.error?.message ?? t("composerSendFailed"), "error");
-          restoreDraft();
+          handleSendFailure(res.error, t("composerSendFailed"));
         }
         return;
       }
@@ -1195,8 +1229,10 @@ export function Composer({
         null,
       );
       if (!res.ok) {
-        pushNotification(res.error?.message ?? t("composerPromptFailed"), "error");
-        restoreDraft();
+        handleSendFailure(res.error, t("composerPromptFailed"));
+      } else {
+        // An accepted prompt means credentials resolved; drop any stale banner.
+        setAuthBlocked(null);
       }
     } catch (error) {
       pushNotification(

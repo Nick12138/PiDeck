@@ -74,6 +74,12 @@ export const en = {
   generalShellAutomatic: "Automatic",
   generalShellUnavailable: "{id} (unavailable)",
   generalDetectShells: "Detect shells again",
+  generalAdvancedGroup: "More settings",
+  generalAdvancedDesc:
+    "Pi reads advanced options from settings.json in the agent directory — for example httpProxy, compaction, retry, and npmCommand. Open the file to edit it by hand.",
+  generalAdvancedOpenFile: "Open settings.json",
+  generalAdvancedRestartHint: "Changes take effect after restarting the Host.",
+  notifSettingsFileOpenFailed: "Couldn't open the settings file",
 
   // Host section
   hostSubtitle: "Pi Host runtime, capabilities, and app info",
@@ -542,7 +548,11 @@ export const en = {
   chatSelectWorkspaceHint: "Use the folder picker in the sidebar.",
   chatWorkspaceServicesNotReady: "Workspace services are not ready.",
   chatAuthRequired:
-    "Authentication required. Configure credentials in the Pi agent directory ({agentDir}). Chat is disabled; Packages and Settings remain available.",
+    "The current model has no credentials. Sign in to a provider to send messages.",
+  chatAuthRequiredProvider:
+    "No credentials configured for “{provider}”. Sign in to send messages.",
+  chatAuthOpenProviders: "Open Providers settings",
+  chatAuthDismiss: "Dismiss",
   chatPackageReconcileRequired:
     "Package state must be reconciled from the Packages page before chat can continue.",
   chatPackageReloadRequired:
@@ -647,6 +657,7 @@ export const en = {
   composerBuiltinTree: "Navigate session tree (switch branches)",
   composerBuiltinFork: "Create a new fork from a previous user message",
   composerBuiltinExport: "Export session to a file (HTML default)",
+  composerBuiltinLogin: "Sign in to a model provider (opens Settings → Providers)",
   composerBuiltinInstructionsHint: "[instructions]",
   composerImageTooLarge: "Image too large (max {max} MB)",
   composerFileTooLarge: "{name}: file too large (max {max} KB)",
@@ -687,6 +698,8 @@ export const en = {
   composerExportUsage: "Usage: /export [html|jsonl]",
   composerSendFailed: "Send failed",
   composerPromptFailed: "Prompt failed",
+  composerLoginGuidance:
+    "PiDeck manages credentials in Settings — choose a provider and sign in there.",
   composerAbortFailed: "Abort failed",
   composerRemoveFile: "Remove file",
   composerRemoveNamedFile: "Remove {name}",

@@ -303,6 +303,67 @@ describe("agent.prompt startup", () => {
   });
 });
 
+describe("agent.prompt auth preflight", () => {
+  function authFixture(checkAuth: ReturnType<typeof vi.fn>) {
+    const fixture = stableHandlerFixture(Promise.resolve());
+    (fixture.session as unknown as { model?: unknown }).model = {
+      provider: "anthropic",
+      id: "claude-sonnet-4",
+    };
+    (fixture.factory as unknown as { deps: unknown }).deps = {
+      modelRuntime: { checkAuth },
+    };
+    return fixture;
+  }
+
+  it("rejects with AUTH_REQUIRED when the current model provider has no credentials", async () => {
+    const checkAuth = vi.fn().mockResolvedValue(undefined);
+    const fixture = authFixture(checkAuth);
+
+    const outcome = await createAgentHandlers(fixture.factory)["agent.prompt"]!({
+      id: "prompt-no-auth",
+      context: {},
+      params: { text: "hello" },
+    } as never);
+
+    expect("error" in outcome).toBe(true);
+    if (!("error" in outcome)) return;
+    expect(outcome.error.code).toBe("AUTH_REQUIRED");
+    expect(outcome.error.details).toEqual({ providerId: "anthropic" });
+    expect(checkAuth).toHaveBeenCalledWith("anthropic");
+    expect(fixture.session.prompt).not.toHaveBeenCalled();
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+  });
+
+  it("sends when credentials resolve (stored, config, or env-provided)", async () => {
+    const checkAuth = vi.fn().mockResolvedValue({ source: "env", type: "api_key" });
+    const fixture = authFixture(checkAuth);
+
+    const outcome = await createAgentHandlers(fixture.factory)["agent.prompt"]!({
+      id: "prompt-auth-ok",
+      context: {},
+      params: { text: "hello" },
+    } as never);
+
+    expect("result" in outcome).toBe(true);
+    await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
+  });
+
+  it("sends when the auth check itself fails — a probe error is not a credential verdict", async () => {
+    const checkAuth = vi.fn().mockRejectedValue(new Error("probe offline"));
+    const fixture = authFixture(checkAuth);
+
+    const outcome = await createAgentHandlers(fixture.factory)["agent.prompt"]!({
+      id: "prompt-auth-probe-failed",
+      context: {},
+      params: { text: "hello" },
+    } as never);
+
+    expect("result" in outcome).toBe(true);
+    await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
+  });
+});
+
 describe("agent.prompt extension command provenance", () => {
   it("scopes the accepted run id and invocation to the registered command handler", async () => {
     const gate = deferred();

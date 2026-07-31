@@ -26,6 +26,14 @@ describe("matchBuiltinCommand", () => {
     });
   });
 
+  it("matches /login so the CLI-era command is intercepted locally", () => {
+    expect(matchBuiltinCommand("/login")).toEqual({ name: "login" });
+    expect(matchBuiltinCommand("/login anthropic")).toEqual({
+      name: "login",
+      args: "anthropic",
+    });
+  });
+
   it("rejects unknown commands and non-command text", () => {
     expect(matchBuiltinCommand("/compactx")).toBeNull();
     expect(matchBuiltinCommand("/unknown")).toBeNull();

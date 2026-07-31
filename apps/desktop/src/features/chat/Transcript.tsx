@@ -426,7 +426,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
     return (
       <div className="flex items-start gap-3">
         <CircleAlert className="mt-1 size-5 shrink-0 text-danger" />
-        <div className="min-w-0 flex-1 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <div className="min-w-0 flex-1 whitespace-pre-wrap break-words rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">
           {row.copyText}
         </div>
       </div>

@@ -304,8 +304,18 @@ function resetExtensionTerminal(state: {
   };
 }
 
+export type SettingsSection = "general" | "providers" | "packages" | "usage" | "host";
+
 export type AppState = EpochState & {
   page: NavPage;
+  /** Section the Settings overlay should open on (null = default "general"). */
+  settingsSection: SettingsSection | null;
+  /**
+   * Set when agent.prompt is rejected with AUTH_REQUIRED: the chat banner
+   * points at Settings → Providers. Cleared on dismiss, on the next accepted
+   * prompt, and when the provider config revision moves (login/logout/save).
+   */
+  authBlocked: { providerId: string | null } | null;
   desktopSettings: DesktopSettings | null;
   extensionUiRequest: ExtensionUiRequestState | null;
   extensionUiQueue: ExtensionUiRequestState[];
@@ -338,6 +348,8 @@ export type AppState = EpochState & {
   applyProviderLoginEvent: (payload: HostEventPayloadMap["provider.loginEvent"]) => void;
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
+  openSettingsSection: (section: SettingsSection) => void;
+  setAuthBlocked: (blocked: { providerId: string | null } | null) => void;
   setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
   beginHostEpoch: (host: HostStatusSnapshot) => void;
@@ -389,6 +401,14 @@ export type AppState = EpochState & {
   dismissNotification: (id: string) => void;
   clearNotifications: () => void;
   setHostFatal: (msg: string | null) => void;
+  /**
+   * Settle into a terminal Host failure: record the fatal message and stop
+   * connecting/rehydrating/desync so `startupSettled` can flip true, the
+   * startup screen lifts, and the Host-unavailable panel (with its
+   * Settings → Restart Host guidance) becomes reachable. Local epoch state is
+   * kept so the user retains workspace/session context behind the panel.
+   */
+  settleHostFailure: (message: string) => void;
   setConnecting: (v: boolean) => void;
   setRehydrating: (v: boolean) => void;
   markDesynchronized: (reason: string) => void;
@@ -420,6 +440,8 @@ function epochSlice(s: AppState): EpochState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
+  settingsSection: null,
+  authBlocked: null,
   ...emptyEpoch(),
   desktopSettings: null,
   extensionUiRequest: null,
@@ -527,7 +549,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       page,
       ...(page !== state.page ? { extensionWidgetsOpen: false } : {}),
+      // Closing Settings (back to chat) drops the section request so the next
+      // open lands on the default section again.
+      ...(page === "chat" ? { settingsSection: null } : {}),
     })),
+  openSettingsSection: (section) =>
+    set({ page: "settings", settingsSection: section, extensionWidgetsOpen: false }),
+  setAuthBlocked: (authBlocked) => set({ authBlocked }),
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
   beginHostEpoch: (host) => {
@@ -1026,6 +1054,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   clearNotifications: () => set({ notifications: [] }),
   setHostFatal: (hostFatal) => set({ hostFatal }),
+  settleHostFailure: (message) =>
+    set({
+      hostFatal: message,
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+      desyncReason: undefined,
+    }),
   setConnecting: (connecting) => set({ connecting }),
   setRehydrating: (rehydrating) => set({ rehydrating }),
 

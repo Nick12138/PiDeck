@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAppStore } from "../lib/stores/app-store";
+import { useAppStore, type SettingsSection } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
 import { createTauriTransport } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
@@ -47,7 +47,7 @@ import {
 } from "../lib/chat/extension-terminal-bus";
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
 
-function SettingsOverlay({ section }: { section: "general" | "packages" }) {
+function SettingsOverlay({ section }: { section: SettingsSection }) {
   const t = useT();
   const setPage = useAppStore((s) => s.setPage);
   const [active, setActive] = useState(false);
@@ -217,9 +217,8 @@ export function handleHostEvent(
       const message = event.payload.error?.message ?? "Host fatal";
       const summary = summarizeHostFailure(message);
       console.error("[pi-host] fatal", message);
-      store.setHostFatal(summary);
+      store.settleHostFailure(summary);
       store.pushNotification(`Host unavailable: ${summary}`, "error");
-      store.setConnecting(false);
       break;
     }
     case "workspace.changed":
@@ -516,6 +515,7 @@ export function handleHostEvent(
 export function App() {
   const windowControlsPlatform = resolveWindowControlsPlatform();
   const page = useAppStore((s) => s.page);
+  const settingsSection = useAppStore((s) => s.settingsSection);
   const settingsOverlayOpen = page !== "chat";
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
@@ -818,9 +818,12 @@ export function App() {
 
               if (lastError && !pendingRecoveryHostId && !cancelled) {
                 const message = lastError instanceof Error ? lastError.message : String(lastError);
-                useAppStore.getState().setHostFatal(message);
+                // Recovery gave up: settle into the terminal failure state so
+                // the startup screen lifts (desynchronized would otherwise pin
+                // startupSettled=false forever) and the fatal panel's
+                // Settings → Restart Host path becomes reachable.
+                useAppStore.getState().settleHostFailure(message);
                 useAppStore.getState().pushNotification(`Host recovery failed: ${message}`, "error");
-                useAppStore.getState().setConnecting(false);
               }
             }
           })().finally(() => {
@@ -991,7 +994,9 @@ export function App() {
         <RightDock />
       </div>
       {settingsOverlayOpen && (
-        <SettingsOverlay section={page === "packages" ? "packages" : "general"} />
+        <SettingsOverlay
+          section={page === "packages" ? "packages" : (settingsSection ?? "general")}
+        />
       )}
       <ExtensionUiModal />
       {startupVisible && (
