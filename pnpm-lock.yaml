@@ -173,6 +173,9 @@ importers:
       turndown:
         specifier: 7.2.4
         version: 7.2.4
+      undici:
+        specifier: 8.5.0
+        version: 8.5.0
       yauzl:
         specifier: 3.4.0
         version: 3.4.0

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAppStore } from "../../lib/stores/app-store";
+import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import { applyTheme } from "../../lib/theme";
 import {
   ArrowLeft,
@@ -14,7 +14,7 @@ import type {
   ExtensionDecisionPresentation,
   TerminalProfileId,
 } from "@pideck/protocol";
-import { Dialog } from "../../components/Dialog";
+import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
@@ -28,6 +28,7 @@ import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
+import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 
 type ShellProfileSummary = {
@@ -44,10 +45,25 @@ type ShellProfileCatalog = {
 function GeneralSettings() {
   const t = useT();
   const desktopSettings = useAppStore((s) => s.desktopSettings);
+  const host = useAppStore((s) => s.host);
+  const pushNotification = useAppStore((s) => s.pushNotification);
   const [shellCatalog, setShellCatalog] = useState<ShellProfileCatalog | null>(null);
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
   const [decisionPresentationSaving, setDecisionPresentationSaving] = useState(false);
+
+  async function openSettingsFile() {
+    if (!host?.agentDir) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("desktop_open_path", { path: `${host.agentDir}/settings.json` });
+    } catch (err) {
+      pushNotification(
+        err instanceof Error ? err.message : t("notifSettingsFileOpenFailed"),
+        "error",
+      );
+    }
+  }
 
   async function loadShellProfiles() {
     setShellCatalogLoading(true);
@@ -349,13 +365,32 @@ function GeneralSettings() {
           </div>
         </section>
 
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAdvancedGroup")}</h2>
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={secondaryButton}
+                disabled={!host?.agentDir}
+                onClick={() => void openSettingsFile()}
+              >
+                {t("generalAdvancedOpenFile")}
+              </button>
+              <RestartHostButton />
+            </div>
+            <p className="text-xs text-muted">{t("generalAdvancedRestartHint")}</p>
+          </div>
+        </section>
+
       </div>
       </div>
     </div>
   );
 }
 
-export type SettingsSection = "general" | "providers" | "packages" | "usage" | "host";
+export type { SettingsSection };
 
 const SETTINGS_NAV: Array<{
   id: SettingsSection;

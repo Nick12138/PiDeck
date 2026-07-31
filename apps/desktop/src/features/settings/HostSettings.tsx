@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
-import { hostClient } from "../../lib/bridge/host-client";
-import { Dialog, secondaryButton } from "../../components/Dialog";
+import { secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { getAppVersion } from "../../lib/app-version";
 import { checkForAppUpdate, type AppUpdate } from "../../lib/updater";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
+import { RestartHostButton } from "./restart-host";
 
 const CAPABILITY_LABELS: Record<string, MessageKey> = {
   packageUpdateCheck: "hostCapPackageUpdateCheck",
@@ -27,7 +27,6 @@ export function HostSettings() {
   const host = useAppStore((s) => s.host);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [confirmRestart, setConfirmRestart] = useState(false);
   const [updatePhase, setUpdatePhase] = useState<UpdatePhase>({ state: "idle" });
 
   useEffect(() => {
@@ -96,21 +95,6 @@ export function HostSettings() {
     }
   }
 
-  async function restartHost() {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      useAppStore.getState().setHostFatal(null);
-      useAppStore.getState().setConnecting(true);
-      hostClient.rejectAllPending("manual Host restart");
-      await invoke("pi_host_restart");
-      pushNotification(t("notifHostRestarted"));
-    } catch (err) {
-      useAppStore.getState().setConnecting(false);
-      useAppStore.getState().setHostFatal(err instanceof Error ? err.message : String(err));
-      pushNotification(t("notifHostRestartFailed"), "error");
-    }
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SectionHeader title={t("navHost")} subtitle={t("hostSubtitle")} />
@@ -165,13 +149,9 @@ export function HostSettings() {
                 </button>
               </div>
               <div className="mt-3 border-t border-border pt-3">
-                <button
-                  type="button"
+                <RestartHostButton
                   className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`}
-                  onClick={() => setConfirmRestart(true)}
-                >
-                  {t("hostRestart")}
-                </button>
+                />
                 <p className="mt-1.5 text-xs text-muted">{t("hostRestartCaption")}</p>
               </div>
             </div>
@@ -241,20 +221,6 @@ export function HostSettings() {
           </section>
         </div>
       </div>
-      {confirmRestart && (
-        <Dialog
-          title={t("hostRestartDialogTitle")}
-          confirmLabel={t("hostRestart")}
-          tone="warning"
-          onCancel={() => setConfirmRestart(false)}
-          onConfirm={() => {
-            setConfirmRestart(false);
-            void restartHost();
-          }}
-        >
-          <p>{t("hostRestartDialogBody")}</p>
-        </Dialog>
-      )}
     </div>
   );
 }

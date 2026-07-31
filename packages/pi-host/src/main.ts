@@ -39,6 +39,7 @@ import { ExtensionProviderOwnership } from "./extension-provider-ownership.js";
 import { refreshModelsLocal } from "./model-runtime-refresh.js";
 import { ensureMigrationBackup, MIGRATION_ID } from "./migration-backup.js";
 import { migrateLegacyPideckData } from "./pideck-data.js";
+import { applyHostNetworkSettings, ensureGlobalSettingsFile } from "./network-bootstrap.js";
 import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
@@ -133,6 +134,12 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
 async function main(): Promise<void> {
   const agentDir = resolveAgentDir();
   mkdirSync(agentDir, { recursive: true });
+
+  // Synchronous, before any network activity: proxy/idle-timeout from global
+  // settings (never applied by the SDK on the library path) and a guaranteed
+  // settings file for the desktop "Open settings.json" affordance.
+  ensureGlobalSettingsFile(agentDir);
+  applyHostNetworkSettings(agentDir);
 
   logger.info("Starting Pi Host", {
     agentDir,
