@@ -34,6 +34,7 @@ import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
 import { subscribeTreePanel } from "../lib/dock-tree";
 import { useT } from "../lib/i18n/use-t";
+import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
   | "files"
@@ -167,6 +168,7 @@ export function RightDock() {
   const addMenuRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const dockWidthRef = useRef(dockWidth);
+  const visibleTabIdsRef = useRef<DockTabId[]>([]);
   dockWidthRef.current = dockWidth;
   browserTabsRef.current = browserTabs;
 
@@ -255,6 +257,27 @@ export function RightDock() {
     tabOrder,
     activeTab,
     visibleTabLimit,
+  );
+  visibleTabIdsRef.current = visibleTabIds;
+
+  useEffect(
+    () =>
+      subscribeDockCommands((request) => {
+        if (request.kind === "toggle") {
+          const open = !useAppStore.getState().dockOpen;
+          setDockOpen(open);
+          setSidebarPref("pideck.dock.open", open);
+          return;
+        }
+        const tabId = visibleTabIdsRef.current[request.index];
+        if (!tabId) return;
+        setActiveTab(tabId);
+        if (!useAppStore.getState().dockOpen) {
+          setDockOpen(true);
+          setSidebarPref("pideck.dock.open", true);
+        }
+      }),
+    [setDockOpen],
   );
 
   const toggle = () => {

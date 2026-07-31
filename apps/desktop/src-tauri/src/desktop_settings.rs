@@ -367,7 +367,9 @@ mod tests {
         assert_eq!(reloaded.settings.language.as_deref(), Some("zh"));
 
         let mut cleared = reloaded;
-        cleared.patch(serde_json::json!({ "language": null })).unwrap();
+        cleared
+            .patch(serde_json::json!({ "language": null }))
+            .unwrap();
         assert_eq!(cleared.settings.language, None);
     }
 

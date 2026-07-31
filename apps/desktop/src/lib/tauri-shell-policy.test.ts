@@ -7,6 +7,14 @@ describe("Tauri shell-open policy", () => {
     shell?: { open?: unknown };
   };
 
+  it("grants IPC only to the configured local development origin", () => {
+    const build = tauriConfig.build as { devUrl?: unknown };
+    const remote = capability.remote as { urls?: unknown } | undefined;
+
+    expect(build.devUrl).toBe("http://127.0.0.1:1420");
+    expect(remote?.urls).toEqual([`${build.devUrl}/*`]);
+  });
+
   it("enforces HTTP and HTTPS through the shell plugin config", () => {
     expect(plugins.shell?.open).toBe("https?://\\S+");
   });

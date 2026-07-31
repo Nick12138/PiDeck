@@ -8,9 +8,10 @@ mod tests {
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
         build_shutdown_line, drain_complete_lines, extract_host_instance_id, finish_monitor_task,
-        is_current_child_generation, push_stderr_tail, read_bounded_lossy_line,
-        read_bounded_utf8_line, should_auto_restart, strip_verbatim_prefix, write_host_stdin,
-        AutoRestartEpoch, HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
+        is_current_child_generation, is_executable_file, node_executable_name,
+        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
+        should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
+        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
         MAX_HOST_STDOUT_LINE_BYTES,
     };
     use std::path::PathBuf;
@@ -204,6 +205,38 @@ rl.on('line', (line) => {
         assert_eq!(p, PathBuf::from(r"C:\foo\bar.js"));
         let unc = strip_verbatim_prefix(PathBuf::from(r"\\?\UNC\server\share"));
         assert_eq!(unc, PathBuf::from(r"\\server\share"));
+    }
+
+    #[test]
+    fn bundled_node_candidates_match_the_target_platform() {
+        let expected = if cfg!(windows) { "node.exe" } else { "node" };
+        assert_eq!(node_executable_name(), expected);
+        for candidate in node_runtime_candidates(std::path::Path::new("runtime")) {
+            assert_eq!(
+                candidate.file_name().and_then(|name| name.to_str()),
+                Some(expected)
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_node_candidate_must_be_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path =
+            std::env::temp_dir().join(format!("pideck-node-candidate-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"fixture").expect("write candidate");
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("make candidate non-executable");
+        assert!(!is_executable_file(&path));
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("make candidate executable");
+        assert!(is_executable_file(&path));
+
+        std::fs::remove_file(path).expect("remove candidate");
     }
 
     #[test]

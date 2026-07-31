@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { AlertTriangle, PackageOpen } from "lucide-react";
+import { AlertTriangle, PackageOpen, type LucideIcon } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
@@ -26,6 +26,8 @@ export function Dialog({
   children,
   confirmLabel,
   tone = "default",
+  icon: Icon = PackageOpen,
+  showCancel = true,
   onCancel,
   onConfirm,
 }: {
@@ -33,6 +35,8 @@ export function Dialog({
   children: ReactNode;
   confirmLabel: string;
   tone?: DialogTone;
+  icon?: LucideIcon;
+  showCancel?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -90,7 +94,7 @@ export function Dialog({
       >
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
-            {tone === "default" ? <PackageOpen size={18} /> : <AlertTriangle size={18} />}
+            {tone === "default" ? <Icon size={18} /> : <AlertTriangle size={18} />}
           </div>
           <div className="min-w-0 flex-1">
             <h2 id="app-dialog-title" className="text-base font-semibold">{title}</h2>
@@ -98,7 +102,9 @@ export function Dialog({
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className={secondaryButton} onClick={onCancel}>{t("commonCancel")}</button>
+          {showCancel && (
+            <button type="button" className={secondaryButton} onClick={onCancel}>{t("commonCancel")}</button>
+          )}
           <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
             {confirmLabel}
           </button>

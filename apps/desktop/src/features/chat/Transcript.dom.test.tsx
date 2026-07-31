@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
+import { MenuHost } from "../../components/Menu";
 
 const SESSION_A = "33333333-3333-4333-8333-333333333333";
 const SESSION_B = "44444444-4444-4444-8444-444444444444";
@@ -100,6 +102,7 @@ describe("Transcript Session-open scrolling", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    delete (navigator as { clipboard?: Clipboard }).clipboard;
     useAppStore.setState({ session: null, desktopSettings: null });
   });
 
@@ -144,5 +147,41 @@ describe("Transcript Session-open scrolling", () => {
     act(() => useAppStore.setState({ session: session(SESSION_B, "Second Session") }));
     flushFrames();
     expect(scroll.scrollTop).toBe(1_700);
+  });
+
+  it("opens a row context menu and copies the complete message", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+    fireEvent.contextMenu(container.querySelector(".transcript-row")!, {
+      clientX: 24,
+      clientY: 32,
+    });
+    await user.click(await screen.findByRole("menuitem", { name: "Copy message" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First Session"));
+  });
+
+  it("leaves development Shift-right-click available for the native menu", () => {
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+    fireEvent.contextMenu(container.querySelector(".transcript-row")!, {
+      clientX: 24,
+      clientY: 32,
+      shiftKey: true,
+    });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

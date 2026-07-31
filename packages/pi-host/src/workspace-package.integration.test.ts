@@ -37,7 +37,11 @@ class HostProcess {
       process.execPath,
       ["--import", "tsx", hostEntry, `--agent-dir=${agentDir}`],
       {
-        env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+        env: {
+          ...process.env,
+          PI_CODING_AGENT_DIR: agentDir,
+          PIDECK_TEST_FAUX: "1",
+        },
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
@@ -235,7 +239,10 @@ describe("package + workspace integration", () => {
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, "auth.json"), "{}");
     writeFileSync(join(agentDir, "models.json"), "{}");
-    writeFileSync(join(agentDir, "settings.json"), "{}");
+    writeFileSync(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ defaultProvider: "pideck-faux", defaultModel: "pideck-core" }),
+    );
 
     host = new HostProcess(agentDir);
     await host.waitForEvent("host.ready");
@@ -817,8 +824,8 @@ describe("package + workspace integration", () => {
     expect(snap.sessionId).toBeTruthy();
     expect(snap.tools.revision).toBe(1);
 
-    // Real agent.prompt path on shipped Host — accepts and returns runId.
-    // Model may fail without auth; that surfaces as agent.event, not request failure.
+    // Real agent.prompt path on the shipped Host accepts and returns a runId.
+    // The test-only faux transport keeps the detached run deterministic and offline.
     const prompt = await host.request(
       "agent.prompt",
       {

@@ -1,4 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
+import { readClipboardText } from "../../lib/desktop-clipboard";
 
 type ClipboardSurface = Pick<Terminal, "hasSelection" | "getSelection" | "paste">;
 
@@ -24,7 +25,12 @@ export function terminalClipboardKeyHandler(args: {
   clipboard?: Pick<Clipboard, "readText" | "writeText">;
 }): (event: KeyboardEvent) => boolean {
   const { terminal, isMac } = args;
-  const clipboard = args.clipboard ?? navigator.clipboard;
+  const readText = args.clipboard
+    ? () => args.clipboard!.readText()
+    : readClipboardText;
+  const writeText = args.clipboard
+    ? (text: string) => args.clipboard!.writeText(text)
+    : (text: string) => navigator.clipboard.writeText(text);
   return (event) => {
     if (event.type !== "keydown" || isMac) return true;
     const { code, ctrlKey, shiftKey } = event;
@@ -33,14 +39,13 @@ export function terminalClipboardKeyHandler(args: {
     if (shiftKey && code === "KeyC") {
       event.preventDefault();
       if (terminal.hasSelection()) {
-        void clipboard.writeText(terminal.getSelection()).catch(() => undefined);
+        void writeText(terminal.getSelection()).catch(() => undefined);
       }
       return false;
     }
     if (code === "KeyV") {
       event.preventDefault();
-      void clipboard
-        .readText()
+      void readText()
         .then((text) => {
           if (text) terminal.paste(text);
         })
@@ -49,7 +54,7 @@ export function terminalClipboardKeyHandler(args: {
     }
     if (!shiftKey && code === "KeyC" && terminal.hasSelection()) {
       event.preventDefault();
-      void clipboard.writeText(terminal.getSelection()).catch(() => undefined);
+      void writeText(terminal.getSelection()).catch(() => undefined);
       return false;
     }
     return true;

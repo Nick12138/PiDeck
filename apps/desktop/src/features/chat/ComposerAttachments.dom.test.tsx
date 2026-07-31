@@ -12,6 +12,7 @@ import type {
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Composer } from "./Composer";
+import { MenuHost } from "../../components/Menu";
 
 const desktopMocks = vi.hoisted(() => ({
   pick: vi.fn(),
@@ -145,6 +146,7 @@ describe("Composer managed documents", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     cleanup();
+    delete (navigator as { clipboard?: Clipboard }).clipboard;
   });
 
   it("refreshes parsing state, gates send, and submits only the attachment ID", async () => {
@@ -213,6 +215,42 @@ describe("Composer managed documents", () => {
         ([method, , params]) => method === "agent.prompt" && JSON.stringify(params).includes(pasted),
       ),
     ).toBe(false);
+  });
+
+  it("pastes small clipboard text as a managed attachment from the context menu", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "attachment.createText") {
+        return { ok: true, result: textAttachment("parsing") } as never;
+      }
+      if (method === "attachment.get") {
+        return { ok: true, result: textAttachment("ready") } as never;
+      }
+      return { ok: true, result: null } as never;
+    });
+    const clipboardText = "Short clipboard note";
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue(clipboardText) },
+    });
+    render(
+      <>
+        <Composer />
+        <MenuHost />
+      </>,
+    );
+    fireEvent.contextMenu(screen.getByRole("textbox"), { clientX: 18, clientY: 24 });
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Paste as attachment" }),
+    );
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "attachment.createText",
+        expect.objectContaining({ expectedSessionId: SESSION_ID }),
+        { text: clipboardText },
+        120_000,
+      ),
+    );
   });
 
   it("keeps smaller pastes inline and measures multibyte text in UTF-8 bytes", async () => {

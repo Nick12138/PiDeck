@@ -16,7 +16,7 @@ pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 pub(crate) const APP_EXIT_HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
 
 #[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 #[cfg(unix)]
@@ -853,23 +853,16 @@ impl PiHostManager {
     fn resolve_node(app: &AppHandle) -> Result<PathBuf, String> {
         // Release: only bundled runtime under resource_dir / next to exe — no PATH/global.
         if let Ok(res_dir) = app.path().resource_dir() {
-            for candidate in [
-                res_dir.join("node").join("node.exe"),
-                res_dir.join("node").join("node"),
-                res_dir.join("resources").join("node").join("node.exe"),
-            ] {
-                if candidate.exists() {
+            for candidate in node_runtime_candidates(&res_dir) {
+                if is_executable_file(&candidate) {
                     return Ok(candidate);
                 }
             }
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                for candidate in [
-                    dir.join("node").join("node.exe"),
-                    dir.join("resources").join("node").join("node.exe"),
-                ] {
-                    if candidate.exists() {
+                for candidate in node_runtime_candidates(dir) {
+                    if is_executable_file(&candidate) {
                         return Ok(candidate);
                     }
                 }
@@ -1199,7 +1192,14 @@ impl PiHostManager {
                                     let _ = tx.send(Ok(hid));
                                 }
                             }
-                            let _ = app_out.emit("pi-host-stdout", payload);
+                            let is_hello_response = payload.contains("\"method\":\"system.hello\"");
+                            let emitted = app_out.emit("pi-host-stdout", payload);
+                            if is_hello_response {
+                                eprintln!(
+                                    "[pideck] system.hello response emitted to WebView: {}",
+                                    emitted.is_ok()
+                                );
+                            }
                         }
                         Err(error) if is_host_line_too_long(&error) => {
                             let message = format!("Pi Host stdout frame dropped: {error}");
@@ -1433,6 +1433,9 @@ impl PiHostManager {
         } else {
             format!("{line}\n")
         };
+        if payload.contains("\"method\":\"system.hello\"") {
+            eprintln!("[pideck] writing system.hello request to Host");
+        }
         let result =
             write_host_stdin(&mut *guard, payload.as_bytes(), HOST_STDIN_WRITE_TIMEOUT).await;
         drop(guard);
@@ -1721,25 +1724,59 @@ fn staged_host_is_runnable(main_js: &Path) -> bool {
             .exists()
 }
 
+pub(crate) fn node_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "node.exe"
+    } else {
+        "node"
+    }
+}
+
+pub(crate) fn node_runtime_candidates(base: &Path) -> [PathBuf; 2] {
+    let executable = node_executable_name();
+    [
+        base.join("node").join(executable),
+        base.join("resources").join("node").join(executable),
+    ]
+}
+
+pub(crate) fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 fn which_node() -> Result<PathBuf, ()> {
     // Try PATH
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {
-            for name in ["node.exe", "node"] {
-                let candidate = dir.join(name);
-                if candidate.is_file() {
-                    return Ok(candidate);
-                }
+            let candidate = dir.join(node_executable_name());
+            if is_executable_file(&candidate) {
+                return Ok(candidate);
             }
         }
     }
     // Common nvm4w / fnm locations on this machine class
-    for candidate in [
-        PathBuf::from(r"C:\nvm4w\nodejs\node.exe"),
-        PathBuf::from(r"C:\Program Files\nodejs\node.exe"),
-    ] {
-        if candidate.is_file() {
-            return Ok(candidate);
+    #[cfg(windows)]
+    {
+        for candidate in [
+            PathBuf::from(r"C:\nvm4w\nodejs\node.exe"),
+            PathBuf::from(r"C:\Program Files\nodejs\node.exe"),
+        ] {
+            if is_executable_file(&candidate) {
+                return Ok(candidate);
+            }
         }
     }
     Err(())

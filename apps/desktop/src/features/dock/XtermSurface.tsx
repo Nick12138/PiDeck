@@ -2,6 +2,12 @@ import { useEffect, useRef } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 import { terminalClipboardKeyHandler } from "./terminal-clipboard";
+import { ClipboardCopy, ClipboardPaste, Eraser, TextSelect } from "lucide-react";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
+import { useT } from "../../lib/i18n/use-t";
+import { formatCommandChord } from "../../lib/commands/keymap";
+import { readClipboardText } from "../../lib/desktop-clipboard";
 
 type Cleanup = () => void | Promise<void>;
 
@@ -38,6 +44,8 @@ export function XtermSurface({
   cursorBlink = true,
   connect,
 }: XtermSurfaceProps) {
+  const t = useT();
+  const isMac = resolveWindowControlsPlatform() === "macos";
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -79,7 +87,7 @@ export function XtermSurface({
       terminal.attachCustomKeyEventHandler(
         terminalClipboardKeyHandler({
           terminal,
-          isMac: resolveWindowControlsPlatform() === "macos",
+          isMac,
         }),
       );
       terminal.open(container);
@@ -145,6 +153,54 @@ export function XtermSurface({
     <div
       ref={containerRef}
       className={`${visible ? "flex" : "hidden"} min-h-0 flex-1 pl-2 pt-2`}
+      onContextMenu={(event) => {
+        if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const terminal = terminalRef.current;
+        openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          trigger: contextMenuTrigger(event.target),
+          items: [
+            {
+              id: "terminal.copy",
+              label: t("menuCopy"),
+              icon: ClipboardCopy,
+              chordHint: formatCommandChord("mod+c", isMac),
+              disabled: !terminal?.hasSelection(),
+              onSelect: () =>
+                terminal?.hasSelection()
+                  ? navigator.clipboard.writeText(terminal.getSelection())
+                  : undefined,
+            },
+            {
+              id: "terminal.paste",
+              label: t("menuPaste"),
+              icon: ClipboardPaste,
+              chordHint: formatCommandChord("mod+v", isMac),
+              onSelect: async () => {
+                const text = await readClipboardText();
+                if (text) terminal?.paste(text);
+              },
+            },
+            {
+              id: "terminal.selectAll",
+              label: t("menuSelectAll"),
+              icon: TextSelect,
+              chordHint: formatCommandChord("mod+a", isMac),
+              separatorBefore: true,
+              onSelect: () => terminal?.selectAll(),
+            },
+            {
+              id: "terminal.clear",
+              label: t("menuClearTerminal"),
+              icon: Eraser,
+              onSelect: () => terminal?.clear(),
+            },
+          ],
+        });
+      }}
     />
   );
 }

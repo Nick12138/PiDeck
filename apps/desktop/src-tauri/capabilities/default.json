@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Default capabilities for PiDeck",
   "webviews": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:1420/*"]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-minimize",
@@ -17,6 +20,7 @@
     "core:window:allow-outer-position",
     "core:window:allow-scale-factor",
     "core:window:allow-current-monitor",
+    "clipboard-manager:allow-read-text",
     "dialog:default",
     "shell:allow-open",
     "updater:default",

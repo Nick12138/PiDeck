@@ -4,6 +4,9 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  Copy,
+  FileOutput,
+  FolderOpen,
   MessageCircleQuestion,
   MoreHorizontal,
   Pencil,
@@ -48,6 +51,11 @@ import {
   type SessionRuntimeState,
 } from "../../lib/stores/session-catalog";
 import { useImeComposition } from "../../lib/use-ime-composition";
+import { createNewSession } from "../../lib/commands/actions";
+import { subscribeSessionSearchFocus } from "../../lib/commands/events";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
+import { requestExport } from "../../lib/export-actions";
 
 export type SessionFilter = "active" | "archived";
 
@@ -220,6 +228,7 @@ export function SessionList({
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<SessionFilter>("active");
   const [controlsOpen, setControlsOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -395,11 +404,21 @@ export function SessionList({
     const request = ++mutationRequest.current;
     setSessionMutationPending(true);
     try {
-      await requestFreshSession(request);
+      await createNewSession();
     } finally {
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
   }
+
+  useEffect(
+    () =>
+      subscribeSessionSearchFocus(() => {
+        if (collapsed) onToggleCollapsed?.();
+        setControlsOpen(true);
+        requestAnimationFrame(() => requestAnimationFrame(() => searchInputRef.current?.focus()));
+      }),
+    [collapsed, onToggleCollapsed],
+  );
 
   /** Create and adopt a fresh session; false when it failed or the request was superseded. */
   async function requestFreshSession(request: number): Promise<boolean> {
@@ -956,6 +975,7 @@ export function SessionList({
               className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
             />
             <input
+              ref={searchInputRef}
               type="search"
               aria-label={t("sessionsSearchAria")}
               placeholder={t("sessionsSearchPlaceholder")}
@@ -1028,6 +1048,114 @@ export function SessionList({
               className={`group flex h-9 items-center rounded-md text-[13px] ${
                 active ? "bg-surface-overlay text-foreground" : "hover:bg-surface-overlay/70"
               }`}
+              onContextMenu={(event) => {
+                if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest("input, textarea, [contenteditable='true']")
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                setMenuSessionId(null);
+                setMenuPosition(null);
+                openContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  trigger: contextMenuTrigger(event.target),
+                  items: [
+                    {
+                      id: "session.open",
+                      label: t("menuOpenSession"),
+                      disabled:
+                        item.archived ||
+                        !item.sessionPath ||
+                        sessionMutationPending ||
+                        sessionOpenBlocked,
+                      onSelect: () => openSession(item.sessionPath),
+                    },
+                    {
+                      id: "session.rename",
+                      label: t("sessionsRename"),
+                      icon: Pencil,
+                      disabled: !canRename,
+                      onSelect: () => beginRename(item),
+                    },
+                    {
+                      id: "session.pin",
+                      label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
+                      icon: pinned ? PinOff : Pin,
+                      onSelect: () => togglePinnedSession(item),
+                    },
+                    {
+                      id: item.archived ? "session.restore" : "session.archive",
+                      label: item.archived ? t("sessionsRestore") : t("sessionsArchive"),
+                      icon: item.archived ? ArchiveRestore : Archive,
+                      separatorBefore: true,
+                      disabled: !item.archived && !canArchive,
+                      onSelect: () =>
+                        runSessionFileAction(
+                          item.archived ? "session.restore" : "session.archive",
+                          item,
+                        ),
+                    },
+                    {
+                      id: "session.exportHtml",
+                      label: t("statsExportHtml"),
+                      icon: FileOutput,
+                      disabled: !active || !session?.isIdle,
+                      onSelect: () => requestExport("html"),
+                    },
+                    {
+                      id: "session.exportJsonl",
+                      label: t("statsExportJsonl"),
+                      icon: FileOutput,
+                      disabled: !active || !session?.isIdle,
+                      onSelect: () => requestExport("jsonl"),
+                    },
+                    {
+                      id: "session.reveal",
+                      label: t("menuRevealSession"),
+                      icon: FolderOpen,
+                      separatorBefore: true,
+                      onSelect: async () => {
+                        try {
+                          const { invoke } = await import("@tauri-apps/api/core");
+                          await invoke("desktop_open_path", {
+                            path: item.sessionPath,
+                            mode: "reveal",
+                          });
+                        } catch {
+                          pushNotification(t("sessionsRevealFailed"), "warning");
+                        }
+                      },
+                    },
+                    {
+                      id: "session.copyPath",
+                      label: t("menuCopySessionPath"),
+                      icon: Copy,
+                      onSelect: async () => {
+                        try {
+                          await navigator.clipboard.writeText(item.sessionPath);
+                          pushNotification(t("sessionsPathCopied"), "info");
+                        } catch {
+                          pushNotification(t("sessionsCopyPathFailed"), "warning");
+                        }
+                      },
+                    },
+                    {
+                      id: "session.delete",
+                      label: t("commonDelete"),
+                      icon: Trash2,
+                      danger: true,
+                      separatorBefore: true,
+                      disabled: !canDelete,
+                      onSelect: () => setConfirmAction({ kind: "delete", item }),
+                    },
+                  ],
+                });
+              }}
             >
               {editing ? (
                 <form

@@ -24,11 +24,12 @@ Landed behavior updates these pages in the same change.
 5. [Extension presentation](./architecture/extension-presentation.md)
 6. [Packages & workspaces](./architecture/packages-workspaces.md)
 7. [Pi settings files](./architecture/pi-settings.md)
-8. [Source map](./architecture/source-map.md)
-9. [P0 scope and verification](./operations/p0-scope.md)
-10. [Development](./operations/development.md)
-11. [Release](./operations/release.md)
-12. [Remediation / completion report](./operations/remediation-report.md)
+8. [Commands, shortcuts, and context menus](./architecture/commands-and-menus.md)
+9. [Source map](./architecture/source-map.md)
+10. [P0 scope and verification](./operations/p0-scope.md)
+11. [Development](./operations/development.md)
+12. [Release](./operations/release.md)
+13. [Remediation / completion report](./operations/remediation-report.md)
 
 ## Document index
 
@@ -40,6 +41,7 @@ Landed behavior updates these pages in the same change.
 | [architecture/chat-runtime.md](./architecture/chat-runtime.md) | Current | Session, chat, tools, Extension UI |
 | [architecture/extension-presentation.md](./architecture/extension-presentation.md) | Current | Cross-Extension transcript presentation and inline requests |
 | [architecture/packages-workspaces.md](./architecture/packages-workspaces.md) | Current | Workspace loading, packages, resources |
+| [architecture/commands-and-menus.md](./architecture/commands-and-menus.md) | Current | Command registry, keyboard dispatch, and context-menu ownership |
 | [architecture/source-map.md](./architecture/source-map.md) | Current | Feature → source paths + gating scripts |
 | [operations/p0-scope.md](./operations/p0-scope.md) | Authoritative | Product P0/P1/P2 scope, acceptance evidence, verification layers |
 | [operations/p0-status.json](./operations/p0-status.json) | Machine-readable | Tracked implementation readiness and accepted-claim state |

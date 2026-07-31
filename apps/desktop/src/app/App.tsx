@@ -46,6 +46,7 @@ import {
   pushExtensionTerminalFrame,
 } from "../lib/chat/extension-terminal-bus";
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
+import { CommandLayer } from "../lib/commands/CommandLayer";
 
 function SettingsOverlay({ section }: { section: SettingsSection }) {
   const t = useT();
@@ -999,6 +1000,7 @@ export function App() {
         />
       )}
       <ExtensionUiModal />
+      <CommandLayer />
       {startupVisible && (
         <StartupScreen
           stage={startupStage}

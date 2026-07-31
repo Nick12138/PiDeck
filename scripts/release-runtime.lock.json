@@ -36,7 +36,7 @@
   },
   "pnpmLock": {
     "path": "pnpm-lock.yaml",
-    "sha256": "4bcca5e812d0ac551c53f85758e11040d4729f6aed7ef700acf87f628c5ba99d"
+    "sha256": "04f24b2cccebf3aa50d5fbfac4f8dd94b814128a59ff83e3dae373435879b2db"
   },
   "hostProductionDeps": {
     "strategy": "pnpm-deploy-from-frozen-lockfile",

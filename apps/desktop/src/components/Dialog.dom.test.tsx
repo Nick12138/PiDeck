@@ -29,6 +29,27 @@ describe("Dialog", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("supports a single-action informational mode while keeping Escape dismissal", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    render(
+      <Dialog
+        title="Reference"
+        confirmLabel="Close"
+        showCancel={false}
+        onCancel={onCancel}
+        onConfirm={vi.fn()}
+      >
+        <p>Body</p>
+      </Dialog>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   it("ignores an Escape a layer above already consumed", async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();

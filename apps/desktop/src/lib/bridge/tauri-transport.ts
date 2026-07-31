@@ -5,39 +5,37 @@ import type { HostTransport } from "./host-client";
  * when Tauri APIs are unavailable.
  */
 export async function createTauriTransport(): Promise<HostTransport> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const { listen } = await import("@tauri-apps/api/event");
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return createMockTransport();
 
-    const handlers = new Set<(line: string) => void>();
+  const { listen } = await import("@tauri-apps/api/event");
+  const handlers = new Set<(line: string) => void>();
 
-    const unlistenStdout = await listen<string>("pi-host-stdout", (event) => {
-      for (const h of handlers) h(event.payload);
-    });
+  const unlistenStdout = await listen<string>("pi-host-stdout", (event) => {
+    for (const h of handlers) h(event.payload);
+  });
 
-    const unlistenStderr = await listen<string>("pi-host-stderr", (event) => {
-      console.debug("[pi-host]", event.payload);
-    });
+  const unlistenStderr = await listen<string>("pi-host-stderr", (event) => {
+    console.debug("[pi-host]", event.payload);
+  });
 
-    return {
-      send: async (line: string) => {
-        await invoke("pi_host_send", { line });
-      },
-      onMessage: (handler) => {
-        handlers.add(handler);
-        return () => handlers.delete(handler);
-      },
-      dispose: () => {
-        handlers.clear();
-        unlistenStdout();
-        unlistenStderr();
-      },
-    };
-  } catch {
-    // Browser fallback — no real host
-    return createMockTransport();
-  }
+  return {
+    send: async (line: string) => {
+      await invoke("pi_host_send", { line });
+    },
+    onMessage: (handler) => {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
+    dispose: () => {
+      handlers.clear();
+      unlistenStdout();
+      unlistenStderr();
+    },
+  };
 }
+
+const BROWSER_MOCK_HOST_ID = "00000000-0000-4000-8000-000000000004";
 
 function createMockTransport(): HostTransport {
   const handlers = new Set<(line: string) => void>();
@@ -48,7 +46,7 @@ function createMockTransport(): HostTransport {
         if (req.method === "system.hello") {
           const response = {
             protocolVersion: 1,
-            hostInstanceId: "browser-mock",
+            hostInstanceId: BROWSER_MOCK_HOST_ID,
             workspaceId: null,
             workspaceRevision: 0,
             sessionId: null,
@@ -59,7 +57,7 @@ function createMockTransport(): HostTransport {
             ok: true,
             result: {
               protocolVersion: 1,
-              hostInstanceId: "browser-mock",
+              hostInstanceId: BROWSER_MOCK_HOST_ID,
               workspaceId: null,
               workspaceRevision: 0,
               sessionId: null,

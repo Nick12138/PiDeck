@@ -3,6 +3,7 @@ import {
   Bug,
   CircleAlert,
   CircleCheck,
+  ClipboardPaste,
   FileText,
   FolderSearch,
   LoaderCircle,
@@ -62,6 +63,10 @@ import {
   pickDesktopAttachmentPaths,
   readDesktopSmallFile,
 } from "../../lib/desktop-file-access";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
+import { buildTextContextMenuItems } from "../../lib/text-context-menu";
+import { readClipboardText } from "../../lib/desktop-clipboard";
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
@@ -1028,6 +1033,56 @@ export function Composer({
     }
   }
 
+  function pasteTextAsAttachment(
+    pastedText: string,
+    selectionStart: number,
+    selectionEnd: number,
+  ): boolean {
+    const sizeBytes = utf8ByteLength(pastedText);
+    if (pastedText.trim().length === 0 || pastedText.includes("\u0000")) {
+      pushNotification(t("composerPastedTextInvalid"), "warning");
+      return false;
+    }
+    if (sizeBytes > MAX_PASTED_TEXT_ATTACHMENT_BYTES) {
+      pushNotification(
+        t("composerPastedTextTooLarge", {
+          max: Math.round(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 1024 / 1024),
+        }),
+        "warning",
+      );
+      return false;
+    }
+    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
+      pushNotification(
+        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
+        "warning",
+      );
+      return false;
+    }
+    const totalBytes = documentsRef.current.reduce(
+      (total, document) => total + document.sizeBytes,
+      sizeBytes,
+    );
+    if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
+      pushNotification(
+        t("composerDocumentTotalTooLarge", {
+          max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
+        }),
+        "warning",
+      );
+      return false;
+    }
+    if (!session) return false;
+    void addPastedText({
+      sessionId: session.sessionId,
+      text: pastedText,
+      draft: text,
+      selectionStart,
+      selectionEnd,
+    });
+    return true;
+  }
+
   function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const pastedFiles = [...event.clipboardData.items]
       .filter((item) => item.kind === "file")
@@ -1044,49 +1099,9 @@ export function Composer({
     if (sizeBytes < PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES) return;
 
     event.preventDefault();
-    if (pastedText.trim().length === 0 || pastedText.includes("\u0000")) {
-      pushNotification(t("composerPastedTextInvalid"), "warning");
-      return;
-    }
-    if (sizeBytes > MAX_PASTED_TEXT_ATTACHMENT_BYTES) {
-      pushNotification(
-        t("composerPastedTextTooLarge", {
-          max: Math.round(MAX_PASTED_TEXT_ATTACHMENT_BYTES / 1024 / 1024),
-        }),
-        "warning",
-      );
-      return;
-    }
-    if (documentsRef.current.length >= MAX_AGENT_REQUEST_ATTACHMENTS) {
-      pushNotification(
-        t("composerDocumentLimit", { max: MAX_AGENT_REQUEST_ATTACHMENTS }),
-        "warning",
-      );
-      return;
-    }
-    const totalBytes = documentsRef.current.reduce(
-      (total, document) => total + document.sizeBytes,
-      sizeBytes,
-    );
-    if (totalBytes > MAX_AGENT_REQUEST_ATTACHMENT_BYTES) {
-      pushNotification(
-        t("composerDocumentTotalTooLarge", {
-          max: Math.round(MAX_AGENT_REQUEST_ATTACHMENT_BYTES / 1024 / 1024),
-        }),
-        "warning",
-      );
-      return;
-    }
-    if (!session) return;
     const selectionStart = event.currentTarget.selectionStart ?? text.length;
     const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
-    void addPastedText({
-      sessionId: session.sessionId,
-      text: pastedText,
-      draft: text,
-      selectionStart,
-      selectionEnd,
-    });
+    pasteTextAsAttachment(pastedText, selectionStart, selectionEnd);
   }
 
   async function send() {
@@ -1485,7 +1500,10 @@ export function Composer({
         ) : null}
         <div className="relative">
           {completion && (
-            <div className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg">
+            <div
+              data-composer-completion
+              className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+            >
               {completion.items.map((item, index) => (
                 <button
                   key={`${item.label}:${index}`}
@@ -1531,6 +1549,31 @@ export function Composer({
             }}
             onBlur={() => setCompletion(null)}
             onPaste={handleComposerPaste}
+            onContextMenu={(event) => {
+              if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const selectionStart = event.currentTarget.selectionStart ?? text.length;
+              const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
+              openContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                trigger: contextMenuTrigger(event.target),
+                items: buildTextContextMenuItems(event.currentTarget, t, [
+                  {
+                    id: "composer.pasteAsAttachment",
+                    label: t("menuPasteAsAttachment"),
+                    icon: ClipboardPaste,
+                    separatorBefore: true,
+                    disabled: disabled || !session,
+                    onSelect: async () => {
+                      const pastedText = await readClipboardText();
+                      pasteTextAsAttachment(pastedText, selectionStart, selectionEnd);
+                    },
+                  },
+                ]),
+              });
+            }}
             onCompositionStart={ime.onCompositionStart}
             onCompositionEnd={ime.onCompositionEnd}
             onKeyDown={(event) => {

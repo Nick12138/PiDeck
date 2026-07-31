@@ -50,6 +50,8 @@ import {
   type TranscriptBlock,
   type TranscriptRow,
 } from "./transcript-model";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 
 const MarkdownMessage = lazy(() =>
   import("./MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
@@ -266,7 +268,45 @@ export function Transcript() {
           {visibleRows.map((row) => {
             const streaming = row.key === streamingAssistantKey;
             return (
-              <div className="transcript-row" key={`${session?.sessionId ?? "session"}:${row.key}`}>
+              <div
+                className="transcript-row"
+                key={`${session?.sessionId ?? "session"}:${row.key}`}
+                onContextMenu={(event) => {
+                  if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const selection = window.getSelection();
+                  const selectedText = selection?.toString() ?? "";
+                  const selectionInside = Boolean(
+                    selectedText &&
+                      selection?.rangeCount &&
+                      selection.getRangeAt(0).intersectsNode(event.currentTarget),
+                  );
+                  openContextMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    trigger: contextMenuTrigger(event.target),
+                    items: [
+                      ...(selectionInside
+                        ? [{
+                            id: "transcript.copySelection",
+                            label: t("menuCopySelection"),
+                            icon: Copy,
+                            onSelect: () => navigator.clipboard.writeText(selectedText),
+                          }]
+                        : []),
+                      {
+                        id: "transcript.copyMessage",
+                        label: t("menuCopyMessage"),
+                        icon: Copy,
+                        separatorBefore: selectionInside,
+                        disabled: !row.copyText,
+                        onSelect: () => navigator.clipboard.writeText(row.copyText),
+                      },
+                    ],
+                  });
+                }}
+              >
                 <TranscriptRowView
                   row={row}
                   mode={streaming ? "streaming" : "static"}

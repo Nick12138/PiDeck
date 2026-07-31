@@ -109,7 +109,9 @@ impl BrowserSurfaceManager {
         let bounds = bounds.validate()?;
         let url = parse_browser_url(raw_url)?;
         if let Some(webview) = self.surfaces.get(surface_id) {
-            webview.set_bounds(bounds.rect()).map_err(|error| error.to_string())?;
+            webview
+                .set_bounds(bounds.rect())
+                .map_err(|error| error.to_string())?;
             if visible {
                 webview.show()
             } else {
@@ -125,7 +127,9 @@ impl BrowserSurfaceManager {
             });
         }
         if self.surfaces.len() >= MAX_BROWSER_SURFACES {
-            return Err(format!("At most {MAX_BROWSER_SURFACES} browser surfaces are allowed"));
+            return Err(format!(
+                "At most {MAX_BROWSER_SURFACES} browser surfaces are allowed"
+            ));
         }
 
         let window = app
@@ -219,11 +223,7 @@ impl BrowserSurfaceManager {
         .map_err(|error| error.to_string())
     }
 
-    pub fn set_bounds(
-        &self,
-        surface_id: &str,
-        bounds: BrowserSurfaceBounds,
-    ) -> Result<(), String> {
+    pub fn set_bounds(&self, surface_id: &str, bounds: BrowserSurfaceBounds) -> Result<(), String> {
         self.get(surface_id)?
             .set_bounds(bounds.validate()?.rect())
             .map_err(|error| error.to_string())
@@ -269,7 +269,9 @@ mod tests {
     fn accepts_only_browser_safe_urls() {
         assert_eq!(parse_browser_url("").unwrap().as_str(), "about:blank");
         assert_eq!(
-            parse_browser_url("https://example.com/path").unwrap().scheme(),
+            parse_browser_url("https://example.com/path")
+                .unwrap()
+                .scheme(),
             "https"
         );
         assert!(parse_browser_url("file:///etc/passwd").is_err());
