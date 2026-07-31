@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Terminal } from "@xterm/xterm";
+import { resolveWindowControlsPlatform } from "../../components/WindowControls";
+import { terminalClipboardKeyHandler } from "./terminal-clipboard";
 
 type Cleanup = () => void | Promise<void>;
 
@@ -74,6 +76,12 @@ export function XtermSurface({
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);
+      terminal.attachCustomKeyEventHandler(
+        terminalClipboardKeyHandler({
+          terminal,
+          isMac: resolveWindowControlsPlatform() === "macos",
+        }),
+      );
       terminal.open(container);
       terminalRef.current = terminal;
       fitRef.current = () => {
