@@ -912,6 +912,60 @@ describe("extension-ui-bridge", () => {
     binding.cleanup();
   });
 
+  it("passes commandContextActions through to bindExtensions", async () => {
+    let received: { commandContextActions?: unknown } | undefined;
+    const session = {
+      bindExtensions: async (bindings: { commandContextActions?: unknown }) => {
+        received = bindings;
+      },
+    };
+    const commandContextActions = { marker: "host-actions" };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => undefined,
+      getIdentity: () => id,
+      commandContextActions: commandContextActions as never,
+    });
+
+    expect(received?.commandContextActions).toBe(commandContextActions);
+    binding.cleanup();
+  });
+
+  it("surfaces extension handler errors via extensionUi.notification", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    let onError: ((error: {
+      extensionPath: string;
+      event: string;
+      error: string;
+    }) => void) | undefined;
+    const session = {
+      bindExtensions: async (bindings: { onError?: typeof onError }) => {
+        onError = bindings.onError;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const publish = await binding.activate();
+    publish();
+
+    expect(onError).toBeTypeOf("function");
+    onError!({
+      extensionPath: "/packages/handoff/extensions/index.ts",
+      event: "session_start",
+      error: "boom",
+    });
+
+    const notification = events.find((event) => event.e === "extensionUi.notification");
+    expect(notification).toBeDefined();
+    expect(notification?.p).toMatchObject({ level: "error" });
+    const message = (notification?.p as { message: string }).message;
+    expect(message).toContain("index.ts");
+    expect(message).toContain("session_start");
+    expect(message).toContain("boom");
+    binding.cleanup();
+  });
+
   it("clears a prior same-key widget when a replacement factory fails", () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({

@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSession,
+  ExtensionCommandContextActions,
+} from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
   type HostError,
@@ -147,6 +150,7 @@ export type SessionRuntimeCacheContext = {
   getServer: () => PiHostServer | null;
   getCurrentRunId: () => string | null;
   sessionPathsEqual: (left: string | undefined, right: string) => boolean;
+  getCommandContextActions?: (session: AgentSession) => ExtensionCommandContextActions;
 };
 
 export class SessionRuntimeCache {
@@ -531,6 +535,7 @@ export class SessionRuntimeCache {
         runtime.extensionsResult,
         server,
         candidateIdentity,
+        this.context.getCommandContextActions?.(runtime.agentSession),
       );
       await withoutImplicitPackageInstall(() => runtime.agentSession.reload());
       signal?.throwIfAborted();

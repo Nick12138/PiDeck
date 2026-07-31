@@ -1,5 +1,8 @@
 import { resolve as pathResolve } from "node:path";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSession,
+  ExtensionCommandContextActions,
+} from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
   type HostError,
@@ -10,6 +13,7 @@ import {
 } from "@pideck/protocol";
 import type { PiHostServer } from "./server.js";
 import { activateOnce } from "./extension-ui-lifecycle.js";
+import { createExtensionCommandContextActions } from "./extension-command-actions.js";
 import {
   SessionRuntimeCache,
   type ActiveSessionState,
@@ -55,6 +59,7 @@ export class WorkspaceGraphFactory {
       getServer: () => this.server,
       getCurrentRunId: () => this.currentRunId,
       sessionPathsEqual: (left, right) => this.sessionPathsEqual(left, right),
+      getCommandContextActions: (session) => this.extensionCommandContextActions(session),
     });
     this.workspaceLifecycle = new WorkspaceLifecycle(
       {
@@ -65,9 +70,15 @@ export class WorkspaceGraphFactory {
         },
         getServer: () => this.server,
         onModelHealthChanged: () => this.onModelHealthChanged?.(),
+        getCommandContextActions: (session) => this.extensionCommandContextActions(session),
       },
       this.sessionRuntimeCache,
     );
+  }
+
+  /** ctx.newSession()/fork()/navigateTree()/switchSession()/reload() for one bound session. */
+  extensionCommandContextActions(session: AgentSession): ExtensionCommandContextActions {
+    return createExtensionCommandContextActions({ factory: this, session });
   }
 
   bindServer(server: PiHostServer): void {

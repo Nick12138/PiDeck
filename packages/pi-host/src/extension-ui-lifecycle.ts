@@ -1,4 +1,7 @@
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSession,
+  ExtensionCommandContextActions,
+} from "@earendil-works/pi-coding-agent";
 import type { HostIdentity } from "@pideck/protocol";
 import {
   bindExtensionUi,
@@ -19,6 +22,7 @@ export function bindForCandidate(
   extensionsResult: unknown,
   server: PiHostServer,
   candidateIdentity: HostIdentity,
+  commandContextActions?: ExtensionCommandContextActions,
 ): Promise<ExtensionUiBinding> {
   return bindExtensionUi(session, extensionsResult, {
     emit: (event, payload) =>
@@ -29,6 +33,7 @@ export function bindForCandidate(
     getCurrentIdentity: () => server.getIdentity(),
     getExtensionDecisionPresentation: () =>
       server.getExtensionDecisionPresentation(),
+    ...(commandContextActions !== undefined ? { commandContextActions } : {}),
   });
 }
 

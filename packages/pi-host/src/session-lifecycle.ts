@@ -435,6 +435,12 @@ export async function createSession(
   factory: WorkspaceGraphFactory,
   requestId: string,
   name?: string,
+  options?: {
+    /** SDK newSession parity: restart the fresh manager's lineage from this parent. */
+    parentSession?: string;
+    /** Runs before the session is built, so setup-written entries are present from the start. */
+    setup?: (sessionManager: SessionManager) => Promise<void>;
+  },
 ): Promise<SessionSnapshot | { error: HostError }> {
   const server = factory.server;
   const g = factory.graph;
@@ -479,8 +485,14 @@ export async function createSession(
     const prev = captureActiveSessionState(g, server.identity);
 
     const sessionManager = SessionManager.create(g.canonicalCwd);
+    if (options?.parentSession) {
+      sessionManager.newSession({ parentSession: options.parentSession });
+    }
     if (name) {
       sessionManager.appendSessionInfo(name);
+    }
+    if (options?.setup) {
+      await options.setup(sessionManager);
     }
     await Promise.resolve(factory.deps.refreshModelHealth());
     factory.onModelHealthChanged?.();
@@ -514,6 +526,7 @@ export async function createSession(
         extensionsResult,
         server,
         candidateIdentity,
+        factory.extensionCommandContextActions(session),
       );
       extensionUiActivate = extensionUiBinding.activate;
       extensionUiCleanup = extensionUiBinding.cleanup;
@@ -820,6 +833,7 @@ export async function openSession(
         extensionsResult,
         server,
         candidateIdentity,
+        factory.extensionCommandContextActions(session),
       );
       const candidateExtensionUiActivate = extensionUiBinding.activate;
       candidateExtensionUiCleanup = extensionUiBinding.cleanup;

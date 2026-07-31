@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
 import type {
   AgentSession,
+  ExtensionCommandContextActions,
   ExtensionUIContext,
   KeybindingsManager as SdkKeybindingsManager,
   Theme,
@@ -168,6 +169,13 @@ export type ExtensionUiBridgeOptions = {
   isDisposed?: () => boolean;
   registerCleanup?: (cleanup: () => void) => void;
   getActiveInvocation?: () => ExtensionInvocationContext | undefined;
+  /**
+   * Host session-lifecycle implementations for ctx.newSession()/fork()/
+   * navigateTree()/switchSession()/reload(). When absent the SDK defaults
+   * silently no-op — callers should always pass these (see
+   * extension-command-actions.ts).
+   */
+  commandContextActions?: ExtensionCommandContextActions;
 };
 
 export type ExtensionUiBinding = {
@@ -1125,6 +1133,25 @@ export async function bindExtensionUi(
       uiContext,
       mode: "rpc",
       invocationRunner: createExtensionInvocationRunner(session),
+      ...(opts.commandContextActions !== undefined
+        ? { commandContextActions: opts.commandContextActions }
+        : {}),
+      onError: (error) => {
+        // Extension handler failures inside agent turns otherwise surface
+        // nowhere — log for diagnostics and notify via the same channel the
+        // frontend already renders as toasts.
+        logger.error("Extension handler failed", {
+          extensionPath: error.extensionPath,
+          event: error.event,
+          error: error.error,
+          stack: error.stack,
+        });
+        const extensionName = error.extensionPath.split(/[\\/]/).pop() ?? error.extensionPath;
+        emit("extensionUi.notification", {
+          message: `Extension error (${extensionName}, ${error.event}): ${error.error}`,
+          level: "error",
+        });
+      },
     })
     .then(() => {
       logger.info("Extension UI bound via bindExtensions({ uiContext, mode: rpc })");

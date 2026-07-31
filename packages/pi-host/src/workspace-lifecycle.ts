@@ -8,6 +8,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type ExtensionCommandContextActions,
 } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
@@ -38,6 +39,7 @@ export type WorkspaceLifecycleContext = {
   setGraph: (graph: WorkspaceGraph | null) => void;
   getServer: () => PiHostServer | null;
   onModelHealthChanged: () => void;
+  getCommandContextActions?: (session: AgentSession) => ExtensionCommandContextActions;
   platform?: NodeJS.Platform;
 };
 
@@ -540,9 +542,21 @@ export class WorkspaceLifecycle {
       // provider would otherwise be attributed to the outgoing workspace.
       const binding = graph.providerOwner
         ? await this.context.deps.providerOwnership.runAsOwner(graph.providerOwner, () =>
-            bindForCandidate(session, graph.extensionsResult, server, candidateIdentity),
+            bindForCandidate(
+              session,
+              graph.extensionsResult,
+              server,
+              candidateIdentity,
+              this.context.getCommandContextActions?.(session),
+            ),
           )
-        : await bindForCandidate(session, graph.extensionsResult, server, candidateIdentity);
+        : await bindForCandidate(
+            session,
+            graph.extensionsResult,
+            server,
+            candidateIdentity,
+            this.context.getCommandContextActions?.(session),
+          );
       graph.extensionUiActivate = binding.activate;
       graph.extensionUiCleanup = binding.cleanup;
       graph.extensionUiUpdateIdentity = binding.updateIdentity;
@@ -793,7 +807,14 @@ export class WorkspaceLifecycle {
       // must land on this candidate workspace, not the outgoing one.
       const extensionUiBinding = await this.context.deps.providerOwnership.runAsOwner(
         providerOwner,
-        () => bindForCandidate(session, extensionsResult, server, candidateIdentity),
+        () =>
+          bindForCandidate(
+            session,
+            extensionsResult,
+            server,
+            candidateIdentity,
+            this.context.getCommandContextActions?.(session),
+          ),
       );
       graph.extensionUiActivate = extensionUiBinding.activate;
       graph.extensionUiCleanup = extensionUiBinding.cleanup;
