@@ -12,7 +12,8 @@ function keyEvent(init: {
     code: init.code,
     ctrlKey: init.ctrlKey ?? false,
     shiftKey: init.shiftKey ?? false,
-  } as KeyboardEvent;
+    preventDefault: vi.fn(),
+  } as unknown as KeyboardEvent;
 }
 
 function surfaceFixture(selection = "") {
@@ -36,44 +37,54 @@ function surfaceFixture(selection = "") {
 describe("terminalClipboardKeyHandler", () => {
   it("copies the selection on Ctrl+C instead of forwarding ^C", () => {
     const { clipboard, terminal, handler } = surfaceFixture("selected output");
+    const event = keyEvent({ code: "KeyC", ctrlKey: true });
 
-    expect(handler(keyEvent({ code: "KeyC", ctrlKey: true }))).toBe(false);
+    expect(handler(event)).toBe(false);
 
+    expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(clipboard.writeText).toHaveBeenCalledWith("selected output");
     expect(terminal.paste).not.toHaveBeenCalled();
   });
 
   it("forwards Ctrl+C as SIGINT when there is no selection", () => {
     const { clipboard, handler } = surfaceFixture();
+    const event = keyEvent({ code: "KeyC", ctrlKey: true });
 
-    expect(handler(keyEvent({ code: "KeyC", ctrlKey: true }))).toBe(true);
+    expect(handler(event)).toBe(true);
+    expect(event.preventDefault).not.toHaveBeenCalled();
     expect(clipboard.writeText).not.toHaveBeenCalled();
   });
 
   it("copies on Ctrl+Shift+C and swallows the no-selection case (no surprise SIGINT)", () => {
     const withSelection = surfaceFixture("selected output");
-    expect(
-      withSelection.handler(keyEvent({ code: "KeyC", ctrlKey: true, shiftKey: true })),
-    ).toBe(false);
+    const withSelectionEvent = keyEvent({ code: "KeyC", ctrlKey: true, shiftKey: true });
+    expect(withSelection.handler(withSelectionEvent)).toBe(false);
+    expect(withSelectionEvent.preventDefault).toHaveBeenCalledOnce();
     expect(withSelection.clipboard.writeText).toHaveBeenCalledWith("selected output");
 
     const withoutSelection = surfaceFixture();
-    expect(
-      withoutSelection.handler(
-        keyEvent({ code: "KeyC", ctrlKey: true, shiftKey: true }),
-      ),
-    ).toBe(false);
+    const withoutSelectionEvent = keyEvent({
+      code: "KeyC",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(withoutSelection.handler(withoutSelectionEvent)).toBe(false);
+    expect(withoutSelectionEvent.preventDefault).toHaveBeenCalledOnce();
     expect(withoutSelection.clipboard.writeText).not.toHaveBeenCalled();
   });
 
   it("pastes clipboard text on Ctrl+V and Ctrl+Shift+V", async () => {
     const { terminal, handler } = surfaceFixture();
+    const ctrlVEvent = keyEvent({ code: "KeyV", ctrlKey: true });
 
-    expect(handler(keyEvent({ code: "KeyV", ctrlKey: true }))).toBe(false);
+    expect(handler(ctrlVEvent)).toBe(false);
+    expect(ctrlVEvent.preventDefault).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("pasted text"));
 
     terminal.paste.mockClear();
-    expect(handler(keyEvent({ code: "KeyV", ctrlKey: true, shiftKey: true }))).toBe(false);
+    const ctrlShiftVEvent = keyEvent({ code: "KeyV", ctrlKey: true, shiftKey: true });
+    expect(handler(ctrlShiftVEvent)).toBe(false);
+    expect(ctrlShiftVEvent.preventDefault).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("pasted text"));
   });
 

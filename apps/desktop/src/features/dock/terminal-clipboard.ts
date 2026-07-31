@@ -31,12 +31,14 @@ export function terminalClipboardKeyHandler(args: {
     if (!ctrlKey) return true;
 
     if (shiftKey && code === "KeyC") {
+      event.preventDefault();
       if (terminal.hasSelection()) {
         void clipboard.writeText(terminal.getSelection()).catch(() => undefined);
       }
       return false;
     }
     if (code === "KeyV") {
+      event.preventDefault();
       void clipboard
         .readText()
         .then((text) => {
@@ -46,6 +48,7 @@ export function terminalClipboardKeyHandler(args: {
       return false;
     }
     if (!shiftKey && code === "KeyC" && terminal.hasSelection()) {
+      event.preventDefault();
       void clipboard.writeText(terminal.getSelection()).catch(() => undefined);
       return false;
     }
