@@ -71,6 +71,22 @@ describe("persistDesktopSettings", () => {
     });
   });
 
+  it("applies shortcut override maps through the browser settings path", async () => {
+    mocks.isTauri.mockReturnValue(false);
+
+    await persistDesktopSettings({
+      shortcutOverrides: {
+        "session.new": "mod+shift+n",
+        "chat.stop": null,
+      },
+    });
+
+    expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toEqual({
+      "session.new": "mod+shift+n",
+      "chat.stop": null,
+    });
+  });
+
   it("accepts a later write after a rejected queued write", async () => {
     mocks.isTauri.mockReturnValue(true);
     mocks.invoke

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -50,6 +51,8 @@ pub struct DesktopSettings {
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcut_overrides: BTreeMap<String, Option<String>>,
 }
 
 impl Default for DesktopSettings {
@@ -66,6 +69,7 @@ impl Default for DesktopSettings {
             terminal_profile: "auto".into(),
             language: None,
             known_workspaces: Vec::new(),
+            shortcut_overrides: BTreeMap::new(),
         }
     }
 }
@@ -371,6 +375,48 @@ mod tests {
             .patch(serde_json::json!({ "language": null }))
             .unwrap();
         assert_eq!(cleared.settings.language, None);
+    }
+
+    #[test]
+    fn validates_and_persists_shortcut_overrides() {
+        let dir = test_dir("shortcut-overrides");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        store
+            .patch(serde_json::json!({
+                "shortcutOverrides": {
+                    "session.new": "mod+shift+n",
+                    "chat.stop": null
+                }
+            }))
+            .unwrap();
+        assert_eq!(
+            store
+                .settings
+                .shortcut_overrides
+                .get("session.new")
+                .and_then(|value| value.as_deref()),
+            Some("mod+shift+n")
+        );
+        assert_eq!(
+            store.settings.shortcut_overrides.get("chat.stop"),
+            Some(&None)
+        );
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            reloaded.settings.shortcut_overrides,
+            store.settings.shortcut_overrides
+        );
+
+        let before = reloaded.settings.shortcut_overrides.clone();
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({
+                "shortcutOverrides": { "session.new": 42 }
+            }))
+            .is_err());
+        assert_eq!(invalid.settings.shortcut_overrides, before);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

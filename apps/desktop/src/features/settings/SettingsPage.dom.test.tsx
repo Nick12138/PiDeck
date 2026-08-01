@@ -90,6 +90,21 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("Host not connected.")).toBeInTheDocument();
   });
 
+  it("offers a persistent Shortcuts section generated from the command registry", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    await user.click(screen.getByRole("button", { name: "Shortcuts" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Keyboard shortcuts" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("New session")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+N")).toBeInTheDocument();
+    expect(screen.getByText("Show keyboard shortcuts")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+/")).toBeInTheDocument();
+  });
+
   it("asks before leaving Providers with unsaved changes and keeps the section on cancel", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="providers" />);

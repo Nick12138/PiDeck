@@ -816,6 +816,8 @@ export type DesktopSettings = {
   language?: "system" | "en" | "zh";
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
+  /** Per-command shortcut overrides. null explicitly disables a command binding. */
+  shortcutOverrides?: Record<string, string | null>;
 };
 
 export type TerminalProfileId =

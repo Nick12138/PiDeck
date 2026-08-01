@@ -34,6 +34,23 @@ order:
 `mod+K` remains unassigned for a command palette. macOS native menu accelerators must
 not duplicate DOM-owned chords; each chord has one owner.
 
+## Shortcut customization
+
+Settings renders editable bindings from the same command registry consumed by the
+global dispatcher and shortcut reference dialog. `DesktopSettings.shortcutOverrides`
+stores only differences from registry defaults: a canonical chord string overrides a
+command, `null` explicitly leaves it unassigned, and a missing key restores its
+default. Reset all writes an empty map. Invalid persisted values fall back to the
+registry default instead of disabling commands unexpectedly.
+
+Recorder input stores the logical `mod` modifier so one setting remains portable:
+it resolves to Command on macOS and Control elsewhere. Letters, digits, and
+punctuation require `mod` or Alt; function keys may stand alone. Escape cancels a
+recording, Delete or Backspace clears the binding, and Tab leaves the recorder.
+Conflicting effective bindings are rejected inline before persistence. While a
+recorder owns focus, the global dispatcher passes its key events through so recording
+cannot execute the command being entered.
+
 ## Context menus
 
 `MenuHost` renders the single open application menu through a portal. It clamps to

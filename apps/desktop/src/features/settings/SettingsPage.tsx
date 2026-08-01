@@ -4,6 +4,7 @@ import { applyTheme } from "../../lib/theme";
 import {
   ArrowLeft,
   ChartColumn,
+  Keyboard,
   KeyRound,
   Package,
   RefreshCw,
@@ -28,6 +29,7 @@ import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
+import { ShortcutsSettings } from "./ShortcutsSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 
@@ -398,6 +400,7 @@ const SETTINGS_NAV: Array<{
   icon: typeof Settings2;
 }> = [
   { id: "general", label: "navGeneral", icon: Settings2 },
+  { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "packages", label: "navPackages", icon: Package },
   { id: "usage", label: "navUsage", icon: ChartColumn },
@@ -474,6 +477,8 @@ export function SettingsPage({
         <div className="flex min-h-0 min-w-0 flex-1">
           {section === "general" ? (
             <GeneralSettings />
+          ) : section === "shortcuts" ? (
+            <ShortcutsSettings />
           ) : section === "providers" ? (
             <ProvidersSettings />
           ) : section === "packages" ? (

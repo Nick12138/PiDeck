@@ -61,6 +61,25 @@ describe("command keymap", () => {
     ).toBe("test");
   });
 
+  it("lets shortcut recorders own captured keys and allows Alt chords in text fields", () => {
+    const recorder = document.createElement("button");
+    recorder.dataset.shortcutRecorder = "true";
+    expect(
+      findMatchingCommand(event("n", { ctrlKey: true }, recorder), [command()], {
+        isMac: false,
+      }),
+    ).toBeNull();
+
+    const input = document.createElement("input");
+    expect(
+      findMatchingCommand(
+        event("n", { altKey: true }, input),
+        [command({ chord: "alt+n" })],
+        { isMac: false },
+      )?.id,
+    ).toBe("test");
+  });
+
   it("limits unmodified Escape to the Composer and blocks it under an overlay", () => {
     const stop = command({
       chord: "escape",
@@ -88,6 +107,8 @@ describe("command keymap", () => {
     expect(formatCommandChord("mod+shift+f", true)).toBe("⌘⇧F");
     expect(formatCommandChord("mod+shift+f", false)).toBe("Ctrl+Shift+F");
     expect(formatCommandChord("escape", false)).toBe("Esc");
+    expect(formatCommandChord("mod+plus", true)).toBe("⌘+");
+    expect(formatCommandChord("alt+arrowup", false)).toBe("Alt+↑");
   });
 
   it("does not bypass dirty Provider navigation from inside Settings", () => {
