@@ -64,6 +64,52 @@ describe("Extension message renderer snapshots", () => {
 const EXTENSION_REQUEST_ID = "00000000-0000-4000-8000-000000000005";
 const RUN_ID = "00000000-0000-4000-8000-000000000006";
 
+describe("compact Assistant message updates", () => {
+  const update = (assistantMessageEvent: unknown) =>
+    validateEventPayload("agent.event", {
+      runId: RUN_ID,
+      event: { type: "message_update", assistantMessageEvent },
+    }).ok;
+
+  it("accepts replayable text, thinking, and tool-call events", () => {
+    expect(update({ type: "text_delta", contentIndex: 0, delta: "hello" })).toBe(true);
+    expect(update({ type: "thinking_end", contentIndex: 1, content: "plan" })).toBe(true);
+    expect(
+      update({ type: "toolcall_start", contentIndex: 2, id: "call-1", name: "read" }),
+    ).toBe(true);
+    expect(
+      update({
+        type: "toolcall_end",
+        contentIndex: 2,
+        toolCall: { type: "toolCall", id: "call-1", name: "read", arguments: {} },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects full snapshots, partial snapshots, invalid indexes, and unknown variants", () => {
+    expect(
+      validateEventPayload("agent.event", {
+        runId: RUN_ID,
+        event: {
+          type: "message_update",
+          message: { role: "assistant", content: "full snapshot" },
+          assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" },
+        },
+      }).ok,
+    ).toBe(false);
+    expect(
+      update({
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "x",
+        partial: { role: "assistant", content: "x" },
+      }),
+    ).toBe(false);
+    expect(update({ type: "text_delta", contentIndex: -1, delta: "x" })).toBe(false);
+    expect(update({ type: "future_delta", contentIndex: 0, delta: "x" })).toBe(false);
+  });
+});
+
 const hostStatus = {
   protocolVersion: 1,
   hostInstanceId: HOST_ID,

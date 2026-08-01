@@ -811,6 +811,21 @@ export type SerializableCompactionResult = {
   [key: string]: JsonValue | undefined;
 };
 
+/** Compact, replayable projection of the SDK's AssistantMessageEvent. */
+export type SerializableAssistantMessageEvent =
+  | { type: "start" }
+  | { type: "text_start"; contentIndex: number }
+  | { type: "text_delta"; contentIndex: number; delta: string }
+  | { type: "text_end"; contentIndex: number; content: string }
+  | { type: "thinking_start"; contentIndex: number }
+  | { type: "thinking_delta"; contentIndex: number; delta: string }
+  | { type: "thinking_end"; contentIndex: number; content: string }
+  | { type: "toolcall_start"; contentIndex: number; id: string; name: string }
+  | { type: "toolcall_delta"; contentIndex: number; delta: string }
+  | { type: "toolcall_end"; contentIndex: number; toolCall: JsonValue }
+  | { type: "done"; reason: string }
+  | { type: "error"; reason: string; errorMessage?: string };
+
 export type SerializableAgentSessionEvent = {
   type: string;
   [key: string]: JsonValue | undefined;
@@ -828,6 +843,8 @@ export type DesktopSettings = {
   terminalProfile: TerminalProfileId;
   /** UI language; "system" (or absent) follows the OS locale. */
   language?: "system" | "en" | "zh";
+  /** Maximum width of the aligned conversation surfaces, in CSS pixels. */
+  conversationContentWidth?: number;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

@@ -91,6 +91,22 @@ See `HOST_EVENT_NAMES` in `packages/protocol/src/events.ts`. Notable:
   transcript events.
 - `extensionUi.customStarted` / `customFrame` / `customClosed` — ui.custom() panels: the host runs a real pi-tui TUI over a virtual terminal (`packages/pi-host/src/virtual-terminal.ts`) and streams its ANSI output as frames; the desktop renders them in an xterm.js dock panel and feeds keyboard input back via `extensionUi.customInput`
 
+### Assistant message streaming
+
+`agent.event` keeps `message_start.message` and `message_end.message` as the
+authoritative Assistant message snapshots. Between those boundaries,
+`message_update` carries only a compact `assistantMessageEvent`: text, thinking,
+and tool-call start/delta/end variants plus stream lifecycle events. The Host
+never forwards the SDK's cumulative `message` or `partial` snapshot on an
+update.
+
+Desktop buffers updates for one animation frame, concatenates only adjacent
+deltas with the same Host/Workspace/Session/Package identity, run id, event
+type, and content index, then applies the frame to one immutable Session draft.
+Start/end events and identity boundaries are never crossed. Streaming tool
+arguments are parsed from their accumulated JSON text for live display; the
+tool-call end and final message snapshot replace that transient state.
+
 ## Runtime validation
 
 `parseHostRequest` in `packages/protocol/src/validate.ts` validates method, context scope (no extra keys), and params. Context scope map: `METHOD_CONTEXT_SCOPE`.

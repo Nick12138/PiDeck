@@ -80,6 +80,10 @@ body,
   box-sizing: border-box;
 }
 
+.conversation-content-width {
+  max-width: min(100%, var(--conversation-content-width, 48rem));
+}
+
 button {
   font: inherit;
   cursor: pointer;

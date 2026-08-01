@@ -1307,7 +1307,7 @@ export function Composer({
       }
     >
       {welcomeWorkspaceName && (
-        <div className="new-conversation-copy mx-auto mb-6 flex max-w-3xl flex-col items-center text-center">
+        <div className="conversation-content-width new-conversation-copy mx-auto mb-6 flex flex-col items-center text-center">
           <PiMark className="mb-4 size-10" />
           <h2 className="max-w-full truncate text-xl font-medium text-foreground">
             {t("composerStartIn", { workspace: welcomeWorkspaceName })}
@@ -1318,7 +1318,7 @@ export function Composer({
       <QueuePanel />
       <div
         ref={extensionWidgetAnchorRef}
-        className="relative mx-auto w-full max-w-3xl"
+        className="conversation-content-width relative mx-auto w-full"
         data-extension-widget-anchor
       >
         <ExtensionStatusStrip />
@@ -1695,7 +1695,7 @@ export function Composer({
       </div>
       {welcomeWorkspaceName && (
         <div
-          className={`mx-auto mt-3 flex min-h-9 w-full max-w-3xl flex-wrap justify-center gap-1.5 ${
+          className={`conversation-content-width mx-auto mt-3 flex min-h-9 w-full flex-wrap justify-center gap-1.5 ${
             hasDraftContent ? "invisible pointer-events-none" : ""
           }`}
           aria-hidden={hasDraftContent || undefined}

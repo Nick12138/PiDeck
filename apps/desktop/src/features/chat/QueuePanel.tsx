@@ -138,7 +138,7 @@ export function QueuePanel() {
     "flex size-6 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-30";
 
   return (
-    <div className="mx-auto mb-1.5 w-full max-w-3xl rounded-lg border border-border bg-surface-raised/80">
+    <div className="conversation-content-width mx-auto mb-1.5 w-full rounded-lg border border-border bg-surface-raised/80">
       <button
         type="button"
         className="flex h-8 w-full items-center gap-2 px-3 text-xs text-muted hover:text-foreground"

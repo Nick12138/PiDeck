@@ -39,7 +39,7 @@ export function InlineExtensionUiRequest() {
       data-extension-ui-surface="inline"
     >
       <div
-        className={`mx-auto max-h-[min(32rem,50dvh)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-md border bg-surface-raised px-3.5 py-3 shadow-sm ${
+        className={`conversation-content-width mx-auto max-h-[min(32rem,50dvh)] w-full overflow-y-auto overscroll-contain rounded-md border bg-surface-raised px-3.5 py-3 shadow-sm ${
           (request?.risk ?? group?.risk) === "high"
             ? "border-warning/40"
             : "border-border"

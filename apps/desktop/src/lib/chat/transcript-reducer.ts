@@ -4,12 +4,15 @@
  */
 import type {
   JsonValue,
+  SerializableAgentContent,
   SerializableSessionEntry,
   SessionSnapshot,
   SerializableAgentMessage,
+  SerializableAssistantMessageEvent,
   HostIdentity,
 } from "@pideck/protocol";
 import { toJsonValue } from "@pideck/protocol";
+import { parse as parsePartialJson } from "partial-json";
 import { isAbortedToolResult } from "./tool-result-status";
 
 type ToolExecutionPart = {
@@ -32,12 +35,7 @@ export type AgentEventEnvelope = {
     type?: string;
     message?: SerializableAgentMessage | { role?: string; content?: unknown };
     delta?: unknown;
-    assistantMessageEvent?: {
-      type?: string;
-      delta?: string;
-      contentIndex?: number;
-      content?: string;
-    };
+    assistantMessageEvent?: SerializableAssistantMessageEvent;
     toolCall?: { name?: string; arguments?: unknown; id?: string };
     toolCallId?: string;
     toolName?: string;
@@ -75,11 +73,76 @@ export function applyAgentEventBatch(
   session: SessionSnapshot | null,
   events: TimedAgentEventEnvelope[],
 ): SessionSnapshot | null {
-  let next = session;
-  for (const event of events) {
-    next = applyAgentEvent(next, event.payload, event.receivedAt);
+  if (!session || events.length === 0) return session;
+  const next = createSessionDraft(session);
+  for (const event of coalesceAgentEventBatch(events)) {
+    applyAgentEventToDraft(next, event.payload, event.receivedAt);
   }
   return next;
+}
+
+export function coalesceAgentEventBatch(
+  events: TimedAgentEventEnvelope[],
+): TimedAgentEventEnvelope[] {
+  const coalesced: TimedAgentEventEnvelope[] = [];
+  let active: {
+    first: TimedAgentEventEnvelope;
+    latest: TimedAgentEventEnvelope;
+    delta: Extract<SerializableAssistantMessageEvent, { delta: string }>;
+    chunks: string[];
+  } | null = null;
+
+  const flushActive = () => {
+    if (!active) return;
+    if (active.chunks.length === 1) {
+      coalesced.push(active.first);
+    } else {
+      coalesced.push({
+        ...active.latest,
+        receivedAt: active.first.receivedAt,
+        payload: {
+          ...active.latest.payload,
+          event: {
+            ...active.latest.payload.event,
+            assistantMessageEvent: {
+              ...active.delta,
+              delta: active.chunks.join(""),
+            },
+          },
+        },
+      });
+    }
+    active = null;
+  };
+
+  for (const event of events) {
+    const currentDelta = assistantDeltaEvent(event);
+    if (
+      active &&
+      currentDelta &&
+      sameTimedAgentEventIdentity(active.latest, event) &&
+      active.latest.payload.runId === event.payload.runId &&
+      active.delta.type === currentDelta.type &&
+      active.delta.contentIndex === currentDelta.contentIndex
+    ) {
+      active.latest = event;
+      active.chunks.push(currentDelta.delta);
+      continue;
+    }
+    flushActive();
+    if (currentDelta) {
+      active = {
+        first: event,
+        latest: event,
+        delta: currentDelta,
+        chunks: [currentDelta.delta],
+      };
+    } else {
+      coalesced.push(event);
+    }
+  }
+  flushActive();
+  return coalesced;
 }
 
 export function applyAgentEvent(
@@ -88,56 +151,65 @@ export function applyAgentEvent(
   eventTime = Date.now(),
 ): SessionSnapshot | null {
   if (!session) return session;
+  const next = createSessionDraft(session);
+  applyAgentEventToDraft(next, payload, eventTime);
+  return next;
+}
+
+function createSessionDraft(session: SessionSnapshot): SessionSnapshot {
+  return { ...session, messages: [...session.messages] };
+}
+
+function applyAgentEventToDraft(
+  next: SessionSnapshot,
+  payload: AgentEventEnvelope,
+  eventTime: number,
+): void {
   const ev = payload.event ?? (payload as unknown as AgentEventEnvelope["event"]);
-  if (!ev || typeof ev !== "object") return session;
+  if (!ev || typeof ev !== "object") return;
 
   const type = String(ev.type ?? "");
-  let next: SessionSnapshot = { ...session, messages: [...session.messages] };
 
   switch (type) {
     case "agent_start":
       // A new run starts before its first message. Close any prior runtime tail
       // so the previous assistant row cannot be mistaken for the new stream.
       next.messages = settleOpenRuntime(next.messages, eventTime);
-      next = { ...next, isStreaming: true, isIdle: false };
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
     case "turn_start":
-      next = { ...next, isStreaming: true, isIdle: false };
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
 
     case "message_start": {
       const msg = normalizeMessage(ev.message);
       if (msg) {
-        next.messages = [
-          ...next.messages,
+        next.messages.push(
           msg.role === "assistant"
             ? { ...msg, startedAt: numericField(msg, "startedAt") ?? eventTime }
             : msg,
-        ];
+        );
       }
-      next = { ...next, isStreaming: true, isIdle: false };
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
     }
 
     case "message_update": {
-      if (ev.message) {
-        const msg = normalizeMessage(ev.message);
-        if (msg) {
-          next.messages = mergeLastAssistant(next.messages, msg, eventTime, false);
-        }
-      }
       if (ev.assistantMessageEvent) {
-        next.messages = appendAssistantContentEvent(
+        appendAssistantContentEventInPlace(
           next.messages,
           ev.assistantMessageEvent,
           eventTime,
-          !ev.message,
         );
-      } else if (!ev.message) {
+      } else {
         const deltaText = extractGenericDelta(ev);
-        if (deltaText) next.messages = appendTextDelta(next.messages, deltaText, eventTime);
+        if (deltaText) appendTextDeltaInPlace(next.messages, deltaText, eventTime);
       }
-      next = { ...next, isStreaming: true, isIdle: false };
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
     }
 
@@ -145,12 +217,11 @@ export function applyAgentEvent(
       const msg = normalizeMessage(ev.message);
       if (msg) {
         if (msg.role === "assistant") {
-          next.messages = mergeLastAssistant(next.messages, msg, eventTime, true);
+          mergeLastAssistantInPlace(next.messages, msg, eventTime, true);
         } else {
           const last = next.messages[next.messages.length - 1];
-          next.messages = last?.role === msg.role
-            ? [...next.messages.slice(0, -1), msg]
-            : [...next.messages, msg];
+          if (last?.role === msg.role) next.messages[next.messages.length - 1] = msg;
+          else next.messages.push(msg);
         }
       }
       break;
@@ -205,8 +276,9 @@ export function applyAgentEvent(
         startedAt: existing?.startedAt ?? eventTime,
         ...(ended ? { endedAt: eventTime } : {}),
       };
-      next.messages = upsertToolExecution(next.messages, toolCallId, part);
-      next = { ...next, isStreaming: true, isIdle: false };
+      upsertToolExecutionInPlace(next.messages, toolCallId, part);
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
     }
 
@@ -217,10 +289,7 @@ export function applyAgentEvent(
       const followUp = Array.isArray((ev as { followUp?: unknown }).followUp)
         ? ((ev as { followUp: string[] }).followUp as string[])
         : next.pending.followUp;
-      next = {
-        ...next,
-        pending: { ...next.pending, steering, followUp },
-      };
+      next.pending = { ...next.pending, steering, followUp };
       break;
     }
 
@@ -234,25 +303,24 @@ export function applyAgentEvent(
       const parentId = typeof entry.parentId === "string" ? entry.parentId : null;
       if (parentId !== (next.leafId ?? null)) break;
       if (next.entries.some((candidate) => candidate.id === entry.id)) break;
-      next = {
-        ...next,
-        entries: [...next.entries, entry],
-        leafId: entry.id,
-      };
+      next.entries = [...next.entries, entry];
+      next.leafId = entry.id;
       break;
     }
 
     case "compaction_start":
-      next = { ...next, isCompacting: true, isIdle: false };
+      next.isCompacting = true;
+      next.isIdle = false;
       break;
     case "compaction_end":
-      next = { ...next, isCompacting: false };
+      next.isCompacting = false;
       break;
     case "auto_retry_start":
-      next = { ...next, isRetrying: true, isIdle: false };
+      next.isRetrying = true;
+      next.isIdle = false;
       break;
     case "auto_retry_end":
-      next = { ...next, isRetrying: false };
+      next.isRetrying = false;
       break;
 
     // The summarization call inside compaction or branch-summary can back off
@@ -261,27 +329,26 @@ export function applyAgentEvent(
     // only signal that the session is waiting on a retry, not stuck.
     case "summarization_retry_scheduled":
     case "summarization_retry_attempt_start":
-      next = { ...next, isRetrying: true, isIdle: false };
+      next.isRetrying = true;
+      next.isIdle = false;
       break;
     case "summarization_retry_finished":
-      next = { ...next, isRetrying: false };
+      next.isRetrying = false;
       break;
 
     case "agent_end":
       // agent_end closes one core-agent run. Pi may still retry, compact, or
       // process a continuation queued by an extension before agent_settled.
-      next = { ...next, isStreaming: true, isIdle: false };
+      next.isStreaming = true;
+      next.isIdle = false;
       break;
 
     case "agent_settled":
       next.messages = settleOpenRuntime(next.messages, eventTime);
-      next = {
-        ...next,
-        isStreaming: false,
-        isIdle: true,
-        isCompacting: false,
-        isRetrying: false,
-      };
+      next.isStreaming = false;
+      next.isIdle = true;
+      next.isCompacting = false;
+      next.isRetrying = false;
       break;
 
     case "error": {
@@ -291,19 +358,38 @@ export function applyAgentEvent(
           : typeof (ev as { message?: unknown }).message === "string"
             ? String((ev as { message: string }).message)
             : "Agent error";
-      next.messages = [
-        ...settleOpenRuntime(next.messages, eventTime),
-        { role: "error", content: errText },
-      ];
-      next = { ...next, isStreaming: false, isIdle: true };
+      next.messages = settleOpenRuntime(next.messages, eventTime);
+      next.messages.push({ role: "error", content: errText });
+      next.isStreaming = false;
+      next.isIdle = true;
       break;
     }
 
     default:
       break;
   }
+}
 
-  return next;
+function assistantDeltaEvent(
+  envelope: TimedAgentEventEnvelope | undefined,
+): Extract<SerializableAssistantMessageEvent, { delta: string }> | null {
+  if (!envelope || envelope.payload.event.type !== "message_update") return null;
+  const event = envelope.payload.event.assistantMessageEvent;
+  return event && "delta" in event ? event : null;
+}
+
+function sameTimedAgentEventIdentity(
+  left: TimedAgentEventEnvelope,
+  right: TimedAgentEventEnvelope,
+): boolean {
+  return (
+    left.hostInstanceId === right.hostInstanceId &&
+    left.workspaceId === right.workspaceId &&
+    left.workspaceRevision === right.workspaceRevision &&
+    left.sessionId === right.sessionId &&
+    left.sessionRevision === right.sessionRevision &&
+    left.packageRevision === right.packageRevision
+  );
 }
 
 function findToolExecution(
@@ -321,27 +407,25 @@ function findToolExecution(
   return null;
 }
 
-function upsertToolExecution(
+function upsertToolExecutionInPlace(
   messages: SerializableAgentMessage[],
   toolCallId: string,
   part: ToolExecutionPart,
-): SerializableAgentMessage[] {
-  const next = [...messages];
-  for (let index = next.length - 1; index >= 0; index -= 1) {
-    const message = next[index];
+): void {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
     if (message?.role !== "tool" || !Array.isArray(message.content)) continue;
     if (message.content.some((item) => item.type === "toolCall" && item.id === toolCallId)) {
-      next[index] = {
+      messages[index] = {
         ...message,
         content: message.content.map((item) =>
           item.type === "toolCall" && item.id === toolCallId ? part : item,
         ),
       };
-      return next;
+      return;
     }
   }
-  next.push({ role: "tool", content: [part] });
-  return next;
+  messages.push({ role: "tool", content: [part] });
 }
 
 function normalizeMessage(
@@ -440,76 +524,70 @@ function mergeContentTiming(
   });
 }
 
-function mergeLastAssistant(
+function mergeLastAssistantInPlace(
   messages: SerializableAgentMessage[],
   message: SerializableAgentMessage,
   eventTime: number,
   complete: boolean,
-): SerializableAgentMessage[] {
+): void {
   const last = messages[messages.length - 1];
   if (last?.role !== "assistant") {
-    return [
-      ...messages,
+    messages.push(
       {
         ...message,
         startedAt: numericField(message, "startedAt") ?? eventTime,
         ...(complete ? { endedAt: eventTime } : {}),
       },
-    ];
+    );
+    return;
   }
-  return [
-    ...messages.slice(0, -1),
-    {
-      ...message,
-      content: mergeContentTiming(last.content, message.content),
-      startedAt:
-        numericField(message, "startedAt") ?? numericField(last, "startedAt") ?? eventTime,
-      ...(complete ? { endedAt: eventTime } : {}),
-    },
-  ];
+  messages[messages.length - 1] = {
+    ...message,
+    content: mergeContentTiming(last.content, message.content),
+    startedAt:
+      numericField(message, "startedAt") ?? numericField(last, "startedAt") ?? eventTime,
+    ...(complete ? { endedAt: eventTime } : {}),
+  };
 }
 
-function appendAssistantContentEvent(
+function appendAssistantContentEventInPlace(
   messages: SerializableAgentMessage[],
-  event: NonNullable<AgentEventEnvelope["event"]["assistantMessageEvent"]>,
+  event: SerializableAssistantMessageEvent,
   eventTime: number,
-  appendContent: boolean,
-): SerializableAgentMessage[] {
-  const eventType = String(event.type ?? "");
+): void {
+  const eventType = event.type;
+  if (eventType === "start" || eventType === "done" || eventType === "error") return;
   const contentKind = eventType.startsWith("thinking_")
     ? "thinking"
     : eventType.startsWith("text_")
       ? "text"
-      : null;
-  if (!contentKind) return messages;
+      : "toolCall";
 
   const delta =
-    typeof event.delta === "string"
+    "delta" in event
       ? event.delta
-      : typeof event.content === "string" && eventType.endsWith("_end")
+      : "content" in event
         ? event.content
         : "";
-  const contentIndex =
-    typeof event.contentIndex === "number" && event.contentIndex >= 0
-      ? event.contentIndex
-      : 0;
+  const contentIndex = event.contentIndex;
 
-  const next = [...messages];
-  const last = next[next.length - 1];
+  const last = messages[messages.length - 1];
   if (!last || last.role !== "assistant") {
-    next.push({ role: "assistant", content: [], startedAt: eventTime });
+    messages.push({ role: "assistant", content: [], startedAt: eventTime });
   }
 
-  const assistant = next[next.length - 1]!;
+  const assistant = messages[messages.length - 1]!;
   if (
     contentKind === "text" &&
     typeof assistant.content === "string" &&
     contentIndex === 0
   ) {
-    if (appendContent && delta && eventType.endsWith("_delta")) {
-      next[next.length - 1] = { ...assistant, content: assistant.content + delta };
+    if (delta && eventType === "text_delta") {
+      messages[messages.length - 1] = { ...assistant, content: assistant.content + delta };
+    } else if (eventType === "text_end") {
+      messages[messages.length - 1] = { ...assistant, content: delta };
     }
-    return next;
+    return;
   }
 
   const parts = Array.isArray(assistant.content)
@@ -518,6 +596,41 @@ function appendAssistantContentEvent(
       ? [{ type: "text", text: assistant.content }]
       : [];
   const current = parts[contentIndex];
+  if (contentKind === "toolCall") {
+    if (event.type === "toolcall_start") {
+      parts[contentIndex] = {
+        type: "toolCall",
+        id: event.id,
+        name: event.name,
+        arguments: {},
+        argumentsText: "",
+        startedAt: eventTime,
+      };
+    } else if (event.type === "toolcall_delta") {
+      const argumentsText = `${
+        current && typeof current.argumentsText === "string" ? current.argumentsText : ""
+      }${event.delta}`;
+      parts[contentIndex] = {
+        ...(current?.type === "toolCall" ? current : { type: "toolCall" }),
+        arguments: parseToolArguments(argumentsText),
+        argumentsText,
+        startedAt: numericField(current, "startedAt") ?? eventTime,
+      };
+    } else if (event.type === "toolcall_end") {
+      const toolCall = normalizeAgentContent(event.toolCall);
+      if (toolCall) {
+        parts[contentIndex] = {
+          ...toolCall,
+          startedAt: numericField(current, "startedAt") ?? eventTime,
+        };
+      }
+    } else {
+      return;
+    }
+    messages[messages.length - 1] = { ...assistant, content: parts };
+    return;
+  }
+
   const currentValue =
     contentKind === "thinking"
       ? typeof current?.thinking === "string"
@@ -530,14 +643,14 @@ function appendAssistantContentEvent(
   if (!current || current.type !== contentKind) {
     parts[contentIndex] =
       contentKind === "thinking"
-        ? { type: "thinking", thinking: appendContent ? delta : "", startedAt: eventTime }
+        ? { type: "thinking", thinking: delta, startedAt: eventTime }
         : { type: "text", text: delta };
-  } else if (appendContent && delta && eventType.endsWith("_delta")) {
+  } else if (delta && eventType.endsWith("_delta")) {
     parts[contentIndex] =
       contentKind === "thinking"
         ? { ...current, thinking: currentValue + delta }
         : { ...current, text: currentValue + delta };
-  } else if (appendContent && delta && eventType.endsWith("_end")) {
+  } else if (eventType.endsWith("_end")) {
     parts[contentIndex] =
       contentKind === "thinking"
         ? { ...current, thinking: delta }
@@ -553,25 +666,23 @@ function appendAssistantContentEvent(
     };
   }
 
-  next[next.length - 1] = { ...assistant, content: parts };
-  return next;
+  messages[messages.length - 1] = { ...assistant, content: parts };
 }
 
-function appendTextDelta(
+function appendTextDeltaInPlace(
   messages: SerializableAgentMessage[],
   delta: string,
   eventTime: number,
-): SerializableAgentMessage[] {
-  if (!delta) return messages;
-  const out = [...messages];
-  const last = out[out.length - 1];
+): void {
+  if (!delta) return;
+  const last = messages[messages.length - 1];
   if (!last || last.role !== "assistant") {
-    out.push({ role: "assistant", content: delta, startedAt: eventTime });
-    return out;
+    messages.push({ role: "assistant", content: delta, startedAt: eventTime });
+    return;
   }
   const content = last.content;
   if (typeof content === "string") {
-    out[out.length - 1] = { ...last, content: content + delta };
+    messages[messages.length - 1] = { ...last, content: content + delta };
   } else if (Array.isArray(content)) {
     const parts = [...content];
     const lastPart = parts[parts.length - 1];
@@ -580,11 +691,10 @@ function appendTextDelta(
     } else {
       parts.push({ type: "text", text: delta });
     }
-    out[out.length - 1] = { ...last, content: parts };
+    messages[messages.length - 1] = { ...last, content: parts };
   } else {
-    out[out.length - 1] = { ...last, content: delta };
+    messages[messages.length - 1] = { ...last, content: delta };
   }
-  return out;
 }
 
 function settleOpenRuntime(
@@ -619,6 +729,28 @@ function settleOpenRuntime(
     });
     return { ...nextMessage, content };
   });
+}
+
+function normalizeAgentContent(
+  value: JsonValue,
+): SerializableAgentContent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return typeof value.type === "string"
+    ? (value as SerializableAgentContent)
+    : null;
+}
+
+function parseToolArguments(value: string): JsonValue {
+  if (!value.trim()) return {};
+  try {
+    return toJsonValue(JSON.parse(value));
+  } catch {
+    try {
+      return toJsonValue(parsePartialJson(value));
+    } catch {
+      return {};
+    }
+  }
 }
 
 function toJsonish(value: unknown): string | undefined {

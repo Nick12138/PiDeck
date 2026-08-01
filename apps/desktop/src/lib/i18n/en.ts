@@ -92,6 +92,10 @@ export const en = {
   generalThemeDark: "Dark",
   generalLanguage: "Language",
   generalLanguageDesc: "Language of the PiDeck interface.",
+  generalConversationWidth: "Conversation width",
+  generalConversationWidthDesc:
+    "Maximum width for messages, the composer, and inline panels. Minimum {min}px.",
+  generalConversationWidthError: "Enter a whole number of at least {min}px.",
   generalRestoreSession: "Restore last session",
   generalRestoreSessionDesc:
     "Reopen your last workspace and conversation when PiDeck starts.",

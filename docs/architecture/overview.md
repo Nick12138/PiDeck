@@ -54,5 +54,5 @@ eviction dispose and rebuild the graph under `serviceGraphLock`.
 
 1. User sends message in Composer → `agent.prompt` request with identity context.
 2. Host validates revision, acquires the per-session operation lock (`factory.getSessionOperationLock`), calls `AgentSession.prompt`.
-3. Host emits `agent.event` stream; on tool `addedToolNames`, emits full `agent.toolsChanged`.
-4. UI reducers apply events only when host/workspace/session identity matches.
+3. Host emits compact `agent.event` Assistant deltas between authoritative message start/end snapshots; on tool `addedToolNames`, it emits full `agent.toolsChanged`.
+4. UI reducers apply matching host/workspace/session events in animation-frame batches and reconcile the final snapshot.

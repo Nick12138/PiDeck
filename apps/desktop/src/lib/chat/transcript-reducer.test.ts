@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   applyAgentEvent,
   applyAgentEventBatch,
+  coalesceAgentEventBatch,
   matchesTimedAgentEventIdentity,
   type AgentEventEnvelope,
+  type TimedAgentEventEnvelope,
 } from "./transcript-reducer.js";
-import type { SessionSnapshot } from "@pideck/protocol";
+import type { SerializableAssistantMessageEvent, SessionSnapshot } from "@pideck/protocol";
 
 function baseSession(): SessionSnapshot {
   return {
@@ -71,14 +73,14 @@ describe("applyAgentEvent", () => {
       runId: "r1",
       event: {
         type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "Hello" },
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Hello" },
       },
     })!;
     s = applyAgentEvent(s, {
       runId: "r1",
       event: {
         type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: " world" },
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " world" },
       },
     })!;
     expect(s.messages).toHaveLength(1);
@@ -202,6 +204,133 @@ describe("applyAgentEvent", () => {
     ]);
   });
 
+  it("coalesces a large frame of compatible deltas without crossing boundaries", () => {
+    const identity = {
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+      packageRevision: 1,
+    };
+    const makeEvent = (
+      sequence: number,
+      assistantMessageEvent: SerializableAssistantMessageEvent,
+    ): TimedAgentEventEnvelope => ({
+      ...identity,
+      sequence,
+      receivedAt: 100 + sequence,
+      payload: {
+        runId: "r1",
+        event: { type: "message_update", assistantMessageEvent },
+      },
+    });
+    const frame = Array.from({ length: 1_000 }, (_, index) =>
+      makeEvent(index + 1, {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "x",
+      }),
+    );
+    frame.push(
+      makeEvent(1_001, { type: "text_end", contentIndex: 0, content: "x".repeat(1_000) }),
+      makeEvent(1_002, { type: "thinking_delta", contentIndex: 1, delta: "y" }),
+      makeEvent(1_003, { type: "thinking_delta", contentIndex: 2, delta: "z" }),
+    );
+
+    const coalesced = coalesceAgentEventBatch(frame);
+
+    expect(coalesced).toHaveLength(4);
+    expect(coalesced[0]?.receivedAt).toBe(101);
+    expect(coalesced[0]?.payload.event.assistantMessageEvent).toEqual({
+      type: "text_delta",
+      contentIndex: 0,
+      delta: "x".repeat(1_000),
+    });
+  });
+
+  it("applies a long-history delta frame with one outer draft and stable history entries", () => {
+    const session = baseSession();
+    session.messages = Array.from({ length: 5_000 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `history-${index}`,
+    }));
+    session.messages.push({ role: "assistant", content: "", startedAt: 50 });
+    const originalMessages = session.messages;
+    const originalFirst = session.messages[0];
+    const identity = {
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+      packageRevision: 1,
+    };
+    const frame: TimedAgentEventEnvelope[] = Array.from({ length: 1_000 }, (_, index) => ({
+      ...identity,
+      sequence: index + 1,
+      receivedAt: 100 + index,
+      payload: {
+        runId: "r1",
+        event: {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" },
+        },
+      },
+    }));
+
+    const next = applyAgentEventBatch(session, frame)!;
+
+    expect(next.messages).not.toBe(originalMessages);
+    expect(next.messages[0]).toBe(originalFirst);
+    expect(next.messages.at(-1)?.content).toBe("x".repeat(1_000));
+    expect(session.messages.at(-1)?.content).toBe("");
+  });
+
+  it("reconstructs streaming tool arguments and replaces transient state at tool end", () => {
+    let s = applyAgentEvent(baseSession(), {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      },
+    }, 90)!;
+    for (const assistantMessageEvent of [
+      { type: "toolcall_start", contentIndex: 0, id: "call-1", name: "read" },
+      { type: "toolcall_delta", contentIndex: 0, delta: "{\"path\":\"" },
+      { type: "toolcall_delta", contentIndex: 0, delta: "a.ts\"}" },
+      {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: {
+          type: "toolCall",
+          id: "call-1",
+          name: "read",
+          arguments: { path: "a.ts" },
+          providerMetadata: { stable: true },
+        },
+      },
+    ] satisfies SerializableAssistantMessageEvent[]) {
+      s = applyAgentEvent(s, {
+        runId: "r1",
+        event: { type: "message_update", assistantMessageEvent },
+      }, 100)!;
+    }
+
+    const content = s.messages[0]?.content;
+    expect(Array.isArray(content)).toBe(true);
+    if (!Array.isArray(content)) return;
+    expect(content[0]).toMatchObject({
+      type: "toolCall",
+      id: "call-1",
+      name: "read",
+      arguments: { path: "a.ts" },
+      providerMetadata: { stable: true },
+      startedAt: 100,
+    });
+    expect(content[0]?.argumentsText).toBeUndefined();
+  });
+
   it("rejects buffered events from a different Session generation", () => {
     const identity = {
       hostInstanceId: "h1",
@@ -242,7 +371,7 @@ describe("applyAgentEvent", () => {
       { type: "thinking_delta", contentIndex: 0, delta: "files" },
       { type: "thinking_end", contentIndex: 0, content: "Inspect files" },
       { type: "text_delta", contentIndex: 1, delta: "Done." },
-    ]) {
+    ] satisfies SerializableAssistantMessageEvent[]) {
       s = applyAgentEvent(s, {
         runId: "r1",
         event: { type: "message_update", assistantMessageEvent: event },
@@ -260,7 +389,7 @@ describe("applyAgentEvent", () => {
     expect(typeof thinking?.endedAt).toBe("number");
   });
 
-  it("uses Pi's structured partial message during streaming", () => {
+  it("reconciles streamed deltas with Pi's authoritative final message", () => {
     let s = baseSession();
     s = applyAgentEvent(s, {
       runId: "r1",
@@ -273,25 +402,40 @@ describe("applyAgentEvent", () => {
       runId: "r1",
       event: {
         type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "Working",
+        },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
         message: {
           role: "assistant",
           content: [
-            { type: "thinking", thinking: "Plan" },
+            { type: "thinking", thinking: "Plan", signature: "provider-signature" },
             { type: "text", text: "Working" },
           ],
-        },
-        assistantMessageEvent: {
-          type: "text_delta",
-          contentIndex: 1,
-          delta: " ignored because partial is authoritative",
+          usage: {
+            input: 1,
+            output: 2,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 3,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
         },
       },
     })!;
 
     expect(s.messages[0]?.content).toEqual([
-      { type: "thinking", thinking: "Plan" },
+      { type: "thinking", thinking: "Plan", signature: "provider-signature" },
       { type: "text", text: "Working" },
     ]);
+    expect(s.messages[0]?.usage?.totalTokens).toBe(3);
   });
 
   it("tracks concurrent tool executions by toolCallId", () => {

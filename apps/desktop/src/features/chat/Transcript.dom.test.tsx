@@ -149,6 +149,76 @@ describe("Transcript Session-open scrolling", () => {
     expect(scroll.scrollTop).toBe(1_700);
   });
 
+  it("releases a small upward gesture before a queued tail alignment", () => {
+    const { container } = render(<Transcript />);
+    const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+    let scrollHeight = 1_000;
+    const clientHeight = 300;
+    let scrollTop = 0;
+    Object.defineProperties(scroll, {
+      clientHeight: { configurable: true, get: () => clientHeight },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = Math.max(0, Math.min(value, scrollHeight - clientHeight));
+        },
+      },
+    });
+    flushFrames();
+    expect(scroll.scrollTop).toBe(700);
+
+    act(() => TestResizeObserver.instances.at(-1)?.trigger());
+    fireEvent.wheel(scroll, { deltaY: -20 });
+    scroll.scrollTop = 680;
+    fireEvent.scroll(scroll);
+    flushFrames();
+
+    expect(scroll.scrollTop).toBe(680);
+    expect(screen.getByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
+
+    scroll.scrollTop = 695;
+    fireEvent.scroll(scroll);
+    scrollHeight = 1_100;
+    act(() => TestResizeObserver.instances.at(-1)?.trigger());
+    flushFrames();
+    expect(scroll.scrollTop).toBe(800);
+  });
+
+  it("keeps following when content shrinkage lowers the maximum scroll position", () => {
+    const { container } = render(<Transcript />);
+    const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+    let scrollHeight = 1_000;
+    const clientHeight = 300;
+    let scrollTop = 0;
+    Object.defineProperties(scroll, {
+      clientHeight: { configurable: true, get: () => clientHeight },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = Math.max(0, Math.min(value, scrollHeight - clientHeight));
+        },
+      },
+    });
+    flushFrames();
+    expect(scroll.scrollTop).toBe(700);
+
+    scrollHeight = 900;
+    scroll.scrollTop = 600;
+    fireEvent.scroll(scroll);
+    scrollHeight = 950;
+    act(() => TestResizeObserver.instances.at(-1)?.trigger());
+    flushFrames();
+
+    expect(scroll.scrollTop).toBe(650);
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest message" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens a row context menu and copies the complete message", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);

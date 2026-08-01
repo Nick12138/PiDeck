@@ -32,6 +32,11 @@ import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
+import {
+  DEFAULT_CONVERSATION_CONTENT_WIDTH,
+  MIN_CONVERSATION_CONTENT_WIDTH,
+  resolveConversationContentWidth,
+} from "../chat/conversation-layout";
 
 type ShellProfileSummary = {
   id: TerminalProfileId;
@@ -53,6 +58,13 @@ function GeneralSettings() {
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
   const [decisionPresentationSaving, setDecisionPresentationSaving] = useState(false);
+  const configuredConversationWidth = resolveConversationContentWidth(
+    desktopSettings?.conversationContentWidth,
+  );
+  const [conversationWidthDraft, setConversationWidthDraft] = useState(
+    String(configuredConversationWidth),
+  );
+  const [conversationWidthInvalid, setConversationWidthInvalid] = useState(false);
 
   async function openSettingsFile() {
     if (!host?.agentDir) return;
@@ -84,6 +96,11 @@ function GeneralSettings() {
     void loadShellProfiles();
   }, []);
 
+  useEffect(() => {
+    setConversationWidthDraft(String(configuredConversationWidth));
+    setConversationWidthInvalid(false);
+  }, [configuredConversationWidth]);
+
   async function patchDesktop(patch: DesktopSettingsUpdate) {
     try {
       await persistDesktopSettings(patch);
@@ -91,8 +108,32 @@ function GeneralSettings() {
         const next = useAppStore.getState().desktopSettings;
         if (next) applyTheme(next.theme);
       }
+      return true;
     } catch (error) {
       notifyDesktopSettingsSaveFailure(error);
+      return false;
+    }
+  }
+
+  async function commitConversationWidth() {
+    const parsed = Number(conversationWidthDraft.trim());
+    if (!Number.isInteger(parsed) || parsed < MIN_CONVERSATION_CONTENT_WIDTH) {
+      setConversationWidthInvalid(true);
+      return;
+    }
+
+    setConversationWidthInvalid(false);
+    setConversationWidthDraft(String(parsed));
+    const saved = await patchDesktop({ conversationContentWidth: parsed });
+    if (!saved) {
+      setConversationWidthDraft(
+        String(
+          resolveConversationContentWidth(
+            useAppStore.getState().desktopSettings?.conversationContentWidth ??
+              DEFAULT_CONVERSATION_CONTENT_WIDTH,
+          ),
+        ),
+      );
     }
   }
 
@@ -213,6 +254,64 @@ function GeneralSettings() {
                 <option value="zh">中文</option>
               </select>
             </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <span className="min-w-0">
+                <label htmlFor="conversation-content-width" className="block text-sm">
+                  {t("generalConversationWidth")}
+                </label>
+                <span
+                  id="conversation-content-width-description"
+                  className="block text-xs text-muted"
+                >
+                  {t("generalConversationWidthDesc", {
+                    min: MIN_CONVERSATION_CONTENT_WIDTH,
+                  })}
+                </span>
+              </span>
+              <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
+                <span
+                  className={`flex h-8 w-32 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-accent ${
+                    conversationWidthInvalid ? "border-danger" : "border-border"
+                  }`}
+                >
+                  <input
+                    id="conversation-content-width"
+                    type="number"
+                    min={MIN_CONVERSATION_CONTENT_WIDTH}
+                    step={1}
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
+                    value={conversationWidthDraft}
+                    aria-invalid={conversationWidthInvalid || undefined}
+                    aria-describedby={`conversation-content-width-description${
+                      conversationWidthInvalid ? " conversation-content-width-error" : ""
+                    }`}
+                    onChange={(event) => {
+                      setConversationWidthDraft(event.target.value);
+                      if (conversationWidthInvalid) setConversationWidthInvalid(false);
+                    }}
+                    onBlur={() => void commitConversationWidth()}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      void commitConversationWidth();
+                    }}
+                  />
+                  <span className="ml-1 text-[11px] text-muted">px</span>
+                </span>
+                {conversationWidthInvalid && (
+                  <span
+                    id="conversation-content-width-error"
+                    role="alert"
+                    className="max-w-64 text-[11px] leading-4 text-danger sm:text-right"
+                  >
+                    {t("generalConversationWidthError", {
+                      min: MIN_CONVERSATION_CONTENT_WIDTH,
+                    })}
+                  </span>
+                )}
+              </span>
+            </div>
             <div className="flex items-center justify-between gap-4">
               <span className="min-w-0">
                 <span className="block text-sm">{t("generalRestoreSession")}</span>

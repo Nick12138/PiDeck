@@ -569,13 +569,54 @@ function isSerializableCompactionResult(value: unknown): boolean {
   );
 }
 
+function isSerializableAssistantMessageEvent(value: unknown): boolean {
+  if (!isPlainObject(value) || !isString(value.type)) return false;
+  switch (value.type) {
+    case "start":
+      return hasExactKeys(value, ["type"]);
+    case "text_start":
+    case "thinking_start":
+      return hasExactKeys(value, ["type", "contentIndex"]) &&
+        isSafeRevision(value.contentIndex);
+    case "text_delta":
+    case "thinking_delta":
+    case "toolcall_delta":
+      return hasExactKeys(value, ["type", "contentIndex", "delta"]) &&
+        isSafeRevision(value.contentIndex) &&
+        isString(value.delta);
+    case "text_end":
+    case "thinking_end":
+      return hasExactKeys(value, ["type", "contentIndex", "content"]) &&
+        isSafeRevision(value.contentIndex) &&
+        isString(value.content);
+    case "toolcall_start":
+      return hasExactKeys(value, ["type", "contentIndex", "id", "name"]) &&
+        isSafeRevision(value.contentIndex) &&
+        isString(value.id) &&
+        isString(value.name);
+    case "toolcall_end":
+      return hasExactKeys(value, ["type", "contentIndex", "toolCall"]) &&
+        isSafeRevision(value.contentIndex) &&
+        isSerializableAgentContent(value.toolCall);
+    case "done":
+      return hasExactKeys(value, ["type", "reason"]) && isString(value.reason);
+    case "error":
+      return hasExactKeys(value, ["type", "reason"], ["errorMessage"]) &&
+        isString(value.reason) &&
+        isOptionalString(value.errorMessage);
+    default:
+      return false;
+  }
+}
+
 function isSerializableAgentSessionEvent(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    isString(value.type) &&
-    Object.entries(value).every(
-      ([key, item]) => key === "type" || item === undefined || isJsonValue(item),
-    )
+  if (!isPlainObject(value) || !isString(value.type)) return false;
+  if (value.type === "message_update") {
+    return hasExactKeys(value, ["type", "assistantMessageEvent"]) &&
+      isSerializableAssistantMessageEvent(value.assistantMessageEvent);
+  }
+  return Object.entries(value).every(
+    ([key, item]) => key === "type" || item === undefined || isJsonValue(item),
   );
 }
 

@@ -11,6 +11,8 @@ const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
 const PIDECK_DATA_DIR_NAME: &str = "pideck";
 const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
+const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 768;
+const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -49,6 +51,7 @@ pub struct DesktopSettings {
     pub terminal_profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    pub conversation_content_width: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -68,6 +71,7 @@ impl Default for DesktopSettings {
             extension_decision_presentation: ExtensionDecisionPresentation::Auto,
             terminal_profile: "auto".into(),
             language: None,
+            conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
         }
@@ -167,7 +171,9 @@ impl DesktopSettingsStore {
 
     fn parse_settings(raw: &str) -> Result<(DesktopSettings, bool), String> {
         let value: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
-        if value.get("schemaVersion").is_some() || value.get("settings").is_some() {
+        let (mut settings, legacy) = if value.get("schemaVersion").is_some()
+            || value.get("settings").is_some()
+        {
             let file: SettingsFile = serde_json::from_value(value).map_err(|e| e.to_string())?;
             if file.schema_version != SETTINGS_SCHEMA_VERSION {
                 return Err(format!(
@@ -175,11 +181,24 @@ impl DesktopSettingsStore {
                     file.schema_version
                 ));
             }
-            Ok((file.settings, false))
+            (file.settings, false)
         } else {
             let settings = serde_json::from_value(value).map_err(|e| e.to_string())?;
-            Ok((settings, true))
+            (settings, true)
+        };
+        settings.conversation_content_width = settings
+            .conversation_content_width
+            .max(MIN_CONVERSATION_CONTENT_WIDTH);
+        Ok((settings, legacy))
+    }
+
+    fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
+        if settings.conversation_content_width < MIN_CONVERSATION_CONTENT_WIDTH {
+            return Err(format!(
+                "conversationContentWidth must be at least {MIN_CONVERSATION_CONTENT_WIDTH}"
+            ));
         }
+        Ok(())
     }
 
     fn quarantine_corrupt_file(path: &Path) -> Result<PathBuf, String> {
@@ -286,6 +305,7 @@ impl DesktopSettingsStore {
             }
         }
         let next = serde_json::from_value(current).map_err(|e| e.to_string())?;
+        Self::validate_settings(&next)?;
         self.write_settings(&next)?;
         self.settings = next;
         Ok(self.settings.clone())
@@ -375,6 +395,45 @@ mod tests {
             .patch(serde_json::json!({ "language": null }))
             .unwrap();
         assert_eq!(cleared.settings.language, None);
+    }
+
+    #[test]
+    fn defaults_validates_and_persists_conversation_content_width() {
+        let dir = test_dir("conversation-content-width");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            store.settings.conversation_content_width,
+            DEFAULT_CONVERSATION_CONTENT_WIDTH
+        );
+
+        store
+            .patch(serde_json::json!({ "conversationContentWidth": 920 }))
+            .unwrap();
+        assert_eq!(store.settings.conversation_content_width, 920);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.conversation_content_width, 920);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "conversationContentWidth": 559 }))
+            .unwrap_err()
+            .contains("must be at least 560"));
+        assert_eq!(invalid.settings.conversation_content_width, 920);
+        fs::remove_dir_all(dir).unwrap();
+
+        let stale_dir = test_dir("stale-conversation-content-width");
+        fs::write(
+            stale_dir.join(SETTINGS_FILE_NAME),
+            r#"{"schemaVersion":1,"settings":{"conversationContentWidth":500}}"#,
+        )
+        .unwrap();
+        let normalized = DesktopSettingsStore::load_from_dir(&stale_dir).unwrap();
+        assert_eq!(
+            normalized.settings.conversation_content_width,
+            MIN_CONVERSATION_CONTENT_WIDTH
+        );
+        fs::remove_dir_all(stale_dir).unwrap();
     }
 
     #[test]

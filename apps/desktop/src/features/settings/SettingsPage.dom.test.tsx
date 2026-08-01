@@ -137,6 +137,33 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.queryByRole("button", { name: "General" })).not.toBeInTheDocument();
   });
 
+  it("validates and persists the conversation width from Appearance settings", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    const input = screen.getByRole("spinbutton", { name: "Conversation width" });
+    expect(input).toHaveValue(768);
+
+    await user.clear(input);
+    await user.type(input, "559");
+    await user.tab();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a whole number of at least 560px.",
+    );
+    expect(useAppStore.getState().desktopSettings?.conversationContentWidth).toBeUndefined();
+
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "920");
+    await user.tab();
+
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.conversationContentWidth).toBe(920),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("synchronizes automatic presentation and offers one-click legacy rollback", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setHost(CONNECTED_HOST);

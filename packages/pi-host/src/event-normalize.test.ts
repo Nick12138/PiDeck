@@ -7,7 +7,7 @@ const reviewedFields = {
   turn_start: [],
   turn_end: ["message", "toolResults"],
   message_start: ["message"],
-  message_update: ["message", "assistantMessageEvent"],
+  message_update: ["assistantMessageEvent"],
   message_end: ["message"],
   tool_execution_start: ["toolCallId", "toolName", "args"],
   tool_execution_update: ["toolCallId", "toolName", "args", "partialResult"],
@@ -32,7 +32,7 @@ const representativeFields = {
   willRetry: false,
   message: { role: "assistant", content: [], timestamp: 2 },
   toolResults: [{ role: "toolResult", content: [] }],
-  assistantMessageEvent: { type: "text_delta", delta: "hi" },
+  assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" },
   toolCallId: "tool-1",
   toolName: "read",
   args: { path: "fixture.txt" },
@@ -95,6 +95,95 @@ describe("normalizeAgentEvent", () => {
       normalizeAgentEvent({
         type: "future_sdk_event_with_sensitive_name",
         credential: "must-not-cross-the-boundary",
+      }),
+    ).toEqual({ type: "unknown" });
+  });
+
+  it("projects message updates without the cumulative message or partial snapshot", () => {
+    const message = {
+      role: "assistant",
+      content: [{ type: "text", text: "x".repeat(50_000) }],
+    };
+    const out = normalizeAgentEvent({
+      type: "message_update",
+      message,
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "x",
+        partial: message,
+      },
+    });
+
+    expect(out).toEqual({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" },
+    });
+    expect(JSON.stringify(out).length).toBeLessThan(150);
+  });
+
+  it("extracts tool identity at start and the final structured call at end", () => {
+    expect(
+      normalizeAgentEvent({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          contentIndex: 1,
+          partial: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "" },
+              { type: "toolCall", id: "call-1", name: "read", arguments: {} },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_start",
+        contentIndex: 1,
+        id: "call-1",
+        name: "read",
+      },
+    });
+
+    expect(
+      normalizeAgentEvent({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_end",
+          contentIndex: 1,
+          toolCall: {
+            type: "toolCall",
+            id: "call-1",
+            name: "read",
+            arguments: { path: "README.md" },
+          },
+          partial: { role: "assistant", content: [] },
+        },
+      }),
+    ).toEqual({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 1,
+        toolCall: {
+          type: "toolCall",
+          id: "call-1",
+          name: "read",
+          arguments: { path: "README.md" },
+        },
+      },
+    });
+  });
+
+  it("fails closed for malformed or future Assistant message events", () => {
+    expect(
+      normalizeAgentEvent({
+        type: "message_update",
+        message: { role: "assistant", content: "must not cross" },
+        assistantMessageEvent: { type: "future_delta", partial: {} },
       }),
     ).toEqual({ type: "unknown" });
   });

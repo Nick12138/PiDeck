@@ -114,6 +114,7 @@ export function Transcript() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const scrollMetricsRef = useRef({ top: 0, height: 0 });
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
 
@@ -127,6 +128,10 @@ export function Transcript() {
     const element = scrollRef.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
+    scrollMetricsRef.current = {
+      top: element.scrollTop,
+      height: element.scrollHeight,
+    };
   }, []);
 
   const scheduleBottomAlignment = useCallback(() => {
@@ -141,6 +146,11 @@ export function Transcript() {
     followingRef.current = next;
     setFollowing((current) => (current === next ? current : next));
   }, []);
+
+  const stopFollowing = useCallback(() => {
+    cancelScheduledScroll();
+    updateFollowing(false);
+  }, [cancelScheduledScroll, updateFollowing]);
 
   // Top-anchored window: `hidden` rows stay unmounted above the fold. New
   // rows stream in at the tail without disturbing what is on screen.
@@ -186,6 +196,10 @@ export function Transcript() {
     const element = scrollRef.current;
     if (!element) return;
     element.scrollTop = anchor.prevTop + (element.scrollHeight - anchor.prevHeight);
+    scrollMetricsRef.current = {
+      top: element.scrollTop,
+      height: element.scrollHeight,
+    };
   }, [hidden]);
 
   const lastAssistantRow = [...rows]
@@ -242,8 +256,23 @@ export function Transcript() {
         ref={scrollRef}
         data-transcript-scroll
         className="h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+        onWheel={(event) => {
+          if (event.deltaY < 0) stopFollowing();
+        }}
         onScroll={(event) => {
           const element = event.currentTarget;
+          const previous = scrollMetricsRef.current;
+          const movingUp =
+            element.scrollTop < previous.top &&
+            element.scrollHeight >= previous.height;
+          scrollMetricsRef.current = {
+            top: element.scrollTop,
+            height: element.scrollHeight,
+          };
+          if (movingUp) {
+            stopFollowing();
+            return;
+          }
           const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
           const shouldFollow = distance < 80;
           if (!shouldFollow && scrollFrameRef.current !== null) {
@@ -255,7 +284,7 @@ export function Transcript() {
         <div
           ref={contentRef}
           data-transcript-content
-          className="mx-auto flex max-w-3xl flex-col gap-5 sm:gap-6"
+          className="conversation-content-width mx-auto flex flex-col gap-5 sm:gap-6"
         >
           {hidden > 0 && (
             <button
