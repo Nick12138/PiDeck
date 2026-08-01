@@ -69,6 +69,28 @@ Unknown or invalid visible custom messages use a neutral, closed fallback. They
 are not discarded, but they do not receive trusted semantic styling and remain
 inside the same execution-trace flow.
 
+### Registered message renderers
+
+For existing Extensions that register a Pi message renderer, PiDeck projects the
+renderer into a bounded, read-only transcript snapshot. Host renders both collapsed
+and expanded modes at a fixed terminal width, removes terminal control sequences,
+and sends plain text lines to Desktop. Declarative Presentation v1 remains the first
+choice and takes precedence when both forms are available.
+
+Renderer snapshots are refreshed when the Session changes and when Extension UI
+activity indicates that in-process renderer state may have changed. This supports
+the visible-anchor pattern used by commands such as `pi-subagents`'
+`/subagents-doctor`, where a hidden final message updates the renderer state for an
+earlier visible message. Desktop can expand differing full output but never executes
+renderer-owned actions or accepts Extension HTML, CSS, or components. A missing or
+failing renderer falls back to the neutral custom-message presentation.
+
+Each renderer snapshot can also carry its position in the current context-message
+projection. Desktop uses that position only for the live message tail, before the
+next Session entry snapshot exposes the persisted entry ID. Persisted rows remain
+keyed by entry ID, so repeated or parallel Extension messages are never matched by
+content, timestamp, or private metadata.
+
 ## Blocking requests
 
 Dialog options can suggest a surface with the PiDeck namespace. The value is a
@@ -218,7 +240,7 @@ Compatibility is organized by behavior class rather than package popularity:
 
 | Layer | Evidence |
 |---|---|
-| Contract fixture | Real SDK loader coverage for subagent dialog/widget/custom/activity, permission and repository guards, planning select/editor, 150-option selection, persistent widgets, renderers, provider-only registration, background ownership, and shutdown cleanup |
+| Contract fixture | Real SDK loader coverage for subagent dialog/widget/custom/activity, permission and repository guards, planning select/editor, 150-option selection, persistent widgets, registered message renderer snapshots, provider-only registration, background ownership, and shutdown cleanup |
 | Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` RPC/group/envelope path and `1.20.0` custom-terminal fallback, both locked with registry integrity hashes |
 | Scheduled latest audit | Weekly/manual GitHub workflow replaces only the disposable v2 test alias with npm `latest`; it is separate from pull-request and `main` gates |
 

@@ -978,6 +978,8 @@ export const en = {
   extPresentationCancelled: "Cancelled",
   extPresentationExpired: "Expired",
   extPresentationFailed: "Failed",
+  extRendererExpand: "Show full Extension output",
+  extRendererCollapse: "Show compact Extension output",
 
   // Git Changes
   gitChanges: "Changes",

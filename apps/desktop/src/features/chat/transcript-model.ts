@@ -1,5 +1,6 @@
 import type {
   AttachmentReference,
+  ExtensionMessageRenderSnapshot,
   ExtensionPresentation,
   SerializableAgentContent,
   SerializableAgentMessage,
@@ -97,6 +98,7 @@ export type TranscriptRow = {
   outcome?: AssistantOutcome;
   customType?: string;
   extensionPresentation?: ExtensionPresentation;
+  extensionMessageRender?: ExtensionMessageRenderSnapshot;
   display?: boolean;
   details?: unknown;
   bash?: BashExecution;
@@ -115,6 +117,7 @@ export type TranscriptRow = {
 export type BuildTranscriptOptions = {
   entries?: readonly SerializableSessionEntry[];
   leafId?: string | null;
+  extensionMessageRenders?: Readonly<Record<string, ExtensionMessageRenderSnapshot>>;
 };
 
 export function findStreamingAssistantKey(
@@ -160,6 +163,7 @@ type MessageSource = {
   key: string;
   sourceId?: string;
   timestamp?: number;
+  extensionMessageRender?: ExtensionMessageRenderSnapshot;
 };
 
 type RowSource = {
@@ -616,6 +620,7 @@ function rowForNonAssistantMessage(
   sourceId: string | undefined,
   timestamp: number | undefined,
   sourceIndex: number,
+  extensionMessageRender?: ExtensionMessageRenderSnapshot,
 ): TranscriptRow | null {
   const role = message.role;
   if (role === "custom") {
@@ -629,6 +634,7 @@ function rowForNonAssistantMessage(
       copyText: copyTextForBlocks(blocks),
       customType: stringField(message, "customType") ?? "custom",
       ...(extensionPresentation ? { extensionPresentation } : {}),
+      ...(extensionMessageRender ? { extensionMessageRender } : {}),
       display: true,
       ...(asRecord(message).details !== undefined ? { details: asRecord(message).details } : {}),
       ...(sourceId ? { sourceId } : {}),
@@ -703,6 +709,10 @@ function sourceMessages(
   options: BuildTranscriptOptions | undefined,
 ): { sources: TranscriptSource[]; projectedMessageCount: number } {
   const entries = options?.entries;
+  const rendersByMessageIndex = new Map<number, ExtensionMessageRenderSnapshot>();
+  for (const render of Object.values(options?.extensionMessageRenders ?? {})) {
+    if (render.messageIndex !== undefined) rendersByMessageIndex.set(render.messageIndex, render);
+  }
   if (!entries) {
     return {
       sources: messages.map((message, index) => ({
@@ -710,6 +720,9 @@ function sourceMessages(
         message,
         key: String(index),
         timestamp: timestampField(message),
+        ...(rendersByMessageIndex.get(index)
+          ? { extensionMessageRender: rendersByMessageIndex.get(index) }
+          : {}),
       })),
       projectedMessageCount: 0,
     };
@@ -727,7 +740,16 @@ function sourceMessages(
       projectedMessageCount += 1;
       const message = asAgentMessage(record.message);
       if (message) {
-        sources.push({ kind: "message", message, key: sourceKey, sourceId, timestamp });
+        sources.push({
+          kind: "message",
+          message,
+          key: sourceKey,
+          sourceId,
+          timestamp,
+          ...(sourceId && options?.extensionMessageRenders?.[sourceId]
+            ? { extensionMessageRender: options.extensionMessageRenders[sourceId] }
+            : {}),
+        });
       }
       continue;
     }
@@ -741,7 +763,16 @@ function sourceMessages(
         ...(record.details !== undefined ? { details: record.details } : {}),
         ...(record.presentation !== undefined ? { presentation: record.presentation } : {}),
       } as SerializableAgentMessage;
-      sources.push({ kind: "message", message, key: sourceKey, sourceId, timestamp });
+      sources.push({
+        kind: "message",
+        message,
+        key: sourceKey,
+        sourceId,
+        timestamp,
+        ...(sourceId && options?.extensionMessageRenders?.[sourceId]
+          ? { extensionMessageRender: options.extensionMessageRenders[sourceId] }
+          : {}),
+      });
       continue;
     }
     if (type === "compaction") {
@@ -833,6 +864,9 @@ function sourceMessages(
       message,
       key: `stream:${index}`,
       timestamp: timestampField(message),
+      ...(rendersByMessageIndex.get(index)
+        ? { extensionMessageRender: rendersByMessageIndex.get(index) }
+        : {}),
     });
   }
   return {
@@ -900,7 +934,7 @@ export function buildTranscriptRows(
       resetAssistant();
       return;
     }
-    const { message, key: sourceKey, sourceId, timestamp } = source;
+    const { message, key: sourceKey, sourceId, timestamp, extensionMessageRender } = source;
     const role = message.role;
     if (role === "toolResult") {
       const result = toolResultForMessage(message);
@@ -1028,6 +1062,7 @@ export function buildTranscriptRows(
       sourceId,
       timestamp,
       sourceIndex,
+      extensionMessageRender,
     );
     if (special?.role === "custom") {
       const block: TranscriptBlock = { kind: "extension", row: special };
@@ -1151,6 +1186,7 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
     !valuesEquivalent(a.outcome, b.outcome) ||
     a.customType !== b.customType ||
     !valuesEquivalent(a.extensionPresentation, b.extensionPresentation) ||
+    !valuesEquivalent(a.extensionMessageRender, b.extensionMessageRender) ||
     a.display !== b.display ||
     !valuesEquivalent(a.details, b.details) ||
     !valuesEquivalent(a.bash, b.bash) ||

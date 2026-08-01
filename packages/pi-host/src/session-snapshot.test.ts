@@ -34,6 +34,51 @@ function sessionFixture(
 }
 
 describe("buildSessionSnapshot entry projection", () => {
+  it("projects registered Extension message renderer output by entry id", () => {
+    const entries = [
+      {
+        id: "custom-1",
+        type: "custom_message",
+        parentId: null,
+        timestamp: "2026-08-01T00:00:00.000Z",
+        customType: "diagnostic",
+        content: "raw",
+        display: true,
+      },
+    ];
+    const sessionManager = {
+      buildContextEntries: vi.fn(() => entries),
+      getLeafId: vi.fn(() => "custom-1"),
+    } as unknown as SessionManager;
+    const renderer = vi.fn((_message, options: { expanded: boolean }) => ({
+      render: () => [options.expanded ? "full diagnostic" : "diagnostic"],
+      invalidate: () => undefined,
+    }));
+    const session = sessionFixture([], {
+      extensionRunner: { getMessageRenderer: () => renderer },
+    });
+
+    const snapshot = buildSessionSnapshot({
+      session,
+      sessionManager,
+      cwd: "C:/workspace",
+      sessionId: SESSION_ID,
+      revision: 1,
+      workspaceId: WORKSPACE_ID,
+      toolRevision: 1,
+    });
+
+    expect(snapshot.extensionMessageRenders).toEqual({
+      "custom-1": {
+        version: 1,
+        collapsed: ["diagnostic"],
+        expanded: ["full diagnostic"],
+        messageIndex: 0,
+      },
+    });
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
   it("uses the SDK's active compaction-aware path and serializes its leaf", () => {
     const entries = [
       {

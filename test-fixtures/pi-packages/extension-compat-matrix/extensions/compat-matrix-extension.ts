@@ -8,6 +8,8 @@ const EMPTY_PARAMETERS = {
 
 export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
   let watcher: ReturnType<typeof setInterval> | undefined;
+  let rendererSequence = 0;
+  const messageRendererStates = new Map<string, string>();
 
   pi.registerProvider("matrix-provider", {
     baseUrl: "https://matrix-provider.invalid/v1",
@@ -26,8 +28,15 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
     ],
   });
 
-  pi.registerMessageRenderer("matrix-message", () => ({
-    render: () => ["matrix message fallback"],
+  pi.registerMessageRenderer("matrix-message", (message, { expanded }) => ({
+    render: () => {
+      const requestId = (message.details as { requestId?: unknown } | undefined)?.requestId;
+      const state =
+        typeof requestId === "string"
+          ? messageRendererStates.get(requestId) ?? "Matrix renderer missing state"
+          : "Matrix renderer missing request";
+      return [expanded ? `${state}: full report` : state];
+    },
     invalidate: () => {},
   }));
   pi.registerEntryRenderer("matrix-entry", () => ({
@@ -137,6 +146,29 @@ export default function extensionCompatibilityMatrix(pi: ExtensionAPI) {
       const options = Array.from({ length: 150 }, (_, index) => `Matrix option ${index + 1}`);
       const selected = await ctx.ui.select("Choose a matrix option", options);
       pi.events.emit("pideck:matrix:large-result", { selected });
+    },
+  });
+
+  pi.registerCommand("matrix-renderer", {
+    description: "Exercises a dynamic registered message renderer.",
+    handler: async () => {
+      rendererSequence += 1;
+      const requestId = `matrix-renderer-${rendererSequence}`;
+      messageRendererStates.set(requestId, "Matrix renderer running");
+      pi.sendMessage({
+        customType: "matrix-message",
+        content: "Matrix renderer anchor",
+        display: true,
+        details: { requestId },
+      });
+      await Promise.resolve();
+      messageRendererStates.set(requestId, "Matrix renderer complete");
+      pi.sendMessage({
+        customType: "matrix-message",
+        content: "Matrix renderer final state",
+        display: false,
+        details: { requestId },
+      });
     },
   });
 }

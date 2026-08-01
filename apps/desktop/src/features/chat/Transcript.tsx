@@ -105,9 +105,10 @@ export function Transcript() {
         buildTranscriptRows(messages, {
           entries: session?.entries,
           leafId: session?.leafId,
+          extensionMessageRenders: session?.extensionMessageRenders,
         }),
       ),
-    [messages, session?.entries, session?.leafId],
+    [messages, session?.entries, session?.leafId, session?.extensionMessageRenders],
   );
   prevRowsRef.current = rows;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -728,7 +729,6 @@ export function ExecutionTrace({
         { count: imageCount },
       )}`
     : traceLabel;
-  const TraceIcon = active ? LoaderCircle : ListTree;
   return (
     <div className="execution-trace">
       <button
@@ -737,10 +737,13 @@ export function ExecutionTrace({
         className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         aria-expanded={open}
       >
-        <TraceIcon
-          size={14}
-          className={`shrink-0 text-muted ${active ? "animate-spin" : ""}`}
-        />
+        {active ? (
+          <span className="execution-trace-spinner text-muted" aria-hidden="true">
+            <LoaderCircle size={14} />
+          </span>
+        ) : (
+          <ListTree size={14} className="shrink-0 text-muted" aria-hidden="true" />
+        )}
         <span className="min-w-0 truncate" title={traceLabelWithMedia}>{traceLabelWithMedia}</span>
         <ChevronRight
           size={13}
@@ -1014,10 +1017,63 @@ function ExtensionFallbackRow({ row }: { row: TranscriptRow }) {
   );
 }
 
+function ExtensionRenderedMessageRow({ row }: { row: TranscriptRow }) {
+  const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const render = row.extensionMessageRender!;
+  const collapsedText = render.collapsed.join("\n");
+  const expandedText = render.expanded.join("\n");
+  const expandable = collapsedText !== expandedText;
+  const toggleLabel = t(expanded ? "extRendererCollapse" : "extRendererExpand");
+
+  if (!expandable) {
+    return (
+      <div className="flex min-w-0 items-start gap-2 py-1 text-xs text-foreground/80">
+        <Puzzle size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
+        <pre className="max-h-48 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">
+          {collapsedText}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 text-xs text-foreground/80">
+      <button
+        type="button"
+        className="flex min-h-8 w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-surface-overlay/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        aria-expanded={expanded}
+        title={toggleLabel}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <Puzzle size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-5">
+          {collapsedText}
+        </span>
+        <ChevronRight
+          size={13}
+          aria-hidden="true"
+          className={`mt-0.5 shrink-0 text-muted transition-transform duration-150 motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+      </button>
+      {expanded && (
+        <pre className="ml-[22px] mt-1 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words border-l border-border py-1 pl-3 font-mono text-[11px] leading-5">
+          {expandedText}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export function ExtensionMessageRow({ row }: { row: TranscriptRow }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const presentation = row.extensionPresentation;
+  if (!presentation && row.extensionMessageRender) {
+    return <ExtensionRenderedMessageRow row={row} />;
+  }
   if (!presentation) return <ExtensionFallbackRow row={row} />;
 
   const agentOnly = presentation.audience === "agent";

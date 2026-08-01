@@ -111,6 +111,8 @@ function coalesceKeyFor(
       return `widget:${sessionScope(identity)}:${String(p?.key ?? "")}`;
     case "extensionUi.widgetAttentionRequested":
       return `widget-attention:${sessionScope(identity)}:${String(p?.runId ?? "")}`;
+    case "extensionUi.messageRendered":
+      return `message-renderer:${sessionScope(identity)}:${String(p?.entryId ?? "")}`;
     case "session.runtimeChanged":
       return `runtime:${String(p?.sessionId ?? "")}`;
     case "package.progress":

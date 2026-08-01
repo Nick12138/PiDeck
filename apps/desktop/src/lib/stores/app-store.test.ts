@@ -887,3 +887,20 @@ describe("provider login flow state", () => {
     expect(state?.prompt).toBeNull();
   });
 });
+
+describe("Extension message renderer state", () => {
+  beforeEach(() => {
+    useAppStore.setState({ session: session("s-render") });
+  });
+
+  it("merges and removes renderer snapshots without replacing the Session", () => {
+    const render = { version: 1 as const, collapsed: ["working"], expanded: ["done"] };
+    useAppStore.getState().setExtensionMessageRender("entry-1", render);
+    expect(useAppStore.getState().session?.extensionMessageRenders).toEqual({
+      "entry-1": render,
+    });
+
+    useAppStore.getState().setExtensionMessageRender("entry-1", null);
+    expect(useAppStore.getState().session?.extensionMessageRenders).toBeUndefined();
+  });
+});

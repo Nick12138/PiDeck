@@ -355,6 +355,38 @@ textarea:focus-visible {
   contain-intrinsic-size: auto 120px;
 }
 
+/* Keep the long-running trace indicator on WebKit's compositor while the
+   transcript is receiving frequent streaming updates. */
+.execution-trace-spinner {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  transform-origin: center;
+  will-change: transform;
+  animation: execution-trace-spin 900ms linear infinite;
+}
+
+@keyframes execution-trace-spin {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0turn);
+  }
+  to {
+    transform: translate3d(0, 0, 0) rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .execution-trace-spinner {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
 /* Conversation markdown */
 .chat-markdown {
   min-width: 0;

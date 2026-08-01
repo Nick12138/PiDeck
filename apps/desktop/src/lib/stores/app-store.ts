@@ -4,6 +4,7 @@ import type {
   SessionTargetContext,
   ExtensionUiRequest,
   ExtensionUiGroupStatus,
+  ExtensionMessageRenderSnapshot,
   HostStatusSnapshot,
   PackageMutationResult,
   PackageSnapshot,
@@ -385,6 +386,10 @@ export type AppState = EpochState & {
   closeExtensionTerminal: (requestId: string) => void;
   setDockOpen: (open: boolean) => void;
   setExtensionStatus: (key: string | undefined, text: string | null) => void;
+  setExtensionMessageRender: (
+    entryId: string,
+    render: ExtensionMessageRenderSnapshot | null,
+  ) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
   toggleExtensionWidgetCollapsed: (key: string) => void;
   setExtensionWidgetsOpen: (open: boolean) => void;
@@ -972,6 +977,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         extensionStatuses,
         extensionStatus: values.length > 0 ? values[values.length - 1] : null,
+      };
+    }),
+  setExtensionMessageRender: (entryId, render) =>
+    set((state) => {
+      if (!state.session) return {};
+      const extensionMessageRenders = {
+        ...(state.session.extensionMessageRenders ?? {}),
+      };
+      if (render) extensionMessageRenders[entryId] = render;
+      else delete extensionMessageRenders[entryId];
+      return {
+        session: {
+          ...state.session,
+          ...(Object.keys(extensionMessageRenders).length > 0
+            ? { extensionMessageRenders }
+            : { extensionMessageRenders: undefined }),
+        },
       };
     }),
   setExtensionWidget: (extensionWidget) =>

@@ -10,6 +10,9 @@ import {
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
+  MAX_EXTENSION_MESSAGE_RENDER_CHARACTERS,
+  MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
+  MAX_EXTENSION_MESSAGE_RENDER_LINES,
 } from "./limits.js";
 import type { HostMethod } from "./methods.js";
 import type {
@@ -611,6 +614,38 @@ function isQueueSnapshot(value: unknown): boolean {
   );
 }
 
+function isExtensionMessageRenderLines(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_EXTENSION_MESSAGE_RENDER_LINES &&
+    value.every(
+      (line) => typeof line === "string" && line.length <= MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
+    ) &&
+    value.reduce((total, line) => total + line.length, 0) <=
+      MAX_EXTENSION_MESSAGE_RENDER_CHARACTERS
+  );
+}
+
+function isExtensionMessageRenderSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["version", "collapsed", "expanded"], ["messageIndex"]) &&
+    value.version === 1 &&
+    isExtensionMessageRenderLines(value.collapsed) &&
+    isExtensionMessageRenderLines(value.expanded) &&
+    (value.messageIndex === undefined || isSafeRevision(value.messageIndex))
+  );
+}
+
+function isExtensionMessageRenderMap(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    Object.entries(value).every(
+      ([entryId, render]) => entryId.length > 0 && isExtensionMessageRenderSnapshot(render),
+    )
+  );
+}
+
 export function isSessionSnapshot(value: unknown): boolean {
   if (
     !isPlainObject(value) ||
@@ -633,7 +668,15 @@ export function isSessionSnapshot(value: unknown): boolean {
         "messages",
         "tools",
       ],
-      ["sessionPath", "name", "model", "contextUsage", "entries", "leafId"],
+      [
+        "sessionPath",
+        "name",
+        "model",
+        "contextUsage",
+        "entries",
+        "leafId",
+        "extensionMessageRenders",
+      ],
     )
   ) {
     return false;
@@ -671,6 +714,8 @@ export function isSessionSnapshot(value: unknown): boolean {
     (value.entries === undefined ||
       (Array.isArray(value.entries) && value.entries.every(isSessionEntry))) &&
     (value.leafId === undefined || value.leafId === null || isString(value.leafId)) &&
+    (value.extensionMessageRenders === undefined ||
+      isExtensionMessageRenderMap(value.extensionMessageRenders)) &&
     isToolSnapshot(tools) &&
     tools.sessionId === value.sessionId &&
     tools.sessionRevision === value.revision
@@ -1920,6 +1965,14 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         payload.invocation.length > 0
         ? null
         : "invalid extensionUi.widgetAttentionRequested payload";
+    case "extensionUi.messageRendered":
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["entryId", "render"]) &&
+        isString(payload.entryId) &&
+        payload.entryId.length > 0 &&
+        (payload.render === null || isExtensionMessageRenderSnapshot(payload.render))
+        ? null
+        : "invalid extensionUi.messageRendered payload";
     case "extensionUi.notification":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["message", "level"]) &&

@@ -744,6 +744,15 @@ describe("protocol coverage — events", () => {
       runId: RUN_ID,
       invocation: "brainstorm",
     },
+    "extensionUi.messageRendered": {
+      entryId: "custom-message-1",
+      render: {
+        version: 1,
+        collapsed: ["working"],
+        expanded: ["working", "details"],
+        messageIndex: 3,
+      },
+    },
     "extensionUi.notification": { message: "hi", level: "info" },
     "extensionUi.customStarted": {
       requestId: EXTENSION_REQUEST_ID,

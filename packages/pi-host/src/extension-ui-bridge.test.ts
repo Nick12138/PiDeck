@@ -843,6 +843,89 @@ describe("extension-ui-bridge", () => {
     expect(events.some((x) => x.e === "extensionUi.notification")).toBe(true);
   });
 
+  it("publishes latest-wins registered message renderer updates", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    let renderState = "running";
+    let sessionListener: (() => void) | undefined;
+    const entries = [
+      {
+        id: "custom-renderer-1",
+        type: "custom_message",
+        customType: "dynamic-result",
+        content: "Running...",
+        display: true,
+        timestamp: "2026-08-01T00:00:00.000Z",
+      },
+    ];
+    const session = {
+      sessionManager: { buildContextEntries: () => entries },
+      extensionRunner: {
+        getMessageRenderer: () =>
+          (_message: unknown, options: { expanded: boolean }) => ({
+            render: () => [options.expanded ? `${renderState}: full` : renderState],
+            invalidate: () => undefined,
+          }),
+      },
+      subscribe: (listener: () => void) => {
+        sessionListener = listener;
+        return () => {
+          sessionListener = undefined;
+        };
+      },
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const publish = await binding.activate();
+    publish();
+
+    expect(events.filter((event) => event.e === "extensionUi.messageRendered")).toEqual([
+      {
+        e: "extensionUi.messageRendered",
+        p: {
+          entryId: "custom-renderer-1",
+          render: {
+            version: 1,
+            collapsed: ["running"],
+            expanded: ["running: full"],
+            messageIndex: 0,
+          },
+        },
+      },
+    ]);
+
+    renderState = "complete";
+    ui!.setStatus("dynamic", undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.filter((event) => event.e === "extensionUi.messageRendered").at(-1)).toEqual({
+      e: "extensionUi.messageRendered",
+      p: {
+        entryId: "custom-renderer-1",
+        render: {
+          version: 1,
+          collapsed: ["complete"],
+          expanded: ["complete: full"],
+          messageIndex: 0,
+        },
+      },
+    });
+
+    const count = events.filter((event) => event.e === "extensionUi.messageRendered").length;
+    sessionListener?.();
+    await Promise.resolve();
+    expect(events.filter((event) => event.e === "extensionUi.messageRendered")).toHaveLength(
+      count,
+    );
+    binding.cleanup();
+    expect(sessionListener).toBeUndefined();
+  });
+
   it("preserves below-editor widget placement", () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({

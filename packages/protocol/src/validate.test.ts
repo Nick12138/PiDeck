@@ -16,6 +16,7 @@ import {
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
+  MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
 } from "./limits.js";
 import {
   isJsonValue,
@@ -33,6 +34,33 @@ const REQUEST_ID = "00000000-0000-4000-8000-000000000001";
 const HOST_ID = "00000000-0000-4000-8000-000000000002";
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000003";
 const SESSION_ID = "00000000-0000-4000-8000-000000000004";
+
+describe("Extension message renderer snapshots", () => {
+  it("accepts bounded renderer updates and rejects oversized lines", () => {
+    expect(
+      validateEventPayload("extensionUi.messageRendered", {
+        entryId: "custom-1",
+        render: { version: 1, collapsed: ["summary"], expanded: ["full"], messageIndex: 2 },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateEventPayload("extensionUi.messageRendered", {
+        entryId: "custom-1",
+        render: {
+          version: 1,
+          collapsed: ["x".repeat(MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH + 1)],
+          expanded: [],
+        },
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateEventPayload("extensionUi.messageRendered", {
+        entryId: "custom-1",
+        render: { version: 1, collapsed: [], expanded: [], messageIndex: -1 },
+      }).ok,
+    ).toBe(false);
+  });
+});
 const EXTENSION_REQUEST_ID = "00000000-0000-4000-8000-000000000005";
 const RUN_ID = "00000000-0000-4000-8000-000000000006";
 

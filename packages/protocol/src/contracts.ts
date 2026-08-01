@@ -37,6 +37,7 @@ import type {
   ExtensionUiClosed,
   ExtensionUiGroupClosed,
   ExtensionUiRequest,
+  ExtensionMessageRenderSnapshot,
   ExtensionDecisionPresentation,
   SerializableSessionEntry,
   SerializableSessionTreeNode,
@@ -476,6 +477,10 @@ export type HostEventPayloadMap = {
     key: string;
     runId: string;
     invocation: string;
+  };
+  "extensionUi.messageRendered": {
+    entryId: string;
+    render: ExtensionMessageRenderSnapshot | null;
   };
   "extensionUi.notification": { message: string; level: string };
   "extensionUi.customStarted": {

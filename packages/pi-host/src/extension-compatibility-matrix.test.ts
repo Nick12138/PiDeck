@@ -221,6 +221,46 @@ describe("Extension behavior-class compatibility matrix", () => {
     }
   });
 
+  it("projects a dynamic registered message renderer through the real loader", async () => {
+    const matrix = await loadMatrix();
+    try {
+      await runCommand(matrix, "matrix-renderer");
+      const rendered = await waitForEvent<{
+        entryId: string;
+        render: { collapsed: string[]; expanded: string[] } | null;
+      }>(
+        matrix.events,
+        "extensionUi.messageRendered",
+        (payload) => payload.render?.collapsed[0] === "Matrix renderer complete",
+      );
+      expect(rendered.render).toEqual({
+        version: 1,
+        collapsed: ["Matrix renderer complete"],
+        expanded: ["Matrix renderer complete: full report"],
+        messageIndex: 0,
+      });
+
+      const entries = matrix.session.sessionManager.getBranch();
+      expect(
+        entries.find((entry) => entry.id === rendered.entryId),
+      ).toMatchObject({
+        type: "custom_message",
+        customType: "matrix-message",
+        display: true,
+      });
+      expect(
+        entries.some(
+          (entry) =>
+            entry.type === "custom_message" &&
+            entry.customType === "matrix-message" &&
+            entry.display === false,
+        ),
+      ).toBe(true);
+    } finally {
+      matrix.cleanup();
+    }
+  });
+
   it("runs a subagent-style dialog, widget, activity, and custom terminal", async () => {
     const matrix = await loadMatrix();
     try {

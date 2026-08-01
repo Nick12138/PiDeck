@@ -669,3 +669,40 @@ describe("Extension presentation surfaces", () => {
     expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 });
+
+describe("registered Extension message renderer output", () => {
+  afterEach(() => cleanup());
+
+  it("shows compact output and expands only when the full rendering differs", async () => {
+    const user = userEvent.setup();
+    const row: TranscriptRow = {
+      key: "custom:renderer",
+      role: "custom",
+      blocks: [{ kind: "text", text: "raw fallback" }],
+      copyText: "raw fallback",
+      customType: "subagent-slash-result",
+      extensionMessageRender: {
+        version: 1,
+        collapsed: ["Subagents doctor report"],
+        expanded: ["Subagents doctor report", "Runtime: ok"],
+      },
+    };
+
+    render(<ExtensionMessageRow row={row} />);
+
+    const name = screen.getByText("Subagents doctor report");
+    expect(name).toBeVisible();
+    expect(screen.queryByText(/raw fallback/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Runtime: ok/)).not.toBeInTheDocument();
+    const disclosure = screen.getByRole("button", { name: /Subagents doctor report/ });
+    expect(disclosure).toHaveAttribute("title", "Show full Extension output");
+    await user.click(name);
+    expect(screen.getByText(/Runtime: ok/)).toBeVisible();
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(disclosure).toHaveAttribute("title", "Show compact Extension output");
+
+    await user.click(name);
+    expect(screen.queryByText(/Runtime: ok/)).not.toBeInTheDocument();
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  });
+});

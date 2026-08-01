@@ -936,6 +936,8 @@ export const zh: Record<MessageKey, string> = {
   extPresentationCancelled: "已取消",
   extPresentationExpired: "已过期",
   extPresentationFailed: "失败",
+  extRendererExpand: "显示完整扩展输出",
+  extRendererCollapse: "显示精简扩展输出",
 
   // Git 改动
   gitChanges: "改动",

@@ -14,7 +14,6 @@ import type {
   KeybindingsManager as SdkKeybindingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Theme as ThemeClass } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
   type KeybindingDefinitions,
@@ -41,6 +40,7 @@ import {
   type HostEventName,
   type HostIdentity,
   type SessionTargetContext,
+  type ExtensionMessageRenderSnapshot,
 } from "@pideck/protocol";
 import type { MethodHandler as ServerMethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
@@ -59,6 +59,11 @@ import {
   resolveExtensionUiOwnerSessionState,
 } from "./extension-ui-policy.js";
 import { ExtensionUiGroupRegistry } from "./extension-ui-groups.js";
+import { createDesktopExtensionTheme } from "./extension-rendering-theme.js";
+import {
+  extensionMessageRenderEqual,
+  renderExtensionMessageEntries,
+} from "./extension-message-renderer.js";
 
 type PendingUi = {
   requestId: string;
@@ -169,6 +174,7 @@ export type ExtensionUiBridgeOptions = {
   isDisposed?: () => boolean;
   registerCleanup?: (cleanup: () => void) => void;
   getActiveInvocation?: () => ExtensionInvocationContext | undefined;
+  onRendererActivity?: () => void;
   /**
    * Host session-lifecycle implementations for ctx.newSession()/fork()/
    * navigateTree()/switchSession()/reload(). When absent the SDK defaults
@@ -183,6 +189,7 @@ export type ExtensionUiBinding = {
   cleanup: () => void;
   updateIdentity: (identity: HostIdentity) => void;
   replayState: () => void;
+  refreshMessageRenderers: () => void;
 };
 
 function stripAnsi(text: string): string {
@@ -322,75 +329,6 @@ function sanitize(value: unknown, seen = new WeakSet<object>()): unknown {
   return stripAnsi(String(value));
 }
 
-/** Minimal Theme instance for desktop UI adapter (hex colors per SDK Theme constructor). */
-function createDesktopStubTheme(): Theme {
-  const w = "#e0e0e0";
-  const g = "#808080";
-  const c = "#00bcd4";
-  const gr = "#4caf50";
-  const r = "#f44336";
-  const y = "#ffeb3b";
-  const m = "#e040fb";
-  const b = "#2196f3";
-  const fg = {
-    accent: c,
-    border: g,
-    borderAccent: c,
-    borderMuted: g,
-    success: gr,
-    error: r,
-    warning: y,
-    muted: g,
-    dim: g,
-    text: w,
-    thinkingText: g,
-    userMessageText: w,
-    customMessageText: w,
-    customMessageLabel: c,
-    toolTitle: w,
-    toolOutput: w,
-    mdHeading: w,
-    mdLink: c,
-    mdLinkUrl: c,
-    mdCode: w,
-    mdCodeBlock: w,
-    mdCodeBlockBorder: g,
-    mdQuote: g,
-    mdQuoteBorder: g,
-    mdHr: g,
-    mdListBullet: w,
-    toolDiffAdded: gr,
-    toolDiffRemoved: r,
-    toolDiffContext: w,
-    syntaxComment: g,
-    syntaxKeyword: m,
-    syntaxFunction: b,
-    syntaxVariable: w,
-    syntaxString: gr,
-    syntaxNumber: y,
-    syntaxType: c,
-    syntaxOperator: w,
-    syntaxPunctuation: w,
-    thinkingOff: g,
-    thinkingMinimal: g,
-    thinkingLow: g,
-    thinkingMedium: y,
-    thinkingHigh: y,
-    thinkingXhigh: r,
-    thinkingMax: r,
-    bashMode: gr,
-  } as const;
-  const bg = {
-    selectedBg: "#1565c0",
-    userMessageBg: "#000000",
-    customMessageBg: "#000000",
-    toolPendingBg: "#000000",
-    toolSuccessBg: "#000000",
-    toolErrorBg: "#000000",
-  } as const;
-  return new ThemeClass(fg, bg, "256color", { name: "pideck-stub" });
-}
-
 /**
  * App-level keybinding definitions mirrored from the SDK's core/keybindings
  * (not exported through the package root). Extensions' custom panels check
@@ -475,7 +413,7 @@ export function createExtensionUiContext(
     opts.emit("extensionUi.groupClosed", payload),
   );
   opts.registerCleanup?.(() => decisionGroups.closeAll("cancelled"));
-  const desktopTheme = createDesktopStubTheme();
+  const desktopTheme = createDesktopExtensionTheme();
   const activeWidgetFactories = new Map<string, ActiveWidgetFactory>();
   const publishedWidgetKeys = new Set<string>();
 
@@ -725,6 +663,7 @@ export function createExtensionUiContext(
         message: stripAnsi(String(message ?? "")),
         level: type ?? "info",
       });
+      opts.onRendererActivity?.();
     },
     onTerminalInput: () => () => {},
     setStatus: (key, text) => {
@@ -732,6 +671,7 @@ export function createExtensionUiContext(
         key: stripAnsi(String(key)),
         text: text === undefined ? "" : stripAnsi(String(text)),
       });
+      opts.onRendererActivity?.();
     },
     setWorkingMessage: () => {},
     setWorkingVisible: () => {},
@@ -846,6 +786,7 @@ export function createExtensionUiContext(
       if (widget !== null && widget !== undefined) {
         requestWidgetAttention(sanitizedKey, commandOrigin);
       }
+      opts.onRendererActivity?.();
     },
     setFooter: () => {},
     setHeader: () => {},
@@ -1058,6 +999,40 @@ export async function bindExtensionUi(
     string,
     { event: HostEventName; payload: unknown }
   >();
+  let lastMessageRenders: Record<string, ExtensionMessageRenderSnapshot> = {};
+  let rendererRefreshQueued = false;
+  const refreshMessageRenderers = () => {
+    if (disposed) return;
+    const sessionManager = session.sessionManager;
+    if (!sessionManager || typeof sessionManager.buildContextEntries !== "function") return;
+    const next = renderExtensionMessageEntries(
+      session,
+      sessionManager.buildContextEntries(),
+      (entry, error) => {
+        emit("package.diagnostic", {
+          severity: "info",
+          message: `Extension message renderer failed for ${String(entry.customType ?? "custom")}: ${stripAnsi(error instanceof Error ? error.message : String(error))}`,
+        });
+      },
+    );
+    const entryIds = new Set([...Object.keys(lastMessageRenders), ...Object.keys(next)]);
+    for (const entryId of entryIds) {
+      if (extensionMessageRenderEqual(lastMessageRenders[entryId], next[entryId])) continue;
+      emit("extensionUi.messageRendered", {
+        entryId,
+        render: next[entryId] ?? null,
+      });
+    }
+    lastMessageRenders = next;
+  };
+  const scheduleMessageRendererRefresh = () => {
+    if (disposed || rendererRefreshQueued) return;
+    rendererRefreshQueued = true;
+    queueMicrotask(() => {
+      rendererRefreshQueued = false;
+      refreshMessageRenderers();
+    });
+  };
   let releaseActivation!: () => void;
   const activation = new Promise<void>((resolve) => {
     releaseActivation = resolve;
@@ -1104,6 +1079,16 @@ export async function bindExtensionUi(
       } else {
         replayableState.set(stateKey, { event, payload });
       }
+      return;
+    }
+    if (event === "extensionUi.messageRendered") {
+      const rendered = payload as { entryId?: unknown; render?: unknown };
+      const stateKey = `message-renderer:${String(rendered.entryId ?? "")}`;
+      if (rendered.render === null || rendered.render === undefined) {
+        replayableState.delete(stateKey);
+      } else {
+        replayableState.set(stateKey, { event, payload });
+      }
     }
   };
   const emit = (event: HostEventName, payload: unknown) => {
@@ -1127,7 +1112,13 @@ export async function bindExtensionUi(
     registerCleanup: (cleanup) => contextCleanups.add(cleanup),
     getActiveInvocation:
       opts.getActiveInvocation ?? (() => getActiveExtensionInvocation(session)),
+    onRendererActivity: scheduleMessageRendererRefresh,
   });
+  const unsubscribeRendererEvents =
+    typeof session.subscribe === "function"
+      ? session.subscribe(() => scheduleMessageRendererRefresh())
+      : undefined;
+  if (unsubscribeRendererEvents) contextCleanups.add(unsubscribeRendererEvents);
   const ready = session
     .bindExtensions({
       uiContext,
@@ -1178,6 +1169,7 @@ export async function bindExtensionUi(
         }
       }
       await ready;
+      refreshMessageRenderers();
       let published = false;
       return () => {
         if (!disposed && !published) {
@@ -1203,6 +1195,7 @@ export async function bindExtensionUi(
       disposed = true;
       queuedEvents.length = 0;
       replayableState.clear();
+      lastMessageRenders = {};
       releaseActivation();
     },
     updateIdentity: (identity) => {
@@ -1216,6 +1209,7 @@ export async function bindExtensionUi(
         publishEvent(state.event, state.payload);
       }
     },
+    refreshMessageRenderers,
   };
 }
 

@@ -26,6 +26,7 @@ export const HOST_EVENT_NAMES = [
   "extensionUi.statusChanged",
   "extensionUi.widgetChanged",
   "extensionUi.widgetAttentionRequested",
+  "extensionUi.messageRendered",
   "extensionUi.notification",
   "extensionUi.customStarted",
   "extensionUi.customFrame",

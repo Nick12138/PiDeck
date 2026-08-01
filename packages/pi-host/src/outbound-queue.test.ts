@@ -165,6 +165,41 @@ describe("OutboundWriter", () => {
     expect(statuses).toEqual(["second", "kept"]);
   });
 
+  it("keeps only the latest message renderer snapshot per entry under pressure", async () => {
+    const fake = fakeStream({ stalled: true });
+    const { out } = writer(fake.stream, { softWatermark: 1 });
+
+    out.enqueueEvent(identity, "extensionUi.notification", { message: "hold", level: "info" });
+    await settle();
+    out.enqueueEvent(identity, "extensionUi.messageRendered", {
+      entryId: "entry-1",
+      render: { version: 1, collapsed: ["running"], expanded: ["running"] },
+    });
+    out.enqueueEvent(identity, "extensionUi.messageRendered", {
+      entryId: "entry-1",
+      render: { version: 1, collapsed: ["done"], expanded: ["final report"] },
+    });
+    out.enqueueEvent(identity, "extensionUi.messageRendered", {
+      entryId: "entry-2",
+      render: null,
+    });
+
+    fake.unstall();
+    await out.drain();
+
+    const renders = fake
+      .parsed()
+      .filter((message) => message.event === "extensionUi.messageRendered")
+      .map((message) => message.payload);
+    expect(renders).toEqual([
+      {
+        entryId: "entry-1",
+        render: { version: 1, collapsed: ["done"], expanded: ["final report"] },
+      },
+      { entryId: "entry-2", render: null },
+    ]);
+  });
+
   it("keeps widget attention between its snapshot and a later same-key update", async () => {
     const fake = fakeStream({ stalled: true });
     const { out } = writer(fake.stream, { softWatermark: 1 });

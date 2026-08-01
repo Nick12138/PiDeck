@@ -44,7 +44,7 @@ describe("ExecutionTrace", () => {
 
     expect(markup).toContain("Running 1 action");
     expect(markup).toContain("lucide-loader-circle");
-    expect(markup).toContain("animate-spin");
+    expect(markup).toContain("execution-trace-spinner");
     expect(markup).not.toContain("lucide-list-tree");
     expect(markup).not.toContain("lucide-brain");
     expect(markup).toContain('aria-expanded="false"');
@@ -64,7 +64,7 @@ describe("ExecutionTrace", () => {
     expect(markup).toContain("1 action completed");
     expect(markup).toContain("lucide-list-tree");
     expect(markup).not.toContain("lucide-loader-circle");
-    expect(markup).not.toContain("animate-spin");
+    expect(markup).not.toContain("execution-trace-spinner");
   });
 
   it("keeps a mixed completed-and-running trace active", () => {

@@ -351,6 +351,18 @@ export type SerializableAgentMessage = {
   [key: string]: JsonValue | SerializableAgentContent[] | string | undefined;
 };
 
+/**
+ * Plain-text projection produced by a registered Pi Extension message renderer.
+ * Extension components and terminal control sequences never cross the Host boundary.
+ */
+export type ExtensionMessageRenderSnapshot = {
+  version: 1;
+  collapsed: string[];
+  expanded: string[];
+  /** Position in the current context-message projection, used before Desktop receives the entry ID. */
+  messageIndex?: number;
+};
+
 export type SerializableUsage = {
   input: number;
   output: number;
@@ -418,6 +430,8 @@ export type SessionSnapshot = {
   entries?: SerializableSessionEntry[];
   /** The leaf represented by `entries`, when the host exposes the entry path. */
   leafId?: string | null;
+  /** Registered Extension renderer output, keyed by persisted custom-message entry ID. */
+  extensionMessageRenders?: Record<string, ExtensionMessageRenderSnapshot>;
   tools: ToolSnapshot;
 };
 

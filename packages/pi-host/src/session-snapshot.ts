@@ -9,7 +9,9 @@ import type {
 } from "@pideck/protocol";
 import { toJsonValue } from "@pideck/protocol";
 import { buildContextUsageBreakdown } from "./context-usage-breakdown.js";
+import { renderExtensionMessageEntries } from "./extension-message-renderer.js";
 import { getQueueSnapshot } from "./queue-state.js";
+import { logger } from "./logger.js";
 
 export const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
 const OMITTED_IMAGE_TEXT = "[Image omitted from desktop snapshot: size limit]";
@@ -229,11 +231,31 @@ export function buildSessionSnapshot(args: {
     typeof args.sessionManager.buildContextEntries === "function" &&
     typeof args.sessionManager.getLeafId === "function";
   if (canReadEntryPath) {
-    const entries = args.sessionManager
-      .buildContextEntries()
-      .map((entry) => toJsonValue(entry) as SerializableSessionEntry);
+    const rawEntries = args.sessionManager.buildContextEntries();
+    const entries = rawEntries.map((entry) => toJsonValue(entry) as SerializableSessionEntry);
     const leafId = args.sessionManager.getLeafId() ?? null;
     if (snapshotBytes + entriesByteLength(entries, leafId) <= maxSnapshotBytes) {
+      const extensionMessageRenders = renderExtensionMessageEntries(
+        session,
+        rawEntries,
+        (entry, error) => {
+          logger.warn("Extension message renderer failed", {
+            entryId: entry.id,
+            customType:
+              typeof entry.customType === "string" ? entry.customType : undefined,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      );
+      const candidate: SessionSnapshot = {
+        ...snapshot,
+        entries,
+        leafId,
+        ...(Object.keys(extensionMessageRenders).length > 0
+          ? { extensionMessageRenders }
+          : {}),
+      };
+      if (snapshotByteLength(candidate) <= maxSnapshotBytes) return candidate;
       return { ...snapshot, entries, leafId };
     }
   }

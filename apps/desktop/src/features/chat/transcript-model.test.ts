@@ -1413,4 +1413,84 @@ describe("Pi extension and session entry messages", () => {
     expect(rows[0]?.sourceId).toBe("u1");
     expect(rows[1]?.copyText).toBe("streaming tail");
   });
+
+  it("attaches Host-rendered Extension output to its persisted custom message", () => {
+    const rows = buildTranscriptRows([], {
+      entries: [
+        {
+          id: "custom-rendered",
+          type: "custom_message",
+          customType: "dynamic-result",
+          display: true,
+          content: "Running...",
+        },
+      ],
+      extensionMessageRenders: {
+        "custom-rendered": {
+          version: 1,
+          collapsed: ["Doctor complete"],
+          expanded: ["Doctor complete", "All checks passed"],
+        },
+      },
+    });
+
+    const block = rows[0]?.blocks[0];
+    expect(block?.kind).toBe("extension");
+    expect(block?.kind === "extension" && block.row.extensionMessageRender).toEqual({
+      version: 1,
+      collapsed: ["Doctor complete"],
+      expanded: ["Doctor complete", "All checks passed"],
+    });
+  });
+
+  it("attaches renderer output to a live custom-message tail by message index", () => {
+    const messages = [
+      { role: "user", content: "Run doctor" },
+      {
+        role: "custom",
+        customType: "subagent-slash-result",
+        display: true,
+        content: "Running subagent...",
+        details: { requestId: "doctor-1" },
+      },
+      {
+        role: "custom",
+        customType: "subagent-slash-result",
+        display: false,
+        content: "final state",
+        details: { requestId: "doctor-1" },
+      },
+    ] as SerializableAgentMessage[];
+    const rows = buildTranscriptRows(messages, {
+      entries: [
+        {
+          id: "user-1",
+          type: "message",
+          parentId: null,
+          message: { role: "user", content: "Run doctor" },
+        },
+      ],
+      leafId: "user-1",
+      extensionMessageRenders: {
+        "custom-live-entry": {
+          version: 1,
+          collapsed: ["Subagents doctor report"],
+          expanded: ["Subagents doctor report", "Runtime: ok"],
+          messageIndex: 1,
+        },
+      },
+    });
+
+    expect(rows).toHaveLength(2);
+    const extension = rows[1]?.blocks.find((block) => block.kind === "extension");
+    expect(extension?.kind === "extension" && extension.row).toMatchObject({
+      role: "custom",
+      customType: "subagent-slash-result",
+      extensionMessageRender: {
+        collapsed: ["Subagents doctor report"],
+        expanded: ["Subagents doctor report", "Runtime: ok"],
+        messageIndex: 1,
+      },
+    });
+  });
 });
