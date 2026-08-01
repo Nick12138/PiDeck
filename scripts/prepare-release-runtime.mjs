@@ -1,136 +1,169 @@
-/**
- * Prepare controlled Node runtime from release-runtime.lock.json.
- * Does NOT use process.execPath as the staged runtime (R1).
- *
- * Cache: .runtime-cache/node-vX-win-x64/
- * Stage: apps/desktop/src-tauri/resources/node/
- */
+/** Stage the pinned Node runtime and platform Git strategy for a release build. */
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  rmSync,
-  cpSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const lockPath = join(root, "scripts/release-runtime.lock.json");
 const cacheRoot = join(root, ".runtime-cache");
 const stageNode = join(root, "apps/desktop/src-tauri/resources/node");
 const stageGit = join(root, "apps/desktop/src-tauri/resources/git");
+const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+const target = resolveReleaseRuntimeTarget(lock);
+const nodeRuntime = target.node;
 
-function die(msg) {
-  console.error("[prepare-runtime]", msg);
+function die(message) {
+  console.error("[prepare-runtime]", message);
   process.exit(1);
 }
 
 function sha256File(file) {
-  const h = createHash("sha256");
-  h.update(readFileSync(file));
-  return h.digest("hex");
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
 
-async function download(url, dest) {
-  const res = await fetch(url);
-  if (!res.ok) die(`download failed ${res.status} ${url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  writeFileSync(dest, buf);
-}
-
-function extractZip(zipPath, destDir) {
-  mkdirSync(destDir, { recursive: true });
-  const r = process.platform === "win32"
-    ? spawnSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-Command",
-          `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
-        ],
-        { encoding: "utf8" },
-      )
-    : spawnSync("unzip", ["-q", "-o", zipPath, "-d", destDir], { encoding: "utf8" });
-  if (r.status !== 0) {
-    console.error(r.stdout ?? "", r.stderr ?? r.error?.message ?? "");
-    die("runtime ZIP extraction failed");
+async function download(url, destination) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        console.warn(`[prepare-runtime] download attempt ${attempt} failed; retrying`);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+      }
+    }
   }
-}
-
-const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-if (lock.node.os !== "win" || lock.node.arch !== "x64") {
-  die("R1 lock is Windows x64 only for P0");
-}
-if (!lock.git?.portable?.url || !lock.git.portable.sha256) {
-  die("release-runtime lock must pin Portable Git URL and SHA-256");
-}
-
-const ver = lock.node.version;
-const archiveName = lock.node.archive;
-const cacheDir = join(cacheRoot, `node-v${ver}-win-x64`);
-const zipPath = join(cacheRoot, archiveName);
-const extractedRoot = join(cacheDir, `node-v${ver}-win-x64`);
-
-mkdirSync(cacheRoot, { recursive: true });
-
-// Download + verify archive
-if (!existsSync(zipPath) || sha256File(zipPath) !== lock.node.sha256) {
-  console.log("[prepare-runtime] downloading", lock.node.url);
-  await download(lock.node.url, zipPath);
-}
-const hash = sha256File(zipPath);
-if (hash !== lock.node.sha256) {
-  die(`SHA-256 mismatch: expected ${lock.node.sha256} got ${hash}`);
-}
-console.log("[prepare-runtime] archive sha256 OK", hash);
-
-// Extract if needed
-if (!existsSync(join(extractedRoot, "node.exe"))) {
-  if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
-  mkdirSync(cacheDir, { recursive: true });
-  extractZip(zipPath, cacheDir);
-}
-if (!existsSync(join(extractedRoot, "node.exe"))) {
-  // some zips nest differently — find node.exe
-  const found = findFile(cacheDir, "node.exe");
-  if (!found) die("node.exe not found after extract");
-  // if found is deeper, use its parent as extractedRoot
-  const realRoot = dirname(found);
-  if (!existsSync(join(stageNode, "node.exe"))) {
-    // stage from realRoot
-  }
-  stageFrom(realRoot);
-} else {
-  stageFrom(extractedRoot);
-}
-
-try {
-  await preparePortableGit();
-} catch (error) {
   die(
-    `Portable Git preparation threw: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    `download failed ${url}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
   );
 }
 
-function findFile(dir, name) {
-  for (const ent of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, ent.name);
-    if (ent.isFile() && ent.name === name) return p;
-    if (ent.isDirectory()) {
-      const f = findFile(p, name);
-      if (f) return f;
+function run(executable, args, options = {}) {
+  const result = spawnSync(executable, args, {
+    encoding: "utf8",
+    shell: false,
+    ...options,
+  });
+  if (result.status !== 0) {
+    die(
+      `${executable} ${args.join(" ")} failed: ${result.stderr || result.stdout || result.error?.message || `exit ${String(result.status)}`}`,
+    );
+  }
+  return result;
+}
+
+function findFile(directory, name) {
+  if (!existsSync(directory)) return null;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isFile() && entry.name === name) return path;
+    if (entry.isDirectory()) {
+      const nested = findFile(path, name);
+      if (nested) return nested;
     }
   }
   return null;
 }
 
+function extractArchive(archivePath, destination) {
+  mkdirSync(destination, { recursive: true });
+  if (archivePath.endsWith(".zip")) {
+    if (process.platform === "win32") {
+      run("powershell.exe", [
+        "-NoProfile",
+        "-Command",
+        `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${destination.replace(/'/g, "''")}' -Force`,
+      ]);
+    } else {
+      run("unzip", ["-q", "-o", archivePath, "-d", destination]);
+    }
+    return;
+  }
+  if (archivePath.endsWith(".tar.gz")) {
+    run("tar", ["-xzf", archivePath, "-C", destination]);
+    return;
+  }
+  die(`unsupported Node archive: ${archivePath}`);
+}
+
+function stageNodeDistribution(sourceRoot, archiveSha256) {
+  rmSync(stageNode, { recursive: true, force: true });
+  mkdirSync(stageNode, { recursive: true });
+  cpSync(sourceRoot, stageNode, { recursive: true });
+
+  let nodeExecutable = join(stageNode, target.stagedNodeExecutable);
+  let npmExecutable = join(stageNode, target.stagedNpmExecutable);
+  let npxExecutable = join(stageNode, target.stagedNpxExecutable);
+  if (target.platform === "darwin") {
+    cpSync(join(stageNode, "bin/node"), nodeExecutable);
+    const writeNodeTool = (path, cliEntry) => {
+      writeFileSync(
+        path,
+        [
+          "#!/bin/sh",
+          `exec \"$(dirname \"$0\")/node\" \"$(dirname \"$0\")/${cliEntry}\" \"$@\"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path, 0o755);
+    };
+    chmodSync(nodeExecutable, 0o755);
+    writeNodeTool(npmExecutable, "lib/node_modules/npm/bin/npm-cli.js");
+    writeNodeTool(npxExecutable, "lib/node_modules/npm/bin/npx-cli.js");
+  }
+
+  for (const [path, label] of [
+    [nodeExecutable, target.stagedNodeExecutable],
+    [npmExecutable, target.stagedNpmExecutable],
+    [npxExecutable, target.stagedNpxExecutable],
+  ]) {
+    if (!existsSync(path)) die(`staged ${label} missing`);
+  }
+  const nodeProbe = run(nodeExecutable, ["--version"]);
+  const npmProbe = run(npmExecutable, ["--version"]);
+  const expectedVersion = `v${nodeRuntime.version}`;
+  if (nodeProbe.stdout.trim() !== expectedVersion) {
+    die(`staged Node reports ${nodeProbe.stdout.trim()}, expected ${expectedVersion}`);
+  }
+
+  const metadata = {
+    target: target.key,
+    platform: target.platform,
+    arch: target.arch,
+    nodeVersion: nodeRuntime.version,
+    archive: nodeRuntime.archive,
+    archiveSha256,
+    nodeExecutable: target.stagedNodeExecutable,
+    npmExecutable: target.stagedNpmExecutable,
+    npmVersion: npmProbe.stdout.trim(),
+    preparedAt: new Date().toISOString(),
+    usedProcessExecPath: false,
+  };
+  writeFileSync(join(stageNode, "RUNTIME.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+  console.log("[prepare-runtime] staged controlled Node", JSON.stringify(metadata));
+}
+
 async function preparePortableGit() {
-  const portable = lock.git.portable;
+  const portable = target.git?.portable;
+  if (!portable?.url || !portable.sha256) {
+    die("release-runtime lock must pin Portable Git URL and SHA-256");
+  }
   const archivePath = join(cacheRoot, portable.archive);
   if (!existsSync(archivePath) || sha256File(archivePath) !== portable.sha256) {
     console.log("[prepare-runtime] downloading", portable.url);
@@ -140,104 +173,98 @@ async function preparePortableGit() {
   if (archiveHash !== portable.sha256) {
     die(`Portable Git SHA-256 mismatch: expected ${portable.sha256} got ${archiveHash}`);
   }
-  console.log("[prepare-runtime] Portable Git archive sha256 OK", archiveHash);
 
-  console.log("[prepare-runtime] extracting Portable Git archive to", stageGit);
-  if (existsSync(stageGit)) rmSync(stageGit, { recursive: true, force: true });
+  rmSync(stageGit, { recursive: true, force: true });
   mkdirSync(stageGit, { recursive: true });
-  let payloadPath = null;
-  let extracted;
-  if (process.platform === "win32") {
-    extracted = spawnSync(archivePath, ["-y", `-o${stageGit}`], {
-      cwd: cacheRoot,
-      encoding: "utf8",
-      shell: false,
-      timeout: 300_000,
-    });
-  } else {
-    const archive = readFileSync(archivePath);
-    const signature = Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]);
-    const payloadOffset = archive.indexOf(signature);
-    if (payloadOffset < 0) die("Portable Git archive does not contain a 7z payload");
-    payloadPath = join(cacheRoot, `${portable.archive}.payload.7z`);
-    writeFileSync(payloadPath, archive.subarray(payloadOffset));
-    const sevenZip = process.env.PIDECK_7ZIP;
-    extracted = sevenZip
-      ? spawnSync(sevenZip, ["x", "-y", `-o${stageGit}`, payloadPath], {
-          cwd: cacheRoot,
-          encoding: "utf8",
-          shell: false,
-          timeout: 300_000,
-        })
-      : spawnSync("bsdtar", ["-xf", payloadPath, "-C", stageGit], {
-          cwd: cacheRoot,
-          encoding: "utf8",
-          shell: false,
-          timeout: 300_000,
-        });
-  }
-  if (payloadPath) rmSync(payloadPath, { force: true });
+  const extracted = spawnSync(archivePath, ["-y", `-o${stageGit}`], {
+    cwd: cacheRoot,
+    encoding: "utf8",
+    shell: false,
+    timeout: 300_000,
+  });
   if (extracted.status !== 0) {
-    const extractionState = [
-      `status=${String(extracted.status)}`,
-      `signal=${String(extracted.signal)}`,
-      `error=${extracted.error?.message ?? "none"}`,
-    ].join(", ");
-    die(
-      `Portable Git extraction failed (${extractionState}): ${extracted.stderr || extracted.stdout}`,
-    );
+    die(`Portable Git extraction failed: ${extracted.stderr || extracted.stdout}`);
   }
   for (const expected of portable.expectedFiles ?? []) {
     if (!existsSync(join(stageGit, expected))) {
-      die(`Portable Git missing expected staged file after extraction: ${expected}`);
+      die(`Portable Git missing expected staged file: ${expected}`);
     }
   }
   const gitExe = join(stageGit, "cmd", "git.exe");
-  const version = process.platform === "win32"
-    ? spawnSync(gitExe, ["--version"], {
-        encoding: "utf8",
-        shell: false,
-        timeout: 30_000,
-      })
-    : spawnSync("git", ["--version"], { encoding: "utf8", shell: false, timeout: 30_000 });
-  if (version.status !== 0 || !String(version.stdout).includes("git version")) {
-    const probeState = [`status=${String(version.status)}`, `signal=${String(version.signal)}`, `error=${version.error?.message ?? "none"}`].join(", ");
-    die(`Git probe failed (${probeState}): ${version.stderr || version.stdout}`);
-  }
-  const meta = {
-    gitVersion: portable.version,
-    tag: portable.tag,
-    archive: portable.archive,
-    archiveSha256: archiveHash,
-    gitExe,
-    versionOutput: process.platform === "win32" ? String(version.stdout).trim() : "cross-platform staging; Windows probe deferred",
-    preparedAt: new Date().toISOString(),
-  };
-  writeFileSync(join(stageGit, "RUNTIME.json"), JSON.stringify(meta, null, 2));
-  console.log("[prepare-runtime] staged Portable Git to", stageGit);
+  const version = run(gitExe, ["--version"], { timeout: 30_000 });
+  writeFileSync(
+    join(stageGit, "RUNTIME.json"),
+    `${JSON.stringify(
+      {
+        strategy: "bundled-portable",
+        target: target.key,
+        gitVersion: portable.version,
+        tag: portable.tag,
+        archive: portable.archive,
+        archiveSha256: archiveHash,
+        gitExecutable: "cmd/git.exe",
+        versionOutput: version.stdout.trim(),
+        preparedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
-function stageFrom(srcRoot) {
-  if (existsSync(stageNode)) rmSync(stageNode, { recursive: true, force: true });
-  mkdirSync(stageNode, { recursive: true });
-  // Copy full distribution (node, npm, npx, etc.)
-  cpSync(srcRoot, stageNode, { recursive: true });
-  const nodeExe = join(stageNode, "node.exe");
-  if (!existsSync(nodeExe)) die("staged node.exe missing");
-  // Also need npm
-  const npmCmd = join(stageNode, "npm.cmd");
-  if (!existsSync(npmCmd)) {
-    console.warn("[prepare-runtime] warning: npm.cmd not found in staged Node");
-  }
-  const stagingMeta = {
-    nodeVersion: ver,
-    archiveSha256: hash,
-    stagedFrom: srcRoot,
-    nodeExe,
-    preparedAt: new Date().toISOString(),
-    usedProcessExecPath: false,
-  };
-  writeFileSync(join(stageNode, "RUNTIME.json"), JSON.stringify(stagingMeta, null, 2));
-  console.log("[prepare-runtime] staged controlled Node to", stageNode);
-  console.log(JSON.stringify(stagingMeta, null, 2));
+function prepareSystemGitEvidence() {
+  const version = run("git", ["--version"], { timeout: 30_000 });
+  rmSync(stageGit, { recursive: true, force: true });
+  mkdirSync(stageGit, { recursive: true });
+  writeFileSync(
+    join(stageGit, "RUNTIME.json"),
+    `${JSON.stringify(
+      {
+        strategy: "system-required",
+        target: target.key,
+        versionOutput: version.stdout.trim(),
+        preparedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
+
+mkdirSync(cacheRoot, { recursive: true });
+const archivePath = join(cacheRoot, nodeRuntime.archive);
+if (!existsSync(archivePath) || sha256File(archivePath) !== nodeRuntime.sha256) {
+  console.log("[prepare-runtime] downloading", nodeRuntime.url);
+  await download(nodeRuntime.url, archivePath);
+}
+const archiveSha256 = sha256File(archivePath);
+if (archiveSha256 !== nodeRuntime.sha256) {
+  die(`Node SHA-256 mismatch: expected ${nodeRuntime.sha256} got ${archiveSha256}`);
+}
+
+const extractRoot = join(cacheRoot, `node-${target.key}-${nodeRuntime.version}`);
+const archiveExecutable = target.platform === "win32" ? "node.exe" : "node";
+let sourceExecutable = findFile(extractRoot, archiveExecutable);
+if (!sourceExecutable) {
+  rmSync(extractRoot, { recursive: true, force: true });
+  extractArchive(archivePath, extractRoot);
+  sourceExecutable = findFile(extractRoot, archiveExecutable);
+}
+if (!sourceExecutable) die(`${archiveExecutable} not found after extracting ${nodeRuntime.archive}`);
+const sourceRoot = target.platform === "win32" ? dirname(sourceExecutable) : dirname(dirname(sourceExecutable));
+for (const expected of nodeRuntime.expectedFiles ?? []) {
+  if (!existsSync(join(sourceRoot, expected))) {
+    die(`Node archive missing expected file: ${expected}`);
+  }
+}
+stageNodeDistribution(sourceRoot, archiveSha256);
+
+if (target.git?.strategy === "bundled-portable") {
+  await preparePortableGit();
+} else if (target.git?.strategy === "system-required") {
+  prepareSystemGitEvidence();
+} else {
+  die(`unsupported Git runtime strategy: ${target.git?.strategy ?? "missing"}`);
+}
+
+console.log(`[prepare-runtime] OK target=${target.key}`);

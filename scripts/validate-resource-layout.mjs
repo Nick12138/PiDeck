@@ -12,6 +12,7 @@ import {
   assertReleaseSdkEvidence,
   loadReleaseSdkEvidence,
 } from "./release-sdk-evidence.mjs";
+import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const res = join(root, "apps/desktop/src-tauri/resources");
@@ -20,6 +21,7 @@ const info = {};
 const runtimeLock = JSON.parse(
   readFileSync(join(root, "scripts/release-runtime.lock.json"), "utf8"),
 );
+const runtimeTarget = resolveReleaseRuntimeTarget(runtimeLock);
 const protocolVersion = JSON.parse(
   readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
 ).version;
@@ -39,11 +41,19 @@ function need(p, msg) {
   if (!existsSync(p)) errors.push(msg ?? `missing ${p}`);
 }
 
-need(join(res, "node/node.exe"), "node/node.exe missing");
-need(join(res, "node/npm.cmd"), "node/npm.cmd missing — controlled npm required");
+need(
+  join(res, "node", runtimeTarget.stagedNodeExecutable),
+  `node/${runtimeTarget.stagedNodeExecutable} missing`,
+);
+need(
+  join(res, "node", runtimeTarget.stagedNpmExecutable),
+  `node/${runtimeTarget.stagedNpmExecutable} missing — controlled npm required`,
+);
 need(join(res, "node/RUNTIME.json"), "node/RUNTIME.json missing");
-need(join(res, "git/cmd/git.exe"), "git/cmd/git.exe missing — controlled Portable Git required");
 need(join(res, "git/RUNTIME.json"), "git/RUNTIME.json missing");
+if (runtimeTarget.git.strategy === "bundled-portable") {
+  need(join(res, "git/cmd/git.exe"), "git/cmd/git.exe missing — controlled Portable Git required");
+}
 need(join(res, "pi-host/main.js"), "pi-host/main.js missing");
 need(join(res, "pi-host/package.json"), "pi-host/package.json missing");
 need(join(res, "pi-host/STAGING.json"), "pi-host/STAGING.json missing");
@@ -175,29 +185,49 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
 if (existsSync(join(res, "node/RUNTIME.json"))) {
   const r = JSON.parse(readFileSync(join(res, "node/RUNTIME.json"), "utf8"));
   info.runtime = {
+    target: r.target,
+    platform: r.platform,
+    arch: r.arch,
     nodeVersion: r.nodeVersion,
     archiveSha256: r.archiveSha256,
     usedProcessExecPath: r.usedProcessExecPath,
   };
   if (r.usedProcessExecPath === true) errors.push("RUNTIME usedProcessExecPath must be false");
+  if (r.target !== runtimeTarget.key) {
+    errors.push(`RUNTIME target ${r.target ?? "missing"} !== ${runtimeTarget.key}`);
+  }
+  if (r.archiveSha256 !== runtimeTarget.node.sha256) {
+    errors.push(
+      `Node runtime archive SHA-256 ${r.archiveSha256 ?? "missing"} !== ${runtimeTarget.node.sha256}`,
+    );
+  }
 }
 if (existsSync(join(res, "git/RUNTIME.json"))) {
   const r = JSON.parse(readFileSync(join(res, "git/RUNTIME.json"), "utf8"));
   info.gitRuntime = {
+    strategy: r.strategy,
+    target: r.target,
     gitVersion: r.gitVersion,
     archiveSha256: r.archiveSha256,
     versionOutput: r.versionOutput,
   };
-  const windowsProbe = String(r.versionOutput ?? "").startsWith("git version ");
-  const deferredCrossPlatformProbe =
-    process.platform !== "win32" &&
-    r.versionOutput === "cross-platform staging; Windows probe deferred";
-  if (!windowsProbe && !deferredCrossPlatformProbe) {
-    errors.push("Portable Git runtime version probe missing or invalid");
+  if (r.target !== runtimeTarget.key) {
+    errors.push(`Git runtime target ${r.target ?? "missing"} !== ${runtimeTarget.key}`);
   }
-  if (r.gitVersion !== runtimeLock.git?.portable?.version) {
+  if (r.strategy !== runtimeTarget.git.strategy) {
     errors.push(
-      `Portable Git runtime version ${r.gitVersion ?? "missing"} !== ${runtimeLock.git?.portable?.version ?? "missing"}`,
+      `Git runtime strategy ${r.strategy ?? "missing"} !== ${runtimeTarget.git.strategy}`,
+    );
+  }
+  if (!String(r.versionOutput ?? "").startsWith("git version ")) {
+    errors.push("Git runtime version probe missing or invalid");
+  }
+  if (
+    runtimeTarget.git.strategy === "bundled-portable" &&
+    r.gitVersion !== runtimeTarget.git.portable?.version
+  ) {
+    errors.push(
+      `Portable Git runtime version ${r.gitVersion ?? "missing"} !== ${runtimeTarget.git.portable?.version ?? "missing"}`,
     );
   }
 }

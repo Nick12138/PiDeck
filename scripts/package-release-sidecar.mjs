@@ -33,11 +33,13 @@ import {
   loadReleaseSdkEvidence,
 } from "./release-sdk-evidence.mjs";
 import { releaseRuntimeImportSpecifiers } from "./release-runtime-imports.mjs";
+import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDist = join(root, "packages/pi-host/dist");
 const protocolDist = join(root, "packages/protocol/dist");
 const protocolPkgJson = join(root, "packages/protocol/package.json");
+const hostPkgJson = join(root, "packages/pi-host/package.json");
 const dest = join(root, "apps/desktop/src-tauri/resources/pi-host");
 const nodeDir = join(root, "apps/desktop/src-tauri/resources/node");
 const gitDir = join(root, "apps/desktop/src-tauri/resources/git");
@@ -72,6 +74,12 @@ if (!existsSync(lockPath)) die("scripts/release-runtime.lock.json missing");
 if (!existsSync(pnpmLock)) die("pnpm-lock.yaml missing");
 
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+let runtimeTarget;
+try {
+  runtimeTarget = resolveReleaseRuntimeTarget(lock);
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
 if (lock.hostProductionDeps?.forbidUnlockedNpmInstall !== true) {
   die("lock must set hostProductionDeps.forbidUnlockedNpmInstall=true");
 }
@@ -118,54 +126,71 @@ if (process.argv.includes("--prepare-runtime") || process.argv.includes("--copy-
   }
 }
 
-if (!existsSync(join(nodeDir, "node.exe"))) {
+const stagedNode = join(nodeDir, runtimeTarget.stagedNodeExecutable);
+const stagedNpm = join(nodeDir, runtimeTarget.stagedNpmExecutable);
+if (!existsSync(stagedNode)) {
   die("controlled Node missing — run: pnpm prepare:runtime");
 }
 if (!existsSync(join(nodeDir, "RUNTIME.json"))) {
   die("resources/node/RUNTIME.json missing — runtime not prepared via lock");
 }
-if (!existsSync(join(nodeDir, "npm.cmd"))) {
-  die("controlled npm.cmd missing in staged Node — refuse global npm fallback");
+if (!existsSync(stagedNpm)) {
+  die(`controlled ${runtimeTarget.stagedNpmExecutable} missing — refuse global npm fallback`);
 }
-if (!existsSync(join(gitDir, "cmd", "git.exe"))) {
+if (
+  runtimeTarget.git.strategy === "bundled-portable" &&
+  !existsSync(join(gitDir, "cmd", "git.exe"))
+) {
   die("controlled Portable Git missing — run: pnpm prepare:runtime");
 }
 if (!existsSync(join(gitDir, "RUNTIME.json"))) {
-  die("resources/git/RUNTIME.json missing — Portable Git not prepared via lock");
+  die("resources/git/RUNTIME.json missing — Git strategy not prepared via lock");
 }
 
 const runtimeMeta = JSON.parse(readFileSync(join(nodeDir, "RUNTIME.json"), "utf8"));
 if (runtimeMeta.usedProcessExecPath === true) {
   die("RUNTIME.json usedProcessExecPath must be false");
 }
-if (runtimeMeta.archiveSha256 !== lock.node.sha256) {
+if (runtimeMeta.target !== runtimeTarget.key) {
+  die(`staged Node target ${runtimeMeta.target ?? "missing"} vs ${runtimeTarget.key}`);
+}
+if (runtimeMeta.archiveSha256 !== runtimeTarget.node.sha256) {
   die(
-    `staged Node archive hash mismatch: RUNTIME ${runtimeMeta.archiveSha256} vs lock ${lock.node.sha256}`,
+    `staged Node archive hash mismatch: RUNTIME ${runtimeMeta.archiveSha256} vs lock ${runtimeTarget.node.sha256}`,
   );
 }
 const gitRuntimeMeta = JSON.parse(readFileSync(join(gitDir, "RUNTIME.json"), "utf8"));
-if (gitRuntimeMeta.archiveSha256 !== lock.git.portable.sha256) {
+if (gitRuntimeMeta.target !== runtimeTarget.key) {
+  die(`staged Git target ${gitRuntimeMeta.target ?? "missing"} vs ${runtimeTarget.key}`);
+}
+if (gitRuntimeMeta.strategy !== runtimeTarget.git.strategy) {
+  die(`staged Git strategy ${gitRuntimeMeta.strategy ?? "missing"} vs ${runtimeTarget.git.strategy}`);
+}
+if (
+  runtimeTarget.git.strategy === "bundled-portable" &&
+  gitRuntimeMeta.archiveSha256 !== runtimeTarget.git.portable.sha256
+) {
   die(
-    `staged Git archive hash mismatch: RUNTIME ${gitRuntimeMeta.archiveSha256} vs lock ${lock.git.portable.sha256}`,
+    `staged Git archive hash mismatch: RUNTIME ${gitRuntimeMeta.archiveSha256} vs lock ${runtimeTarget.git.portable.sha256}`,
   );
 }
-const gitProbeExecutable = process.platform === "win32" ? join(gitDir, "cmd", "git.exe") : "git";
+const gitProbeExecutable =
+  runtimeTarget.git.strategy === "bundled-portable" ? join(gitDir, "cmd", "git.exe") : "git";
 const gitProbe = spawnSync(gitProbeExecutable, ["--version"], {
   encoding: "utf8",
   shell: false,
   timeout: 30_000,
 });
 if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
-  die(`controlled Portable Git probe failed: ${gitProbe.stderr || gitProbe.stdout}`);
+  die(`release Git probe failed: ${gitProbe.stderr || gitProbe.stdout}`);
 }
 
 function proveRuntimeImports(hostDir) {
-  const nodeExe = process.platform === "win32" ? join(nodeDir, "node.exe") : process.execPath;
   const modules = releaseRuntimeImportSpecifiers(
     sdkEvidence.hostManifest.productionDependencies,
   );
   const prove = spawnSync(
-    nodeExe,
+    stagedNode,
     [
       "-e",
       `Promise.all(${JSON.stringify(modules)}.map((name) => import(name)))` +
@@ -395,12 +420,13 @@ const protocolVendor = join(dest, "vendor", "protocol");
 mkdirSync(protocolVendor, { recursive: true });
 cpSync(protocolDist, join(protocolVendor, "dist"), { recursive: true });
 const protoMeta = JSON.parse(readFileSync(protocolPkgJson, "utf8"));
+const hostMeta = JSON.parse(readFileSync(hostPkgJson, "utf8"));
 writeFileSync(
   join(protocolVendor, "package.json"),
   JSON.stringify(
     {
       name: "@pideck/protocol",
-      version: protoMeta.version || "0.1.0",
+      version: protoMeta.version,
       type: "module",
       main: "./dist/index.js",
       types: "./dist/index.d.ts",
@@ -418,7 +444,7 @@ cpSync(protocolVendor, protoLink, { recursive: true });
 
 const releasePkg = {
   name: "pideck-host-release",
-  version: "0.1.0",
+  version: hostMeta.version,
   private: true,
   type: "module",
   main: "./main.js",
@@ -460,13 +486,12 @@ const staging = {
   usedGlobalNpm: false,
   unlockedNpmInstall: false,
   nodeVersion: runtimeMeta.nodeVersion,
+  runtimeTarget: runtimeTarget.key,
   nodeArchiveSha256: runtimeMeta.archiveSha256,
-  portableGitVersion: gitRuntimeMeta.gitVersion,
-  portableGitArchiveSha256: gitRuntimeMeta.archiveSha256,
-  portableGitProbe:
-    process.platform === "win32"
-      ? String(gitProbe.stdout).trim()
-      : gitRuntimeMeta.versionOutput,
+  gitStrategy: gitRuntimeMeta.strategy,
+  portableGitVersion: gitRuntimeMeta.gitVersion ?? null,
+  portableGitArchiveSha256: gitRuntimeMeta.archiveSha256 ?? null,
+  gitProbe: String(gitProbe.stdout).trim(),
   pnpmLockSha256: lockSha,
   pnpmLockSha256Expected: expectedSha,
   pnpmLockVerified: true,
@@ -477,8 +502,8 @@ const staging = {
 };
 writeFileSync(join(dest, "STAGING.json"), JSON.stringify(staging, null, 2));
 
-// Always compact node_modules → zip for NSIS MAX_PATH (C1/C8)
-console.log("[package-sidecar] compacting node_modules for NSIS...");
+// Keep one deterministic dependency payload across both installer formats.
+console.log("[package-sidecar] compacting node_modules...");
 const compact = timedStage("compact production dependencies", () =>
   spawnSync(process.execPath, [join(root, "scripts/compact-pi-host-resources.mjs")], {
     cwd: root,

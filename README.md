@@ -6,7 +6,7 @@ PiDeck is a desktop interface for [Pi Coding Agent](https://www.npmjs.com/packag
 
 > **P0 source gate: passing.** `pnpm verify:p0` has passed on Apple Silicon macOS and is the tracked GitHub Actions gate on Windows. It covers documentation, type checks, unit and Host integration tests, the production frontend build, and Rust tests.
 
-PiDeck supports early testing from source on Windows and Apple Silicon macOS. Distribution is a separate milestone: the current packaging pipeline produces unsigned Windows x64 development candidates, while macOS `.app` / DMG packaging is not yet available.
+PiDeck supports early testing from source on Windows and macOS. Distribution is a separate milestone: the release pipeline produces Windows x64, Apple Silicon macOS, and Intel macOS development candidates, but public-release code signing is still required.
 
 ## What is included
 
@@ -24,9 +24,9 @@ PiDeck currently pins the Pi SDK to `0.82.1`.
 | Platform | Source development | Packaging |
 |---|---:|---:|
 | Windows 11 x64 | Supported; tracked CI gate | Unsigned NSIS development candidate |
-| macOS Apple Silicon | Supported for early testing | Not yet implemented |
+| macOS Apple Silicon / Intel | Supported for early testing | DMG development candidate |
 
-Both platforms can run the full application with `tauri:dev`. The optimized `dev:fast` workflow and `package:release` remain Windows-only. Revealing a local path uses the native file manager on each platform (Explorer `/select`, Finder `open -R`).
+Both platforms can run the full application with `tauri:dev` and build a native candidate with `package:release`. The optimized `dev:fast` workflow remains Windows-only. Revealing a local path uses the native file manager on each platform (Explorer `/select`, Finder `open -R`).
 
 ## Quick start
 
@@ -131,13 +131,13 @@ Provider credentials, settings, Packages, and Sessions are user data. Do not com
 
 The passing P0 source gate demonstrates that the implemented core behavior builds and passes its automated checks. It does not by itself certify a downloadable installer.
 
-Before a public release, the project still needs accepted packaging evidence and code signing. Windows development candidates are built with:
+Before a public release, the project still needs accepted packaging evidence and platform code signing. Native development candidates are built with:
 
 ```bash
 pnpm package:release
 ```
 
-That command is Windows-only and does not produce a certified public release. macOS packaging, signing, and notarization remain future work. See [P0 scope and verification](./docs/operations/p0-scope.md) for the exact source and release boundaries.
+On Windows this produces an NSIS installer. On macOS it produces a DMG plus the signed Tauri updater archive. Without Apple Developer secrets, the macOS candidate is ad-hoc signed and may require manual approval in Privacy & Security; it is not a certified public release. See [P0 scope and verification](./docs/operations/p0-scope.md) for the exact source and release boundaries.
 
 ## Workspace layout
 

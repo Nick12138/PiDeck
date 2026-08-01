@@ -17,12 +17,14 @@ import {
   assertReleaseSdkEvidence,
   loadReleaseSdkEvidence,
 } from "./release-sdk-evidence.mjs";
+import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const resources = join(root, "apps", "desktop", "src-tauri", "resources");
 const lock = JSON.parse(
   readFileSync(join(root, "scripts", "release-runtime.lock.json"), "utf8"),
 );
+const runtimeTarget = resolveReleaseRuntimeTarget(lock);
 const sdkEvidence = loadReleaseSdkEvidence(root, lock);
 const stagedHostRoot = join(resources, "pi-host");
 const staging = JSON.parse(readFileSync(join(stagedHostRoot, "STAGING.json"), "utf8"));
@@ -41,7 +43,7 @@ assertReleaseProductionManifest(
 );
 const nodePath =
   process.env.PIDECK_STAGED_NODE ??
-  (process.platform === "win32" ? join(resources, "node", "node.exe") : process.execPath);
+  join(resources, "node", runtimeTarget.stagedNodeExecutable);
 const hostEntry =
   process.env.PIDECK_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
 const portableGit = join(resources, "git", "cmd", "git.exe");
@@ -49,7 +51,7 @@ const gitExecutable =
   process.env.PIDECK_STAGED_GIT ??
   (process.platform === "win32" && existsSync(portableGit) ? portableGit : "git");
 const expectedNodeVersion =
-  process.env.PIDECK_EXPECT_NODE_VERSION ?? lock.node.version;
+  process.env.PIDECK_EXPECT_NODE_VERSION ?? runtimeTarget.node.version;
 const timeoutMs = parseTimeout(process.env.PIDECK_STAGED_SMOKE_TIMEOUT_MS, 180_000);
 
 function parseTimeout(value, fallback) {

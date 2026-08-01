@@ -51,7 +51,11 @@ if (!libuvVerified) {
   process.exit(1);
 }
 
-const archive = `node-v${version}-win-x64.zip`;
+const archives = {
+  "win32-x64": `node-v${version}-win-x64.zip`,
+  "darwin-arm64": `node-v${version}-darwin-arm64.tar.gz`,
+  "darwin-x64": `node-v${version}-darwin-x64.tar.gz`,
+};
 const shasumsUrl = `https://nodejs.org/dist/v${version}/SHASUMS256.txt`;
 const response = await fetch(shasumsUrl);
 if (!response.ok) {
@@ -59,30 +63,43 @@ if (!response.ok) {
   process.exit(1);
 }
 const shasums = await response.text();
-const line = shasums.split("\n").find((l) => l.trim().endsWith(archive));
-if (!line) {
-  console.error(`no ${archive} entry in ${shasumsUrl}`);
-  process.exit(1);
-}
-const sha256 = line.trim().split(/\s+/)[0];
-if (!/^[0-9a-f]{64}$/.test(sha256)) {
-  console.error(`malformed sha256 for ${archive}: ${sha256}`);
-  process.exit(1);
+const sha256ByTarget = {};
+for (const [target, archive] of Object.entries(archives)) {
+  const line = shasums.split("\n").find((candidate) => candidate.trim().endsWith(archive));
+  const sha256 = line?.trim().split(/\s+/)[0];
+  if (!/^[0-9a-f]{64}$/.test(sha256 ?? "")) {
+    console.error(`missing or malformed sha256 for ${archive}: ${sha256 ?? "missing"}`);
+    process.exit(1);
+  }
+  sha256ByTarget[target] = sha256;
 }
 
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 const previous = lock.node.version;
 lock.node.version = version;
-lock.node.archive = archive;
-lock.node.url = `https://nodejs.org/dist/v${version}/${archive}`;
-lock.node.sha256 = sha256;
+lock.node.archive = archives["win32-x64"];
+lock.node.url = `https://nodejs.org/dist/v${version}/${archives["win32-x64"]}`;
+lock.node.sha256 = sha256ByTarget["win32-x64"];
+for (const target of ["darwin-arm64", "darwin-x64"]) {
+  const node = lock.targets?.[target]?.node;
+  if (!node) {
+    console.error(`release runtime lock is missing ${target}`);
+    process.exit(1);
+  }
+  node.version = version;
+  node.archive = archives[target];
+  node.url = `https://nodejs.org/dist/v${version}/${archives[target]}`;
+  node.sha256 = sha256ByTarget[target];
+}
 writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n");
 writeFileSync(nodeVersionPath, `${version}\n`);
 
 console.log(`node pin: ${previous} -> ${version}`);
 console.log(`  ${lockPath}`);
 console.log(`  ${nodeVersionPath}`);
-console.log(`  sha256 ${sha256} (from SHASUMS256.txt)`);
+for (const target of Object.keys(archives)) {
+  console.log(`  ${target} sha256 ${sha256ByTarget[target]} (from SHASUMS256.txt)`);
+}
 console.log("");
 console.log("remaining steps (handoff doc section 10 has the full runbook):");
 console.log(`  fnm install ${version} && fnm use ${version}`);

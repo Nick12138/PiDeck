@@ -182,7 +182,7 @@ A→B→A acceptance runs in `workspace-package.integration.test.ts`.
 | `pnpm build` | Build all JS packages |
 | `pnpm verify:quick` | Docs + typecheck + unit/Host integration tests for local iteration |
 | `pnpm verify:p0` | Pull-request P0 gate: quick + production frontend build + Rust tests |
-| `pnpm package:release` | Build a Windows x64 NSIS development candidate (Windows only) |
+| `pnpm package:release` | Build a native Windows x64 NSIS or macOS DMG development candidate |
 | `pnpm dev:host` | Run Pi Host (JSONL on stdio) |
 | `pnpm spike:sidecar` | M0 Extension load spike |
 | `pnpm dev:desktop` | Vite UI only |

@@ -6,7 +6,7 @@ PiDeck 是 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-co
 
 > **P0 源码门禁：已通过。** `pnpm verify:p0` 已在 Apple Silicon macOS 上通过，也是 Windows GitHub Actions 中配置的门禁。它覆盖文档检查、类型检查、单元测试与 Host 集成测试、前端生产构建和 Rust 测试。
 
-PiDeck 现已支持在 Windows 和 Apple Silicon macOS 上从源码开始早期试用。发行分发属于独立阶段：当前打包链路只能生成未签名的 Windows x64 开发候选安装包，macOS `.app` / DMG 打包尚未实现。
+PiDeck 现已支持在 Windows 和 macOS 上从源码开始早期试用。发行分发属于独立阶段：当前流水线可以生成 Windows x64、Apple Silicon macOS 和 Intel macOS 开发候选安装包，但公开发行仍需要平台代码签名。
 
 ## 已实现功能
 
@@ -24,9 +24,9 @@ PiDeck 当前固定使用 Pi SDK `0.82.1`。
 | 平台 | 源码开发 | 打包能力 |
 |---|---:|---:|
 | Windows 11 x64 | 支持；已配置 CI 门禁 | 可生成未签名的 NSIS 开发候选包 |
-| macOS Apple Silicon | 支持早期试用 | 尚未实现 |
+| macOS Apple Silicon / Intel | 支持早期试用 | DMG 开发候选包 |
 
-两个平台都可以通过 `tauri:dev` 运行完整应用。优化过的 `dev:fast` 工作流和 `package:release` 仍仅支持 Windows。macOS 目前还有一项已知限制：在 Finder 中定位本地路径的原生命令仍错误地依赖 `xdg-open`。
+两个平台都可以通过 `tauri:dev` 运行完整应用，并通过 `package:release` 构建当前平台的候选包。优化过的 `dev:fast` 工作流仍仅支持 Windows。在两个平台上定位本地路径都会调用原生文件管理器（Explorer `/select`、Finder `open -R`）。
 
 ## 快速开始
 
@@ -137,7 +137,7 @@ P0 源码门禁通过，说明已经实现的核心功能能够完成构建并�
 pnpm package:release
 ```
 
-该命令仅支持 Windows，且不会直接产出已认证的公开发行版。macOS 打包、签名和公证仍属于后续工作。源码与发布边界的精确定义请参阅 [P0 范围与验证](./docs/operations/p0-scope.md)。
+该命令在 Windows 上生成 NSIS 安装包，在 macOS 上生成 DMG 和 Tauri updater 压缩包。未配置 Apple Developer secrets 时，macOS 候选包使用 ad-hoc 签名，首次打开可能需要在“隐私与安全性”中手动允许；它仍不是已认证的公开发行版。源码与发布边界的精确定义请参阅 [P0 范围与验证](./docs/operations/p0-scope.md)。
 
 ## 仓库结构
 

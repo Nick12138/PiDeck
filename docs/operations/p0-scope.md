@@ -79,8 +79,9 @@ These paths remain covered by unit and integration tests where applicable.
 | `pnpm verify:p0` | Pull request and `main` | Quick gate, production frontend build, Rust tests |
 | `extension-compat-latest.yml` | Weekly or manual | Non-gating audit of upstream Extension package drift |
 
-> Release-grade verification is not currently automated. Windows development
-> candidates use `pnpm package:release`; macOS packaging is not implemented.
+> Candidate packaging is automated for Windows x64 and both macOS architectures.
+> Native development candidates use `pnpm package:release`; public-release
+> acceptance still requires platform signing and human installation tests.
 
 `verify:p0` is a source/core quality gate, not proof that an installer is
 releasable. `package:release` produces a development candidate without making
@@ -88,6 +89,6 @@ a release-readiness claim.
 
 ## External release condition
 
-Before public distribution, restore automated release verification and add
-Authenticode signing, timestamping, and signature verification before final
-hashes are accepted.
+Before public distribution, add Windows Authenticode signing and require the
+macOS Developer ID/notarization secrets. Verify both platform signatures before
+final hashes are accepted.

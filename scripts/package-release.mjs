@@ -19,13 +19,21 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { inspectWindowsInstaller } from "./windows-installer-integrity.mjs";
-import {
-  assertReleaseProductionManifest,
-  assertReleaseSdkEvidence,
-  loadReleaseSdkEvidence,
-} from "./release-sdk-evidence.mjs";
+import { writeReleaseResourceManifest } from "./release-resource-manifest.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.platform === "darwin") {
+  const result = spawnSync(process.execPath, [join(root, "scripts/package-release-macos.mjs")], {
+    cwd: root,
+    stdio: "inherit",
+    shell: false,
+    env: process.env,
+  });
+  process.exit(result.status ?? 1);
+}
+if (process.platform !== "win32" || process.arch !== "x64") {
+  throw new Error(`release packaging is unsupported on ${process.platform}-${process.arch}`);
+}
 const outDir = join(root, "apps/desktop/src-tauri/target/release-staging");
 const stageTimingsMs = {};
 mkdirSync(outDir, { recursive: true });
@@ -169,64 +177,6 @@ function findPrimaryInstaller(releaseDir) {
   return null;
 }
 
-const criticalResourcePaths = [
-  "node/node.exe",
-  "node/npm.cmd",
-  "node/node_modules/npm/package.json",
-  "node/RUNTIME.json",
-  "git/cmd/git.exe",
-  "git/bin/git.exe",
-  "git/RUNTIME.json",
-  "pi-host/main.js",
-  "pi-host/host-main.js",
-  "pi-host/package.json",
-  "pi-host/STAGING.json",
-  "pi-host/node_modules.zip",
-];
-
-function writeResourceManifest(resourceDir) {
-  const runtimeLockPath = join(root, "scripts", "release-runtime.lock.json");
-  const runtimeLock = JSON.parse(readFileSync(runtimeLockPath, "utf8"));
-  const sdkEvidence = loadReleaseSdkEvidence(root, runtimeLock);
-  const staging = JSON.parse(
-    readFileSync(join(resourceDir, "pi-host", "STAGING.json"), "utf8"),
-  );
-  assertReleaseSdkEvidence(staging.sdkEvidence, sdkEvidence, "STAGING SDK evidence");
-  const protocolVersion = JSON.parse(
-    readFileSync(join(root, "packages", "protocol", "package.json"), "utf8"),
-  ).version;
-  const releaseHostManifest = JSON.parse(
-    readFileSync(join(resourceDir, "pi-host", "package.json"), "utf8"),
-  );
-  assertReleaseProductionManifest(
-    releaseHostManifest,
-    sdkEvidence,
-    { "@pideck/protocol": protocolVersion },
-    "staged release Host manifest",
-  );
-  const files = criticalResourcePaths.map((relativePath) => {
-    const path = join(resourceDir, ...relativePath.split("/"));
-    if (!existsSync(path)) throw new Error(`critical release resource missing: ${relativePath}`);
-    const stat = statSync(path);
-    return { path: relativePath, sha256: sha256File(path), size: stat.size };
-  });
-  const manifest = {
-    schemaVersion: 2,
-    generatedAt: new Date().toISOString(),
-    sdkVersion: sdkEvidence.sdkVersion,
-    sdkEvidence,
-    nodeVersion: runtimeLock.node.version,
-    nodeArchiveSha256: runtimeLock.node.sha256,
-    gitVersion: runtimeLock.git.portable.version,
-    gitArchiveSha256: runtimeLock.git.portable.sha256,
-    pnpmLockSha256: runtimeLock.pnpmLock.sha256,
-    files,
-  };
-  const path = join(resourceDir, "pi-host", "RELEASE_RESOURCES.json");
-  writeFileSync(path, JSON.stringify(manifest, null, 2));
-  return { path, manifest, sha256: sha256File(path) };
-}
-
 function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
   const errors = [];
   const resourceDir = join(releaseDir, "resources");
@@ -349,7 +299,7 @@ const stagedResourceDir = join(root, "apps", "desktop", "src-tauri", "resources"
 let resourceManifestProof;
 try {
   resourceManifestProof = timedStage("write release resource manifest", () =>
-    writeResourceManifest(stagedResourceDir),
+    writeReleaseResourceManifest(root, stagedResourceDir),
   );
 } catch (error) {
   writeManifest({

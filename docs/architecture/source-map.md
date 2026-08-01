@@ -72,7 +72,8 @@ the current Windows development-candidate boundary follow
 | Quick source gate | root `package.json` | `pnpm verify:quick` |
 | P0 pull-request gate | root `package.json` | `pnpm verify:p0` |
 | Tracked P0 implementation state | `docs/operations/p0-status.json` | `pnpm verify:docs` |
-| Windows candidate packaging + integrity | `scripts/package-release.mjs`, `scripts/windows-installer-integrity.mjs` | `pnpm package:release` (Windows only) |
+| Native candidate packaging + integrity | `scripts/package-release.mjs`, `scripts/package-release-macos.mjs`, `scripts/windows-installer-integrity.mjs` | `pnpm package:release` |
+| Cross-platform release aggregation | `scripts/generate-update-manifest.mjs`, `.github/workflows/release.yml` | tag-triggered Draft Release |
 | Pull-request CI | `.github/workflows/p0.yml` | `pnpm verify:p0` |
 | Extension compatibility fixtures | `test-fixtures/pi-packages/extension-compat-matrix/`, `packages/pi-host/src/extension-compatibility-matrix.test.ts`, `real-extension-compatibility.test.ts` | behavior-class matrix plus exact published-package aliases |
 | Scheduled latest Extension audit | `.github/workflows/extension-compat-latest.yml` | weekly/manual, independent of PR and `main` gates |

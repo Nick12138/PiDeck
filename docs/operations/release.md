@@ -6,7 +6,7 @@ development and release packaging are separate support levels:
 | Platform | Source development | Development package | Public release |
 |---|---|---|---|
 | Windows 11 x64 | Supported | NSIS candidate | Not yet signed or accepted |
-| Apple Silicon macOS | Supported for early testing | Not implemented | Not available |
+| Apple Silicon / Intel macOS | Supported for early testing | DMG candidate | Requires Developer ID + notarization |
 
 The tracked implementation requirements in
 [`p0-status.json`](./p0-status.json) are implemented, but `claimStatus` remains
@@ -42,8 +42,8 @@ the exact production dependencies in
 checked against `pnpm-lock.yaml`, the deployed dependency tree, and the staged
 tree. `STAGING.json` and `RELEASE_RESOURCES.json` retain the four Pi package
 versions together with the SDK patch and pnpm-lock SHA-256 values.
-The packaging path, runtime lock, Tauri bundle target, and integrity inspection
-are all Windows-specific.
+The runtime lock also pins native macOS arm64 and x64 Node distributions. macOS
+uses the system Git executable and records its version as release evidence.
 
 ## Source Verification
 
@@ -62,22 +62,30 @@ also passed the command locally.
 These commands do not install, sign, launch, or uninstall a packaged
 candidate. They therefore cannot authorize a public-release claim.
 
-## macOS Boundary
+## macOS Development Candidate
 
-Apple Silicon macOS can run the complete development application with:
+macOS can run the complete development application and build a native candidate with:
 
 ```bash
 pnpm build
 pnpm --filter @pideck/desktop run tauri:dev
+pnpm package:release
 ```
 
-There is no macOS runtime lock, Tauri app/DMG target, signing identity,
-notarization workflow, or packaged-app smoke evidence yet. Do not use
-`package:release` or `dev:fast` on macOS.
+`package:release` stages a pinned architecture-matched Node runtime, validates
+the packaged Host, builds an app bundle and DMG, verifies the app signature and
+DMG, and binds the `.app.tar.gz` updater artifact to its updater signature.
 
-The current `desktop_open_path` implementation also invokes `xdg-open` for all
-non-Windows systems, so revealing paths in Finder is a known development-mode
-limitation.
+Without `APPLE_SIGNING_IDENTITY`, the command uses an ad-hoc signature. This is
+appropriate only for a Draft Release or direct testing and can require manual
+approval in macOS Privacy & Security. A public macOS release requires a
+Developer ID Application certificate plus notarization credentials.
+
+The tag-triggered release workflow builds Windows x64, macOS arm64, and macOS
+x64 independently. It aggregates their accepted assets into one `latest.json`
+and one GitHub Draft Release. The Apple credential set is all-or-nothing:
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
 
 ## Public Release Requirements
 
@@ -93,8 +101,9 @@ Before publishing any installer as a supported release:
 - Archive the evidence and update `p0-status.json` only after human acceptance.
 
 For Windows, this requires Authenticode signing in addition to the current
-integrity checks. For macOS, it requires a separate app/DMG packaging, signing,
-and notarization implementation.
+integrity checks. For macOS, candidate packaging is implemented, but a public
+release still requires Developer ID signing, notarization, and human install/
+update acceptance on both architectures.
 
 The deferred production checklist is preserved in
 [release-checklist.md](./release-checklist.md). Historical hardening evidence
