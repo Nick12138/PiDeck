@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { closeShellTerminal, chunkTerminalInput, shellTerminalLabel } from "./ShellTerminal";
 
@@ -41,5 +43,15 @@ describe("closeShellTerminal", () => {
     await closing;
 
     expect(commandsBeforeWriteSettled).toEqual(["shell_terminal_close"]);
+  });
+});
+
+describe("terminal stylesheet bundling", () => {
+  it("loads xterm structural styles through the static application entry", () => {
+    const main = readFileSync(join(process.cwd(), "src/main.tsx"), "utf8");
+    const surface = readFileSync(join(process.cwd(), "src/features/dock/XtermSurface.tsx"), "utf8");
+
+    expect(main).toContain('import "@xterm/xterm/css/xterm.css";');
+    expect(surface).not.toContain('import("@xterm/xterm/css/xterm.css")');
   });
 });

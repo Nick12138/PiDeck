@@ -2,6 +2,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { RotateCw } from "lucide-react";
 import { App } from "./app/App";
+import "@xterm/xterm/css/xterm.css";
 import "streamdown/styles.css";
 import "katex/dist/katex.min.css";
 import "./styles/index.css";

@@ -65,7 +65,6 @@ export function XtermSurface({
     void Promise.all([
       import("@xterm/xterm"),
       import("@xterm/addon-fit"),
-      import("@xterm/xterm/css/xterm.css"),
     ]).then(async ([{ Terminal }, { FitAddon }]) => {
       if (cancelled) return;
 
