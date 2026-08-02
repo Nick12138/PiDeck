@@ -41,7 +41,7 @@ export function applyTheme(
   root.dataset.theme = effective;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", effective === "light" ? "#f7f7f8" : "#121214");
+    ?.setAttribute("content", effective === "light" ? "#ffffff" : "#17171b");
 }
 
 export function applyStoredTheme(): void {

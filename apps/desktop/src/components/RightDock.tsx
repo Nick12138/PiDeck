@@ -474,7 +474,7 @@ export function RightDock() {
   return (
     <aside
       style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth }}
-      className={`relative flex shrink-0 flex-col border-l border-border bg-sidebar ${
+      className={`relative flex shrink-0 flex-col border-l border-border bg-surface ${
         resizing ? "transition-none" : "transition-[margin-right] duration-200 ease-out"
       }`}
     >

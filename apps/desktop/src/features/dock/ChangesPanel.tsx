@@ -469,7 +469,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         )}
       </div>
 
-      <footer className="shrink-0 border-t border-border bg-sidebar p-3">
+      <footer className="shrink-0 border-t border-border bg-surface p-3">
         {hasConflicts && <p className="mb-2 text-xs text-warning">{t("gitResolveConflicts")}</p>}
         {commitSha && <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-success"><Check size={12} />{t("gitCommitSuccess", { sha: commitSha })}</p>}
         <label htmlFor="git-commit-message" className="mb-1.5 block text-[11px] font-medium text-muted">{t("gitCommitMessage")}</label>

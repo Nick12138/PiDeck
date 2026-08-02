@@ -44,10 +44,10 @@
 @source "../../node_modules/@streamdown/mermaid/dist/*.js";
 
 @theme {
-  --color-surface: #121214;
-  --color-surface-raised: #18181b;
-  --color-surface-overlay: #26262a;
-  --color-sidebar: #151517;
+  --color-surface: #17171b;
+  --color-surface-raised: #1e1e23;
+  --color-surface-overlay: #27272d;
+  --color-sidebar: #121216;
   --color-border: #2a2a2f;
   --color-foreground: #edeef0;
   --color-muted: #9a9ba3;
@@ -158,15 +158,24 @@ input[type="checkbox"] {
 /* Light theme */
 html.light {
   color-scheme: light;
-  --color-surface: #f7f7f8;
+  --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-surface-overlay: #ececee;
-  --color-sidebar: #f2f2f4;
+  --color-surface-overlay: #ececf0;
+  --color-sidebar: #f5f6f7;
   --color-border: #e0e0e4;
   --color-foreground: #1b1c1f;
   --color-muted: #6b6c74;
   --color-accent: #d45d2d;
   --color-accent-hover: #bd4f24;
+}
+
+/* Session sidebar: soft elevation shadow cast onto the conversation area. */
+.sidebar-edge-shadow {
+  box-shadow: 4px 0 16px -6px rgb(0 0 0 / 45%);
+}
+
+html.light .sidebar-edge-shadow {
+  box-shadow: 4px 0 16px -6px rgb(0 0 0 / 10%);
 }
 
 .pi-mark-light {
@@ -199,7 +208,7 @@ html.light .pi-mark-dark {
 }
 
 html.light .startup-screen {
-  background: #f7f7f8;
+  background: #ffffff;
   color: #171918;
 }
 

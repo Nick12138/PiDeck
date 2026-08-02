@@ -98,7 +98,7 @@ export function SidebarLayout({
     <aside
       style={{ marginLeft: sidebarCollapsed ? -268 : 0 }}
       data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
-      className="relative flex w-[268px] shrink-0 flex-col border-r border-border bg-sidebar transition-[margin-left] duration-200 ease-out"
+      className="sidebar-edge-shadow relative flex w-[268px] shrink-0 flex-col border-r border-border bg-sidebar transition-[margin-left] duration-200 ease-out"
     >
       <div className="group/sidebar-edge absolute -right-4 top-0 z-40 h-full w-4">
         <button

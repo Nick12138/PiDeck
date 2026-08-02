@@ -20,7 +20,7 @@ beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.className = "";
   document.documentElement.removeAttribute("data-theme");
-  document.head.innerHTML = '<meta name="theme-color" content="#121214">';
+  document.head.innerHTML = '<meta name="theme-color" content="#17171b">';
   mockSystemTheme(false);
 });
 
@@ -44,7 +44,7 @@ describe("theme bootstrap", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
       "content",
-      "#f7f7f8",
+      "#ffffff",
     );
 
     applyTheme("dark");
@@ -53,7 +53,7 @@ describe("theme bootstrap", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
       "content",
-      "#121214",
+      "#17171b",
     );
   });
 
