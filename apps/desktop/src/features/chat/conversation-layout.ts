@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-export const DEFAULT_CONVERSATION_CONTENT_WIDTH = 768;
+export const DEFAULT_CONVERSATION_CONTENT_WIDTH = 668;
 export const MIN_CONVERSATION_CONTENT_WIDTH = 560;
 
 export function resolveConversationContentWidth(value: number | undefined): number {

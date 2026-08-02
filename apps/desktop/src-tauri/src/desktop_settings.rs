@@ -11,7 +11,7 @@ const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
 const PIDECK_DATA_DIR_NAME: &str = "pideck";
 const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
-const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 768;
+const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
 const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

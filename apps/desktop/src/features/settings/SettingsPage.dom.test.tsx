@@ -142,7 +142,7 @@ describe("SettingsPage navigation guard", () => {
     render(<SettingsPage initialSection="general" />);
 
     const input = screen.getByRole("spinbutton", { name: "Conversation width" });
-    expect(input).toHaveValue(768);
+    expect(input).toHaveValue(668);
 
     await user.clear(input);
     await user.type(input, "559");
