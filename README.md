@@ -13,7 +13,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<img src="docs/assets/readme/hero.png" alt="PiDeck main window — streaming conversation with the right dock" width="840">
+<img src="docs/assets/readme/hero-zh.png" alt="PiDeck main window in Chinese with the right dock" width="840">
 
 </div>
 
