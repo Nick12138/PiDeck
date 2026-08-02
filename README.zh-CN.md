@@ -13,10 +13,7 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<!-- 📸 截图置位 — 主视觉:正在流式对话的主窗口。
-     图片放到 docs/assets/readme/hero.png 后,取消下面这行的注释:
-<img src="docs/assets/readme/hero.png" alt="PiDeck 主窗口" width="840">
--->
+<img src="docs/assets/readme/hero.png" alt="PiDeck 主窗口 —— 流式对话与右侧面板" width="840">
 
 </div>
 
@@ -30,10 +27,9 @@
 - **Extension UI 与终端** —— 扩展可以渲染自己的交互面板,集成的工作区终端一个快捷键即达。
 - **顺手好用** —— 自定义键盘快捷键、右键菜单,界面支持简体中文和 English。
 
-<!-- 📸 截图置位 — 功能图:工具调用 + Git 面板并排。
-     图片放到 docs/assets/readme/features.png 后,取消下面这行的注释:
-<img src="docs/assets/readme/features.png" alt="工具调用与 Git 面板" width="840">
--->
+![Extension 交互提问与 Git 改动面板](docs/assets/readme/features-1.png)
+
+![Markdown 渲染、Extension 部件与分支历史](docs/assets/readme/features-2.png)
 
 ## 下载安装
 

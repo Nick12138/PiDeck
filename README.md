@@ -13,10 +13,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<!-- 📸 SCREENSHOT PLACEHOLDER — hero: main window with a streaming conversation.
-     Drop the image at docs/assets/readme/hero.png, then uncomment:
-<img src="docs/assets/readme/hero.png" alt="PiDeck main window" width="840">
--->
+<img src="docs/assets/readme/hero.png" alt="PiDeck main window — streaming conversation with the right dock" width="840">
 
 </div>
 
@@ -30,10 +27,9 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 - **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
 - **Make it yours** — customizable keyboard shortcuts, context menus, and an interface available in English and 简体中文.
 
-<!-- 📸 SCREENSHOT PLACEHOLDER — feature shot: tool calls + Git panel side by side.
-     Drop the image at docs/assets/readme/features.png, then uncomment:
-<img src="docs/assets/readme/features.png" alt="Tool calls and Git panel" width="840">
--->
+![Interactive extension prompt and the Git changes panel](docs/assets/readme/features-1.png)
+
+![Markdown rendering, extension widgets, and branch history](docs/assets/readme/features-2.png)
 
 ## Download
 
