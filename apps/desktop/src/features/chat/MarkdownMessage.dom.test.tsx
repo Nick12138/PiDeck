@@ -267,10 +267,21 @@ describe("MarkdownMessage Mermaid rendering", () => {
   });
 
   it("shows an error when a rendered chart later becomes invalid", async () => {
+    mermaidRender.mockImplementation(async (_id: string, chart: string) => {
+      if (chart.includes("this is not valid")) {
+        throw new Error("updated syntax error");
+      }
+      return { svg: '<svg viewBox="0 0 100 40"><text>diagram</text></svg>' };
+    });
     const view = render(<MarkdownMessage content={closed} mode="streaming" />);
-    await waitFor(() => expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument());
+    await waitFor(
+      () =>
+        expect(
+          view.container.querySelector('[aria-label="Mermaid chart"]'),
+        ).toHaveTextContent("diagram"),
+      { timeout: 5_000 },
+    );
 
-    mermaidRender.mockRejectedValueOnce(new Error("updated syntax error"));
     view.rerender(
       <MarkdownMessage content={"```mermaid\nthis is not valid\n```"} mode="streaming" />,
     );
