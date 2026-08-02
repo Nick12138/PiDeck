@@ -222,7 +222,7 @@ function GeneralSettings() {
                 <span className="block text-xs text-muted">{t("generalThemeDesc")}</span>
               </span>
               <select
-                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+                className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
                 value={desktopSettings?.theme ?? "system"}
                 onChange={(e) =>
                   void patchDesktop({
@@ -241,7 +241,7 @@ function GeneralSettings() {
                 <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
               </span>
               <select
-                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+                className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
                 value={desktopSettings?.language ?? "system"}
                 onChange={(e) =>
                   void patchDesktop({
@@ -270,7 +270,7 @@ function GeneralSettings() {
               </span>
               <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
                 <span
-                  className={`flex h-8 w-32 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-accent ${
+                  className={`flex h-8 w-24 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-accent ${
                     conversationWidthInvalid ? "border-danger" : "border-border"
                   }`}
                 >
