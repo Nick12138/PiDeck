@@ -1524,3 +1524,59 @@ describe("WorkspaceGraphFactory retained Workspace recovery", () => {
     }
   });
 });
+
+describe("createSession pristine reuse", () => {
+  it("reuses the pristine active Session without rebuilding or republishing", async () => {
+    const serviceGraphLock = new TryMutex();
+    const graphOperations = new GraphOperationRegistry();
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      packageRevision: 1,
+    };
+    const emit = vi.fn();
+    const server = {
+      identity,
+      getIdentity: () => identity,
+      emit,
+      serviceGraphLock,
+      graphOperations,
+    } as unknown as PiHostServer;
+
+    const session = fakeSession(true, ACTIVE_SESSION_ID);
+    Reflect.set(session, "sessionName", undefined);
+    const graph = {
+      ...(fakeWorkspaceGraph("C:/workspace", WORKSPACE_ID, session) as object),
+      resourceLoader: {},
+    } as unknown as WorkspaceGraph;
+
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    Reflect.set(factory, "graph", graph);
+
+    const result = await factory.createSession("req-pristine");
+
+    expect("error" in result).toBe(false);
+    const snapshot = result as { sessionId: string; revision: number };
+    expect(snapshot.sessionId).toBe(ACTIVE_SESSION_ID);
+    expect(snapshot.revision).toBe(5);
+    expect(identity.sessionRevision).toBe(5);
+    expect(emit).not.toHaveBeenCalled();
+
+    // Lock and operation slot must be free for the next mutation.
+    expect(
+      serviceGraphLock.tryAcquire({ operationKind: "session.create", requestId: "next" }),
+    ).toBe(true);
+    serviceGraphLock.release("next");
+    expect(
+      graphOperations.begin({
+        operationKind: "session.create",
+        requestId: "next",
+        operationId: "00000000-0000-4000-8000-000000000009",
+      }),
+    ).not.toBeNull();
+  });
+});

@@ -444,7 +444,14 @@ export function SessionList({
       pushNotification(res.error?.message ?? t("notifCreateSessionFailed"), "error");
       return false;
     }
-    setSession(res.result);
+    // Reused-pristine creates return the already-active snapshot, and normal
+    // creates push a session.snapshot event first — skip the duplicate apply.
+    const appliedSession = useAppStore.getState().session;
+    const alreadyApplied =
+      appliedSession !== null &&
+      appliedSession.sessionId === res.result.sessionId &&
+      appliedSession.revision === res.result.revision;
+    if (!alreadyApplied) setSession(res.result);
     const currentHost = useAppStore.getState().host;
     if (currentHost) {
       const nextHost = mergeHostIdentity(currentHost, res);
@@ -550,7 +557,15 @@ export function SessionList({
         );
         return;
       }
-      setSession(res.result);
+      // The Host already pushed this snapshot as a session.snapshot event before
+      // the response resolved; applying it again would rebuild the transcript a
+      // second time. Apply only when the event has not landed.
+      const appliedSession = useAppStore.getState().session;
+      const alreadyApplied =
+        appliedSession !== null &&
+        appliedSession.sessionId === res.result.sessionId &&
+        appliedSession.revision === res.result.revision;
+      if (!alreadyApplied) setSession(res.result);
       const latestHost = useAppStore.getState().host;
       if (latestHost) {
         const nextHost = mergeHostIdentity(latestHost, res);

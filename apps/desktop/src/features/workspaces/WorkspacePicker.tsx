@@ -122,8 +122,28 @@ export function WorkspacePicker() {
       }
 
       const result = res.result;
-      setWorkspace(result.workspace);
-      if (result.session) setSession(result.session);
+      // workspace.changed / session.snapshot events land before this response
+      // resolves; re-applying identical snapshots re-renders the chat and
+      // sidebar a second time. Apply only what the event stream has not.
+      const appliedWorkspace = useAppStore.getState().workspace;
+      if (
+        appliedWorkspace === null ||
+        appliedWorkspace.id !== result.workspace.id ||
+        appliedWorkspace.revision !== result.workspace.revision
+      ) {
+        setWorkspace(result.workspace);
+      }
+      const responseSession = result.session;
+      if (responseSession) {
+        const appliedSession = useAppStore.getState().session;
+        if (
+          appliedSession === null ||
+          appliedSession.sessionId !== responseSession.sessionId ||
+          appliedSession.revision !== responseSession.revision
+        ) {
+          setSession(responseSession);
+        }
+      }
       useAppStore.getState().setHost({
         ...host,
         workspaceId: res.workspaceId,

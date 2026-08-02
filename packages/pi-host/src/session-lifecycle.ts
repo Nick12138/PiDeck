@@ -17,6 +17,7 @@ import {
 } from "@pideck/protocol";
 import { logger } from "./logger.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
+import { getQueueSnapshot } from "./queue-state.js";
 import { bindForCandidate } from "./extension-ui-lifecycle.js";
 import { type GraphOperationKind } from "./locks.js";
 import {
@@ -481,6 +482,55 @@ export async function createSession(
 
   try {
     operation.signal.throwIfAborted();
+
+    // A Workspace switch just built a pristine default Session; a "new
+    // conversation" right after it would rebuild an identical empty Session
+    // and tear this one down. Reuse the active Session instead so the create
+    // resolves without touching the runtime.
+    const pristineSession = g.agentSession;
+    const pristineManager = g.sessionManager;
+    const pristineSessionId = server.identity.sessionId;
+    if (
+      !name &&
+      !options?.parentSession &&
+      !options?.setup &&
+      pristineSession &&
+      pristineManager &&
+      pristineSessionId &&
+      pristineSession.isIdle &&
+      pristineSession.messages.length === 0 &&
+      !pristineSession.sessionName &&
+      (typeof pristineManager.buildContextEntries !== "function" ||
+        pristineManager.buildContextEntries().length === 0)
+    ) {
+      const pending = getQueueSnapshot(pristineSession);
+      if (pending.steering.length === 0 && pending.followUp.length === 0) {
+        const sessionSnapshot = buildSessionSnapshot({
+          session: pristineSession,
+          sessionManager: pristineManager,
+          cwd: g.canonicalCwd,
+          sessionId: pristineSessionId,
+          revision: server.identity.sessionRevision,
+          workspaceId: g.workspaceId,
+          toolRevision: g.toolRevision,
+        });
+        g.sessionSnapshot = sessionSnapshot;
+        logger.info("session create reused pristine active session", {
+          sessionId: pristineSessionId,
+        });
+        return sessionSnapshot;
+      }
+    }
+
+    const startedAt = Date.now();
+    const stepTimings: Record<string, number> = {};
+    let lastStepAt = startedAt;
+    const markStep = (step: string) => {
+      const now = Date.now();
+      stepTimings[step] = now - lastStepAt;
+      lastStepAt = now;
+    };
+
     // C4 candidate-commit: build new session fully before disposing old (B-SESSION-TXN-01)
     const prev = captureActiveSessionState(g, server.identity);
 
@@ -494,9 +544,12 @@ export async function createSession(
     if (options?.setup) {
       await options.setup(sessionManager);
     }
+    markStep("sessionManager.create");
     await Promise.resolve(factory.deps.refreshModelHealth());
     factory.onModelHealthChanged?.();
+    markStep("refreshModelHealth");
     const candidateResourceLoader = await createSessionResourceLoader(factory, g);
+    markStep("resourceLoader.reload");
 
     const created = await createAgentSession({
       cwd: g.canonicalCwd,
@@ -512,6 +565,7 @@ export async function createSession(
     const session = created.session;
     const extensionsResult = created.extensionsResult;
     candidateSession = session;
+    markStep("createAgentSession");
 
     const sessionId = sessionManager.getSessionId() || session.sessionId || randomUUID();
     const sessionRevision = server.identity.sessionRevision + 1;
@@ -563,6 +617,7 @@ export async function createSession(
       };
     }
 
+    markStep("bindExtensionUi");
     const sessionSnapshot = buildSessionSnapshot({
       session,
       sessionManager,
@@ -572,6 +627,7 @@ export async function createSession(
       workspaceId: g.workspaceId,
       toolRevision: 1,
     });
+    markStep("buildSessionSnapshot");
 
     const retainedPrevious = factory.retainBusySession(g, prev);
 
@@ -621,6 +677,32 @@ export async function createSession(
       };
     }
 
+    markStep("activateExtensionUi");
+
+    // The candidate is authoritative once commit and Extension activation
+    // succeed. Publish it before the outgoing runtime's teardown so slow
+    // Extension cleanup cannot delay the visible conversation (openSession
+    // publishes in the same order).
+    server.emit("session.snapshot", sessionSnapshot);
+    server.emit("agent.toolsChanged", sessionSnapshot.tools);
+    if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
+    publishExtensionUi();
+    candidateSession = null;
+    extensionUiActivate = null;
+    extensionUiCleanup = null;
+    extensionUiUpdateIdentity = null;
+    extensionUiReplayState = null;
+    unsubscribeAgent = null;
+    markStep("publish");
+
+    if (prev.sessionId && prev.sessionId !== sessionId) {
+      try {
+        await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
+      } catch {
+        /* ignore — drafts cleanup is best-effort once the candidate published */
+      }
+    }
+
     if (!retainedPrevious) {
       const retainedIdle = prev.agentSession?.isIdle
         ? await factory.retainIdleSession(g, prev)
@@ -645,21 +727,13 @@ export async function createSession(
         }
       }
     }
+    markStep("disposePrevious");
 
-    candidateSession = null;
-    extensionUiActivate = null;
-    extensionUiCleanup = null;
-    extensionUiUpdateIdentity = null;
-    extensionUiReplayState = null;
-    unsubscribeAgent = null;
-
-    server.emit("session.snapshot", sessionSnapshot);
-    server.emit("agent.toolsChanged", sessionSnapshot.tools);
-    if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
-    publishExtensionUi();
-    if (prev.sessionId && prev.sessionId !== sessionId) {
-      await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
-    }
+    logger.info("session created", {
+      sessionId,
+      totalMs: Date.now() - startedAt,
+      stepsMs: stepTimings,
+    });
     return sessionSnapshot;
   } catch (err) {
     try {
@@ -788,10 +862,20 @@ export async function openSession(
       if (promoted !== null) return promoted;
     }
 
+    const startedAt = Date.now();
+    const stepTimings: Record<string, number> = {};
+    let lastStepAt = startedAt;
+    const markStep = (step: string) => {
+      const now = Date.now();
+      stepTimings[step] = now - lastStepAt;
+      lastStepAt = now;
+    };
+
     // Opening a session written before the upgrade is the case the migration
     // backup exists for, so record it once the SDK has accepted the file.
     const sessionManager = SessionManager.open(sessionPath, undefined, g.canonicalCwd);
     await factory.deps.recordMigrationMilestone?.("sessionOpened");
+    markStep("sessionManager.open");
     let candidateSession: AgentSession | null = null;
     let candidateExtensionUiCleanup: (() => void) | null = null;
     let candidateExtensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null = null;
@@ -800,7 +884,9 @@ export async function openSession(
     try {
       await Promise.resolve(factory.deps.refreshModelHealth());
       factory.onModelHealthChanged?.();
+      markStep("refreshModelHealth");
       const candidateResourceLoader = await createSessionResourceLoader(factory, g);
+      markStep("resourceLoader.reload");
 
       const created = await createAgentSession({
         cwd: g.canonicalCwd,
@@ -816,11 +902,13 @@ export async function openSession(
       candidateSession = created.session;
       const session = created.session;
       const extensionsResult = created.extensionsResult;
+      markStep("createAgentSession");
       const sessionId = sessionManager.getSessionId() || session.sessionId || randomUUID();
       await factory.deps.attachmentStore?.reconcileSession(
         sessionId,
         sessionManager.getSessionFile(),
       );
+      markStep("reconcileAttachments");
       const sessionRevision = server.identity.sessionRevision + 1;
 
       const candidateIdentity: HostIdentity = {
@@ -843,6 +931,7 @@ export async function openSession(
         factory.handleAgentEvent(g, session, event);
       });
       operation.signal.throwIfAborted();
+      markStep("bindExtensionUi");
       const sessionSnapshot = buildSessionSnapshot({
         session,
         sessionManager,
@@ -852,6 +941,7 @@ export async function openSession(
         workspaceId: g.workspaceId,
         toolRevision: 1,
       });
+      markStep("buildSessionSnapshot");
 
       const prev = captureActiveSessionState(g, server.identity);
 
@@ -904,10 +994,12 @@ export async function openSession(
       // The candidate is authoritative once commit and Extension activation succeed.
       // Publish it before awaiting outgoing idle shutdown so slow Extension cleanup
       // cannot hold the visible conversation on the previous Session.
+      markStep("activateExtensionUi");
       server.emit("session.snapshot", sessionSnapshot);
       server.emit("agent.toolsChanged", sessionSnapshot.tools);
       if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
       publishExtensionUi();
+      markStep("publish");
       if (prev.sessionId && prev.sessionId !== sessionId) {
         await factory.deps.attachmentStore?.discardSessionDrafts(prev.sessionId);
       }
@@ -938,6 +1030,12 @@ export async function openSession(
       candidateExtensionUiUpdateIdentity = null;
       candidateExtensionUiReplayState = null;
       candidateUnsubscribeAgent = null;
+      markStep("disposePrevious");
+      logger.info("session opened", {
+        sessionId,
+        totalMs: Date.now() - startedAt,
+        stepsMs: stepTimings,
+      });
       return sessionSnapshot;
     } catch (err) {
       try {
