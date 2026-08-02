@@ -27,6 +27,7 @@ async function createRepository(): Promise<{ root: string; workspace: string }> 
   git(root, "init");
   git(root, "config", "user.name", "PiDeck Test");
   git(root, "config", "user.email", "pideck@example.invalid");
+  git(root, "config", "core.autocrlf", "false");
   await writeFile(join(workspace, "tracked.txt"), "first\n", "utf8");
   git(root, "add", ".");
   git(root, "commit", "-m", "initial");
