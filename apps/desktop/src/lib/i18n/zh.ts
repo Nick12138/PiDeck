@@ -245,6 +245,7 @@ export const zh: Record<MessageKey, string> = {
   providersCompatSystemRole: "系统指令角色",
   providersCompatReasoningEffort: "reasoning_effort 字段",
   providersCompatDeveloper: "Developer",
+  providersCompatSystem: "system",
   providersCompatSend: "发送",
   providersCompatOmit: "省略",
   providersApiKey: "API 密钥",

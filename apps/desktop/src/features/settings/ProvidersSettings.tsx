@@ -1235,15 +1235,14 @@ export function ProvidersSettings() {
                     {t("providersCompatSystemRole")}
                     <select
                       className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
-                      value={compatibilityChoice(draft.compat?.supportsDeveloperRole)}
+                      value={compatibilityChoice(draft.compat?.supportsDeveloperRole ?? false)}
                       onChange={(event) => updateCompatibility(
                         "supportsDeveloperRole",
-                        event.target.value === "auto" ? null : event.target.value === "enabled",
+                        event.target.value === "enabled",
                       )}
                     >
-                      <option value="auto">{t("commonAuto")}</option>
                       <option value="enabled">{t("providersCompatDeveloper")}</option>
-                      <option value="disabled">{t("commonSystem")}</option>
+                      <option value="disabled">{t("providersCompatSystem")}</option>
                     </select>
                   </label>
                   <label className="flex flex-col gap-1.5 text-xs text-muted">

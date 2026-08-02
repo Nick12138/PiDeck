@@ -683,6 +683,19 @@ describe("Provider controller", () => {
     expect(persisted.providers.custom.authHeader).toBe(false);
   });
 
+  it("defaults a new OpenAI Chat Completions Provider to the system role", async () => {
+    const { layout, handlers } = await setup({ providers: {} });
+    const { compat: _compat, ...base } = draft([configuredModel("relay-model")]);
+    const outcome = await handlers["provider.save"]!({
+      id: "save-openai-default-role",
+      params: { provider: { ...base, api: "openai-completions" as const } },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.providers.custom.compat).toEqual({ supportsDeveloperRole: false });
+  });
+
   it("marks only already enabled remote models as selected", async () => {
     const catalogServer = createServer((_request, response) => {
       response.writeHead(200, { "Content-Type": "application/json" });

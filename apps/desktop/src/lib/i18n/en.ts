@@ -258,6 +258,7 @@ export const en = {
   providersCompatSystemRole: "System instruction role",
   providersCompatReasoningEffort: "Reasoning effort field",
   providersCompatDeveloper: "Developer",
+  providersCompatSystem: "system",
   providersCompatSend: "Send",
   providersCompatOmit: "Omit",
   providersApiKey: "API key",

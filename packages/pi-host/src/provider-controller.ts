@@ -382,6 +382,16 @@ function mergeProvider(existing: JsonObject, draft: ProviderDraft): JsonObject {
     if (Object.keys(compat).length > 0) merged.compat = compat;
     else delete merged.compat;
   }
+  // PiDeck defaults OpenAI Chat Completions Providers to the system role:
+  // pi-ai auto-detection sends the developer role to any unrecognized relay,
+  // which most OpenAI-compatible endpoints reject.
+  if (draft.api === "openai-completions") {
+    const compat: JsonObject = isObject(merged.compat) ? { ...merged.compat } : {};
+    if (typeof compat.supportsDeveloperRole !== "boolean") {
+      compat.supportsDeveloperRole = false;
+      merged.compat = compat;
+    }
+  }
   return merged;
 }
 
