@@ -37,6 +37,18 @@ export const MAX_GIT_DIFF_OUTPUT_BYTES = 2 * 1024 * 1024;
 /** Maximum patch lines returned by one Git diff request. */
 export const MAX_GIT_DIFF_LINES = 20_000;
 
+/** Maximum UTF-8 bytes accepted for one local Git branch name. */
+export const MAX_GIT_BRANCH_NAME_BYTES = 255;
+
+/** Maximum local branches returned by one Git branch request. */
+export const MAX_GIT_BRANCHES = 1_000;
+
+/** Maximum commits accepted in one Git history page. */
+export const MAX_GIT_HISTORY_PAGE_SIZE = 100;
+
+/** Maximum stdout bytes collected from branch or history metadata commands. */
+export const MAX_GIT_METADATA_OUTPUT_BYTES = 2 * 1024 * 1024;
+
 /** Maximum UTF-8 bytes in one Host-to-Desktop JSONL frame, including newline. */
 export const MAX_HOST_JSONL_FRAME_BYTES = 32 * 1024 * 1024;
 

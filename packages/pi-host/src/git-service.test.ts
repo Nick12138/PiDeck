@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { GitService, parseGitStatusPorcelain } from "./git-service.js";
+import {
+  GitService,
+  parseGitStatusPorcelain,
+  parseUnifiedGitDiffHunks,
+} from "./git-service.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -100,6 +104,40 @@ describe("parseGitStatusPorcelain", () => {
     expect(parsed.files).toHaveLength(1);
     expect(parsed.files[0]).toMatchObject({ unstaged: "untracked", pathSupported: false });
     expect(parsed.warnings).toHaveLength(1);
+  });
+});
+
+describe("parseUnifiedGitDiffHunks", () => {
+  it("returns stable metadata and standalone patches for each unified hunk", () => {
+    const patch = [
+      "diff --git a/file.txt b/file.txt",
+      "index 1111111..2222222 100644",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,2 +1,2 @@",
+      "-old one",
+      "+new one",
+      " keep",
+      "@@ -10 +10 @@",
+      "-old ten",
+      "+new ten",
+      "",
+    ].join("\n");
+
+    const hunks = parseUnifiedGitDiffHunks(patch);
+    expect(hunks).toHaveLength(2);
+    expect(hunks[0]).toMatchObject({
+      header: "@@ -1,2 +1,2 @@",
+      oldStart: 1,
+      oldLines: 2,
+      newStart: 1,
+      newLines: 2,
+      additions: 1,
+      deletions: 1,
+    });
+    expect(hunks[0]?.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(hunks[0]?.patch).toContain("diff --git a/file.txt b/file.txt");
+    expect(hunks[0]?.patch).not.toContain("@@ -10 +10 @@");
   });
 });
 
@@ -227,6 +265,63 @@ describe("GitService", () => {
     });
   });
 
+  it("stages and unstages all repository changes without changing working bytes", async () => {
+    const { workspace } = await createRepository();
+    const service = new GitService();
+    await writeFile(join(workspace, "tracked.txt"), "changed\n", "utf8");
+    await writeFile(join(workspace, "new.txt"), "new\n", "utf8");
+
+    const initial = await service.getStatus(workspace);
+    if (initial.state !== "ready") throw new Error("expected ready status");
+    const staged = await service.stageAll(workspace, initial.revision);
+    if (!staged.snapshot || staged.snapshot.state !== "ready") throw new Error("expected status");
+    expect(staged.snapshot.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "packages/app/tracked.txt", staged: "modified", unstaged: null }),
+      expect.objectContaining({ path: "packages/app/new.txt", staged: "added", unstaged: null }),
+    ]));
+
+    const unstaged = await service.unstageAll(workspace, staged.snapshot.revision);
+    expect(unstaged.snapshot).toMatchObject({
+      state: "ready",
+      files: expect.arrayContaining([
+        expect.objectContaining({ path: "packages/app/tracked.txt", staged: null, unstaged: "modified" }),
+        expect.objectContaining({ path: "packages/app/new.txt", staged: null, unstaged: "untracked" }),
+      ]),
+    });
+    await expect(readFile(join(workspace, "tracked.txt"), "utf8")).resolves.toBe("changed\n");
+    await expect(readFile(join(workspace, "new.txt"), "utf8")).resolves.toBe("new\n");
+  });
+
+  it("discards tracked worktree changes while preserving reviewed staged bytes", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const path = "packages/app/tracked.txt";
+    await writeFile(join(workspace, "tracked.txt"), "reviewed\n", "utf8");
+    const initial = await service.getStatus(workspace);
+    if (initial.state !== "ready") throw new Error("expected ready status");
+    const staged = await service.stage(workspace, path, initial.revision);
+    if (!staged.snapshot || staged.snapshot.state !== "ready") throw new Error("expected status");
+
+    await writeFile(join(workspace, "tracked.txt"), "discard me\n", "utf8");
+    const changed = await service.getStatus(workspace);
+    if (changed.state !== "ready") throw new Error("expected ready status");
+    const discarded = await service.discard(workspace, path, changed.revision);
+    expect(discarded.snapshot).toMatchObject({
+      state: "ready",
+      files: [expect.objectContaining({ path, staged: "modified", unstaged: null })],
+    });
+    await expect(readFile(join(workspace, "tracked.txt"), "utf8")).resolves.toBe("reviewed\n");
+    expect(git(root, "show", `:${path}`)).toBe("reviewed");
+
+    await writeFile(join(workspace, "untracked.txt"), "keep me\n", "utf8");
+    const withUntracked = await service.getStatus(workspace);
+    if (withUntracked.state !== "ready") throw new Error("expected ready status");
+    await expect(
+      service.discard(workspace, "packages/app/untracked.txt", withUntracked.revision),
+    ).rejects.toMatchObject({ code: "GIT_OPERATION_FAILED" });
+    await expect(readFile(join(workspace, "untracked.txt"), "utf8")).resolves.toBe("keep me\n");
+  });
+
   it("rejects commit when staged bytes change after review", async () => {
     const { workspace } = await createRepository();
     const service = new GitService();
@@ -251,5 +346,166 @@ describe("GitService", () => {
     await expect(
       service.commit(workspace, "must not commit", expectedIndexGeneration),
     ).rejects.toMatchObject({ code: "STALE_REVISION" });
+  });
+
+  it("stages and discards individual hunks without touching the other hunk", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const path = "packages/app/tracked.txt";
+    const original = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`);
+    await writeFile(join(workspace, "tracked.txt"), `${original.join("\n")}\n`, "utf8");
+    git(root, "add", path);
+    git(root, "commit", "-m", "expand fixture");
+
+    const changed = [...original];
+    changed[1] = "changed near top";
+    changed[21] = "changed near bottom";
+    await writeFile(join(workspace, "tracked.txt"), `${changed.join("\n")}\n`, "utf8");
+    const status = await service.getStatus(workspace);
+    if (status.state !== "ready") throw new Error("expected ready status");
+    const diff = await service.getDiff(workspace, path, "unstaged", status.revision);
+    expect(diff.hunks).toHaveLength(2);
+
+    const staged = await service.mutateHunk(
+      workspace,
+      path,
+      "unstaged",
+      diff.hunks[0]!.id,
+      "stage",
+      status.revision,
+      diff.contentGeneration,
+    );
+    if (!staged.snapshot || staged.snapshot.state !== "ready") throw new Error("expected status");
+    expect(git(root, "show", `:${path}`)).toContain("changed near top");
+    expect(git(root, "show", `:${path}`)).toContain("line 22");
+
+    const remaining = await service.getDiff(
+      workspace,
+      path,
+      "unstaged",
+      staged.snapshot.revision,
+    );
+    expect(remaining.hunks).toHaveLength(1);
+    const discarded = await service.mutateHunk(
+      workspace,
+      path,
+      "unstaged",
+      remaining.hunks[0]!.id,
+      "discard",
+      staged.snapshot.revision,
+      remaining.contentGeneration,
+    );
+    expect(discarded.applied).toBe(true);
+    const worktree = await readFile(join(workspace, "tracked.txt"), "utf8");
+    expect(worktree).toContain("changed near top");
+    expect(worktree).toContain("line 22");
+    expect(worktree).not.toContain("changed near bottom");
+  });
+
+  it("unstages one reviewed hunk and rejects a stale hunk identity", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const path = "packages/app/tracked.txt";
+    const original = Array.from({ length: 24 }, (_, index) => `row ${index + 1}`);
+    await writeFile(join(workspace, "tracked.txt"), `${original.join("\n")}\n`, "utf8");
+    git(root, "add", path);
+    git(root, "commit", "-m", "expand fixture");
+    const changed = [...original];
+    changed[1] = "reviewed top";
+    changed[21] = "reviewed bottom";
+    await writeFile(join(workspace, "tracked.txt"), `${changed.join("\n")}\n`, "utf8");
+    git(root, "add", path);
+
+    const status = await service.getStatus(workspace);
+    if (status.state !== "ready") throw new Error("expected ready status");
+    const diff = await service.getDiff(workspace, path, "staged", status.revision);
+    expect(diff.hunks).toHaveLength(2);
+    await expect(
+      service.mutateHunk(
+        workspace,
+        path,
+        "staged",
+        "0".repeat(64),
+        "unstage",
+        status.revision,
+        diff.contentGeneration,
+      ),
+    ).rejects.toMatchObject({ code: "STALE_REVISION" });
+
+    const result = await service.mutateHunk(
+      workspace,
+      path,
+      "staged",
+      diff.hunks[0]!.id,
+      "unstage",
+      status.revision,
+      diff.contentGeneration,
+    );
+    expect(result.applied).toBe(true);
+    expect(git(root, "show", `:${path}`)).toContain("row 2");
+    expect(git(root, "show", `:${path}`)).toContain("reviewed bottom");
+    expect(await readFile(join(workspace, "tracked.txt"), "utf8")).toContain("reviewed top");
+  });
+
+  it("stages a selected hunk from an untracked text file", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const path = "packages/app/new.txt";
+    await writeFile(join(workspace, "new.txt"), "first\nsecond\nthird\n", "utf8");
+    const status = await service.getStatus(workspace);
+    if (status.state !== "ready") throw new Error("expected ready status");
+    const diff = await service.getDiff(workspace, path, "unstaged", status.revision);
+    expect(diff.hunks).toHaveLength(1);
+    expect(diff.hunkOperations).toEqual(["stage"]);
+
+    const result = await service.mutateHunk(
+      workspace,
+      path,
+      "unstaged",
+      diff.hunks[0]!.id,
+      "stage",
+      status.revision,
+      diff.contentGeneration,
+    );
+    expect(result.applied).toBe(true);
+    expect(git(root, "show", `:${path}`)).toBe("first\nsecond\nthird");
+  });
+
+  it("creates and switches local branches and pages first-parent history", async () => {
+    const { root, workspace } = await createRepository();
+    const service = new GitService();
+    const initial = await service.getStatus(workspace);
+    if (initial.state !== "ready") throw new Error("expected ready status");
+
+    const created = await service.createBranch(workspace, "feature/history", initial.revision);
+    if (!created.snapshot || created.snapshot.state !== "ready") throw new Error("expected status");
+    expect(created.snapshot.branch).toBe("feature/history");
+    const branches = await service.listBranches(workspace);
+    expect(branches.branches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "feature/history", current: true }),
+      expect.objectContaining({ name: initial.branch, current: false }),
+    ]));
+
+    await writeFile(join(workspace, "history.txt"), "history change\n", "utf8");
+    git(root, "add", ".");
+    git(root, "commit", "-m", "history change");
+    const history = await service.listHistory(workspace, 1);
+    expect(history.commits).toHaveLength(1);
+    expect(history.commits[0]).toMatchObject({ subject: "history change", authorName: "PiDeck Test" });
+    expect(history.nextCursor).toBe(history.commits[0]?.sha);
+    const older = await service.listHistory(workspace, 10, history.nextCursor!);
+    expect(older.commits[0]?.subject).toBe("initial");
+
+    const commitDiff = await service.getCommitDiff(workspace, history.commits[0]!.sha);
+    expect(commitDiff.patch).toContain("+history change");
+    expect(commitDiff.parentSha).toMatch(/^[0-9a-f]{40,64}$/);
+    const rootDiff = await service.getCommitDiff(workspace, older.commits[0]!.sha);
+    expect(rootDiff.parentSha).toBeNull();
+    expect(rootDiff.patch).toContain("+first");
+
+    const latest = await service.getStatus(workspace);
+    if (latest.state !== "ready") throw new Error("expected ready status");
+    const switched = await service.switchBranch(workspace, initial.branch!, latest.revision);
+    expect(switched.snapshot).toMatchObject({ state: "ready", branch: initial.branch });
   });
 });

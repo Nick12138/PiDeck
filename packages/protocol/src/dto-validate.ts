@@ -1327,6 +1327,8 @@ function isGitDiffSnapshot(value: unknown): boolean {
       "binary",
       "truncated",
       "contentGeneration",
+      "hunks",
+      "hunkOperations",
     ]) &&
     isString(value.path) &&
     (value.area === "staged" || value.area === "unstaged") &&
@@ -1336,7 +1338,117 @@ function isGitDiffSnapshot(value: unknown): boolean {
     isBoolean(value.binary) &&
     isBoolean(value.truncated) &&
     isString(value.contentGeneration) &&
-    /^[0-9a-f]{64}$/.test(value.contentGeneration)
+    /^[0-9a-f]{64}$/.test(value.contentGeneration) &&
+    Array.isArray(value.hunks) &&
+    value.hunks.every(isGitDiffHunk) &&
+    Array.isArray(value.hunkOperations) &&
+    value.hunkOperations.every(
+      (operation) => operation === "stage" || operation === "unstage" || operation === "discard",
+    ) &&
+    new Set(value.hunkOperations).size === value.hunkOperations.length
+  );
+}
+
+function isGitDiffHunk(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "id",
+      "header",
+      "oldStart",
+      "oldLines",
+      "newStart",
+      "newLines",
+      "additions",
+      "deletions",
+    ]) &&
+    isString(value.id) &&
+    /^[0-9a-f]{64}$/.test(value.id) &&
+    isString(value.header) &&
+    isSafeRevision(value.oldStart) &&
+    isSafeRevision(value.oldLines) &&
+    isSafeRevision(value.newStart) &&
+    isSafeRevision(value.newLines) &&
+    isSafeRevision(value.additions) &&
+    isSafeRevision(value.deletions)
+  );
+}
+
+function isGitSha(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40,64}$/.test(value);
+}
+
+function isGitBranchList(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["statusRevision", "current", "detached", "branches", "truncated"]) &&
+    isSafeRevision(value.statusRevision) &&
+    (value.current === null || isString(value.current)) &&
+    isBoolean(value.detached) &&
+    Array.isArray(value.branches) &&
+    value.branches.every(
+      (branch) =>
+        isPlainObject(branch) &&
+        hasExactKeys(branch, ["name", "current", "upstream", "ahead", "behind"]) &&
+        isString(branch.name) &&
+        isBoolean(branch.current) &&
+        (branch.upstream === null || isString(branch.upstream)) &&
+        isSafeRevision(branch.ahead) &&
+        isSafeRevision(branch.behind),
+    ) &&
+    isBoolean(value.truncated)
+  );
+}
+
+function isGitHistoryResult(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["commits", "nextCursor"]) &&
+    Array.isArray(value.commits) &&
+    value.commits.every(
+      (commit) =>
+        isPlainObject(commit) &&
+        hasExactKeys(commit, [
+          "sha",
+          "shortSha",
+          "parents",
+          "authorName",
+          "authoredAt",
+          "subject",
+          "refs",
+        ]) &&
+        isGitSha(commit.sha) &&
+        isString(commit.shortSha) &&
+        Array.isArray(commit.parents) &&
+        commit.parents.every(isGitSha) &&
+        isString(commit.authorName) &&
+        isString(commit.authoredAt) &&
+        isString(commit.subject) &&
+        isStringArray(commit.refs),
+    ) &&
+    (value.nextCursor === null || isGitSha(value.nextCursor))
+  );
+}
+
+function isGitCommitDiffSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "commitSha",
+      "parentSha",
+      "patch",
+      "additions",
+      "deletions",
+      "binary",
+      "truncated",
+    ]) &&
+    isGitSha(value.commitSha) &&
+    (value.parentSha === null || isGitSha(value.parentSha)) &&
+    isString(value.patch) &&
+    isSafeRevision(value.additions) &&
+    isSafeRevision(value.deletions) &&
+    isBoolean(value.binary) &&
+    isBoolean(value.truncated)
   );
 }
 
@@ -1496,8 +1608,20 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid git.setWatching result";
     case "git.getDiff":
       return isGitDiffSnapshot(result) ? null : "invalid git.getDiff result";
+    case "git.listBranches":
+      return isGitBranchList(result) ? null : "invalid git.listBranches result";
+    case "git.listHistory":
+      return isGitHistoryResult(result) ? null : "invalid git.listHistory result";
+    case "git.getCommitDiff":
+      return isGitCommitDiffSnapshot(result) ? null : "invalid git.getCommitDiff result";
+    case "git.mutateHunk":
     case "git.stage":
+    case "git.stageAll":
     case "git.unstage":
+    case "git.unstageAll":
+    case "git.discard":
+    case "git.createBranch":
+    case "git.switchBranch":
       return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
     case "git.commit":
       return isGitMutationResult(result, true) ? null : "invalid git.commit result";

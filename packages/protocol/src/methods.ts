@@ -12,9 +12,18 @@ export const HOST_METHODS = [
   "git.getStatus",
   "git.setWatching",
   "git.getDiff",
+  "git.mutateHunk",
   "git.stage",
+  "git.stageAll",
   "git.unstage",
+  "git.unstageAll",
+  "git.discard",
   "git.commit",
+  "git.listBranches",
+  "git.createBranch",
+  "git.switchBranch",
+  "git.listHistory",
+  "git.getCommitDiff",
   "attachment.create",
   "attachment.createText",
   "attachment.get",
@@ -156,9 +165,18 @@ export type WorkspaceOnlyMethod =
   | "git.getStatus"
   | "git.setWatching"
   | "git.getDiff"
+  | "git.mutateHunk"
   | "git.stage"
+  | "git.stageAll"
   | "git.unstage"
+  | "git.unstageAll"
+  | "git.discard"
   | "git.commit"
+  | "git.listBranches"
+  | "git.createBranch"
+  | "git.switchBranch"
+  | "git.listHistory"
+  | "git.getCommitDiff"
   | "session.list"
   | "session.archive"
   | "session.restore"
@@ -261,9 +279,18 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "git.getStatus": "workspace",
   "git.setWatching": "workspace",
   "git.getDiff": "workspace",
+  "git.mutateHunk": "workspace",
   "git.stage": "workspace",
+  "git.stageAll": "workspace",
   "git.unstage": "workspace",
+  "git.unstageAll": "workspace",
+  "git.discard": "workspace",
   "git.commit": "workspace",
+  "git.listBranches": "workspace",
+  "git.createBranch": "workspace",
+  "git.switchBranch": "workspace",
+  "git.listHistory": "workspace",
+  "git.getCommitDiff": "workspace",
   "attachment.create": "activeSession",
   "attachment.createText": "activeSession",
   "attachment.get": "activeSession",

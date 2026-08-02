@@ -102,10 +102,82 @@ export function createGitHandlers(
       }
     },
 
+    "git.listBranches": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const root = workspace(factory);
+      if (!root) return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      try {
+        const result = await service.listBranches(root);
+        const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+        return staleAfter ? { error: staleAfter } : { result };
+      } catch (error) {
+        return { error: hostError(error) };
+      }
+    },
+
+    "git.listHistory": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const root = workspace(factory);
+      if (!root) return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      const params = ctx.params as { limit: number; cursor?: string };
+      try {
+        const result = await service.listHistory(root, params.limit, params.cursor);
+        const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+        return staleAfter ? { error: staleAfter } : { result };
+      } catch (error) {
+        return { error: hostError(error) };
+      }
+    },
+
+    "git.getCommitDiff": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const root = workspace(factory);
+      if (!root) return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      const params = ctx.params as { commitSha: string };
+      try {
+        const result = await service.getCommitDiff(root, params.commitSha);
+        const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+        return staleAfter ? { error: staleAfter } : { result };
+      } catch (error) {
+        return { error: hostError(error) };
+      }
+    },
+
+    "git.mutateHunk": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as {
+          path: string;
+          area: "staged" | "unstaged";
+          hunkId: string;
+          operation: "stage" | "unstage" | "discard";
+          expectedRevision: number;
+          expectedContentGeneration: string;
+        };
+        return service.mutateHunk(
+          root,
+          params.path,
+          params.area,
+          params.hunkId,
+          params.operation,
+          params.expectedRevision,
+          params.expectedContentGeneration,
+          signal,
+        );
+      }, emitSnapshot),
+
     "git.stage": async (ctx) =>
       mutateGit(factory, ctx, (root, signal) => {
         const params = ctx.params as { path: string; expectedRevision: number };
         return service.stage(root, params.path, params.expectedRevision, signal);
+      }, emitSnapshot),
+
+    "git.stageAll": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as { expectedRevision: number };
+        return service.stageAll(root, params.expectedRevision, signal);
       }, emitSnapshot),
 
     "git.unstage": async (ctx) =>
@@ -114,10 +186,34 @@ export function createGitHandlers(
         return service.unstage(root, params.path, params.expectedRevision, signal);
       }, emitSnapshot),
 
+    "git.unstageAll": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as { expectedRevision: number };
+        return service.unstageAll(root, params.expectedRevision, signal);
+      }, emitSnapshot),
+
+    "git.discard": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as { path: string; expectedRevision: number };
+        return service.discard(root, params.path, params.expectedRevision, signal);
+      }, emitSnapshot),
+
     "git.commit": async (ctx) =>
       mutateGit(factory, ctx, (root, signal) => {
         const params = ctx.params as { message: string; expectedIndexGeneration: string };
         return service.commit(root, params.message, params.expectedIndexGeneration, signal);
+      }, emitSnapshot),
+
+    "git.createBranch": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as { name: string; expectedRevision: number };
+        return service.createBranch(root, params.name, params.expectedRevision, signal);
+      }, emitSnapshot),
+
+    "git.switchBranch": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => {
+        const params = ctx.params as { name: string; expectedRevision: number };
+        return service.switchBranch(root, params.name, params.expectedRevision, signal);
       }, emitSnapshot),
   };
 }

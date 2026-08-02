@@ -89,9 +89,25 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "git.getStatus": null,
   "git.setWatching": { enabled: true },
   "git.getDiff": { path: "src/app.ts", area: "unstaged", expectedRevision: 1 },
+  "git.mutateHunk": {
+    path: "src/app.ts",
+    area: "unstaged",
+    hunkId: "b".repeat(64),
+    operation: "stage",
+    expectedRevision: 1,
+    expectedContentGeneration: "c".repeat(64),
+  },
   "git.stage": { path: "src/app.ts", expectedRevision: 1 },
+  "git.stageAll": { expectedRevision: 1 },
   "git.unstage": { path: "src/app.ts", expectedRevision: 1 },
+  "git.unstageAll": { expectedRevision: 1 },
+  "git.discard": { path: "src/app.ts", expectedRevision: 1 },
   "git.commit": { message: "feat: update app", expectedIndexGeneration: "a".repeat(64) },
+  "git.listBranches": null,
+  "git.createBranch": { name: "feature/git", expectedRevision: 1 },
+  "git.switchBranch": { name: "main", expectedRevision: 1 },
+  "git.listHistory": { limit: 50 },
+  "git.getCommitDiff": { commitSha: "d".repeat(40) },
   "attachment.create": { path: "/tmp/report.pdf" },
   "attachment.createText": { text: "pasted text" },
   "attachment.get": { attachmentId: RUN_ID },
@@ -234,6 +250,7 @@ function invalidParams(method: HostMethod): unknown {
     case "system.shutdown":
     case "workspace.getCurrent":
     case "git.getStatus":
+    case "git.listBranches":
     case "session.list":
     case "session.cleanupArchived":
     case "session.reload":
@@ -264,11 +281,24 @@ function invalidParams(method: HostMethod): unknown {
       return { enabled: "yes" };
     case "git.getDiff":
       return { path: "src/app.ts", area: "both", expectedRevision: 1 };
+    case "git.mutateHunk":
+      return { path: "src/app.ts", area: "unstaged", hunkId: "bad", operation: "stage", expectedRevision: 1, expectedContentGeneration: "bad" };
     case "git.stage":
     case "git.unstage":
+    case "git.discard":
       return { path: "../escape", expectedRevision: "old" };
+    case "git.stageAll":
+    case "git.unstageAll":
+      return { expectedRevision: -1 };
     case "git.commit":
       return { message: "", expectedIndexGeneration: "nope" };
+    case "git.createBranch":
+    case "git.switchBranch":
+      return { name: "", expectedRevision: -1 };
+    case "git.listHistory":
+      return { limit: 0 };
+    case "git.getCommitDiff":
+      return { commitSha: "main" };
     case "attachment.create":
       return { path: "" };
     case "attachment.createText":

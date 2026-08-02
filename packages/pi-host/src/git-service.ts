@@ -5,12 +5,20 @@ import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import {
   MAX_GIT_DIFF_LINES,
   MAX_GIT_DIFF_OUTPUT_BYTES,
+  MAX_GIT_BRANCHES,
+  MAX_GIT_HISTORY_PAGE_SIZE,
+  MAX_GIT_METADATA_OUTPUT_BYTES,
   MAX_GIT_STATUS_ENTRIES,
   MAX_GIT_STATUS_OUTPUT_BYTES,
+  type GitBranchList,
   type GitChangeKind,
+  type GitCommitDiffSnapshot,
   type GitCommitResult,
+  type GitDiffHunk,
   type GitDiffSnapshot,
   type GitFileChange,
+  type GitHistoryResult,
+  type GitHunkOperation,
   type GitMutationResult,
   type GitStatusSnapshot,
   type HostErrorCode,
@@ -410,6 +418,66 @@ function safeGitMessage(message: string, fallback: string): string {
   return normalized || fallback;
 }
 
+type ParsedGitDiffHunk = GitDiffHunk & { patch: string };
+
+function countPatchChanges(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
+    if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+export function parseUnifiedGitDiffHunks(patch: string): ParsedGitDiffHunk[] {
+  const lines = patch.split("\n");
+  const hunkStarts: number[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index]?.startsWith("@@ ")) hunkStarts.push(index);
+  }
+  if (hunkStarts.length === 0) return [];
+  const headerLines = lines.slice(0, hunkStarts[0]);
+  if (
+    !headerLines.some((line) => line.startsWith("diff --git ")) ||
+    !headerLines.some((line) => line.startsWith("--- ")) ||
+    !headerLines.some((line) => line.startsWith("+++ "))
+  ) {
+    return [];
+  }
+
+  return hunkStarts.flatMap((start, ordinal) => {
+    const header = lines[start] ?? "";
+    const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
+    if (!match) return [];
+    const end = hunkStarts[ordinal + 1] ?? lines.length;
+    const hunkLines = lines.slice(start, end);
+    while (hunkLines.at(-1) === "") hunkLines.pop();
+    const hunkPatch = [...headerLines, ...hunkLines].join("\n") + "\n";
+    let additions = 0;
+    let deletions = 0;
+    for (const line of hunkLines.slice(1)) {
+      if (line.startsWith("+")) additions += 1;
+      else if (line.startsWith("-")) deletions += 1;
+    }
+    return [{
+      id: createHash("sha256")
+        .update(String(ordinal))
+        .update("\0")
+        .update(hunkPatch)
+        .digest("hex"),
+      header,
+      oldStart: Number(match[1]),
+      oldLines: match[2] === undefined ? 1 : Number(match[2]),
+      newStart: Number(match[3]),
+      newLines: match[4] === undefined ? 1 : Number(match[4]),
+      additions,
+      deletions,
+      patch: hunkPatch,
+    }];
+  });
+}
+
 export class GitService {
   private cacheKey: string | null = null;
   private cachedSnapshot: GitStatusSnapshot | null = null;
@@ -545,12 +613,23 @@ export class GitService {
       truncated = true;
     }
     const binary = /(^|\n)(Binary files .* differ|GIT binary patch)(\n|$)/.test(patch) || patch.includes("\u0000");
-    let additions = 0;
-    let deletions = 0;
-    for (const line of patch.split("\n")) {
-      if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
-      if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
-    }
+    const hunkUnsafe =
+      binary ||
+      truncated ||
+      change.conflict ||
+      change.submodule ||
+      change.staged === "renamed" ||
+      change.staged === "copied" ||
+      change.unstaged === "renamed" ||
+      change.unstaged === "copied";
+    const hunkOperations: GitHunkOperation[] = hunkUnsafe
+      ? []
+      : area === "staged"
+        ? ["unstage"]
+        : change.unstaged === "untracked"
+          ? ["stage"]
+          : ["stage", "discard"];
+    const { additions, deletions } = countPatchChanges(patch);
     return {
       path,
       area,
@@ -560,7 +639,80 @@ export class GitService {
       binary,
       truncated,
       contentGeneration: createHash("sha256").update(patch).digest("hex"),
+      hunks: hunkOperations.length === 0
+        ? []
+        : parseUnifiedGitDiffHunks(patch).map(({ patch: _patch, ...hunk }) => hunk),
+      hunkOperations,
     };
+  }
+
+  async mutateHunk(
+    workspace: string,
+    path: string,
+    area: "staged" | "unstaged",
+    hunkId: string,
+    operation: GitHunkOperation,
+    expectedRevision: number,
+    expectedContentGeneration: string,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    if (
+      (area === "unstaged" && operation === "unstage") ||
+      (area === "staged" && operation !== "unstage")
+    ) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "The hunk operation does not match its diff area");
+    }
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before the hunk operation", true);
+    }
+    const change = this.requireChange(status, path, area);
+    if (
+      change.conflict ||
+      change.submodule ||
+      change.staged === "renamed" ||
+      change.staged === "copied" ||
+      change.unstaged === "renamed" ||
+      change.unstaged === "copied" ||
+      (operation === "discard" && change.unstaged === "untracked")
+    ) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        "This change does not support safe hunk operations in PiDeck",
+      );
+    }
+    const diff = await this.getDiff(workspace, path, area, expectedRevision, signal);
+    if (diff.contentGeneration !== expectedContentGeneration) {
+      throw new GitServiceError("STALE_REVISION", "The selected diff changed before the hunk operation", true);
+    }
+    if (diff.binary || diff.truncated) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "Binary or truncated diffs cannot be changed by hunk");
+    }
+    const hunk = parseUnifiedGitDiffHunks(diff.patch).find((candidate) => candidate.id === hunkId);
+    if (!hunk) {
+      throw new GitServiceError("STALE_REVISION", "The selected diff hunk no longer exists", true);
+    }
+    const args = operation === "stage"
+      ? ["apply", "--cached", "--recount", "--whitespace=nowarn", "-"]
+      : operation === "unstage"
+        ? ["apply", "--cached", "--reverse", "--recount", "--whitespace=nowarn", "-"]
+        : ["apply", "--reverse", "--recount", "--whitespace=nowarn", "-"];
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args,
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+      stdin: hunk.patch,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Git hunk operation failed"),
+      );
+    }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
   }
 
   stage(
@@ -579,6 +731,64 @@ export class GitService {
     signal?: AbortSignal,
   ): Promise<GitMutationResult> {
     return this.mutateFile("unstage", workspace, path, expectedRevision, signal);
+  }
+
+  stageAll(
+    workspace: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    return this.mutateAll("stage", workspace, expectedRevision, signal);
+  }
+
+  unstageAll(
+    workspace: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    return this.mutateAll("unstage", workspace, expectedRevision, signal);
+  }
+
+  async discard(
+    workspace: string,
+    path: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before discard", true);
+    }
+    const change = this.requireChange(status, path, "unstaged");
+    if (
+      change.conflict ||
+      change.submodule ||
+      change.unstaged === "untracked" ||
+      change.unstaged === "conflicted" ||
+      change.unstaged === "renamed" ||
+      change.unstaged === "copied"
+    ) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        "This change cannot be safely discarded from PiDeck",
+      );
+    }
+    this.validatePath(status.repositoryRoot, change.path);
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["restore", "--worktree", "--", change.path],
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Git discard failed"),
+      );
+    }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
   }
 
   async commit(
@@ -628,6 +838,221 @@ export class GitService {
     }
     const refreshed = await this.refreshAfterMutation(workspace, signal);
     return { applied: true, commitSha, ...refreshed };
+  }
+
+  async listBranches(workspace: string, signal?: AbortSignal): Promise<GitBranchList> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: [
+        "for-each-ref",
+        "--sort=refname",
+        `--count=${MAX_GIT_BRANCHES + 1}`,
+        "--format=%(refname:short)%00%(HEAD)%00%(upstream:short)%00%(upstream:track)",
+        "refs/heads",
+      ],
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: MAX_GIT_METADATA_OUTPUT_BYTES,
+      optionalLocks: true,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr, "Unable to list Git branches"),
+      );
+    }
+    const records = result.stdout.toString("utf8").split("\n").filter(Boolean);
+    const truncated = result.stdoutTruncated || records.length > MAX_GIT_BRANCHES;
+    const branches = records.slice(0, MAX_GIT_BRANCHES).flatMap((record) => {
+      const [name, marker, upstreamText, tracking = ""] = record.replace(/\r$/, "").split("\0");
+      if (!name) return [];
+      const ahead = /ahead (\d+)/.exec(tracking)?.[1];
+      const behind = /behind (\d+)/.exec(tracking)?.[1];
+      return [{
+        name,
+        current: marker === "*",
+        upstream: upstreamText || null,
+        ahead: ahead ? Number(ahead) : 0,
+        behind: behind ? Number(behind) : 0,
+      }];
+    });
+    return {
+      statusRevision: status.revision,
+      current: status.branch,
+      detached: status.detached,
+      branches,
+      truncated,
+    };
+  }
+
+  async createBranch(
+    workspace: string,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before branch creation", true);
+    }
+    await this.validateBranchName(status.repositoryRoot, name, signal);
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["switch", "--create", name],
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Unable to create Git branch"),
+      );
+    }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
+  }
+
+  async switchBranch(
+    workspace: string,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before branch switching", true);
+    }
+    await this.validateBranchName(status.repositoryRoot, name, signal);
+    const branchList = await this.listBranches(workspace, signal);
+    if (!branchList.branches.some((branch) => branch.name === name)) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "The selected local branch no longer exists");
+    }
+    if (status.branch === name && !status.detached) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "The selected branch is already checked out");
+    }
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["switch", "--", name],
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Unable to switch Git branch"),
+      );
+    }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
+  }
+
+  async listHistory(
+    workspace: string,
+    limit: number,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<GitHistoryResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.unborn) return { commits: [], nextCursor: null };
+    const revision = cursor ? await this.resolveCommit(status.repositoryRoot, cursor, signal) : "HEAD";
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: [
+        "log",
+        "--first-parent",
+        "--no-show-signature",
+        "-z",
+        `--max-count=${Math.min(limit, MAX_GIT_HISTORY_PAGE_SIZE) + 1}`,
+        ...(cursor ? ["--skip=1"] : []),
+        "--format=%H%x00%h%x00%P%x00%an%x00%aI%x00%s%x00%D",
+        revision,
+        "--",
+      ],
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: MAX_GIT_METADATA_OUTPUT_BYTES,
+      optionalLocks: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr, "Unable to read Git history"),
+      );
+    }
+    const fields = result.stdout.toString("utf8").split("\0");
+    if (fields.at(-1) === "") fields.pop();
+    const commits = [] as GitHistoryResult["commits"];
+    for (let index = 0; index + 6 < fields.length; index += 7) {
+      const sha = fields[index]!;
+      if (!/^[0-9a-f]{40,64}$/.test(sha)) continue;
+      commits.push({
+        sha,
+        shortSha: fields[index + 1]!,
+        parents: fields[index + 2]!.split(" ").filter(Boolean),
+        authorName: fields[index + 3]!,
+        authoredAt: fields[index + 4]!,
+        subject: fields[index + 5]!,
+        refs: fields[index + 6]!.split(", ").map((ref) => ref.trim()).filter(Boolean),
+      });
+    }
+    const hasMore = commits.length > limit;
+    const page = commits.slice(0, limit);
+    return { commits: page, nextCursor: hasMore ? page.at(-1)?.sha ?? null : null };
+  }
+
+  async getCommitDiff(
+    workspace: string,
+    commitSha: string,
+    signal?: AbortSignal,
+  ): Promise<GitCommitDiffSnapshot> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.unborn) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "The repository has no commits");
+    }
+    const resolved = await this.resolveCommit(status.repositoryRoot, commitSha, signal);
+    const parentsResult = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["rev-list", "--parents", "-n", "1", resolved],
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: 8 * 1024,
+      optionalLocks: true,
+      signal,
+    });
+    if (parentsResult.exitCode !== 0) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "Unable to resolve the commit parent");
+    }
+    const parentSha = parentsResult.stdout.toString("utf8").trim().split(/\s+/)[1] ?? null;
+    const args = parentSha
+      ? ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", parentSha, resolved, "--"]
+      : ["show", "--format=", "--root", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", resolved, "--"];
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args,
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: MAX_GIT_DIFF_OUTPUT_BYTES,
+      optionalLocks: true,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr, "Unable to read the commit diff"),
+      );
+    }
+    let patch = result.stdout.toString("utf8");
+    let truncated = result.stdoutTruncated;
+    const lines = patch.split("\n");
+    if (lines.length > MAX_GIT_DIFF_LINES) {
+      patch = lines.slice(0, MAX_GIT_DIFF_LINES).join("\n");
+      truncated = true;
+    }
+    const binary = /(^|\n)(Binary files .* differ|GIT binary patch)(\n|$)/.test(patch) || patch.includes("\u0000");
+    return { commitSha: resolved, parentSha, patch, ...countPatchChanges(patch), binary, truncated };
   }
 
   async setWatching(
@@ -726,6 +1151,53 @@ export class GitService {
     return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
   }
 
+  private async mutateAll(
+    kind: "stage" | "unstage",
+    workspace: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    if (status.revision !== expectedRevision) {
+      throw new GitServiceError("STALE_REVISION", "Git status changed before the operation", true);
+    }
+    const area = kind === "stage" ? "unstaged" : "staged";
+    const changes = status.files.filter((file) => file[area] !== null);
+    if (changes.length === 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        kind === "stage" ? "There are no changes to stage" : "There are no changes to unstage",
+      );
+    }
+    if (changes.some((change) => !change.pathSupported)) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        "A changed path is not valid UTF-8 and must remain read-only",
+      );
+    }
+    const args =
+      kind === "stage"
+        ? ["add", "-A", "--", "."]
+        : status.unborn
+          ? ["rm", "--cached", "-r", "--ignore-unmatch", "--", "."]
+          : ["restore", "--staged", "--", "."];
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args,
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), `Git ${kind} all failed`),
+      );
+    }
+    return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
+  }
+
   private async refreshAfterMutation(
     workspace: string,
     signal?: AbortSignal,
@@ -768,6 +1240,53 @@ export class GitService {
     if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
       throw new GitServiceError("GIT_OPERATION_FAILED", "Repository path escapes its root");
     }
+  }
+
+  private async validateBranchName(
+    repositoryRoot: string,
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!name || name.includes("\u0000") || /[\u0000-\u001f\u007f]/.test(name)) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "Invalid Git branch name");
+    }
+    const result = await runGitCommand(this.executable, {
+      cwd: repositoryRoot,
+      args: ["check-ref-format", "--branch", name],
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: 8 * 1024,
+      optionalLocks: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr, "Invalid Git branch name"),
+      );
+    }
+  }
+
+  private async resolveCommit(
+    repositoryRoot: string,
+    commitSha: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (!/^[0-9a-f]{40,64}$/.test(commitSha)) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "Invalid Git commit ID");
+    }
+    const result = await runGitCommand(this.executable, {
+      cwd: repositoryRoot,
+      args: ["rev-parse", "--verify", `${commitSha}^{commit}`],
+      timeoutMs: GIT_READ_TIMEOUT_MS,
+      maxStdoutBytes: 8 * 1024,
+      optionalLocks: true,
+      signal,
+    });
+    const resolved = result.stdout.toString("utf8").trim();
+    if (result.exitCode !== 0 || !/^[0-9a-f]{40,64}$/.test(resolved)) {
+      throw new GitServiceError("GIT_OPERATION_FAILED", "The selected Git commit no longer exists");
+    }
+    return resolved;
   }
 
   private commitSnapshot(candidate: GitStatusCandidate): GitStatusSnapshot {

@@ -5,6 +5,8 @@ import {
   MAX_AGENT_REQUEST_IMAGES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   MAX_GIT_COMMIT_MESSAGE_BYTES,
+  MAX_GIT_BRANCH_NAME_BYTES,
+  MAX_GIT_HISTORY_PAGE_SIZE,
   MAX_GIT_PATH_BYTES,
 } from "./limits.js";
 import {
@@ -86,6 +88,20 @@ function isValidCommitMessage(value: unknown): value is string {
     !value.includes("\u0000") &&
     utf8Bytes(value) <= MAX_GIT_COMMIT_MESSAGE_BYTES
   );
+}
+
+function isValidGitBranchName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim() === value &&
+    value.length > 0 &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    utf8Bytes(value) <= MAX_GIT_BRANCH_NAME_BYTES
+  );
+}
+
+function isGitSha(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40,64}$/.test(value);
 }
 
 function isBoolean(value: unknown): value is boolean {
@@ -294,6 +310,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "system.shutdown":
     case "workspace.getCurrent":
     case "git.getStatus":
+    case "git.listBranches":
     case "session.list":
     case "session.cleanupArchived":
     case "session.reload":
@@ -346,11 +363,38 @@ export function validateRequestParams<M extends HostMethod>(
         isSafeRevision(params.expectedRevision)
         ? ok(params)
         : fail("invalid git.getDiff params", { method });
+    case "git.mutateHunk":
+      return exactObject(params, [
+        "path",
+        "area",
+        "hunkId",
+        "operation",
+        "expectedRevision",
+        "expectedContentGeneration",
+      ]) &&
+        isValidGitPath(params.path) &&
+        (params.area === "staged" || params.area === "unstaged") &&
+        (params.operation === "stage" ||
+          params.operation === "unstage" ||
+          params.operation === "discard") &&
+        typeof params.hunkId === "string" &&
+        /^[0-9a-f]{64}$/.test(params.hunkId) &&
+        isSafeRevision(params.expectedRevision) &&
+        typeof params.expectedContentGeneration === "string" &&
+        /^[0-9a-f]{64}$/.test(params.expectedContentGeneration)
+        ? ok(params)
+        : fail("invalid git.mutateHunk params", { method });
     case "git.stage":
     case "git.unstage":
+    case "git.discard":
       return exactObject(params, ["path", "expectedRevision"]) &&
         isValidGitPath(params.path) &&
         isSafeRevision(params.expectedRevision)
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
+    case "git.stageAll":
+    case "git.unstageAll":
+      return exactObject(params, ["expectedRevision"]) && isSafeRevision(params.expectedRevision)
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "git.commit":
@@ -360,6 +404,26 @@ export function validateRequestParams<M extends HostMethod>(
         /^[0-9a-f]{64}$/.test(params.expectedIndexGeneration)
         ? ok(params)
         : fail("invalid git.commit params", { method });
+    case "git.createBranch":
+    case "git.switchBranch":
+      return exactObject(params, ["name", "expectedRevision"]) &&
+        isValidGitBranchName(params.name) &&
+        isSafeRevision(params.expectedRevision)
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
+    case "git.listHistory":
+      return exactObject(params, ["limit"], ["cursor"]) &&
+        typeof params.limit === "number" &&
+        Number.isInteger(params.limit) &&
+        params.limit >= 1 &&
+        params.limit <= MAX_GIT_HISTORY_PAGE_SIZE &&
+        (params.cursor === undefined || isGitSha(params.cursor))
+        ? ok(params)
+        : fail("invalid git.listHistory params", { method });
+    case "git.getCommitDiff":
+      return exactObject(params, ["commitSha"]) && isGitSha(params.commitSha)
+        ? ok(params)
+        : fail("invalid git.getCommitDiff params", { method });
     case "attachment.create":
       return exactObject(params, ["path"]) && isNonEmptyString(params.path)
         ? ok(params)

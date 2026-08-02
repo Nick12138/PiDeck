@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { GitStatusSnapshot } from "@pideck/protocol";
-import { buildGitListRows, gitChangeLetter, parseUnifiedDiffLines } from "./ChangesPanel";
+import {
+  buildGitListRows,
+  canDiscardGitChange,
+  gitChangeLetter,
+  parseUnifiedDiffLines,
+} from "./ChangesPanel";
 
 describe("ChangesPanel helpers", () => {
   it("shows the same file in unstaged and staged groups", () => {
@@ -45,8 +50,43 @@ describe("ChangesPanel helpers", () => {
     ]);
   });
 
+  it("resets line numbering between files in a commit diff", () => {
+    const lines = parseUnifiedDiffLines([
+      "diff --git a/one.ts b/one.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "diff --git a/two.ts b/two.ts",
+      "index 1111111..2222222 100644",
+      "--- a/two.ts",
+      "+++ b/two.ts",
+      "@@ -8 +8 @@",
+      " second",
+    ].join("\n"));
+    expect(lines[4]).toMatchObject({ kind: "meta", oldLine: null, newLine: null });
+    expect(lines[5]).toMatchObject({ kind: "meta", oldLine: null, newLine: null });
+    expect(lines[9]).toMatchObject({ kind: "context", oldLine: 8, newLine: 8 });
+  });
+
   it("uses compact, stable status letters", () => {
     expect(gitChangeLetter("untracked")).toBe("U");
     expect(gitChangeLetter("conflicted")).toBe("!");
+  });
+
+  it("allows discard only for safe tracked worktree changes", () => {
+    const file = {
+      path: "src/app.ts",
+      staged: null,
+      unstaged: "modified" as const,
+      conflict: false,
+      submodule: false,
+      pathSupported: true,
+    };
+    expect(canDiscardGitChange(file)).toBe(true);
+    expect(canDiscardGitChange({ ...file, unstaged: "untracked" })).toBe(false);
+    expect(canDiscardGitChange({ ...file, unstaged: "renamed" })).toBe(false);
+    expect(canDiscardGitChange({ ...file, conflict: true })).toBe(false);
+    expect(canDiscardGitChange({ ...file, submodule: true })).toBe(false);
+    expect(canDiscardGitChange({ ...file, pathSupported: false })).toBe(false);
   });
 });

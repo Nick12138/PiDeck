@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import type {
@@ -12,6 +12,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import { MenuHost } from "../../components/Menu";
 import { ChangesPanel } from "./ChangesPanel";
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -181,6 +182,75 @@ describe("ChangesPanel", () => {
     expect(screen.getByText("No changes")).toBeVisible();
   });
 
+  it("stages and unstages all changes from the group headers", async () => {
+    const unstagedOnly = status({
+      files: [{ ...status().files[0]!, staged: null }],
+    });
+    const stagedOnly = status({
+      revision: 8,
+      files: [{ ...status().files[0]!, unstaged: null }],
+    });
+    const finalUnstaged = status({
+      revision: 9,
+      files: [{ ...status().files[0]!, staged: null }],
+    });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: unstagedOnly }) as never;
+      if (method === "git.stageAll") return success(method, { applied: true, snapshot: stagedOnly }) as never;
+      if (method === "git.unstageAll") return success(method, { applied: true, snapshot: finalUnstaged }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Stage all changes" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.stageAll",
+      expect.any(Object),
+      { expectedRevision: unstagedOnly.revision },
+      32_000,
+    ));
+
+    await user.click(await screen.findByRole("button", { name: "Unstage all changes" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.unstageAll",
+      expect.any(Object),
+      { expectedRevision: stagedOnly.revision },
+      32_000,
+    ));
+    expect(await screen.findByRole("button", { name: "Stage all changes" })).toBeVisible();
+  });
+
+  it("confirms discard and preserves the staged version", async () => {
+    const stagedOnly = status({
+      revision: 8,
+      files: [{ ...status().files[0]!, unstaged: null }],
+    });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.discard") return success(method, { applied: true, snapshot: stagedOnly }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Discard changes in src/app.ts" }));
+    expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeVisible();
+    expect(screen.getByText("The staged version will be preserved.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.discard",
+      expect.any(Object),
+      { path: "src/app.ts", expectedRevision: 7 },
+      32_000,
+    ));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Changes: src/app.ts" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Staged Changes: src/app.ts" })).toBeVisible();
+  });
+
   it("ignores status events from another workspace", async () => {
     let handler: ((event: never) => void) | null = null;
     vi.spyOn(hostClient, "onEvent").mockImplementation((next) => {
@@ -200,5 +270,174 @@ describe("ChangesPanel", () => {
     } as never));
     expect(screen.getByRole("button", { name: "Changes: src/app.ts" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Staged Changes: src/app.ts" })).toBeVisible();
+  });
+
+  it("stages a reviewed hunk through its structured identity", async () => {
+    const unstaged = status({ files: [{ ...status().files[0]!, staged: null }] });
+    const staged = status({
+      revision: 8,
+      files: [{ ...status().files[0]!, unstaged: null }],
+    });
+    const diff = {
+      path: "src/app.ts",
+      area: "unstaged",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      contentGeneration: "c".repeat(64),
+      hunks: [{
+        id: "d".repeat(64),
+        header: "@@ -1 +1 @@",
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+        additions: 1,
+        deletions: 1,
+      }],
+      hunkOperations: ["stage", "discard"],
+    } as const;
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: unstaged }) as never;
+      if (method === "git.getDiff") return success(method, diff) as never;
+      if (method === "git.mutateHunk") return success(method, { applied: true, snapshot: staged }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Changes: src/app.ts" }));
+    await user.click(await screen.findByRole("button", { name: "Stage hunk" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.mutateHunk",
+      expect.any(Object),
+      {
+        path: "src/app.ts",
+        area: "unstaged",
+        hunkId: "d".repeat(64),
+        operation: "stage",
+        expectedRevision: unstaged.revision,
+        expectedContentGeneration: diff.contentGeneration,
+      },
+      32_000,
+    ));
+    expect(await screen.findByRole("button", { name: "Staged Changes: src/app.ts" })).toBeVisible();
+  });
+
+  it("confirms destructive hunk discard", async () => {
+    const unstaged = status({ files: [{ ...status().files[0]!, staged: null }] });
+    const clean = status({ revision: 8, files: [] });
+    const diff = {
+      path: "src/app.ts",
+      area: "unstaged",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+      contentGeneration: "c".repeat(64),
+      hunks: [{ id: "e".repeat(64), header: "@@ -1 +1 @@", oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, additions: 1, deletions: 1 }],
+      hunkOperations: ["stage", "discard"],
+    } as const;
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: unstaged }) as never;
+      if (method === "git.getDiff") return success(method, diff) as never;
+      if (method === "git.mutateHunk") return success(method, { applied: true, snapshot: clean }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Changes: src/app.ts" }));
+    await user.click(await screen.findByRole("button", { name: "Discard hunk" }));
+    const dialog = screen.getByRole("dialog", { name: "Discard this hunk?" });
+    expect(dialog).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Discard hunk" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.mutateHunk",
+      expect.any(Object),
+      expect.objectContaining({ hunkId: "e".repeat(64), operation: "discard" }),
+      32_000,
+    ));
+  });
+
+  it("switches and creates local branches from the shared branch menu", async () => {
+    const feature = status({ revision: 8, branch: "feature/git", ahead: 0, behind: 0 });
+    const created = status({ revision: 9, branch: "feature/new", ahead: 0, behind: 0 });
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.listBranches") return success(method, {
+        statusRevision: 7,
+        current: "main",
+        detached: false,
+        branches: [
+          { name: "main", current: true, upstream: "origin/main", ahead: 1, behind: 2 },
+          { name: "feature/git", current: false, upstream: null, ahead: 0, behind: 0 },
+        ],
+        truncated: false,
+      }) as never;
+      if (method === "git.switchBranch") return success(method, { applied: true, snapshot: feature }) as never;
+      if (method === "git.createBranch") return success(method, { applied: true, snapshot: created }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<><ChangesPanel visible /><MenuHost /></>);
+
+    await user.click(await screen.findByRole("button", { name: "Choose branch" }));
+    await user.click(await screen.findByRole("menuitem", { name: "feature/git" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.switchBranch",
+      expect.any(Object),
+      { name: "feature/git", expectedRevision: 7 },
+      32_000,
+    ));
+
+    await user.click(screen.getByRole("button", { name: "Choose branch" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Create branch" }));
+    await user.type(screen.getByRole("textbox", { name: "Branch name" }), "feature/new");
+    await user.click(screen.getByRole("button", { name: "Create branch" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "git.createBranch",
+      expect.any(Object),
+      { name: "feature/new", expectedRevision: feature.revision },
+      32_000,
+    ));
+  });
+
+  it("browses history and opens a first-parent commit diff", async () => {
+    const commit = {
+      sha: "f".repeat(40),
+      shortSha: "ffffffff",
+      parents: ["a".repeat(40)],
+      authorName: "PiDeck Test",
+      authoredAt: "2026-08-02T12:00:00+08:00",
+      subject: "History change",
+      refs: ["HEAD -> main"],
+    };
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching") return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.listHistory") return success(method, { commits: [commit], nextCursor: null }) as never;
+      if (method === "git.getCommitDiff") return success(method, {
+        commitSha: commit.sha,
+        parentSha: commit.parents[0],
+        patch: "@@ -0,0 +1 @@\n+history change",
+        additions: 1,
+        deletions: 0,
+        binary: false,
+        truncated: false,
+      }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("tab", { name: "History" }));
+    await user.click(await screen.findByRole("button", { name: "Open commit: History change" }));
+    expect(await screen.findByText("+history change")).toBeVisible();
+    expect(screen.getByText("ffffffff")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Back to history" }));
+    expect(screen.getByRole("button", { name: "Open commit: History change" })).toBeVisible();
   });
 });

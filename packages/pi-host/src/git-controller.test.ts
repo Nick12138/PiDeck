@@ -66,9 +66,24 @@ function fixture() {
     }),
     stopWatching: vi.fn(),
     getDiff: vi.fn(),
+    listBranches: vi.fn(async () => ({
+      statusRevision: ready.revision,
+      current: "main",
+      detached: false,
+      branches: [],
+      truncated: false,
+    })),
+    listHistory: vi.fn(async () => ({ commits: [], nextCursor: null })),
+    getCommitDiff: vi.fn(),
+    mutateHunk: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
     stage: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
+    stageAll: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
     unstage: vi.fn(),
+    unstageAll: vi.fn(),
+    discard: vi.fn(),
     commit: vi.fn(),
+    createBranch: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
+    switchBranch: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
   } as unknown as GitService;
   return { factory, graph, server, service };
 }
@@ -126,6 +141,81 @@ describe("Git controller", () => {
     expect(result).toMatchObject({ error: { code: "SERVICE_GRAPH_BUSY" } });
     expect(state.service.stage).not.toHaveBeenCalled();
     active?.finish();
+  });
+
+  it("routes batch and discard mutations through the locked Git service", async () => {
+    const state = fixture();
+    const handlers = createGitHandlers(state.factory, state.service);
+
+    await handlers["git.stageAll"]!(context("git.stageAll", { expectedRevision: 4 }));
+    expect(state.service.stageAll).toHaveBeenCalledWith(
+      "/repo/apps/desktop",
+      4,
+      expect.any(AbortSignal),
+    );
+
+    vi.mocked(state.service.discard).mockResolvedValueOnce({ applied: true, snapshot: ready });
+    await handlers["git.discard"]!(
+      context("git.discard", { path: "src/app.ts", expectedRevision: 4 }),
+    );
+    expect(state.service.discard).toHaveBeenCalledWith(
+      "/repo/apps/desktop",
+      "src/app.ts",
+      4,
+      expect.any(AbortSignal),
+    );
+    expect(state.server.emit).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes hunk and branch mutations through the lock and emits refreshed status", async () => {
+    const state = fixture();
+    const handlers = createGitHandlers(state.factory, state.service);
+    await handlers["git.mutateHunk"]!(context("git.mutateHunk", {
+      path: "src/app.ts",
+      area: "unstaged",
+      hunkId: "a".repeat(64),
+      operation: "stage",
+      expectedRevision: 4,
+      expectedContentGeneration: "b".repeat(64),
+    }));
+    expect(state.service.mutateHunk).toHaveBeenCalledWith(
+      "/repo/apps/desktop",
+      "src/app.ts",
+      "unstaged",
+      "a".repeat(64),
+      "stage",
+      4,
+      "b".repeat(64),
+      expect.any(AbortSignal),
+    );
+
+    await handlers["git.createBranch"]!(context("git.createBranch", {
+      name: "feature/git",
+      expectedRevision: 4,
+    }));
+    await handlers["git.switchBranch"]!(context("git.switchBranch", {
+      name: "main",
+      expectedRevision: 4,
+    }));
+    expect(state.service.createBranch).toHaveBeenCalledWith(
+      "/repo/apps/desktop", "feature/git", 4, expect.any(AbortSignal),
+    );
+    expect(state.service.switchBranch).toHaveBeenCalledWith(
+      "/repo/apps/desktop", "main", 4, expect.any(AbortSignal),
+    );
+    expect(state.server.emit).toHaveBeenCalledTimes(3);
+  });
+
+  it("routes branch, history, and commit diff reads without taking the mutation lock", async () => {
+    const state = fixture();
+    const handlers = createGitHandlers(state.factory, state.service);
+    await handlers["git.listBranches"]!(context("git.listBranches", null));
+    await handlers["git.listHistory"]!(context("git.listHistory", { limit: 25, cursor: "a".repeat(40) }));
+    await handlers["git.getCommitDiff"]!(context("git.getCommitDiff", { commitSha: "b".repeat(40) }));
+    expect(state.service.listBranches).toHaveBeenCalledWith("/repo/apps/desktop");
+    expect(state.service.listHistory).toHaveBeenCalledWith("/repo/apps/desktop", 25, "a".repeat(40));
+    expect(state.service.getCommitDiff).toHaveBeenCalledWith("/repo/apps/desktop", "b".repeat(40));
+    expect(state.server.serviceGraphLock.getOwner()).toBeNull();
   });
 
   it("identity-checks watch events and stops a stale subscription", async () => {

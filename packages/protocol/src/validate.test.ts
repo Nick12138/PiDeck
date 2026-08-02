@@ -5,6 +5,7 @@ import {
   MAX_AGENT_REQUEST_ATTACHMENTS,
   MAX_AGENT_REQUEST_IMAGES,
   MAX_GIT_COMMIT_MESSAGE_BYTES,
+  MAX_GIT_BRANCH_NAME_BYTES,
   MAX_GIT_PATH_BYTES,
   MAX_PASTED_TEXT_ATTACHMENT_BYTES,
   MAX_EXTENSION_UI_CORRELATION_ID_LENGTH,
@@ -310,7 +311,7 @@ describe("parseHostRequest", () => {
   });
 
   it("validates Git paths, revisions, and exact fields", () => {
-    const request = (method: "git.getDiff" | "git.stage" | "git.unstage", params: unknown) =>
+    const request = (method: "git.getDiff" | "git.stage" | "git.unstage" | "git.discard", params: unknown) =>
       parseHostRequest({ protocolVersion: 1, id: REQUEST_ID, method, context: workspaceContext, params });
 
     expect(request("git.stage", { path: "a".repeat(MAX_GIT_PATH_BYTES), expectedRevision: 1 }).ok).toBe(true);
@@ -320,7 +321,18 @@ describe("parseHostRequest", () => {
     }
     expect(request("git.stage", { path: "a".repeat(MAX_GIT_PATH_BYTES + 1), expectedRevision: 1 }).ok).toBe(false);
     expect(request("git.unstage", { path: "src/app.ts", expectedRevision: -1 }).ok).toBe(false);
+    expect(request("git.discard", { path: "src/app.ts", expectedRevision: 3 }).ok).toBe(true);
     expect(request("git.stage", { path: "src/app.ts", expectedRevision: 1, force: true }).ok).toBe(false);
+  });
+
+  it("validates Git batch mutations by revision and exact fields", () => {
+    const request = (method: "git.stageAll" | "git.unstageAll", params: unknown) =>
+      parseHostRequest({ protocolVersion: 1, id: REQUEST_ID, method, context: workspaceContext, params });
+
+    expect(request("git.stageAll", { expectedRevision: 1 }).ok).toBe(true);
+    expect(request("git.unstageAll", { expectedRevision: 2 }).ok).toBe(true);
+    expect(request("git.stageAll", { expectedRevision: -1 }).ok).toBe(false);
+    expect(request("git.unstageAll", { expectedRevision: 1, path: "." }).ok).toBe(false);
   });
 
   it("validates Git commit messages by UTF-8 bytes and index generation", () => {
@@ -339,6 +351,28 @@ describe("parseHostRequest", () => {
     expect(request("bad\u0000message").ok).toBe(false);
     expect(request("message", { expectedIndexGeneration: "short" }).ok).toBe(false);
     expect(request("message", { amend: true }).ok).toBe(false);
+  });
+
+  it("validates Git hunk, branch, history, and commit comparison requests", () => {
+    const request = (method: "git.mutateHunk" | "git.createBranch" | "git.switchBranch" | "git.listHistory" | "git.getCommitDiff", params: unknown) =>
+      parseHostRequest({ protocolVersion: 1, id: REQUEST_ID, method, context: workspaceContext, params });
+    const hunk = {
+      path: "src/app.ts",
+      area: "unstaged",
+      hunkId: "a".repeat(64),
+      operation: "stage",
+      expectedRevision: 2,
+      expectedContentGeneration: "b".repeat(64),
+    };
+    expect(request("git.mutateHunk", hunk).ok).toBe(true);
+    expect(request("git.mutateHunk", { ...hunk, hunkId: "short" }).ok).toBe(false);
+    expect(request("git.createBranch", { name: "feature/git", expectedRevision: 2 }).ok).toBe(true);
+    expect(request("git.switchBranch", { name: " bad", expectedRevision: 2 }).ok).toBe(false);
+    expect(request("git.createBranch", { name: "a".repeat(MAX_GIT_BRANCH_NAME_BYTES + 1), expectedRevision: 2 }).ok).toBe(false);
+    expect(request("git.listHistory", { limit: 50, cursor: "c".repeat(40) }).ok).toBe(true);
+    expect(request("git.listHistory", { limit: 101 }).ok).toBe(false);
+    expect(request("git.getCommitDiff", { commitSha: "d".repeat(40) }).ok).toBe(true);
+    expect(request("git.getCommitDiff", { commitSha: "HEAD" }).ok).toBe(false);
   });
 
   it.each(["agent.prompt", "agent.steer", "agent.followUp"] as const)(
@@ -1139,10 +1173,51 @@ describe("Git DTO validation", () => {
       binary: false,
       truncated: false,
       contentGeneration: "c".repeat(64),
+      hunks: [{
+        id: "e".repeat(64),
+        header: "@@ -1 +1 @@",
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+        additions: 1,
+        deletions: 1,
+      }],
+      hunkOperations: ["unstage"],
     } as const;
     expect(validateSuccessResult("git.getDiff", diff).ok).toBe(true);
     expect(validateSuccessResult("git.getDiff", { ...diff, area: "working" }).ok).toBe(false);
     expect(validateSuccessResult("git.stage", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.stageAll", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.unstageAll", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.discard", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.mutateHunk", { applied: true, snapshot: ready }).ok).toBe(true);
+    expect(validateSuccessResult("git.listBranches", {
+      statusRevision: 2,
+      current: "main",
+      detached: false,
+      branches: [{ name: "main", current: true, upstream: "origin/main", ahead: 1, behind: 0 }],
+      truncated: false,
+    }).ok).toBe(true);
+    const commit = {
+      sha: "d".repeat(40),
+      shortSha: "dddddddd",
+      parents: ["a".repeat(40)],
+      authorName: "PiDeck",
+      authoredAt: "2026-08-02T12:00:00+08:00",
+      subject: "Test",
+      refs: ["HEAD -> main"],
+    };
+    expect(validateSuccessResult("git.listHistory", { commits: [commit], nextCursor: commit.sha }).ok).toBe(true);
+    expect(validateSuccessResult("git.getCommitDiff", {
+      commitSha: commit.sha,
+      parentSha: commit.parents[0],
+      patch: diff.patch,
+      additions: 1,
+      deletions: 1,
+      binary: false,
+      truncated: false,
+    }).ok).toBe(true);
     expect(validateSuccessResult("git.commit", { applied: true, commitSha: "d".repeat(40), snapshot: ready }).ok).toBe(true);
     expect(validateSuccessResult("git.commit", { applied: true, snapshot: ready }).ok).toBe(false);
     expect(validateEventPayload("git.changed", { snapshot: ready }).ok).toBe(true);

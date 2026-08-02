@@ -129,6 +129,62 @@ export type GitDiffSnapshot = {
   binary: boolean;
   truncated: boolean;
   contentGeneration: string;
+  hunks: GitDiffHunk[];
+  hunkOperations: GitHunkOperation[];
+};
+
+export type GitDiffHunk = {
+  id: string;
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  additions: number;
+  deletions: number;
+};
+
+export type GitHunkOperation = "stage" | "unstage" | "discard";
+
+export type GitBranch = {
+  name: string;
+  current: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+};
+
+export type GitBranchList = {
+  statusRevision: number;
+  current: string | null;
+  detached: boolean;
+  branches: GitBranch[];
+  truncated: boolean;
+};
+
+export type GitCommitSummary = {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  authorName: string;
+  authoredAt: string;
+  subject: string;
+  refs: string[];
+};
+
+export type GitHistoryResult = {
+  commits: GitCommitSummary[];
+  nextCursor: string | null;
+};
+
+export type GitCommitDiffSnapshot = {
+  commitSha: string;
+  parentSha: string | null;
+  patch: string;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  truncated: boolean;
 };
 
 export type GitMutationResult = {

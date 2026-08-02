@@ -58,6 +58,9 @@ import type {
   AttachmentSnapshot,
   GitStatusSnapshot,
   GitDiffSnapshot,
+  GitBranchList,
+  GitHistoryResult,
+  GitCommitDiffSnapshot,
   GitMutationResult,
   GitCommitResult,
 } from "./types.js";
@@ -75,9 +78,18 @@ export type HostContextMap = {
   "git.getStatus": WorkspaceContext;
   "git.setWatching": WorkspaceContext;
   "git.getDiff": WorkspaceContext;
+  "git.mutateHunk": WorkspaceContext;
   "git.stage": WorkspaceContext;
+  "git.stageAll": WorkspaceContext;
   "git.unstage": WorkspaceContext;
+  "git.unstageAll": WorkspaceContext;
+  "git.discard": WorkspaceContext;
   "git.commit": WorkspaceContext;
+  "git.listBranches": WorkspaceContext;
+  "git.createBranch": WorkspaceContext;
+  "git.switchBranch": WorkspaceContext;
+  "git.listHistory": WorkspaceContext;
+  "git.getCommitDiff": WorkspaceContext;
   "attachment.create": ActiveSessionContext;
   "attachment.createText": ActiveSessionContext;
   "attachment.get": ActiveSessionContext;
@@ -168,9 +180,25 @@ export type HostRequestParams = {
   "git.getStatus": null;
   "git.setWatching": { enabled: boolean };
   "git.getDiff": { path: string; area: "staged" | "unstaged"; expectedRevision: number };
+  "git.mutateHunk": {
+    path: string;
+    area: "staged" | "unstaged";
+    hunkId: string;
+    operation: "stage" | "unstage" | "discard";
+    expectedRevision: number;
+    expectedContentGeneration: string;
+  };
   "git.stage": { path: string; expectedRevision: number };
+  "git.stageAll": { expectedRevision: number };
   "git.unstage": { path: string; expectedRevision: number };
+  "git.unstageAll": { expectedRevision: number };
+  "git.discard": { path: string; expectedRevision: number };
   "git.commit": { message: string; expectedIndexGeneration: string };
+  "git.listBranches": null;
+  "git.createBranch": { name: string; expectedRevision: number };
+  "git.switchBranch": { name: string; expectedRevision: number };
+  "git.listHistory": { limit: number; cursor?: string };
+  "git.getCommitDiff": { commitSha: string };
   "attachment.create": { path: string };
   "attachment.createText": { text: string };
   "attachment.get": { attachmentId: string };
@@ -288,9 +316,18 @@ export type HostResultMap = {
   "git.getStatus": GitStatusSnapshot;
   "git.setWatching": { watching: boolean; snapshot: GitStatusSnapshot | null };
   "git.getDiff": GitDiffSnapshot;
+  "git.mutateHunk": GitMutationResult;
   "git.stage": GitMutationResult;
+  "git.stageAll": GitMutationResult;
   "git.unstage": GitMutationResult;
+  "git.unstageAll": GitMutationResult;
+  "git.discard": GitMutationResult;
   "git.commit": GitCommitResult;
+  "git.listBranches": GitBranchList;
+  "git.createBranch": GitMutationResult;
+  "git.switchBranch": GitMutationResult;
+  "git.listHistory": GitHistoryResult;
+  "git.getCommitDiff": GitCommitDiffSnapshot;
   "attachment.create": AttachmentSnapshot;
   "attachment.createText": AttachmentSnapshot;
   "attachment.get": AttachmentSnapshot;
