@@ -67,6 +67,17 @@ afterEach(() => {
 });
 
 describe("SettingsPage navigation guard", () => {
+  it("places Shortcuts last in the settings sidebar", () => {
+    render(<SettingsPage initialSection="general" />);
+
+    const navigation = screen.getByRole("navigation");
+    expect(
+      within(navigation)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["General", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
+  });
+
   it("switches sections directly when the Providers form is clean", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="providers" />);

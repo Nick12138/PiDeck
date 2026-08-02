@@ -499,11 +499,11 @@ const SETTINGS_NAV: Array<{
   icon: typeof Settings2;
 }> = [
   { id: "general", label: "navGeneral", icon: Settings2 },
-  { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "packages", label: "navPackages", icon: Package },
   { id: "usage", label: "navUsage", icon: ChartColumn },
   { id: "host", label: "navHost", icon: ServerCog },
+  { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
 ];
 
 export function SettingsPage({
