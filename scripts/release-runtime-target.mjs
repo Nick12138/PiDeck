@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 const SUPPORTED_TARGETS = new Set(["win32-x64", "darwin-arm64", "darwin-x64"]);
 
 export function releaseRuntimeTargetKey(platform = process.platform, arch = process.arch) {
@@ -53,4 +55,17 @@ export function updaterPlatformKey(platform = process.platform, arch = process.a
   if (platform === "darwin" && arch === "arm64") return "darwin-aarch64";
   if (platform === "darwin" && arch === "x64") return "darwin-x86_64";
   throw new Error(`unsupported updater platform: ${platform}-${arch}`);
+}
+
+export function stagedNpmProbe(runtimeTarget, stagedNodeRoot) {
+  if (runtimeTarget.platform === "win32") {
+    return {
+      executable: join(stagedNodeRoot, runtimeTarget.stagedNodeExecutable),
+      args: [join(stagedNodeRoot, "node_modules", "npm", "bin", "npm-cli.js"), "--version"],
+    };
+  }
+  return {
+    executable: join(stagedNodeRoot, runtimeTarget.stagedNpmExecutable),
+    args: ["--version"],
+  };
 }

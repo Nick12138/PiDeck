@@ -12,6 +12,7 @@ import {
 import {
   releaseRuntimeTargetKey,
   resolveReleaseRuntimeTarget,
+  stagedNpmProbe,
   updaterPlatformKey,
 } from "./release-runtime-target.mjs";
 
@@ -121,6 +122,19 @@ test("maps every supported runtime target to the matching updater platform", () 
   assert.equal(resolveReleaseRuntimeTarget(lock, "darwin", "x64").stagedNpmExecutable, "npm");
   assert.equal(updaterPlatformKey("darwin", "x64"), "darwin-x86_64");
   assert.throws(() => releaseRuntimeTargetKey("linux", "x64"), /unsupported release runtime target/);
+});
+
+test("probes Windows npm through staged Node instead of spawning npm.cmd", () => {
+  const runtimeTarget = resolveReleaseRuntimeTarget(
+    { node: { version: "24.18.0" }, git: { portable: {} } },
+    "win32",
+    "x64",
+  );
+  const probe = stagedNpmProbe(runtimeTarget, "C:\\pideck\\node");
+  assert.match(probe.executable, /node\.exe$/u);
+  assert.match(probe.args[0], /node_modules[/\\]npm[/\\]bin[/\\]npm-cli\.js$/u);
+  assert.equal(probe.args[1], "--version");
+  assert.notEqual(probe.executable, "npm.cmd");
 });
 
 test("refuses mismatched tags, duplicate platforms, and empty signatures", () => {

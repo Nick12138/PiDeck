@@ -13,7 +13,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
+import { resolveReleaseRuntimeTarget, stagedNpmProbe } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const lockPath = join(root, "scripts/release-runtime.lock.json");
@@ -136,7 +136,8 @@ function stageNodeDistribution(sourceRoot, archiveSha256) {
     if (!existsSync(path)) die(`staged ${label} missing`);
   }
   const nodeProbe = run(nodeExecutable, ["--version"]);
-  const npmProbe = run(npmExecutable, ["--version"]);
+  const npmProbeCommand = stagedNpmProbe(target, stageNode);
+  const npmProbe = run(npmProbeCommand.executable, npmProbeCommand.args);
   const expectedVersion = `v${nodeRuntime.version}`;
   if (nodeProbe.stdout.trim() !== expectedVersion) {
     die(`staged Node reports ${nodeProbe.stdout.trim()}, expected ${expectedVersion}`);
