@@ -208,6 +208,27 @@ rl.on('line', (line) => {
     }
 
     #[test]
+    fn stripped_runtime_dir_yields_cmd_compatible_controlled_path() {
+        // resource_dir on Windows is derived from a canonicalized (\\?\) exe
+        // path. The bundled node/git dirs land on the Host's controlled PATH,
+        // where cmd.exe resolves npm.cmd — cmd cannot handle \\?\ paths, so a
+        // verbatim entry breaks every npm install in the packaged app.
+        let node = strip_verbatim_prefix(PathBuf::from(
+            r"\\?\C:\Users\Admin\AppData\Local\PiDeck\resources\node\node.exe",
+        ));
+        assert_eq!(
+            node,
+            PathBuf::from(r"C:\Users\Admin\AppData\Local\PiDeck\resources\node\node.exe"),
+        );
+        let node_dir = node.parent().expect("node dir");
+        assert!(!node_dir.to_string_lossy().starts_with(r"\\?\"));
+        let git_cmd = strip_verbatim_prefix(PathBuf::from(
+            r"\\?\C:\Users\Admin\AppData\Local\PiDeck\resources\git\cmd",
+        ));
+        assert!(!git_cmd.to_string_lossy().starts_with(r"\\?\"));
+    }
+
+    #[test]
     fn bundled_node_candidates_match_the_target_platform() {
         let expected = if cfg!(windows) { "node.exe" } else { "node" };
         assert_eq!(node_executable_name(), expected);

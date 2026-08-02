@@ -852,10 +852,16 @@ impl PiHostManager {
 
     fn resolve_node(app: &AppHandle) -> Result<PathBuf, String> {
         // Release: only bundled runtime under resource_dir / next to exe — no PATH/global.
+        // Tauri's resource_dir derives from a canonicalized exe path, which on
+        // Windows is a \\?\ verbatim path. node.exe itself launches fine with
+        // it, but the runtime directory also feeds the Host's controlled PATH,
+        // where cmd.exe (npm.cmd and any batch shim) cannot resolve \\?\ paths
+        // — npm installs then fail with "The system cannot find the path
+        // specified". Always hand out stripped paths.
         if let Ok(res_dir) = app.path().resource_dir() {
             for candidate in node_runtime_candidates(&res_dir) {
                 if is_executable_file(&candidate) {
-                    return Ok(candidate);
+                    return Ok(strip_verbatim_prefix(candidate));
                 }
             }
         }
@@ -863,7 +869,7 @@ impl PiHostManager {
             if let Some(dir) = exe.parent() {
                 for candidate in node_runtime_candidates(dir) {
                     if is_executable_file(&candidate) {
-                        return Ok(candidate);
+                        return Ok(strip_verbatim_prefix(candidate));
                     }
                 }
             }
@@ -911,7 +917,9 @@ impl PiHostManager {
         }
         for candidate in candidates {
             if candidate.join("git.exe").exists() {
-                return Ok(Some(candidate));
+                // Same \\?\ concern as resolve_node: these directories go on
+                // the Host's controlled PATH, which cmd.exe must understand.
+                return Ok(Some(strip_verbatim_prefix(candidate)));
             }
         }
 
