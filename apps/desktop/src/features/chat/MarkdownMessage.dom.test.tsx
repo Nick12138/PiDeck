@@ -234,7 +234,13 @@ describe("MarkdownMessage Mermaid rendering", () => {
     expect(view.container.querySelector('[data-streamdown="mermaid"]')).not.toBeInTheDocument();
 
     view.rerender(<MarkdownMessage content={closed} mode="streaming" />);
-    await waitFor(() => expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument());
+    // Same parallel-load allowance as the render-call wait below: the element
+    // itself appears through the streaming-mode debounce.
+    await waitFor(
+      () =>
+        expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument(),
+      { timeout: 5_000 },
+    );
     // The streaming-mode debounce can delay the render call past the element
     // appearing when the test host is under parallel load.
     await waitFor(
