@@ -1,87 +1,71 @@
+<div align="center">
+
 # PiDeck
+
+**[Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 的原生桌面应用**
+
+与你的编码智能体对话、实时查看工具调用、管理会话/模型/Packages —— 全部在一个可视化工作空间里。
+
+[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#下载安装)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-PiDeck 是 [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 的桌面端界面。它将 Pi SDK 转化为一个可视化工作空间，用于管理对话、工具调用、会话、模型和 Packages。
+<!-- 📸 截图置位 — 主视觉:正在流式对话的主窗口。
+     图片放到 docs/assets/readme/hero.png 后,取消下面这行的注释:
+<img src="docs/assets/readme/hero.png" alt="PiDeck 主窗口" width="840">
+-->
 
-> **P0 源码门禁：已通过。** `pnpm verify:p0` 已在 Apple Silicon macOS 上通过，也是 Windows GitHub Actions 中配置的门禁。它覆盖文档检查、类型检查、单元测试与 Host 集成测试、前端生产构建和 Rust 测试。
+</div>
 
-PiDeck 现已支持在 Windows 和 macOS 上从源码开始早期试用。发行分发属于独立阶段：当前流水线可以生成 Windows x64、Apple Silicon macOS 和 Intel macOS 开发候选安装包，但公开发行仍需要平台代码签名。
+## 功能亮点
 
-## 已实现功能
+- **流式对话** —— 实时展示智能体的思考过程、工具调用和执行结果,一键停止生成,会话异常自动恢复。
+- **会话与工作区** —— 跨项目浏览、搜索、创建和重新打开会话,对话历史完整恢复到离开时的状态。
+- **模型与 Provider** —— 在界面里切换 Provider、模型和思考等级,每个对话的用量一目了然。
+- **内置 Git** —— 查看变更、按 hunk 暂存/撤销、浏览分支历史,不用离开应用。
+- **Packages** —— 安装和管理 Pi 的 Extensions、Skills、Prompts 和 Themes,支持项目级 Package。
+- **Extension UI 与终端** —— 扩展可以渲染自己的交互面板,集成的工作区终端一个快捷键即达。
+- **顺手好用** —— 自定义键盘快捷键、右键菜单,界面支持简体中文和 English。
 
-- 支持思考过程、工具调用与结果、停止生成和异常恢复的流式对话。
-- 工作区与会话的浏览、创建、重新打开和状态恢复。
-- Provider、模型、思考等级和用量控制。
-- Extensions、Skills、Prompts 和 Themes 的 Package 管理。
-- Extension UI 以及集成的工作区 Shell 终端。
-- 通过 `~/.pi/agent` 和项目 `.pi` 目录与 Pi 共享数据。
+<!-- 📸 截图置位 — 功能图:工具调用 + Git 面板并排。
+     图片放到 docs/assets/readme/features.png 后,取消下面这行的注释:
+<img src="docs/assets/readme/features.png" alt="工具调用与 Git 面板" width="840">
+-->
 
-PiDeck 当前固定使用 Pi SDK `0.82.1`。
+## 下载安装
 
-## 平台状态
+从[最新 Release](https://github.com/Skitre/PiDeck/releases) 下载对应平台的安装包:
 
-| 平台 | 源码开发 | 打包能力 |
-|---|---:|---:|
-| Windows 11 x64 | 支持；已配置 CI 门禁 | 可生成未签名的 NSIS 开发候选包 |
-| macOS Apple Silicon / Intel | 支持早期试用 | DMG 开发候选包 |
+| 平台 | 文件 |
+|---|---|
+| Windows 11 x64 | `PiDeck_<version>_x64-setup.exe` |
+| macOS Apple Silicon | `PiDeck_<version>_aarch64.dmg` |
+| macOS Intel | `PiDeck_<version>_x64.dmg` |
 
-两个平台都可以通过 `tauri:dev` 运行完整应用，并通过 `package:release` 构建当前平台的候选包。优化过的 `dev:fast` 工作流仍仅支持 Windows。在两个平台上定位本地路径都会调用原生文件管理器（Explorer `/select`、Finder `open -R`）。
+PiDeck 会自动检查并原地安装更新。
 
-## 快速开始
+> **早期测试版说明。** 当前安装包尚未使用付费证书签名。Windows 上
+> SmartScreen 可能弹出警告,选择**更多信息 → 仍要运行**即可;macOS 首次打开
+> 若被拦截,请在**系统设置 → 隐私与安全性 → 仍要打开**中放行。发布状态与
+> 签名进展见[发布说明](./docs/operations/release.md)。
 
-### 环境要求
+## 与 Pi CLI 协同,但不依赖它
 
-- Node.js —— 使用 [`.node-version`](./.node-version) 中固定的版本，开发与 CI 都以它为准；**22.19.0** 是最低支持版本。
-- pnpm **9.15.0**
-- Rust stable
-- [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)
+PiDeck 内置 Pi SDK(当前为 `0.82.1`)和独立的 Node 运行时,开箱即用:
+不需要全局安装 `pi` 命令行或 Node;Windows 版还内置了 Git。
 
-请使用指定的 pnpm 版本。pnpm 11 会忽略本仓库使用的 `patchedDependencies` 配置位置，从而可能安装错误的 Pi SDK 依赖树。
+如果你同时使用 Pi CLI,两者共享 `~/.pi/agent` 和各工作区 `.pi` 目录中的
+数据:会话与历史、认证与模型设置、已安装的 Packages。建议让 CLI 版本与
+PiDeck 固定的 SDK 版本保持接近,并避免同时在两个应用中编辑同一个会话。
 
-在 macOS 上进行桌面开发，只安装 Xcode Command Line Tools 即可：
+## 从源码构建
 
-```bash
-xcode-select --install
-```
-
-在 Windows 上进行桌面开发，请安装：
-
-- [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)，并勾选 **Desktop development with C++**。
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。大多数 Windows 11 系统已经自带。
-- [Rustup](https://rustup.rs/)，并使用 stable 工具链。
-
-在 PowerShell 中，可以使用 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本。请在仓库根目录执行，`.node-version` 才能被正确读取：
-
-```powershell
-winget install Schniz.fnm
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm install (Get-Content .node-version)
-fnm use (Get-Content .node-version)
-
-npm install --global corepack@latest
-corepack enable pnpm
-corepack prepare pnpm@9.15.0 --activate
-```
-
-如需让 `fnm` 在之后的 PowerShell 会话中自动加载，请将 `fnm env` 那一行加入 `$PROFILE`。
-
-在 macOS 上，同样在仓库根目录，可以通过 `fnm` 和 Corepack 安装项目所需的 Node 与 pnpm 版本：
-
-```bash
-brew install fnm
-eval "$(fnm env --use-on-cd --shell zsh)"
-fnm install "$(cat .node-version)"
-fnm use "$(cat .node-version)"
-
-npm install --global corepack@latest
-corepack enable pnpm
-corepack prepare pnpm@9.15.0 --activate
-```
-
-### 安装并启动
-
-在仓库根目录执行：
+环境要求:[Node](./.node-version) ≥ 22.19.0、pnpm 9.15.0、Rust stable,以及
+[Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)。Windows 和
+macOS 的工具链一键安装步骤见[开发指南](./docs/operations/development.md)。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -89,75 +73,29 @@ pnpm build
 pnpm --filter @pideck/desktop run tauri:dev
 ```
 
-第一次启动需要编译 Tauri 应用，可能耗时数分钟；后续启动会复用 Rust 构建缓存。
-
-## 不要求安装 Pi CLI
-
-PiDeck 直接将 `@earendil-works/pi-coding-agent` 作为应用依赖使用，不会调用全局安装的 `pi` 可执行文件。因此，即使电脑上没有安装 Pi CLI，PiDeck 也可以正常使用。
-
-PiDeck 默认使用 `~/.pi/agent`。如果以后安装 Pi CLI 并继续使用它的默认数据目录，CLI 与 PiDeck 可以共享：
-
-- 会话和对话历史
-- 认证信息和模型设置
-- Packages、Extensions、Skills、Prompts 和 Themes
-
-项目资源位于各工作区的 `.pi` 目录中；当两个应用打开同一个工作区时，这些资源也会共享。
-
-为了获得最佳兼容性，建议让 CLI 版本与 PiDeck 固定的 SDK 版本保持接近。版本高出很多的 CLI 可能写入 SDK `0.82.1` 无法识别的设置或会话条目。不要同时通过 CLI 和 PiDeck 修改同一个会话。
-
-## 验证代码
-
-```bash
-# 文档、类型检查以及全部 JavaScript/TypeScript 测试
-pnpm verify:quick
-
-# 完整 P0 源码门禁：快速检查、生产构建和 Rust 测试
-pnpm verify:p0
-```
-
-如果首次下载 Rust 依赖时因为 crates.io 连接过慢而失败，可以使用以下命令重试：
-
-```bash
-CARGO_HTTP_TIMEOUT=600 CARGO_HTTP_LOW_SPEED_LIMIT=1 CARGO_NET_RETRY=10 pnpm test:rust
-```
+首次启动需要编译 Tauri 应用,可能耗时数分钟;后续启动复用构建缓存。验证
+代码可运行 `pnpm verify:quick`(文档、类型、JS/TS 测试)或
+`pnpm verify:p0`(追加生产构建和 Rust 测试)。原生安装包通过
+`pnpm package:release` 构建。
 
 ## 安全说明
 
-选择工作区会立即授权并加载其中的项目资源，`.pi/extensions` 内的代码可以使用当前用户权限在本机执行。请只打开可信的工作区，并且只安装可信来源的 Packages。
-
-Provider 凭据、设置、Packages 和会话属于用户数据。不要将 `~/.pi/agent` 中的文件提交到本仓库。
-
-## 当前发布边界
-
-P0 源码门禁通过，说明已经实现的核心功能能够完成构建并通过自动化检查；它本身并不代表某个可下载安装包已经通过发行认证。
-
-公开发布前，项目仍需补齐通过验收的打包证据和代码签名。Windows 开发候选安装包可通过以下命令生成：
-
-```bash
-pnpm package:release
-```
-
-该命令在 Windows 上生成 NSIS 安装包，在 macOS 上生成 DMG 和 Tauri updater 压缩包。未配置 Apple Developer secrets 时，macOS 候选包使用 ad-hoc 签名，首次打开可能需要在“隐私与安全性”中手动允许；它仍不是已认证的公开发行版。源码与发布边界的精确定义请参阅 [P0 范围与验证](./docs/operations/p0-scope.md)。
+打开工作区即授权加载其项目资源:`.pi/extensions` 中的代码会以当前用户权限
+在本机执行。请只打开可信的工作区、只安装可信来源的 Packages。Provider
+凭据、设置和会话属于 `~/.pi/agent` 下的用户数据,切勿提交到任何仓库。
 
 ## 仓库结构
 
 | 路径 | 职责 |
 |---|---|
 | `apps/desktop` | React/Vite 界面与 Tauri 2 桌面宿主 |
-| `packages/protocol` | Rust、Host 和 UI 进程之间的类型化协议 |
-| `packages/pi-host` | Node sidecar 与 Pi SDK 的唯一所有者 |
-| `docs` | 架构、开发与发布文档 |
-| `test-fixtures` | 用于测试的 Packages 和 Extensions |
+| `packages/protocol` | Rust、Host 和 UI 进程间的类型化协议 |
+| `packages/pi-host` | 持有 Pi SDK 的 Node sidecar |
+| `docs` | [架构](./docs/architecture/overview.md)、[开发](./docs/operations/development.md)与[发布](./docs/operations/release.md)文档 |
 | `scripts` | 验证、运行时 staging 与打包工具 |
 
-## 文档
-
-- [文档索引](./docs/README.md)
-- [架构概览](./docs/architecture/overview.md)
-- [开发指南](./docs/operations/development.md)
-- [P0 范围与验证](./docs/operations/p0-scope.md)
-- [发布说明与限制](./docs/operations/release.md)
+更多内容见[文档索引](./docs/README.md)。
 
 ## 许可证
 
-MIT — 参阅 [LICENSE](./LICENSE) 和 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+MIT —— 参阅 [LICENSE](./LICENSE) 和 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

@@ -1,87 +1,75 @@
+<div align="center">
+
 # PiDeck
+
+**A native desktop app for [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**
+
+Chat with your coding agent, watch its tools work, manage sessions, models, and packages — in one visual workspace.
+
+[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#download)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-PiDeck is a desktop interface for [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). It turns Pi's SDK into a visual workspace for conversations, tool calls, sessions, models, and Packages.
+<!-- 📸 SCREENSHOT PLACEHOLDER — hero: main window with a streaming conversation.
+     Drop the image at docs/assets/readme/hero.png, then uncomment:
+<img src="docs/assets/readme/hero.png" alt="PiDeck main window" width="840">
+-->
 
-> **P0 source gate: passing.** `pnpm verify:p0` has passed on Apple Silicon macOS and is the tracked GitHub Actions gate on Windows. It covers documentation, type checks, unit and Host integration tests, the production frontend build, and Rust tests.
+</div>
 
-PiDeck supports early testing from source on Windows and macOS. Distribution is a separate milestone: the release pipeline produces Windows x64, Apple Silicon macOS, and Intel macOS development candidates, but public-release code signing is still required.
+## Features
 
-## What is included
+- **Streaming conversations** — watch the agent think, call tools, and stream results in real time, with one-click abort and automatic session recovery.
+- **Sessions & workspaces** — browse, search, create, and reopen sessions across projects; conversation history is restored exactly where you left off.
+- **Models & providers** — switch providers, models, and thinking levels from the UI, with usage visibility per conversation.
+- **Git built in** — review changes, stage or unstage individual hunks, and browse branch history without leaving the app.
+- **Packages** — install and manage Pi Extensions, Skills, Prompts, and Themes, including project-local packages.
+- **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
+- **Make it yours** — customizable keyboard shortcuts, context menus, and an interface available in English and 简体中文.
 
-- Streaming chat with thinking, tool calls, results, abort, and recovery.
-- Workspace and Session browsing, creation, reopening, and restoration.
-- Provider, model, thinking-level, and usage controls.
-- Package management for Extensions, Skills, Prompts, and Themes.
-- Extension UI support and an integrated workspace shell terminal.
-- Shared Pi data compatibility through `~/.pi/agent` and project `.pi` directories.
+<!-- 📸 SCREENSHOT PLACEHOLDER — feature shot: tool calls + Git panel side by side.
+     Drop the image at docs/assets/readme/features.png, then uncomment:
+<img src="docs/assets/readme/features.png" alt="Tool calls and Git panel" width="840">
+-->
 
-PiDeck currently pins the Pi SDK to `0.82.1`.
+## Download
 
-## Platform status
+Grab the installer for your platform from the [latest release](https://github.com/Skitre/PiDeck/releases):
 
-| Platform | Source development | Packaging |
-|---|---:|---:|
-| Windows 11 x64 | Supported; tracked CI gate | Unsigned NSIS development candidate |
-| macOS Apple Silicon / Intel | Supported for early testing | DMG development candidate |
+| Platform | File |
+|---|---|
+| Windows 11 x64 | `PiDeck_<version>_x64-setup.exe` |
+| macOS Apple Silicon | `PiDeck_<version>_aarch64.dmg` |
+| macOS Intel | `PiDeck_<version>_x64.dmg` |
 
-Both platforms can run the full application with `tauri:dev` and build a native candidate with `package:release`. The optimized `dev:fast` workflow remains Windows-only. Revealing a local path uses the native file manager on each platform (Explorer `/select`, Finder `open -R`).
+PiDeck checks for updates automatically and installs them in place.
 
-## Quick start
+> **Early-access builds.** Current installers are not yet code-signed with a
+> paid certificate. On Windows, SmartScreen may warn — choose **More info →
+> Run anyway**. On macOS, if the app is blocked on first launch, allow it under
+> **System Settings → Privacy & Security → Open Anyway**. Release status and
+> signing progress are tracked in [release notes](./docs/operations/release.md).
 
-### Requirements
+## Works with the Pi CLI — but doesn't need it
 
-- Node.js — the version pinned in [`.node-version`](./.node-version), which development and CI both use. **22.19.0** is the minimum supported runtime.
-- pnpm **9.15.0**
-- Rust stable
-- [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/)
+PiDeck bundles the Pi SDK (currently `0.82.1`) and its own Node runtime, so
+it runs standalone — no global `pi` executable or Node installation required.
+The Windows build bundles Git as well.
 
-Use the pinned pnpm version. pnpm 11 ignores the `patchedDependencies` location used by this repository and can install an incorrect Pi SDK tree.
+If you also use the Pi CLI, both share the same data in `~/.pi/agent` and each
+workspace's `.pi` directory: sessions and history, authentication and model
+settings, and installed packages. Keep the CLI version close to PiDeck's
+pinned SDK version, and avoid editing the same session from both apps at once.
 
-For macOS desktop development, Xcode Command Line Tools are sufficient:
+## Build from source
 
-```bash
-xcode-select --install
-```
-
-For Windows desktop development, install:
-
-- [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++** selected.
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). It is already present on most Windows 11 installations.
-- [Rustup](https://rustup.rs/) with the stable toolchain.
-
-In PowerShell, `fnm` plus Corepack can provide the pinned Node and pnpm versions. Run this from the repository root so `.node-version` resolves:
-
-```powershell
-winget install Schniz.fnm
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-fnm install (Get-Content .node-version)
-fnm use (Get-Content .node-version)
-
-npm install --global corepack@latest
-corepack enable pnpm
-corepack prepare pnpm@9.15.0 --activate
-```
-
-To load `fnm` automatically in future PowerShell sessions, add the `fnm env` line to `$PROFILE`.
-
-One way to install the expected Node and pnpm versions on macOS is, again from the repository root:
-
-```bash
-brew install fnm
-eval "$(fnm env --use-on-cd --shell zsh)"
-fnm install "$(cat .node-version)"
-fnm use "$(cat .node-version)"
-
-npm install --global corepack@latest
-corepack enable pnpm
-corepack prepare pnpm@9.15.0 --activate
-```
-
-### Install and launch
-
-From the repository root:
+Requirements: [Node](./.node-version) ≥ 22.19.0, pnpm 9.15.0, Rust stable, and
+the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/). See the
+[development guide](./docs/operations/development.md) for one-command toolchain
+setup on Windows and macOS.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -89,74 +77,30 @@ pnpm build
 pnpm --filter @pideck/desktop run tauri:dev
 ```
 
-The first launch compiles the Tauri application and may take several minutes. Subsequent launches reuse the Rust build cache.
-
-## Pi CLI is not required
-
-PiDeck uses `@earendil-works/pi-coding-agent` directly as an application dependency. It does not invoke a globally installed `pi` executable, so PiDeck works even when the Pi CLI is not installed.
-
-PiDeck uses `~/.pi/agent` by default. If you install the Pi CLI later and keep its default data directory, the CLI and PiDeck can share:
-
-- Sessions and conversation history
-- Authentication and model settings
-- Packages, Extensions, Skills, Prompts, and Themes
-
-Project resources live under each workspace's `.pi` directory and are shared when both applications open the same workspace.
-
-For the best compatibility, keep the CLI version close to PiDeck's pinned SDK version. A much newer CLI may write settings or Session entries that SDK `0.82.1` does not understand. Avoid modifying the same Session concurrently from the CLI and PiDeck.
-
-## Verify a checkout
-
-```bash
-# Documentation, type checks, and all JavaScript/TypeScript tests
-pnpm verify:quick
-
-# Full P0 source gate: quick checks, production build, and Rust tests
-pnpm verify:p0
-```
-
-If the first Rust dependency download fails because crates.io is too slow, retry with:
-
-```bash
-CARGO_HTTP_TIMEOUT=600 CARGO_HTTP_LOW_SPEED_LIMIT=1 CARGO_NET_RETRY=10 pnpm test:rust
-```
+The first launch compiles the Tauri application and may take several minutes;
+later launches reuse the build cache. To verify a checkout, run
+`pnpm verify:quick` (docs, types, JS/TS tests) or `pnpm verify:p0` (adds the
+production build and Rust tests). Native installers are built with
+`pnpm package:release`.
 
 ## Security
 
-Selecting a workspace immediately authorizes and loads its project resources. Code in `.pi/extensions` can execute locally with your user permissions. Only open workspaces and install Packages you trust.
+Opening a workspace authorizes its project resources: code in
+`.pi/extensions` runs locally with your user permissions. Only open workspaces
+and install packages you trust. Provider credentials, settings, and sessions
+are user data under `~/.pi/agent` — never commit them to a repository.
 
-Provider credentials, settings, Packages, and Sessions are user data. Do not commit files from `~/.pi/agent` into this repository.
-
-## Current release boundary
-
-The passing P0 source gate demonstrates that the implemented core behavior builds and passes its automated checks. It does not by itself certify a downloadable installer.
-
-Before a public release, the project still needs accepted packaging evidence and platform code signing. Native development candidates are built with:
-
-```bash
-pnpm package:release
-```
-
-On Windows this produces an NSIS installer. On macOS it produces a DMG plus the signed Tauri updater archive. Without Apple Developer secrets, the macOS candidate is ad-hoc signed and may require manual approval in Privacy & Security; it is not a certified public release. See [P0 scope and verification](./docs/operations/p0-scope.md) for the exact source and release boundaries.
-
-## Workspace layout
+## Project layout
 
 | Path | Role |
 |---|---|
 | `apps/desktop` | React/Vite interface and Tauri 2 desktop host |
 | `packages/protocol` | Typed Rust/Host/UI process protocol |
-| `packages/pi-host` | Node sidecar and Pi SDK owner |
-| `docs` | Architecture, development, and release documentation |
-| `test-fixtures` | Test Packages and Extensions |
+| `packages/pi-host` | Node sidecar that owns the Pi SDK |
+| `docs` | [Architecture](./docs/architecture/overview.md), [development](./docs/operations/development.md), and [release](./docs/operations/release.md) documentation |
 | `scripts` | Verification, runtime staging, and packaging tools |
 
-## Documentation
-
-- [Documentation index](./docs/README.md)
-- [Architecture overview](./docs/architecture/overview.md)
-- [Development guide](./docs/operations/development.md)
-- [P0 scope and verification](./docs/operations/p0-scope.md)
-- [Release notes and limitations](./docs/operations/release.md)
+More in the [documentation index](./docs/README.md).
 
 ## License
 

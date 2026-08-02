@@ -13,6 +13,51 @@ Windows desktop development requires Microsoft C++ Build Tools with the
 development requires Xcode Command Line Tools (`xcode-select --install`).
 The repository does not currently claim Linux support.
 
+## Toolchain setup
+
+Use the pinned pnpm version (`9.15.0`). pnpm 11 ignores the
+`patchedDependencies` location used by this repository and can install an
+incorrect Pi SDK tree.
+
+`fnm` plus Corepack can provide the pinned Node and pnpm versions. Run these
+from the repository root so `.node-version` resolves.
+
+PowerShell:
+
+```powershell
+winget install Schniz.fnm
+fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
+fnm install (Get-Content .node-version)
+fnm use (Get-Content .node-version)
+
+npm install --global corepack@latest
+corepack enable pnpm
+corepack prepare pnpm@9.15.0 --activate
+```
+
+To load `fnm` automatically in future PowerShell sessions, add the `fnm env`
+line to `$PROFILE`.
+
+macOS:
+
+```bash
+brew install fnm
+eval "$(fnm env --use-on-cd --shell zsh)"
+fnm install "$(cat .node-version)"
+fnm use "$(cat .node-version)"
+
+npm install --global corepack@latest
+corepack enable pnpm
+corepack prepare pnpm@9.15.0 --activate
+```
+
+If the first Rust dependency download fails because crates.io is too slow,
+retry with:
+
+```bash
+CARGO_HTTP_TIMEOUT=600 CARGO_HTTP_LOW_SPEED_LIMIT=1 CARGO_NET_RETRY=10 pnpm test:rust
+```
+
 ## Install
 
 ```bash
