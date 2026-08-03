@@ -32,7 +32,9 @@ export function hasExactKeys(
   optional: readonly string[] = [],
 ): boolean {
   const allowed = new Set([...required, ...optional]);
-  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
+  return (
+    required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key))
+  );
 }
 
 export function isUuid(value: unknown): value is string {
@@ -96,7 +98,10 @@ function isJsonValue(value: unknown): boolean {
 }
 
 export function isHostErrorRecord(value: unknown): boolean {
-  if (!isPlainObject(value) || !hasExactKeys(value, ["code", "message", "retryable"], ["details"])) {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["code", "message", "retryable"], ["details"])
+  ) {
     return false;
   }
   return (
@@ -213,7 +218,10 @@ export function isHostStatusSnapshot(value: unknown): boolean {
 }
 
 export function isWorkspaceSnapshot(value: unknown): boolean {
-  if (!isPlainObject(value) || !hasExactKeys(value, ["id", "cwd", "canonicalCwd", "revision", "servicesReady"])) {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["id", "cwd", "canonicalCwd", "revision", "servicesReady"])
+  ) {
     return false;
   }
   return (
@@ -279,11 +287,11 @@ function isStringRecord(value: unknown): boolean {
 }
 
 function isProviderCompatibility(value: unknown, allowNull: boolean): boolean {
-  return isPlainObject(value) &&
+  return (
+    isPlainObject(value) &&
     hasExactKeys(value, [], ["supportsDeveloperRole", "supportsReasoningEffort"]) &&
-    Object.values(value).every((item) =>
-      isBoolean(item) || (allowNull && item === null),
-    );
+    Object.values(value).every((item) => isBoolean(item) || (allowNull && item === null))
+  );
 }
 
 export function isProviderDraft(value: unknown): boolean {
@@ -331,7 +339,11 @@ function isProviderAuthStatus(value: unknown): boolean {
 function isProviderSnapshot(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["id", "enabled", "name", "baseUrl", "api", "authHeader", "headers", "models", "auth"], ["modelsUrl", "compat"]) &&
+    hasExactKeys(
+      value,
+      ["id", "enabled", "name", "baseUrl", "api", "authHeader", "headers", "models", "auth"],
+      ["modelsUrl", "compat"],
+    ) &&
     isString(value.id) &&
     value.id.trim().length > 0 &&
     isBoolean(value.enabled) &&
@@ -354,7 +366,16 @@ function isDiscoveredProviderModel(value: unknown): boolean {
     !isPlainObject(value) ||
     !hasExactKeys(
       value,
-      ["id", "name", "reasoning", "input", "contextWindow", "maxTokens", "enabled", "thinkingSource"],
+      [
+        "id",
+        "name",
+        "reasoning",
+        "input",
+        "contextWindow",
+        "maxTokens",
+        "enabled",
+        "thinkingSource",
+      ],
       ["thinkingLevelMap"],
     )
   ) {
@@ -436,7 +457,8 @@ function isProviderLoginFlowEvent(value: unknown): boolean {
   if (!isPlainObject(value) || !isString(value.kind)) return false;
   switch (value.kind) {
     case "info":
-      return hasExactKeys(value, ["kind", "message"], ["links"]) &&
+      return (
+        hasExactKeys(value, ["kind", "message"], ["links"]) &&
         isString(value.message) &&
         (value.links === undefined ||
           (Array.isArray(value.links) &&
@@ -446,20 +468,21 @@ function isProviderLoginFlowEvent(value: unknown): boolean {
                 hasExactKeys(link, ["url"], ["label"]) &&
                 isString(link.url) &&
                 isOptionalString(link.label),
-            )));
+            )))
+      );
     case "auth_url":
-      return hasExactKeys(value, ["kind", "url"], ["instructions"]) &&
+      return (
+        hasExactKeys(value, ["kind", "url"], ["instructions"]) &&
         isString(value.url) &&
-        isOptionalString(value.instructions);
+        isOptionalString(value.instructions)
+      );
     case "device_code":
-      return hasExactKeys(
-        value,
-        ["kind", "userCode", "verificationUri"],
-        ["expiresInSeconds"],
-      ) &&
+      return (
+        hasExactKeys(value, ["kind", "userCode", "verificationUri"], ["expiresInSeconds"]) &&
         isString(value.userCode) &&
         isString(value.verificationUri) &&
-        (value.expiresInSeconds === undefined || isSafeRevision(value.expiresInSeconds));
+        (value.expiresInSeconds === undefined || isSafeRevision(value.expiresInSeconds))
+      );
     case "progress":
       return hasExactKeys(value, ["kind", "message"]) && isString(value.message);
     case "prompt":
@@ -467,9 +490,11 @@ function isProviderLoginFlowEvent(value: unknown): boolean {
     case "prompt_cancel":
       return hasExactKeys(value, ["kind", "promptId"]) && isString(value.promptId);
     case "done":
-      return hasExactKeys(value, ["kind", "ok"], ["message"]) &&
+      return (
+        hasExactKeys(value, ["kind", "ok"], ["message"]) &&
         isBoolean(value.ok) &&
-        isOptionalString(value.message);
+        isOptionalString(value.message)
+      );
     default:
       return false;
   }
@@ -480,13 +505,13 @@ export function isSerializableAgentContent(value: unknown): boolean {
     isPlainObject(value) &&
     isString(value.type) &&
     (value.text === undefined || isString(value.text)) &&
-    Object.entries(value).every(([key, item]) =>
-      key === "type" || key === "text" || item === undefined || isJsonValue(item),
+    Object.entries(value).every(
+      ([key, item]) => key === "type" || key === "text" || item === undefined || isJsonValue(item),
     )
   );
 }
 
-export function isSerializableUsage(value: unknown): boolean {
+function isSerializableUsage(value: unknown): boolean {
   if (
     !isPlainObject(value) ||
     !hasExactKeys(
@@ -515,12 +540,10 @@ export function isSerializableUsage(value: unknown): boolean {
 
 function isAgentMessage(value: unknown): boolean {
   if (!isPlainObject(value) || !isString(value.role)) return false;
-  if (
-    !(
-      typeof value.content === "string" ||
-      (Array.isArray(value.content) && value.content.every(isSerializableAgentContent))
-    )
-  ) {
+  if (!(
+    typeof value.content === "string" ||
+    (Array.isArray(value.content) && value.content.every(isSerializableAgentContent))
+  )) {
     return false;
   }
   if (value.usage !== undefined && !isSerializableUsage(value.usage)) return false;
@@ -559,12 +582,13 @@ function isSerializableCompactionResult(value: unknown): boolean {
     isOptionalString(value.summary) &&
     (value.tokensBefore === undefined || isFiniteNumber(value.tokensBefore)) &&
     (value.tokensAfter === undefined || isFiniteNumber(value.tokensAfter)) &&
-    Object.entries(value).every(([key, item]) =>
-      key === "summary" ||
-      key === "tokensBefore" ||
-      key === "tokensAfter" ||
-      item === undefined ||
-      isJsonValue(item),
+    Object.entries(value).every(
+      ([key, item]) =>
+        key === "summary" ||
+        key === "tokensBefore" ||
+        key === "tokensAfter" ||
+        item === undefined ||
+        isJsonValue(item),
     )
   );
 }
@@ -576,34 +600,43 @@ function isSerializableAssistantMessageEvent(value: unknown): boolean {
       return hasExactKeys(value, ["type"]);
     case "text_start":
     case "thinking_start":
-      return hasExactKeys(value, ["type", "contentIndex"]) &&
-        isSafeRevision(value.contentIndex);
+      return hasExactKeys(value, ["type", "contentIndex"]) && isSafeRevision(value.contentIndex);
     case "text_delta":
     case "thinking_delta":
     case "toolcall_delta":
-      return hasExactKeys(value, ["type", "contentIndex", "delta"]) &&
+      return (
+        hasExactKeys(value, ["type", "contentIndex", "delta"]) &&
         isSafeRevision(value.contentIndex) &&
-        isString(value.delta);
+        isString(value.delta)
+      );
     case "text_end":
     case "thinking_end":
-      return hasExactKeys(value, ["type", "contentIndex", "content"]) &&
+      return (
+        hasExactKeys(value, ["type", "contentIndex", "content"]) &&
         isSafeRevision(value.contentIndex) &&
-        isString(value.content);
+        isString(value.content)
+      );
     case "toolcall_start":
-      return hasExactKeys(value, ["type", "contentIndex", "id", "name"]) &&
+      return (
+        hasExactKeys(value, ["type", "contentIndex", "id", "name"]) &&
         isSafeRevision(value.contentIndex) &&
         isString(value.id) &&
-        isString(value.name);
+        isString(value.name)
+      );
     case "toolcall_end":
-      return hasExactKeys(value, ["type", "contentIndex", "toolCall"]) &&
+      return (
+        hasExactKeys(value, ["type", "contentIndex", "toolCall"]) &&
         isSafeRevision(value.contentIndex) &&
-        isSerializableAgentContent(value.toolCall);
+        isSerializableAgentContent(value.toolCall)
+      );
     case "done":
       return hasExactKeys(value, ["type", "reason"]) && isString(value.reason);
     case "error":
-      return hasExactKeys(value, ["type", "reason"], ["errorMessage"]) &&
+      return (
+        hasExactKeys(value, ["type", "reason"], ["errorMessage"]) &&
         isString(value.reason) &&
-        isOptionalString(value.errorMessage);
+        isOptionalString(value.errorMessage)
+      );
     default:
       return false;
   }
@@ -612,8 +645,10 @@ function isSerializableAssistantMessageEvent(value: unknown): boolean {
 function isSerializableAgentSessionEvent(value: unknown): boolean {
   if (!isPlainObject(value) || !isString(value.type)) return false;
   if (value.type === "message_update") {
-    return hasExactKeys(value, ["type", "assistantMessageEvent"]) &&
-      isSerializableAssistantMessageEvent(value.assistantMessageEvent);
+    return (
+      hasExactKeys(value, ["type", "assistantMessageEvent"]) &&
+      isSerializableAssistantMessageEvent(value.assistantMessageEvent)
+    );
   }
   return Object.entries(value).every(
     ([key, item]) => key === "type" || item === undefined || isJsonValue(item),
@@ -634,7 +669,14 @@ function isToolInfo(value: unknown): boolean {
 export function isToolSnapshot(value: unknown): value is ToolSnapshot {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["revision", "workspaceId", "sessionId", "sessionRevision", "tools", "active"]) &&
+    hasExactKeys(value, [
+      "revision",
+      "workspaceId",
+      "sessionId",
+      "sessionRevision",
+      "tools",
+      "active",
+    ]) &&
     isSafeRevision(value.revision) &&
     isUuid(value.workspaceId) &&
     isUuid(value.sessionId) &&
@@ -662,8 +704,7 @@ function isExtensionMessageRenderLines(value: unknown): value is string[] {
     value.every(
       (line) => typeof line === "string" && line.length <= MAX_EXTENSION_MESSAGE_RENDER_LINE_LENGTH,
     ) &&
-    value.reduce((total, line) => total + line.length, 0) <=
-      MAX_EXTENSION_MESSAGE_RENDER_CHARACTERS
+    value.reduce((total, line) => total + line.length, 0) <= MAX_EXTENSION_MESSAGE_RENDER_CHARACTERS
   );
 }
 
@@ -997,7 +1038,7 @@ export function isPackageSnapshot(value: unknown): boolean {
   );
 }
 
-export function isRehydrateSnapshot(value: unknown): value is RehydrateSnapshot {
+function isRehydrateSnapshot(value: unknown): value is RehydrateSnapshot {
   if (
     !isPlainObject(value) ||
     !hasExactKeys(value, ["watermark", "host", "workspace", "session", "tools", "packages"]) ||
@@ -1045,7 +1086,11 @@ export function isRehydrateSnapshot(value: unknown): value is RehydrateSnapshot 
 function isPackageMutationResult(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["operationId", "status", "packageSnapshot", "warnings", "reconcileRequired"], ["session"]) &&
+    hasExactKeys(
+      value,
+      ["operationId", "status", "packageSnapshot", "warnings", "reconcileRequired"],
+      ["session"],
+    ) &&
     isUuid(value.operationId) &&
     ["committed", "partialFailure", "failed"].includes(String(value.status)) &&
     isPackageSnapshot(value.packageSnapshot) &&
@@ -1056,34 +1101,12 @@ function isPackageMutationResult(value: unknown): boolean {
   );
 }
 
-function isPiSettingsSnapshot(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    hasExactKeys(
-      value,
-      ["steeringMode", "followUpMode", "autoCompaction", "autoRetry"],
-      ["defaultModel", "defaultThinkingLevel"],
-    ) &&
-    (value.defaultModel === undefined || isModelSummary(value.defaultModel)) &&
-    isOptionalString(value.defaultThinkingLevel) &&
-    ["all", "one-at-a-time"].includes(String(value.steeringMode)) &&
-    ["all", "one-at-a-time"].includes(String(value.followUpMode)) &&
-    isBoolean(value.autoCompaction) &&
-    isBoolean(value.autoRetry)
-  );
-}
-
 function isExtensionUiOrigin(value: unknown): boolean {
   if (!isPlainObject(value) || !isString(value.invocationKind)) return false;
   if (value.invocationKind === "unknown") {
     return hasExactKeys(value, ["invocationKind"]);
   }
-  const baseKeys = [
-    "invocationKind",
-    "extensionId",
-    "extensionDisplayName",
-    "sourceKind",
-  ];
+  const baseKeys = ["invocationKind", "extensionId", "extensionDisplayName", "sourceKind"];
   if (
     !isBoundedNonEmptyString(value.extensionId, 128) ||
     !isBoundedNonEmptyString(value.extensionDisplayName, 120) ||
@@ -1159,10 +1182,7 @@ function isExtensionUiRequest(value: unknown): boolean {
             hasExactKeys(item, ["id", "label"], ["description", "destructive"]) &&
             isBoundedString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH) &&
             isBoundedString(item.label, MAX_EXTENSION_UI_OPTION_LABEL_LENGTH) &&
-            isOptionalBoundedString(
-              item.description,
-              MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH,
-            ) &&
+            isOptionalBoundedString(item.description, MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH) &&
             (item.destructive === undefined || isBoolean(item.destructive)),
         ))) &&
     isOptionalBoundedString(value.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH) &&
@@ -1172,7 +1192,8 @@ function isExtensionUiRequest(value: unknown): boolean {
     (value.presentationHint === undefined ||
       ["inline", "modal"].includes(String(value.presentationHint))) &&
     (value.riskHint === undefined || ["normal", "high"].includes(String(value.riskHint))) &&
-    (value.presentation === undefined || ["inline", "modal"].includes(String(value.presentation))) &&
+    (value.presentation === undefined ||
+      ["inline", "modal"].includes(String(value.presentation))) &&
     (value.risk === undefined || ["normal", "high"].includes(String(value.risk))) &&
     (value.routeReason === undefined ||
       [
@@ -1196,7 +1217,12 @@ function isExtensionUiRequest(value: unknown): boolean {
 }
 
 function isSessionEntry(value: unknown): boolean {
-  return isPlainObject(value) && isString(value.id) && isString(value.type) && Object.values(value).every(isJsonValue);
+  return (
+    isPlainObject(value) &&
+    isString(value.id) &&
+    isString(value.type) &&
+    Object.values(value).every(isJsonValue)
+  );
 }
 
 function isSessionTreeNode(value: unknown): boolean {
@@ -1211,7 +1237,7 @@ function isSessionTreeNode(value: unknown): boolean {
   );
 }
 
-export function isAttachmentSnapshot(value: unknown): value is AttachmentSnapshot {
+function isAttachmentSnapshot(value: unknown): value is AttachmentSnapshot {
   return (
     isPlainObject(value) &&
     hasExactKeys(
@@ -1227,9 +1253,7 @@ export function isAttachmentSnapshot(value: unknown): value is AttachmentSnapsho
       "text/plain",
     ].includes(String(value.mediaType)) &&
     isSafeRevision(value.sizeBytes) &&
-    ["copying", "parsing", "ready", "needs_ocr", "failed"].includes(
-      String(value.status),
-    ) &&
+    ["copying", "parsing", "ready", "needs_ocr", "failed"].includes(String(value.status)) &&
     (value.unit === undefined || value.unit === "page" || value.unit === "chunk") &&
     (value.unitCount === undefined || isSafeRevision(value.unitCount)) &&
     (value.processedUnits === undefined || isSafeRevision(value.processedUnits)) &&
@@ -1270,7 +1294,7 @@ function isGitFileChange(value: unknown): boolean {
   );
 }
 
-export function isGitStatusSnapshot(value: unknown): value is GitStatusSnapshot {
+function isGitStatusSnapshot(value: unknown): value is GitStatusSnapshot {
   if (!isPlainObject(value) || !isSafeRevision(value.revision) || !isString(value.state)) {
     return false;
   }
@@ -1659,21 +1683,13 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isSafeRevision(result.messageCount) &&
         (result.toolCallCount === undefined || isSafeRevision(result.toolCallCount)) &&
         (result.tokenUsage === undefined || isJsonValue(result.tokenUsage)) &&
-        (result.userMessageCount === undefined ||
-          isSafeRevision(result.userMessageCount)) &&
+        (result.userMessageCount === undefined || isSafeRevision(result.userMessageCount)) &&
         (result.assistantMessageCount === undefined ||
           isSafeRevision(result.assistantMessageCount)) &&
-        (result.toolResultCount === undefined ||
-          isSafeRevision(result.toolResultCount)) &&
+        (result.toolResultCount === undefined || isSafeRevision(result.toolResultCount)) &&
         (result.tokens === undefined ||
           (isPlainObject(result.tokens) &&
-            hasExactKeys(result.tokens, [
-              "input",
-              "output",
-              "cacheRead",
-              "cacheWrite",
-              "total",
-            ]) &&
+            hasExactKeys(result.tokens, ["input", "output", "cacheRead", "cacheWrite", "total"]) &&
             isFiniteNumber(result.tokens.input) &&
             isFiniteNumber(result.tokens.output) &&
             isFiniteNumber(result.tokens.cacheRead) &&
@@ -1759,14 +1775,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) &&
         hasExactKeys(
           result,
-          [
-            "aborted",
-            "settled",
-            "queueRestored",
-            "partialFailure",
-            "queue",
-            "session",
-          ],
+          ["aborted", "settled", "queueRestored", "partialFailure", "queue", "session"],
           ["error"],
         ) &&
         isBoolean(result.aborted) &&
@@ -1896,7 +1905,11 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid provider.checkConnection result";
     case "model.list":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["models", "thinkingLevels", "configHealth"], ["current", "enabledProviders"]) &&
+        hasExactKeys(
+          result,
+          ["models", "thinkingLevels", "configHealth"],
+          ["current", "enabledProviders"],
+        ) &&
         Array.isArray(result.models) &&
         result.models.every(isModelSummary) &&
         (result.current === undefined || isModelSummary(result.current)) &&
@@ -1948,9 +1961,6 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         result.resources.every(isResourceRecord)
         ? null
         : "invalid package.getResources result";
-    case "piSettings.get":
-    case "piSettings.patch":
-      return isPiSettingsSnapshot(result) ? null : "invalid PiSettingsSnapshot";
     default:
       // Exhaustiveness guard: a new HostMethod without a result validator is a
       // compile error here — outbound validation can never be silently skipped.
@@ -1968,7 +1978,9 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
     case "host.statusChanged":
       return isHostStatusSnapshot(payload) ? null : "invalid HostStatusSnapshot payload";
     case "host.fatal":
-      return isPlainObject(payload) && hasExactKeys(payload, ["error"]) && isHostErrorRecord(payload.error)
+      return isPlainObject(payload) &&
+        hasExactKeys(payload, ["error"]) &&
+        isHostErrorRecord(payload.error)
         ? null
         : "invalid host.fatal payload";
     case "workspace.changed":
@@ -1993,7 +2005,9 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         ? null
         : "invalid attachment.changed payload";
     case "session.snapshot":
-      return payload === null || isSessionSnapshot(payload) ? null : "invalid session.snapshot payload";
+      return payload === null || isSessionSnapshot(payload)
+        ? null
+        : "invalid session.snapshot payload";
     case "session.infoChanged":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["sessionId"], ["name"]) &&
@@ -2003,11 +2017,7 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         : "invalid session.infoChanged payload";
     case "session.runtimeChanged":
       return isPlainObject(payload) &&
-        hasExactKeys(
-          payload,
-          ["sessionId", "sessionRevision", "state", "updatedAt"],
-          ["error"],
-        ) &&
+        hasExactKeys(payload, ["sessionId", "sessionRevision", "state", "updatedAt"], ["error"]) &&
         isUuid(payload.sessionId) &&
         isSafeRevision(payload.sessionRevision) &&
         ["starting", "running", "queued", "idle", "error", "inactive"].includes(

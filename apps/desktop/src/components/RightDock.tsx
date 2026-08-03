@@ -17,10 +17,7 @@ import type { TerminalProfileId } from "@pideck/protocol";
 import { useAppStore } from "../lib/stores/app-store";
 import { setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
-import {
-  ExtensionTerminal,
-  cancelExtensionTerminal,
-} from "../features/dock/ExtensionTerminal";
+import { ExtensionTerminal, cancelExtensionTerminal } from "../features/dock/ExtensionTerminal";
 import {
   ShellTerminal,
   shellTerminalLabel,
@@ -37,12 +34,7 @@ import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  | "files"
-  | "tree"
-  | "changes"
-  | `browser:${number}`
-  | `shell:${number}`
-  | `extension:${string}`;
+  "files" | "tree" | "changes" | `browser:${number}` | `shell:${number}` | `extension:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -90,10 +82,7 @@ export function visibleDockTabLimit(availableWidth: number, tabCount: number): n
   const widthWithoutMenu = Math.max(0, availableWidth - TAB_CONTROL_WIDTH - TAB_GAP);
   const allTabsWidth = tabCount * MIN_TAB_WIDTH + Math.max(0, tabCount - 1) * TAB_GAP;
   if (allTabsWidth <= widthWithoutMenu) return tabCount;
-  const widthWithMenu = Math.max(
-    0,
-    availableWidth - TAB_CONTROL_WIDTH * 2 - TAB_GAP * 2,
-  );
+  const widthWithMenu = Math.max(0, availableWidth - TAB_CONTROL_WIDTH * 2 - TAB_GAP * 2);
   return Math.max(
     1,
     Math.min(tabCount, Math.floor((widthWithMenu + TAB_GAP) / (MIN_TAB_WIDTH + TAB_GAP))),
@@ -118,10 +107,7 @@ export function partitionDockTabs<T extends string>(
 }
 
 export function clampDockWidth(width: number, viewportWidth = 1280): number {
-  const responsiveMax = Math.max(
-    DEFAULT_DOCK_WIDTH,
-    Math.min(MAX_DOCK_WIDTH, viewportWidth - 360),
-  );
+  const responsiveMax = Math.max(DEFAULT_DOCK_WIDTH, Math.min(MAX_DOCK_WIDTH, viewportWidth - 360));
   if (!Number.isFinite(width)) return Math.min(DEFAULT_DOCK_WIDTH, responsiveMax);
   return Math.min(responsiveMax, Math.max(MIN_DOCK_WIDTH, Math.round(width)));
 }
@@ -141,9 +127,7 @@ export function RightDock() {
   const dockOpen = useAppStore((state) => state.dockOpen);
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
-  const terminalProfile = useAppStore(
-    (state) => state.desktopSettings?.terminalProfile ?? "auto",
-  );
+  const terminalProfile = useAppStore((state) => state.desktopSettings?.terminalProfile ?? "auto");
   const setDockOpen = useAppStore((state) => state.setDockOpen);
   const pushNotification = useAppStore((state) => state.pushNotification);
   const initialExtensionTab = panel ? extensionTabId(panel.requestId) : null;
@@ -172,9 +156,7 @@ export function RightDock() {
   dockWidthRef.current = dockWidth;
   browserTabsRef.current = browserTabs;
 
-  const updateBrowserTabs = (
-    updater: (current: BrowserDockTab[]) => BrowserDockTab[],
-  ) => {
+  const updateBrowserTabs = (updater: (current: BrowserDockTab[]) => BrowserDockTab[]) => {
     const next = updater(browserTabsRef.current);
     browserTabsRef.current = next;
     setBrowserTabs(next);
@@ -193,9 +175,10 @@ export function RightDock() {
     });
   };
 
+  const panelRequestId = panel?.requestId ?? null;
   useEffect(() => {
-    if (panel) {
-      const tabId = extensionTabId(panel.requestId);
+    if (panelRequestId) {
+      const tabId = extensionTabId(panelRequestId);
       setExtensionClosing(null);
       setTabOrder((current) => (current.includes(tabId) ? current : [...current, tabId]));
       setActiveTab(tabId);
@@ -212,7 +195,7 @@ export function RightDock() {
       );
       return next;
     });
-  }, [panel?.requestId]);
+  }, [panelRequestId]);
 
   useEffect(() => {
     if (!addMenuOpen) return;
@@ -394,9 +377,7 @@ export function RightDock() {
   const restartShell = (id: number) => {
     const generation = nextShellGeneration.current++;
     setShellTabs((current) =>
-      current.map((tab) =>
-        tab.id === id ? { ...tab, generation, status: null } : tab,
-      ),
+      current.map((tab) => (tab.id === id ? { ...tab, generation, status: null } : tab)),
     );
     setActiveTab(shellTabId(id));
   };
@@ -414,10 +395,7 @@ export function RightDock() {
     window.setTimeout(() => {
       if (useAppStore.getState().extensionTerminal?.requestId !== requestId) return;
       setExtensionClosing((current) => (current === requestId ? null : current));
-      pushNotification(
-        t("dockExtensionCloseTimeout"),
-        "warning",
-      );
+      pushNotification(t("dockExtensionCloseTimeout"), "warning");
     }, 1_500);
   };
 
@@ -502,10 +480,7 @@ export function RightDock() {
           onPointerMove={(event) => {
             const start = resizeStart.current;
             if (!start || start.pointerId !== event.pointerId) return;
-            const next = clampDockWidth(
-              start.width + start.x - event.clientX,
-              window.innerWidth,
-            );
+            const next = clampDockWidth(start.width + start.x - event.clientX, window.innerWidth);
             dockWidthRef.current = next;
             setDockWidth(next);
           }}
@@ -612,7 +587,11 @@ export function RightDock() {
                     className="shrink-0 p-1 text-muted hover:text-foreground disabled:opacity-60"
                     onClick={() => closeTab(tabId)}
                   >
-                    {closing ? <LoaderCircle size={12} className="animate-spin" /> : <X size={12} />}
+                    {closing ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <X size={12} />
+                    )}
                   </button>
                 </div>
               );
@@ -640,7 +619,10 @@ export function RightDock() {
                 {overflowTabIds.map((tabId) => {
                   const { label, Icon } = tabInfo(tabId);
                   return (
-                    <div key={tabId} className="flex items-center text-muted hover:bg-surface-overlay">
+                    <div
+                      key={tabId}
+                      className="flex items-center text-muted hover:bg-surface-overlay"
+                    >
                       <button
                         type="button"
                         className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:text-foreground"
@@ -841,9 +823,7 @@ export function RightDock() {
             }
           />
         ))}
-        {panel && (
-          <ExtensionTerminal visible={activeTab === extensionTabId(panel.requestId)} />
-        )}
+        {panel && <ExtensionTerminal visible={activeTab === extensionTabId(panel.requestId)} />}
         {tabOrder.length === 0 && (
           <div className="flex min-h-0 flex-1 items-center justify-center">
             <div className="flex w-56 flex-col items-center gap-4">

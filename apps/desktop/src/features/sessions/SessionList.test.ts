@@ -13,7 +13,7 @@ import {
   sessionStatusDotClass,
   shouldRetrySessionRpc,
   shouldClearLastSessionPath,
-} from "./SessionList";
+} from "./session-list-policy";
 
 const active = {
   sessionId: "active-session",
@@ -119,12 +119,10 @@ describe("canReloadSession", () => {
 
 describe("last Session path cleanup", () => {
   it("matches only the exact Host canonical path", () => {
-    expect(
-      shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/Alpha.jsonl"),
-    ).toBe(true);
-    expect(
-      shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/alpha.jsonl"),
-    ).toBe(false);
+    expect(shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/Alpha.jsonl")).toBe(true);
+    expect(shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/alpha.jsonl")).toBe(
+      false,
+    );
   });
 });
 
@@ -140,10 +138,7 @@ describe("canRenameSession", () => {
   it("allows inactive files and idle active Sessions", () => {
     expect(canRenameSession(item, active)).toBe(true);
     expect(
-      canRenameSession(
-        { ...item, sessionId: active.sessionId, runtimeState: "idle" },
-        active,
-      ),
+      canRenameSession({ ...item, sessionId: active.sessionId, runtimeState: "idle" }, active),
     ).toBe(true);
   });
 
@@ -177,10 +172,7 @@ describe("canDeleteSession", () => {
 
   it("allows the currently viewed Session while it is idle", () => {
     expect(
-      canDeleteSession(
-        { ...item, sessionId: active.sessionId, runtimeState: "idle" },
-        active,
-      ),
+      canDeleteSession({ ...item, sessionId: active.sessionId, runtimeState: "idle" }, active),
     ).toBe(true);
   });
 
@@ -210,10 +202,7 @@ describe("canArchiveSession", () => {
     expect(canArchiveSession(item, active)).toBe(true);
     expect(canArchiveSession({ ...item, runtimeState: "idle" }, active)).toBe(true);
     expect(
-      canArchiveSession(
-        { ...item, sessionId: active.sessionId, runtimeState: "idle" },
-        active,
-      ),
+      canArchiveSession({ ...item, sessionId: active.sessionId, runtimeState: "idle" }, active),
     ).toBe(true);
   });
 
@@ -266,31 +255,21 @@ describe("filterSessionItems", () => {
   });
 
   it("matches the untitled label in the caller's locale", () => {
-    expect(filterSessionItems(items, "new session", "active", "New session")).toEqual([
-      items[1],
-    ]);
+    expect(filterSessionItems(items, "new session", "active", "New session")).toEqual([items[1]]);
     expect(filterSessionItems(items, "新会话", "active", "New session")).toEqual([]);
   });
 
   it("keeps archived Sessions out of the active view", () => {
     expect(filterSessionItems(items, "", "active", "新会话")).toEqual(items.slice(0, 2));
-    expect(filterSessionItems(items, "investigation", "archived", "新会话")).toEqual([
-      items[2],
-    ]);
+    expect(filterSessionItems(items, "investigation", "archived", "新会话")).toEqual([items[2]]);
   });
 });
 
 describe("shouldRetrySessionRpc", () => {
   it("retries only transient graph-lock contention", () => {
-    expect(
-      shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: true }),
-    ).toBe(true);
-    expect(
-      shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: false }),
-    ).toBe(false);
-    expect(shouldRetrySessionRpc({ code: "STALE_REVISION", retryable: true })).toBe(
-      false,
-    );
+    expect(shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: true })).toBe(true);
+    expect(shouldRetrySessionRpc({ code: "SERVICE_GRAPH_BUSY", retryable: false })).toBe(false);
+    expect(shouldRetrySessionRpc({ code: "STALE_REVISION", retryable: true })).toBe(false);
   });
 
   it("keeps retrying lock contention until a successful list arrives", async () => {

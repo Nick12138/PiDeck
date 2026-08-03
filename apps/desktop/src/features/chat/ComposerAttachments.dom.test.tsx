@@ -28,6 +28,11 @@ vi.mock("../../lib/desktop-file-access", async (importOriginal) => {
   };
 });
 
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(),
+});
+
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
@@ -151,7 +156,8 @@ describe("Composer managed documents", () => {
 
   it("refreshes parsing state, gates send, and submits only the attachment ID", async () => {
     const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
-      if (method === "attachment.create") return { ok: true, result: attachment("parsing") } as never;
+      if (method === "attachment.create")
+        return { ok: true, result: attachment("parsing") } as never;
       if (method === "attachment.get") return { ok: true, result: attachment("ready") } as never;
       if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
       return { ok: true, result: null } as never;
@@ -212,7 +218,8 @@ describe("Composer managed documents", () => {
     );
     expect(
       request.mock.calls.some(
-        ([method, , params]) => method === "agent.prompt" && JSON.stringify(params).includes(pasted),
+        ([method, , params]) =>
+          method === "agent.prompt" && JSON.stringify(params).includes(pasted),
       ),
     ).toBe(false);
   });
@@ -240,9 +247,7 @@ describe("Composer managed documents", () => {
       </>,
     );
     fireEvent.contextMenu(screen.getByRole("textbox"), { clientX: 18, clientY: 24 });
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Paste as attachment" }),
-    );
+    await user.click(await screen.findByRole("menuitem", { name: "Paste as attachment" }));
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
         "attachment.createText",
@@ -495,5 +500,110 @@ describe("Composer managed documents", () => {
     ).toBe(false);
     expect(await screen.findByText("note.txt")).toBeVisible();
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen command completion after its token disappears", async () => {
+    let resolveCommands: ((value: unknown) => void) | undefined;
+    const commandRequest = new Promise((resolve) => {
+      resolveCommands = resolve;
+    });
+    let commandRequests = 0;
+    const request = vi.spyOn(hostClient, "request").mockImplementation((method) => {
+      if (method === "session.getCommands") {
+        commandRequests += 1;
+        if (commandRequests === 1) return commandRequest as never;
+        return Promise.resolve({
+          ok: true,
+          result: {
+            commands: [
+              {
+                invocation: "fresh-command",
+                description: "current request",
+                kind: "command",
+              },
+            ],
+          },
+        }) as never;
+      }
+      return Promise.resolve({ ok: true, result: null }) as never;
+    });
+    render(<Composer />);
+    const textarea = screen.getByRole("textbox");
+
+    fireEvent.change(textarea, { target: { value: "/", selectionStart: 1 } });
+    expect(request).toHaveBeenCalledWith(
+      "session.getCommands",
+      expect.objectContaining({ expectedSessionId: SESSION_ID }),
+      null,
+    );
+    fireEvent.change(textarea, { target: { value: "plain text", selectionStart: 10 } });
+    await act(async () => {
+      resolveCommands?.({
+        ok: true,
+        result: {
+          commands: [
+            {
+              invocation: "late-command",
+              description: "must stay closed",
+              kind: "command",
+            },
+          ],
+        },
+      });
+      await commandRequest;
+    });
+
+    expect(screen.queryByText("/late-command")).not.toBeInTheDocument();
+    fireEvent.change(textarea, { target: { value: "/", selectionStart: 1 } });
+    expect(await screen.findByText("/fresh-command")).toBeVisible();
+    expect(commandRequests).toBe(2);
+  });
+
+  it("does not reopen file completion after its token disappears", async () => {
+    let resolveFiles: ((value: unknown) => void) | undefined;
+    const fileRequest = new Promise((resolve) => {
+      resolveFiles = resolve;
+    });
+    let fileRequests = 0;
+    const request = vi.spyOn(hostClient, "request").mockImplementation((method) => {
+      if (method === "workspace.searchFiles") {
+        fileRequests += 1;
+        if (fileRequests === 1) return fileRequest as never;
+        return Promise.resolve({
+          ok: true,
+          result: {
+            files: [{ path: "src/fresh.ts", kind: "file" }],
+            truncated: false,
+          },
+        }) as never;
+      }
+      return Promise.resolve({ ok: true, result: null }) as never;
+    });
+    render(<Composer />);
+    const textarea = screen.getByRole("textbox");
+
+    fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
+    expect(request).toHaveBeenCalledWith(
+      "workspace.searchFiles",
+      {
+        expectedHostInstanceId: HOST_ID,
+        expectedWorkspaceId: WORKSPACE_ID,
+        expectedWorkspaceRevision: 1,
+      },
+      { query: "", limit: 3000 },
+    );
+    fireEvent.change(textarea, { target: { value: "plain text", selectionStart: 10 } });
+    await act(async () => {
+      resolveFiles?.({
+        ok: true,
+        result: { files: [{ path: "src/late.ts", kind: "file" }], truncated: false },
+      });
+      await fileRequest;
+    });
+
+    expect(screen.queryByText("src/late.ts")).not.toBeInTheDocument();
+    fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
+    expect(await screen.findByText("src/fresh.ts")).toBeVisible();
+    expect(fileRequests).toBe(2);
   });
 });

@@ -43,25 +43,40 @@ function useSessionUsageReport() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const hostInstanceId = host?.hostInstanceId;
+  const workspaceId = workspace?.id;
+  const workspaceRevision = workspace?.revision;
 
   useEffect(() => {
-    if (!host || !workspace) {
+    if (!hostInstanceId || !workspaceId || workspaceRevision === undefined) {
       setReport(null);
       setError(null);
       setLoading(false);
       return;
     }
+    const current = useAppStore.getState();
+    const requestHost = current.host;
+    const requestWorkspace = current.workspace;
+    if (
+      !requestHost ||
+      !requestWorkspace ||
+      requestHost.hostInstanceId !== hostInstanceId ||
+      requestWorkspace.id !== workspaceId ||
+      requestWorkspace.revision !== workspaceRevision
+    ) {
+      return;
+    }
     let cancelled = false;
-    const expectedHostId = host.hostInstanceId;
-    const expectedWorkspaceId = workspace.id;
-    const requestKey = `${expectedHostId}:${expectedWorkspaceId}:${workspace.revision}:${refreshKey}`;
+    const expectedHostId = requestHost.hostInstanceId;
+    const expectedWorkspaceId = requestWorkspace.id;
+    const requestKey = `${expectedHostId}:${expectedWorkspaceId}:${requestWorkspace.revision}:${refreshKey}`;
     setLoading(true);
     setError(null);
 
     void sharedUsageReportRequest(requestKey, () =>
       hostClient.request(
         "session.usageReport",
-        workspaceContext(host, workspace),
+        workspaceContext(requestHost, requestWorkspace),
         null,
         120_000,
       ),
@@ -93,7 +108,7 @@ function useSessionUsageReport() {
     return () => {
       cancelled = true;
     };
-  }, [host?.hostInstanceId, workspace?.id, workspace?.revision, refreshKey]);
+  }, [hostInstanceId, workspaceId, workspaceRevision, refreshKey]);
 
   return {
     report,
@@ -177,10 +192,18 @@ export function UsageSettings() {
           <table className="w-full table-fixed border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 bg-surface-raised text-[11px] text-muted">
               <tr className="border-b border-border">
-                <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">{t("usageColSession")}</th>
-                <th scope="col" className="w-[24%] px-3 py-2.5 font-medium">{t("usageColUpdated")}</th>
-                <th scope="col" className="w-[18%] px-3 py-2.5 text-right font-medium">{t("usageColTokens")}</th>
-                <th scope="col" className="w-[16%] px-6 py-2.5 text-right font-medium">{t("usageColCost")}</th>
+                <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">
+                  {t("usageColSession")}
+                </th>
+                <th scope="col" className="w-[24%] px-3 py-2.5 font-medium">
+                  {t("usageColUpdated")}
+                </th>
+                <th scope="col" className="w-[18%] px-3 py-2.5 text-right font-medium">
+                  {t("usageColTokens")}
+                </th>
+                <th scope="col" className="w-[16%] px-6 py-2.5 text-right font-medium">
+                  {t("usageColCost")}
+                </th>
               </tr>
             </thead>
             <tbody>

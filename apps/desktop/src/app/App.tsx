@@ -23,6 +23,7 @@ import {
 } from "../lib/chat/transcript-reducer";
 import { classifyToolSnapshot } from "../lib/stores/tool-revision";
 import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";
+import { publishValidatedHostEvent } from "../lib/bridge/validated-host-events";
 import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
@@ -30,11 +31,7 @@ import { getAppVersion } from "../lib/app-version";
 import { checkForAppUpdate } from "../lib/updater";
 import { applyLanguage } from "../lib/i18n";
 import { tCurrent, useT } from "../lib/i18n/use-t";
-import {
-  StartupScreen,
-  resolveStartupStage,
-  useInitialStartupScreen,
-} from "./StartupScreen";
+import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -131,7 +128,9 @@ export async function runFullRehydrate(
       return false;
     }
     for (const event of recovered.events) {
-      handleHostEvent(event, requestRecovery, agentEventBuffer);
+      if (handleHostEvent(event, requestRecovery, agentEventBuffer)) {
+        publishValidatedHostEvent(event);
+      }
       if (useAppStore.getState().desynchronized) return false;
     }
     useAppStore.getState().setHostFatal(null);
@@ -166,17 +165,17 @@ export function handleHostEvent(
     enqueue: (event: HostEventEnvelope<"agent.event">) => void;
     flush: () => void;
   },
-): void {
+): boolean {
   const store = useAppStore.getState();
   const lifecycleEvent = event.event === "host.statusChanged" || event.event === "host.fatal";
-  if ((store.rehydrating || store.desynchronized) && !lifecycleEvent) return;
+  if ((store.rehydrating || store.desynchronized) && !lifecycleEvent) return false;
 
   if (!isSyntheticLifecycleFatal(event)) {
     const seqAction = store.noteSequence(event.sequence);
-    if (seqAction === "drop") return;
+    if (seqAction === "drop") return false;
     if (seqAction === "gap") {
       requestRecovery(`sequence gap at ${event.sequence}`);
-      return;
+      return false;
     }
   }
 
@@ -196,7 +195,7 @@ export function handleHostEvent(
   ) {
     store.markDesynchronized(`identity mismatch for ${event.event}`);
     requestRecovery(`identity mismatch for ${event.event}`);
-    return;
+    return false;
   }
 
   const bufferableMessageUpdate =
@@ -228,7 +227,7 @@ export function handleHostEvent(
         event.payload.revision !== event.workspaceRevision
       ) {
         requestRecovery("workspace.changed payload generation mismatch");
-        return;
+        return false;
       }
       store.applyWorkspaceSnapshot(event.payload);
       break;
@@ -240,7 +239,7 @@ export function handleHostEvent(
             event.payload.revision !== event.sessionRevision))
       ) {
         requestRecovery("session.snapshot payload generation mismatch");
-        return;
+        return false;
       }
       store.applySessionSnapshot(event.payload);
       break;
@@ -250,7 +249,7 @@ export function handleHostEvent(
         event.payload.sessionRevision !== event.sessionRevision
       ) {
         requestRecovery("session.runtimeChanged payload generation mismatch");
-        return;
+        return false;
       }
       store.setSessionRuntimeState(
         event.payload.sessionId,
@@ -268,7 +267,7 @@ export function handleHostEvent(
         action === "recover"
       ) {
         requestRecovery("agent.toolsChanged payload generation mismatch");
-        return;
+        return false;
       }
       if (action === "apply") {
         store.setTools(event.payload);
@@ -281,7 +280,7 @@ export function handleHostEvent(
         event.payload.revision !== event.packageRevision
       ) {
         requestRecovery("package.snapshot payload generation mismatch");
-        return;
+        return false;
       }
       store.applyPackageSnapshot(event.payload);
       break;
@@ -294,7 +293,7 @@ export function handleHostEvent(
             event.payload.session.revision !== event.sessionRevision))
       ) {
         requestRecovery("package.resourcesChanged payload generation mismatch");
-        return;
+        return false;
       }
       store.applyPackageSnapshot(event.payload.packages);
       if (event.payload.session) {
@@ -310,13 +309,11 @@ export function handleHostEvent(
     case "extensionUi.request":
       if (!event.sessionId) {
         requestRecovery("extensionUi.request missing session identity");
-        return;
+        return false;
       }
       const extensionRequest = {
         ...event.payload,
-        expiresAt: event.payload.timeoutMs
-          ? Date.now() + event.payload.timeoutMs
-          : undefined,
+        expiresAt: event.payload.timeoutMs ? Date.now() + event.payload.timeoutMs : undefined,
         context: {
           expectedHostInstanceId: event.hostInstanceId,
           expectedWorkspaceId: event.workspaceId,
@@ -341,7 +338,7 @@ export function handleHostEvent(
     case "extensionUi.closed":
       if (!event.sessionId) {
         requestRecovery("extensionUi.closed missing session identity");
-        return;
+        return false;
       }
       store.closeExtensionUiRequest(
         event.payload.requestId,
@@ -355,12 +352,9 @@ export function handleHostEvent(
     case "extensionUi.groupClosed":
       if (!event.sessionId) {
         requestRecovery("extensionUi.groupClosed missing session identity");
-        return;
+        return false;
       }
-      store.closeExtensionDecisionGroup(
-        event.payload.groupKey,
-        event.payload.status,
-      );
+      store.closeExtensionDecisionGroup(event.payload.groupKey, event.payload.status);
       break;
     case "extensionUi.statusChanged":
       if (
@@ -409,7 +403,7 @@ export function handleHostEvent(
     case "extensionUi.customStarted":
       if (!event.sessionId) {
         requestRecovery("extensionUi.customStarted missing session identity");
-        return;
+        return false;
       }
       store.openExtensionTerminal({
         requestId: event.payload.requestId,
@@ -458,11 +452,7 @@ export function handleHostEvent(
         break;
       }
       const cur = useAppStore.getState().session;
-      if (
-        !cur ||
-        event.sessionId !== cur.sessionId ||
-        event.sessionRevision !== cur.revision
-      ) {
+      if (!cur || event.sessionId !== cur.sessionId || event.sessionRevision !== cur.revision) {
         break;
       }
       const next = applyAgentEvent(cur, event.payload);
@@ -519,6 +509,7 @@ export function handleHostEvent(
     default:
       break;
   }
+  return true;
 }
 
 export function App() {
@@ -536,8 +527,7 @@ export function App() {
   const sessionRevision = useAppStore((s) => s.session?.revision ?? 0);
   const workspacePath = useAppStore((s) => s.workspace?.canonicalCwd);
   const activeSessionPath = useAppStore((s) => s.session?.sessionPath);
-  const startupSettled =
-    desktopSettings !== null && !connecting && !rehydrating && !desynchronized;
+  const startupSettled = desktopSettings !== null && !connecting && !rehydrating && !desynchronized;
   const startupPhase = useInitialStartupScreen(startupSettled);
   const startupVisible = startupPhase !== "complete";
   const startupStage = resolveStartupStage({
@@ -612,8 +602,7 @@ export function App() {
             ? {
                 ...current.host,
                 workspaceId: current.workspace?.id ?? current.host.workspaceId,
-                workspaceRevision:
-                  current.workspace?.revision ?? current.host.workspaceRevision,
+                workspaceRevision: current.workspace?.revision ?? current.host.workspaceRevision,
                 sessionId: current.session?.sessionId ?? current.host.sessionId,
                 sessionRevision: current.session?.revision ?? current.host.sessionRevision,
                 packageRevision: current.packages?.revision ?? current.host.packageRevision,
@@ -687,8 +676,8 @@ export function App() {
               for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
                 try {
                   const configuredPresentation =
-                    useAppStore.getState().desktopSettings
-                      ?.extensionDecisionPresentation ?? "legacy-modal";
+                    useAppStore.getState().desktopSettings?.extensionDecisionPresentation ??
+                    "legacy-modal";
                   const status = await hostClient.hello(
                     "pideck",
                     await getAppVersion(),
@@ -765,7 +754,8 @@ export function App() {
                           !cancelled &&
                           current.host?.hostInstanceId === restoreContext.expectedHostInstanceId &&
                           current.workspace?.id === restoreContext.expectedWorkspaceId &&
-                          current.workspace?.revision === restoreContext.expectedWorkspaceRevision &&
+                          current.workspace?.revision ===
+                            restoreContext.expectedWorkspaceRevision &&
                           // The restore decision was made against this session
                           // generation; once it moves, re-evaluate instead of
                           // re-sending a context the Host must reject.
@@ -791,9 +781,7 @@ export function App() {
                         agentEventBuffer,
                       );
                       if (!restoredRecovery) {
-                        lastError = new Error(
-                          "Host recovery was superseded after session restore",
-                        );
+                        lastError = new Error("Host recovery was superseded after session restore");
                         break;
                       }
                     } else if (restored.error.code === "SESSION_NOT_FOUND") {
@@ -808,10 +796,12 @@ export function App() {
                       );
                       continue;
                     } else {
-                      useAppStore.getState().pushNotification(
-                        `Could not restore the last session: ${restored.error.message}`,
-                        "warning",
-                      );
+                      useAppStore
+                        .getState()
+                        .pushNotification(
+                          `Could not restore the last session: ${restored.error.message}`,
+                          "warning",
+                        );
                     }
                   }
                   useAppStore.getState().setHostFatal(null);
@@ -832,13 +822,18 @@ export function App() {
                 // startupSettled=false forever) and the fatal panel's
                 // Settings → Restart Host path becomes reachable.
                 useAppStore.getState().settleHostFailure(message);
-                useAppStore.getState().pushNotification(`Host recovery failed: ${message}`, "error");
+                useAppStore
+                  .getState()
+                  .pushNotification(`Host recovery failed: ${message}`, "error");
               }
             }
           })().finally(() => {
             recoveryLoop = null;
             if (!cancelled && pendingRecoveryHostId) {
-              scheduleRecovery(pendingRecoveryHostId === "bootstrap" ? null : pendingRecoveryHostId, reason);
+              scheduleRecovery(
+                pendingRecoveryHostId === "bootstrap" ? null : pendingRecoveryHostId,
+                reason,
+              );
             }
           });
         };
@@ -890,7 +885,9 @@ export function App() {
             hostClient.rejectAllPending(event.payload.error.message);
           }
           if (recoveryEvents.capture(event)) return;
-          handleHostEvent(event, requestRecovery, agentEventBuffer);
+          if (handleHostEvent(event, requestRecovery, agentEventBuffer)) {
+            publishValidatedHostEvent(event);
+          }
         });
         unsubTransportError = hostClient.onTransportError(repairTransport);
         hostClient.attach(transport);
@@ -951,26 +948,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (
-      connecting ||
-      rehydrating ||
-      desynchronized ||
-      !desktopSettings ||
-      !workspacePath
-    ) {
+    if (connecting || rehydrating || desynchronized || !desktopSettings || !workspacePath) {
       return;
     }
     void persistRecentDesktopLocation(workspacePath, activeSessionPath ?? null).catch(
       notifyDesktopSettingsSaveFailure,
     );
-  }, [
-    connecting,
-    rehydrating,
-    desynchronized,
-    desktopSettings !== null,
-    workspacePath,
-    activeSessionPath,
-  ]);
+  }, [connecting, rehydrating, desynchronized, desktopSettings, workspacePath, activeSessionPath]);
 
   return (
     <div
@@ -997,8 +981,8 @@ export function App() {
               <h2 className="mb-2 font-semibold text-danger">Host unavailable</h2>
               <p className="text-sm text-muted">{hostFatal}</p>
               <p className="mt-2 text-xs text-muted">
-                Use Settings → Restart Host after fixing the problem. Packages and
-                Settings remain available when the host recovers.
+                Use Settings → Restart Host after fixing the problem. Packages and Settings remain
+                available when the host recovers.
               </p>
             </div>
           ) : (
@@ -1015,10 +999,7 @@ export function App() {
       <ExtensionUiModal />
       <CommandLayer />
       {startupVisible && (
-        <StartupScreen
-          stage={startupStage}
-          exiting={startupPhase === "exiting"}
-        />
+        <StartupScreen stage={startupStage} exiting={startupPhase === "exiting"} />
       )}
     </div>
   );

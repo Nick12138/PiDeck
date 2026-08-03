@@ -10,6 +10,7 @@ import {
   isCurrentRequestGeneration,
   latestSessionTargetContext,
   mergeHostIdentity,
+  workspaceContext,
 } from "./host-context";
 
 const current: HostStatusSnapshot = {
@@ -44,12 +45,32 @@ function identity(overrides: Partial<HostIdentity> = {}): HostIdentity {
   };
 }
 
+describe("workspaceContext", () => {
+  it("uses the Host generation before a Workspace snapshot is available", () => {
+    expect(workspaceContext(current, null)).toEqual({
+      expectedHostInstanceId: current.hostInstanceId,
+      expectedWorkspaceId: current.workspaceId,
+      expectedWorkspaceRevision: current.workspaceRevision,
+    });
+  });
+
+  it("prefers the authoritative Workspace snapshot generation", () => {
+    expect(
+      workspaceContext(current, {
+        id: current.workspaceId,
+        revision: current.workspaceRevision + 1,
+      } as WorkspaceSnapshot),
+    ).toEqual({
+      expectedHostInstanceId: current.hostInstanceId,
+      expectedWorkspaceId: current.workspaceId,
+      expectedWorkspaceRevision: current.workspaceRevision + 1,
+    });
+  });
+});
+
 describe("mergeHostIdentity", () => {
   it("preserves a newer session generation when a read response carries older closure state", () => {
-    const merged = mergeHostIdentity(
-      current,
-      identity({ sessionRevision: 7, packageRevision: 6 }),
-    );
+    const merged = mergeHostIdentity(current, identity({ sessionRevision: 7, packageRevision: 6 }));
 
     expect(merged).toMatchObject({
       sessionId: current.sessionId,
@@ -149,8 +170,6 @@ describe("latestSessionTargetContext", () => {
       ...session,
       sessionId: "44444444-4444-4444-8444-444444444444",
     };
-    expect(latestSessionTargetContext(captured, current, workspace, otherSession)).toBe(
-      captured,
-    );
+    expect(latestSessionTargetContext(captured, current, workspace, otherSession)).toBe(captured);
   });
 });

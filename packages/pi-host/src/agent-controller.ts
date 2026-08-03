@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  getSupportedThinkingLevels,
-  type ImageContent,
-  type Model,
-} from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   buildAttachmentReferenceBlock,
@@ -16,13 +12,10 @@ import {
 } from "@pideck/protocol";
 import type { AgentOperationLock } from "./locks.js";
 import type { MethodHandler, PiHostServer } from "./server.js";
-import type {
-  BackgroundSessionRuntime,
-  WorkspaceGraphFactory,
-} from "./workspace-graph-factory.js";
+import type { BackgroundSessionRuntime, WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
-import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-controller.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { createProvisionalSessionTitle } from "./session-title.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
@@ -96,10 +89,7 @@ function startDetachedPrompt(args: {
         ? null
         : createProvisionalSessionTitle(visibleText);
     const titleSessionId = args.server.identity.sessionId;
-    const extensionCommandInvocation = resolveExtensionCommandInvocation(
-      args.session,
-      args.text,
-    );
+    const extensionCommandInvocation = resolveExtensionCommandInvocation(args.session, args.text);
 
     runStatePublished = true;
     args.factory.currentRunId = runId;
@@ -213,11 +203,7 @@ async function enqueueQueue(session: AgentSession, queue: QueueTexts): Promise<v
       throw err;
     }
     if (images) {
-      recordQueuedImages(
-        session,
-        session.getSteeringMessages().at(-1) ?? text,
-        images,
-      );
+      recordQueuedImages(session, session.getSteeringMessages().at(-1) ?? text, images);
     }
   }
   for (const text of queue.followUp) {
@@ -229,11 +215,7 @@ async function enqueueQueue(session: AgentSession, queue: QueueTexts): Promise<v
       throw err;
     }
     if (images) {
-      recordQueuedImages(
-        session,
-        session.getFollowUpMessages().at(-1) ?? text,
-        images,
-      );
+      recordQueuedImages(session, session.getFollowUpMessages().at(-1) ?? text, images);
     }
   }
 }
@@ -398,9 +380,7 @@ export function createAgentHandlers(
       }
       const promptImages =
         toSdkImages(params.images) ??
-        (params.attachQueuedImages
-          ? takeQueuedImages(g.agentSession, params.text)
-          : undefined);
+        (params.attachQueuedImages ? takeQueuedImages(g.agentSession, params.text) : undefined);
       const runId = startDetachedPrompt({
         requestId: ctx.id,
         factory,
@@ -539,10 +519,7 @@ export function createAgentHandlers(
           let operationError: HostError | undefined;
           let queue = originalQueue;
           if (factory.isSessionBusy(session)) {
-            pruneQueuedImages(session, [
-              ...originalQueue.steering,
-              ...originalQueue.followUp,
-            ]);
+            pruneQueuedImages(session, [...originalQueue.steering, ...originalQueue.followUp]);
             const originalAttachments = snapshotQueuedImages(session);
             factory.beginQueueTransaction(session);
             session.clearQueue();
@@ -666,10 +643,7 @@ export function createAgentHandlers(
           const oldTexts = [...originalQueue.steering, ...originalQueue.followUp];
           pruneQueuedImages(session, oldTexts);
           const originalAttachments = snapshotQueuedImages(session);
-          carryImagesAcrossEdit(session, oldTexts, [
-            ...params.steering,
-            ...params.followUp,
-          ]);
+          carryImagesAcrossEdit(session, oldTexts, [...params.steering, ...params.followUp]);
           factory.beginQueueTransaction(session);
           let mutationError: unknown;
           let rollbackError: unknown;
@@ -765,16 +739,11 @@ export function createAgentHandlers(
             steering: [...current.steering],
             followUp: [...current.followUp],
           };
-          pruneQueuedImages(session, [
-            ...originalQueue.steering,
-            ...originalQueue.followUp,
-          ]);
+          pruneQueuedImages(session, [...originalQueue.steering, ...originalQueue.followUp]);
           const originalAttachments = snapshotQueuedImages(session);
           const remaining: QueueTexts = {
             steering: [...originalQueue.steering],
-            followUp: originalQueue.followUp.filter(
-              (_, index) => index !== params.followUpIndex,
-            ),
+            followUp: originalQueue.followUp.filter((_, index) => index !== params.followUpIndex),
           };
 
           factory.beginQueueTransaction(session);
@@ -951,11 +920,10 @@ export function createAgentHandlers(
         const result = await session.compact(params.instructions);
         const stillCurrentGraph = factory.getGraph() === g;
         const active = stillCurrentGraph && g.agentSession === session;
-        const background = stillCurrentGraph && !active
-          ? [...g.backgroundSessions.values()].find(
-              (runtime) => runtime.agentSession === session,
-            )
-          : undefined;
+        const background =
+          stillCurrentGraph && !active
+            ? [...g.backgroundSessions.values()].find((runtime) => runtime.agentSession === session)
+            : undefined;
         const projectionIdentity = active ? server.getIdentity() : requestIdentity;
         backgroundAfterCompact = background;
         const snap = buildSessionSnapshot({
@@ -963,12 +931,8 @@ export function createAgentHandlers(
           sessionManager: background?.sessionManager ?? sessionManager,
           cwd: g.canonicalCwd,
           sessionId:
-            background?.sessionId ??
-            projectionIdentity.sessionId ??
-            session.sessionId ??
-            "",
-          revision:
-            background?.sessionRevision ?? projectionIdentity.sessionRevision,
+            background?.sessionId ?? projectionIdentity.sessionId ?? session.sessionId ?? "",
+          revision: background?.sessionRevision ?? projectionIdentity.sessionRevision,
           workspaceId: g.workspaceId,
           toolRevision:
             background?.toolRevision ?? (active ? g.toolRevision : originatingToolRevision),
@@ -1052,9 +1016,7 @@ export function createAgentHandlers(
           result: {
             session: snap,
             cancelled: outcome.cancelled,
-            ...(outcome.editorText !== undefined
-              ? { editorText: outcome.editorText }
-              : {}),
+            ...(outcome.editorText !== undefined ? { editorText: outcome.editorText } : {}),
           },
         };
       } finally {
@@ -1069,9 +1031,8 @@ export function createAgentHandlers(
       });
       if (stale) return { error: stale };
       const g = factory.getGraph();
-      const abort = (
-        g?.agentSession as unknown as { abortCompaction?: () => void }
-      )?.abortCompaction;
+      const abort = (g?.agentSession as unknown as { abortCompaction?: () => void })
+        ?.abortCompaction;
       abort?.call(g?.agentSession);
       return { result: { accepted: true } };
     },
@@ -1260,7 +1221,9 @@ export function createAgentHandlers(
           const enabledProviderSet = enabledProviders ? new Set(enabledProviders) : undefined;
           const modelAllowLists = await getProviderModelAllowLists(factory.deps.agentDir);
           const models: ModelSummary[] = all
-            .filter((model: Model<any>) => !enabledProviderSet || enabledProviderSet.has(model.provider))
+            .filter(
+              (model: Model<any>) => !enabledProviderSet || enabledProviderSet.has(model.provider),
+            )
             .filter((model: Model<any>) => {
               const allow = modelAllowLists?.[model.provider];
               if (!allow) return true;

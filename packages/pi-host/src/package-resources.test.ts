@@ -15,12 +15,14 @@ import type { PackageSource } from "./package-filters.js";
 
 function managerFixture(options: { orphan?: boolean } = {}) {
   const globalPackages = options.orphan ? [] : ["npm:shared"];
-  const projectPackages = [{
-    source: "npm:shared",
-    autoload: false,
-    // Project deltas are applied in order, so the final exact override wins.
-    skills: ["-skills/review/SKILL.md", "+skills/review/SKILL.md"],
-  }];
+  const projectPackages = [
+    {
+      source: "npm:shared",
+      autoload: false,
+      // Project deltas are applied in order, so the final exact override wins.
+      skills: ["-skills/review/SKILL.md", "+skills/review/SKILL.md"],
+    },
+  ];
   return {
     settings: {
       getGlobalSettings: () => ({ packages: globalPackages }),
@@ -132,17 +134,21 @@ describe("unified package resources", () => {
         listConfiguredPackages: () => [],
         getInstalledPath: () => undefined,
         resolve: async () => ({
-          extensions: [], skills: [], themes: [],
-          prompts: [{
-            path,
-            enabled: false,
-            metadata: {
-              source: "local",
-              scope: "project",
-              origin: "top-level",
-              baseDir: "C:/workspace/.pi",
+          extensions: [],
+          skills: [],
+          themes: [],
+          prompts: [
+            {
+              path,
+              enabled: false,
+              metadata: {
+                source: "local",
+                scope: "project",
+                origin: "top-level",
+                baseDir: "C:/workspace/.pi",
+              },
             },
-          }],
+          ],
         }),
       } as never,
       settingsManager: {
@@ -166,7 +172,8 @@ describe("unified package resources", () => {
     const packageRoot = join(root, "shared-package");
     mkdirSync(join(packageRoot, "skills", "review"), { recursive: true });
     mkdirSync(agentDir, { recursive: true });
-    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(cwd, ".git"), { recursive: true });
+    vi.stubEnv("HOME", root);
     writeFileSync(
       join(packageRoot, "skills", "review", "SKILL.md"),
       "---\nname: review\ndescription: Review changes\n---\n",
@@ -192,15 +199,20 @@ describe("unified package resources", () => {
       const userPackage = snapshot.configured.find((pkg) => pkg.scope === "user")!;
       const projectPackage = snapshot.configured.find((pkg) => pkg.scope === "project")!;
       expect(snapshot.resources).toHaveLength(2);
-      expect(snapshot.resources.find((resource) => resource.packageId === userPackage.id)).toMatchObject({
+      expect(
+        snapshot.resources.find((resource) => resource.packageId === userPackage.id),
+      ).toMatchObject({
         scope: "user",
         control: { kind: "preference", scopes: ["user"] },
       });
-      expect(snapshot.resources.find((resource) => resource.packageId === projectPackage.id)).toMatchObject({
+      expect(
+        snapshot.resources.find((resource) => resource.packageId === projectPackage.id),
+      ).toMatchObject({
         scope: "project",
         control: { kind: "preference", scopes: ["project"] },
       });
     } finally {
+      vi.unstubAllEnvs();
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -216,17 +228,21 @@ describe("unified package resources", () => {
         listConfiguredPackages: () => [{ source: "./b", scope: "user", filtered: false }],
         getInstalledPath: () => "C:/agent/b",
         resolve: async () => ({
-          extensions: [], prompts: [], themes: [],
-          skills: [{
-            path: "C:/agent/b/skills/review/SKILL.md",
-            enabled: true,
-            metadata: {
-              source: "./b",
-              scope: "user",
-              origin: "package",
-              baseDir: "C:/agent/b",
+          extensions: [],
+          prompts: [],
+          themes: [],
+          skills: [
+            {
+              path: "C:/agent/b/skills/review/SKILL.md",
+              enabled: true,
+              metadata: {
+                source: "./b",
+                scope: "user",
+                origin: "package",
+                baseDir: "C:/agent/b",
+              },
             },
-          }],
+          ],
         }),
       } as never,
       settingsManager: {
@@ -244,17 +260,21 @@ describe("unified package resources", () => {
   it("links extension-discovered resources to their owner extension", async () => {
     const fixture = managerFixture();
     fixture.packageManager.resolve = vi.fn(async () => ({
-      extensions: [{
-        path: "C:/user/shared/extensions/owner.ts",
-        enabled: true,
-        metadata: {
-          source: "npm:shared",
-          scope: "user",
-          origin: "package",
-          baseDir: "C:/user/shared",
+      extensions: [
+        {
+          path: "C:/user/shared/extensions/owner.ts",
+          enabled: true,
+          metadata: {
+            source: "npm:shared",
+            scope: "user",
+            origin: "package",
+            baseDir: "C:/user/shared",
+          },
         },
-      }],
-      skills: [], prompts: [], themes: [],
+      ],
+      skills: [],
+      prompts: [],
+      themes: [],
     })) as never;
     const sourceInfo = {
       path: "C:/user/shared/extensions/owner.ts",
@@ -272,21 +292,29 @@ describe("unified package resources", () => {
     };
     const loader = {
       getExtensions: () => ({
-        extensions: [{
-          path: sourceInfo.path,
-          sourceInfo,
-          handlers: new Map(), tools: new Map(), commands: new Map(), flags: new Map(), shortcuts: new Map(),
-        }],
+        extensions: [
+          {
+            path: sourceInfo.path,
+            sourceInfo,
+            handlers: new Map(),
+            tools: new Map(),
+            commands: new Map(),
+            flags: new Map(),
+            shortcuts: new Map(),
+          },
+        ],
         errors: [],
       }),
       getSkills: () => ({
-        skills: [{
-          name: "review",
-          description: "Review changes",
-          filePath: dynamicInfo.path,
-          sourceInfo: dynamicInfo,
-          disableModelInvocation: true,
-        }],
+        skills: [
+          {
+            name: "review",
+            description: "Review changes",
+            filePath: dynamicInfo.path,
+            sourceInfo: dynamicInfo,
+            disableModelInvocation: true,
+          },
+        ],
         diagnostics: [],
       }),
       getPrompts: () => ({ prompts: [], diagnostics: [] }),
@@ -327,18 +355,25 @@ describe("unified package resources", () => {
         origin: "package",
         baseDir: root,
       },
-      handlers: new Map(), tools: new Map(), commands: new Map(), flags: new Map(), shortcuts: new Map(),
+      handlers: new Map(),
+      tools: new Map(),
+      commands: new Map(),
+      flags: new Map(),
+      shortcuts: new Map(),
     });
     const snapshot = await buildPackageSnapshot({
       revision: 1,
       workspaceId: "workspace",
       scope: "all",
       packageManager: {
-        listConfiguredPackages: () => configured.map((source) => ({ source, scope: "user", filtered: false })),
-        getInstalledPath: (source: string) => source === "npm:first" ? "C:/first" : "C:/second",
+        listConfiguredPackages: () =>
+          configured.map((source) => ({ source, scope: "user", filtered: false })),
+        getInstalledPath: (source: string) => (source === "npm:first" ? "C:/first" : "C:/second"),
         resolve: async () => ({
           extensions: [extension("npm:first", "C:/first"), extension("npm:second", "C:/second")],
-          skills: [], prompts: [], themes: [],
+          skills: [],
+          prompts: [],
+          themes: [],
         }),
       } as never,
       settingsManager: {
@@ -354,19 +389,21 @@ describe("unified package resources", () => {
           errors: [],
         }),
         getSkills: () => ({
-          skills: [{
-            name: "runtime-review",
-            description: "Runtime review",
-            filePath: "C:/runtime/review/SKILL.md",
-            sourceInfo: {
-              path: "C:/runtime/review/SKILL.md",
-              source: "extension:owner",
-              scope: "temporary",
-              origin: "top-level",
-              baseDir: "C:/second/extensions",
+          skills: [
+            {
+              name: "runtime-review",
+              description: "Runtime review",
+              filePath: "C:/runtime/review/SKILL.md",
+              sourceInfo: {
+                path: "C:/runtime/review/SKILL.md",
+                source: "extension:owner",
+                scope: "temporary",
+                origin: "top-level",
+                baseDir: "C:/second/extensions",
+              },
+              disableModelInvocation: false,
             },
-            disableModelInvocation: false,
-          }],
+          ],
           diagnostics: [],
         }),
         getPrompts: () => ({ prompts: [], diagnostics: [] }),
@@ -396,8 +433,9 @@ describe("unified package resources", () => {
     } as never);
     expect("error" in result).toBe(false);
     if (!("error" in result)) {
-      expect((result.result as { resources: Array<{ id: string }> }).resources.map((item) => item.id))
-        .toContain(dynamic.id);
+      expect(
+        (result.result as { resources: Array<{ id: string }> }).resources.map((item) => item.id),
+      ).toContain(dynamic.id);
     }
   });
 
@@ -416,15 +454,19 @@ describe("unified package resources", () => {
       workspaceId: "workspace",
       scope: "all",
       packageManager: {
-        listConfiguredPackages: () => [{
-          source: "npm:shared",
-          scope: "user",
-          filtered: false,
-          installedPath: "C:/shared",
-        }],
+        listConfiguredPackages: () => [
+          {
+            source: "npm:shared",
+            scope: "user",
+            filtered: false,
+            installedPath: "C:/shared",
+          },
+        ],
         getInstalledPath: () => "C:/shared",
         resolve: async () => ({
-          extensions: [], prompts: [], themes: [],
+          extensions: [],
+          prompts: [],
+          themes: [],
           skills: [winnerPath, loserPath].map((path) => ({
             path,
             enabled: true,
@@ -439,23 +481,27 @@ describe("unified package resources", () => {
       resourceLoader: {
         getExtensions: () => ({ extensions: [], errors: [] }),
         getSkills: () => ({
-          skills: [{
-            name: "shared-name",
-            description: "Winning skill",
-            filePath: winnerPath,
-            sourceInfo: sourceInfo(winnerPath),
-            disableModelInvocation: false,
-          }],
-          diagnostics: [{
-            type: "collision",
-            message: "Skill name collision: shared-name",
-            collision: {
-              resourceType: "skill",
+          skills: [
+            {
               name: "shared-name",
-              winnerPath,
-              loserPath,
+              description: "Winning skill",
+              filePath: winnerPath,
+              sourceInfo: sourceInfo(winnerPath),
+              disableModelInvocation: false,
             },
-          }],
+          ],
+          diagnostics: [
+            {
+              type: "collision",
+              message: "Skill name collision: shared-name",
+              collision: {
+                resourceType: "skill",
+                name: "shared-name",
+                winnerPath,
+                loserPath,
+              },
+            },
+          ],
         }),
         getPrompts: () => ({ prompts: [], diagnostics: [] }),
         getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -488,15 +534,21 @@ describe("unified package resources", () => {
         workspaceId: "workspace",
         scope: "all",
         packageManager: {
-          listConfiguredPackages: () => [{ source: root, scope: "user", filtered: true, installedPath: root }],
+          listConfiguredPackages: () => [
+            { source: root, scope: "user", filtered: true, installedPath: root },
+          ],
           getInstalledPath: () => root,
           resolve: async () => ({
-            extensions: [], prompts: [], themes: [],
-            skills: [{
-              path: skillPath,
-              enabled: false,
-              metadata: { source: root, scope: "user", origin: "package", baseDir: root },
-            }],
+            extensions: [],
+            prompts: [],
+            themes: [],
+            skills: [
+              {
+                path: skillPath,
+                enabled: false,
+                metadata: { source: root, scope: "user", origin: "package", baseDir: root },
+              },
+            ],
           }),
         } as never,
         settingsManager: {
@@ -546,18 +598,21 @@ describe("resource preference batches", () => {
     const setPackages = vi.fn();
     const setProjectPackages = vi.fn();
     const map: ResourceIdMap = new Map([
-      ["resource-1", {
-        type: "skill",
-        scope: "user",
-        path: "C:/pkg/skills/review/SKILL.md",
-        baseDir: "C:/pkg",
-        relativePath: "skills/review/SKILL.md",
-        origin: "package",
-        packageSource: "npm:shared",
-        packageScope: "user",
-        packageIdentity: "npm:shared",
-        configurableScopes: ["user", "project"],
-      }],
+      [
+        "resource-1",
+        {
+          type: "skill",
+          scope: "user",
+          path: "C:/pkg/skills/review/SKILL.md",
+          baseDir: "C:/pkg",
+          relativePath: "skills/review/SKILL.md",
+          origin: "package",
+          packageSource: "npm:shared",
+          packageScope: "user",
+          packageIdentity: "npm:shared",
+          configurableScopes: ["user", "project"],
+        },
+      ],
     ]);
     return {
       setPackages,
@@ -581,7 +636,9 @@ describe("resource preference batches", () => {
       { resourceId: "resource-1", targetScope: "user", preference: "disabled" },
       { resourceId: "missing", targetScope: "project", preference: "enabled" },
     ];
-    expect(() => applyResourcePreferences(fixture.graph as never, updates)).toThrow("Resource not found");
+    expect(() => applyResourcePreferences(fixture.graph as never, updates)).toThrow(
+      "Resource not found",
+    );
     expect(fixture.setPackages).not.toHaveBeenCalled();
     expect(fixture.setProjectPackages).not.toHaveBeenCalled();
   });
@@ -601,17 +658,21 @@ describe("resource preference batches", () => {
       configurableScopes: ["user", "project"],
     });
     fixture.graph.settingsManager.getGlobalSettings = () => ({
-      packages: [{
-        source: "npm:pi-codex-goal",
-        prompts: ["-prompts/create-goal.md"],
-      }],
+      packages: [
+        {
+          source: "npm:pi-codex-goal",
+          prompts: ["-prompts/create-goal.md"],
+        },
+      ],
     });
 
-    applyResourcePreferences(fixture.graph as never, [{
-      resourceId: "resource-1",
-      targetScope: "user",
-      preference: "enabled",
-    }]);
+    applyResourcePreferences(fixture.graph as never, [
+      {
+        resourceId: "resource-1",
+        targetScope: "user",
+        preference: "enabled",
+      },
+    ]);
 
     expect(fixture.setPackages).toHaveBeenCalledTimes(1);
     expect(fixture.setPackages).toHaveBeenCalledWith(["npm:pi-codex-goal"]);
@@ -638,15 +699,13 @@ describe("resource preference batches", () => {
   it("removes exact project overrides and deletes an empty delta on inherit", () => {
     const fixture = graphFixture();
     fixture.graph.settingsManager.getProjectSettings = () => ({
-      packages: [{
-        source: "npm:shared",
-        autoload: false,
-        skills: [
-          "!skills/review",
-          "+skills/review",
-          "-skills/review/SKILL.md",
-        ],
-      }],
+      packages: [
+        {
+          source: "npm:shared",
+          autoload: false,
+          skills: ["!skills/review", "+skills/review", "-skills/review/SKILL.md"],
+        },
+      ],
     });
 
     applyResourcePreferences(fixture.graph as never, [
@@ -683,11 +742,13 @@ describe("package identity normalization", () => {
     });
     expect(normalizePackageIdentity("git@github.com:owner/repo.git").kind).toBe("local");
     expect(normalizePackageIdentity("git+https://github.com/owner/repo.git").kind).toBe("local");
-    expect(normalizePackageIdentity("foo", {
-      scope: "user",
-      agentDir,
-      cwd,
-    })).toEqual({ identity: `local:${expectedAgentDir}/foo`, kind: "local" });
+    expect(
+      normalizePackageIdentity("foo", {
+        scope: "user",
+        agentDir,
+        cwd,
+      }),
+    ).toEqual({ identity: `local:${expectedAgentDir}/foo`, kind: "local" });
     const user = normalizePackageIdentity("./shared", {
       scope: "user",
       agentDir,

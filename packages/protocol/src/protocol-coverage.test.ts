@@ -207,8 +207,6 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
       },
     ],
   },
-  "piSettings.get": null,
-  "piSettings.patch": { patch: {} },
   "extensionUi.configure": { extensionDecisionPresentation: "auto" },
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
@@ -267,7 +265,6 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.authStatus":
     case "model.list":
     case "package.reloadResources":
-    case "piSettings.get":
       return {}; // must be null
     case "workspace.setCurrent":
       return { path: "x" }; // missing cwd
@@ -282,7 +279,14 @@ function invalidParams(method: HostMethod): unknown {
     case "git.getDiff":
       return { path: "src/app.ts", area: "both", expectedRevision: 1 };
     case "git.mutateHunk":
-      return { path: "src/app.ts", area: "unstaged", hunkId: "bad", operation: "stage", expectedRevision: 1, expectedContentGeneration: "bad" };
+      return {
+        path: "src/app.ts",
+        area: "unstaged",
+        hunkId: "bad",
+        operation: "stage",
+        expectedRevision: 1,
+        expectedContentGeneration: "bad",
+      };
     case "git.stage":
     case "git.unstage":
     case "git.discard":
@@ -380,8 +384,6 @@ function invalidParams(method: HostMethod): unknown {
       return { resourceId: "r", targetScope: "user", preference: "inherit" };
     case "resource.setPreferences":
       return { updates: [{ resourceId: "r", targetScope: "workspace", preference: "enabled" }] };
-    case "piSettings.patch":
-      return {};
     case "extensionUi.configure":
       return { extensionDecisionPresentation: "automatic" };
     case "extensionUi.respond":
@@ -608,9 +610,7 @@ describe("unified package resources", () => {
         ],
       }),
     ).toBe(false);
-    expect(
-      isPackageSnapshot({ ...snapshot, configured: [legacyPackageRecord] }),
-    ).toBe(false);
+    expect(isPackageSnapshot({ ...snapshot, configured: [legacyPackageRecord] })).toBe(false);
     expect(
       validateSuccessResult("package.getResources", {
         package: packageRecord,
@@ -633,7 +633,6 @@ describe("unified package resources", () => {
   it("exposes the non-configurable resource error", () => {
     expect(HOST_ERROR_CODES).toContain("RESOURCE_NOT_CONFIGURABLE");
   });
-
 });
 
 describe("Host error codes", () => {
@@ -826,9 +825,7 @@ describe("protocol coverage — events", () => {
     { key: "brainstorm", runId: RUN_ID, invocation: "" },
     { key: "brainstorm", runId: RUN_ID, invocation: "brainstorm", extra: true },
   ])("rejects malformed widget attention payload %#", (payload) => {
-    expect(validateEventPayload("extensionUi.widgetAttentionRequested", payload).ok).toBe(
-      false,
-    );
+    expect(validateEventPayload("extensionUi.widgetAttentionRequested", payload).ok).toBe(false);
   });
 
   it("session.runtimeChanged rejects unknown states and extra fields", () => {
@@ -1013,13 +1010,12 @@ describe("context usage breakdown", () => {
     ).toBe(true);
   });
 
-  it.each([
-    { entries: "not-an-array" },
-    { entries: [{ id: 1, type: "message" }] },
-    { leafId: 42 },
-  ])("rejects malformed session entry path %#", (extra) => {
-    expect(isSessionSnapshot({ ...snapshot, ...extra })).toBe(false);
-  });
+  it.each([{ entries: "not-an-array" }, { entries: [{ id: 1, type: "message" }] }, { leafId: 42 }])(
+    "rejects malformed session entry path %#",
+    (extra) => {
+      expect(isSessionSnapshot({ ...snapshot, ...extra })).toBe(false);
+    },
+  );
 });
 
 describe("compile-time maps completeness", () => {

@@ -24,12 +24,11 @@ const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
 
 export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): number {
   const viewportLimit =
-    viewportWidth - Math.max(0, menuLeft) - MODEL_MENU_VIEWPORT_GUTTER -
+    viewportWidth -
+    Math.max(0, menuLeft) -
+    MODEL_MENU_VIEWPORT_GUTTER -
     MODEL_MENU_THINKING_RESERVE_WIDTH;
-  return Math.max(
-    MODEL_MENU_MIN_WIDTH,
-    Math.min(MODEL_MENU_RESIZE_MAX_WIDTH, viewportLimit),
-  );
+  return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_RESIZE_MAX_WIDTH, viewportLimit));
 }
 
 export function clampModelMenuWidth(
@@ -192,7 +191,9 @@ export function ContextUsageRing() {
                 <span className="text-muted">{t("contextUserPrompts")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.userPrompts)}</span>
                 <span className="text-muted">{t("contextAssistant")}</span>
-                <span className="tabular-nums">~{formatTokenCount(breakdown.assistantMessages)}</span>
+                <span className="tabular-nums">
+                  ~{formatTokenCount(breakdown.assistantMessages)}
+                </span>
                 <span className="text-muted">{t("contextToolResults")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.toolResults)}</span>
                 <span className="text-muted">{t("contextSummaries")}</span>
@@ -210,9 +211,7 @@ export function ContextUsageRing() {
               checked={autoCompactionEnabled}
               label={t("contextToggleAutoCompaction")}
               disabled={!session}
-              onChange={() =>
-                session && void setAutoCompaction(!session.autoCompactionEnabled)
-              }
+              onChange={() => session && void setAutoCompaction(!session.autoCompactionEnabled)}
             />
           </div>
           <button
@@ -267,14 +266,23 @@ export function ModelControls() {
   const sessionRevision = session?.revision;
 
   useEffect(() => {
+    const current = useAppStore.getState();
+    const requestHost = current.host;
+    const requestWorkspace = current.workspace;
+    const requestSession = current.session;
     if (
-      !host ||
-      !workspace ||
-      !session ||
+      !requestHost ||
+      !requestWorkspace ||
+      !requestSession ||
+      requestHost.hostInstanceId !== hostInstanceId ||
+      requestWorkspace.id !== workspaceId ||
+      requestWorkspace.revision !== workspaceRevision ||
+      requestSession.sessionId !== sessionId ||
+      requestSession.revision !== sessionRevision ||
       !canRequestModelList({
-        hasHost: Boolean(host),
-        hasWorkspace: Boolean(workspace),
-        hasSession: Boolean(session),
+        hasHost: hostInstanceId !== undefined,
+        hasWorkspace: workspaceId !== undefined,
+        hasSession: sessionId !== undefined,
         connecting,
         rehydrating,
         desynchronized,
@@ -287,11 +295,11 @@ export function ModelControls() {
     }
     let cancelled = false;
     const request = ++listRequest.current;
-    const expectedHostId = host.hostInstanceId;
-    const expectedWorkspaceId = workspace.id;
-    const expectedWorkspaceRevision = workspace.revision;
-    const expectedSessionId = session.sessionId;
-    const expectedSessionRevision = session.revision;
+    const expectedHostId = requestHost.hostInstanceId;
+    const expectedWorkspaceId = requestWorkspace.id;
+    const expectedWorkspaceRevision = requestWorkspace.revision;
+    const expectedSessionId = requestSession.sessionId;
+    const expectedSessionRevision = requestSession.revision;
     const isCurrentRequest = () => {
       const current = useAppStore.getState();
       return (
@@ -311,7 +319,7 @@ export function ModelControls() {
           () =>
             hostClient.request(
               "model.list",
-              activeSessionContext(host, workspace, session),
+              activeSessionContext(requestHost, requestWorkspace, requestSession),
               null,
             ),
           undefined,
@@ -367,14 +375,14 @@ export function ModelControls() {
   const thinkingModel = thinkingModelKey
     ? modelOptions.find((model) => `${model.provider}/${model.modelId}` === thinkingModelKey)
     : undefined;
-  const thinkingModelSelected = thinkingModel !== undefined &&
+  const thinkingModelSelected =
+    thinkingModel !== undefined &&
     session?.model?.provider === thinkingModel.provider &&
     session.model.modelId === thinkingModel.modelId;
-  const thinkingMenuLevels = thinkingModel?.thinkingLevels ??
-    (thinkingModelSelected ? availableThinkingLevels : ["off"]);
-  const modelMenuLabels = modelOptions.length > 0
-    ? modelOptions.map(modelOptionLabel)
-    : [t("modelNoneEnabled")];
+  const thinkingMenuLevels =
+    thinkingModel?.thinkingLevels ?? (thinkingModelSelected ? availableThinkingLevels : ["off"]);
+  const modelMenuLabels =
+    modelOptions.length > 0 ? modelOptions.map(modelOptionLabel) : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
 
   useLayoutEffect(() => {
@@ -383,12 +391,9 @@ export function ModelControls() {
     if (contentWidth === undefined) return;
     const nextWidth = Math.min(
       MODEL_MENU_DEFAULT_MAX_WIDTH,
-      Math.max(
-        MODEL_MENU_MIN_WIDTH,
-        Math.ceil(contentWidth) + MODEL_MENU_ROW_CONTROLS_WIDTH,
-      ),
+      Math.max(MODEL_MENU_MIN_WIDTH, Math.ceil(contentWidth) + MODEL_MENU_ROW_CONTROLS_WIDTH),
     );
-    setModelMenuWidth((current) => current === nextWidth ? current : nextWidth);
+    setModelMenuWidth((current) => (current === nextWidth ? current : nextWidth));
   }, [modelMenuMeasureKey]);
 
   useLayoutEffect(() => {
@@ -503,7 +508,9 @@ export function ModelControls() {
           aria-hidden="true"
           className="pointer-events-none invisible absolute flex w-max flex-col whitespace-nowrap text-xs"
         >
-          {modelMenuLabels.map((label, index) => <span key={`${index}:${label}`}>{label}</span>)}
+          {modelMenuLabels.map((label, index) => (
+            <span key={`${index}:${label}`}>{label}</span>
+          ))}
         </span>
         <button
           type="button"
@@ -538,61 +545,70 @@ export function ModelControls() {
             >
               {modelOptions.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-muted">{t("modelNoneEnabled")}</p>
-              ) : modelOptions.map((model) => {
-                const key = `${model.provider}/${model.modelId}`;
-                const selected = session?.model?.provider === model.provider &&
-                  session.model.modelId === model.modelId;
-                const levels = model.thinkingLevels ?? (selected ? availableThinkingLevels : ["off"]);
-                return (
-                  <div key={key} className="flex h-8 items-center gap-0.5 px-1">
-                    <button
-                      type="button"
-                      className={`min-w-0 flex-1 truncate px-1.5 py-1 text-left text-xs ${
-                        selected ? "font-medium text-accent" : "text-foreground hover:text-accent"
-                      }`}
-                      role="menuitemradio"
-                      aria-checked={selected}
-                      title={modelOptionLabel(model)}
-                      onClick={() => {
-                        if (selected) {
-                          setMenuOpen(false);
-                          return;
-                        }
-                        void setModel(model.provider, model.modelId).then((changed) => {
-                          if (changed) setMenuOpen(false);
-                        });
-                      }}
-                    >
-                      {modelOptionLabel(model)}
-                    </button>
-                    <button
-                      type="button"
-                      className={`flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground ${
-                        thinkingModelKey === key ? "bg-surface-overlay text-foreground" : ""
-                      }`}
-                      title={t("modelThinkingFor", { model: modelOptionLabel(model) })}
-                      aria-label={t("modelThinkingFor", { model: modelOptionLabel(model) })}
-                      aria-expanded={thinkingModelKey === key}
-                      onClick={(event) => {
-                        if (thinkingModelKey === key) {
-                          setThinkingModelKey(null);
-                          return;
-                        }
-                        const panel = modelMenuPanelRef.current?.getBoundingClientRect();
-                        const button = event.currentTarget.getBoundingClientRect();
-                        const estimatedHeight = Math.min(220, Math.max(36, levels.length * 28 + 8));
-                        const rowTop = panel ? button.top - panel.top : 0;
-                        setThinkingMenuTop(panel
-                          ? Math.max(0, Math.min(rowTop, panel.height - estimatedHeight))
-                          : 0);
-                        setThinkingModelKey(key);
-                      }}
-                    >
-                      <Brain size={14} />
-                    </button>
-                  </div>
-                );
-              })}
+              ) : (
+                modelOptions.map((model) => {
+                  const key = `${model.provider}/${model.modelId}`;
+                  const selected =
+                    session?.model?.provider === model.provider &&
+                    session.model.modelId === model.modelId;
+                  const levels =
+                    model.thinkingLevels ?? (selected ? availableThinkingLevels : ["off"]);
+                  return (
+                    <div key={key} className="flex h-8 items-center gap-0.5 px-1">
+                      <button
+                        type="button"
+                        className={`min-w-0 flex-1 truncate px-1.5 py-1 text-left text-xs ${
+                          selected ? "font-medium text-accent" : "text-foreground hover:text-accent"
+                        }`}
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        title={modelOptionLabel(model)}
+                        onClick={() => {
+                          if (selected) {
+                            setMenuOpen(false);
+                            return;
+                          }
+                          void setModel(model.provider, model.modelId).then((changed) => {
+                            if (changed) setMenuOpen(false);
+                          });
+                        }}
+                      >
+                        {modelOptionLabel(model)}
+                      </button>
+                      <button
+                        type="button"
+                        className={`flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground ${
+                          thinkingModelKey === key ? "bg-surface-overlay text-foreground" : ""
+                        }`}
+                        title={t("modelThinkingFor", { model: modelOptionLabel(model) })}
+                        aria-label={t("modelThinkingFor", { model: modelOptionLabel(model) })}
+                        aria-expanded={thinkingModelKey === key}
+                        onClick={(event) => {
+                          if (thinkingModelKey === key) {
+                            setThinkingModelKey(null);
+                            return;
+                          }
+                          const panel = modelMenuPanelRef.current?.getBoundingClientRect();
+                          const button = event.currentTarget.getBoundingClientRect();
+                          const estimatedHeight = Math.min(
+                            220,
+                            Math.max(36, levels.length * 28 + 8),
+                          );
+                          const rowTop = panel ? button.top - panel.top : 0;
+                          setThinkingMenuTop(
+                            panel
+                              ? Math.max(0, Math.min(rowTop, panel.height - estimatedHeight))
+                              : 0,
+                          );
+                          setThinkingModelKey(key);
+                        }}
+                      >
+                        <Brain size={14} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
             <div
               role="separator"
@@ -619,10 +635,10 @@ export function ModelControls() {
                 if (!start || start.pointerId !== event.pointerId) return;
                 resizeModelMenu(start.width + event.clientX - start.x);
               }}
-              onPointerUp={(event) =>
-                finishModelMenuResize(event.currentTarget, event.pointerId)}
+              onPointerUp={(event) => finishModelMenuResize(event.currentTarget, event.pointerId)}
               onPointerCancel={(event) =>
-                finishModelMenuResize(event.currentTarget, event.pointerId)}
+                finishModelMenuResize(event.currentTarget, event.pointerId)
+              }
               onLostPointerCapture={() => {
                 modelMenuResizeStart.current = null;
               }}
@@ -651,28 +667,30 @@ export function ModelControls() {
                   <span className="block px-2 py-1.5 text-[11px] text-muted">
                     {t("modelNoThinkingLevels")}
                   </span>
-                ) : thinkingMenuLevels.map((level) => {
-                  const active = thinkingModelSelected && session?.thinkingLevel === level;
-                  return (
-                    <button
-                      key={level}
-                      type="button"
-                      className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] capitalize ${
-                        active
-                          ? "bg-accent/15 text-accent"
-                          : "text-muted hover:bg-surface-overlay hover:text-foreground"
-                      }`}
-                      role="menuitemradio"
-                      aria-checked={active}
-                      onClick={() => void setThinkingForModel(thinkingModel, level)}
-                    >
-                      <span className="flex size-3 shrink-0 items-center justify-center">
-                        {active && <Check size={11} />}
-                      </span>
-                      {thinkingLevelLabel(level)}
-                    </button>
-                  );
-                })}
+                ) : (
+                  thinkingMenuLevels.map((level) => {
+                    const active = thinkingModelSelected && session?.thinkingLevel === level;
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] capitalize ${
+                          active
+                            ? "bg-accent/15 text-accent"
+                            : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                        }`}
+                        role="menuitemradio"
+                        aria-checked={active}
+                        onClick={() => void setThinkingForModel(thinkingModel, level)}
+                      >
+                        <span className="flex size-3 shrink-0 items-center justify-center">
+                          {active && <Check size={11} />}
+                        </span>
+                        {thinkingLevelLabel(level)}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>

@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "./stores/app-store";
-import {
-  persistDesktopSettings,
-  recentDesktopLocationPatch,
-} from "./desktop-settings";
+import { persistDesktopSettings, recentDesktopLocationPatch } from "./desktop-settings";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -87,15 +84,37 @@ describe("persistDesktopSettings", () => {
     });
   });
 
+  it("uses the same runtime value constraints outside Tauri", async () => {
+    mocks.isTauri.mockReturnValue(false);
+
+    await expect(persistDesktopSettings({ theme: "neon" } as never)).rejects.toThrow(
+      "Invalid desktop theme",
+    );
+    await expect(persistDesktopSettings({ futureSetting: true } as never)).rejects.toThrow(
+      "Unknown desktop settings field",
+    );
+
+    expect(useAppStore.getState().desktopSettings).toEqual(initialSettings);
+  });
+
+  it("clears an optional language through the browser settings path", async () => {
+    mocks.isTauri.mockReturnValue(false);
+
+    await persistDesktopSettings({ language: null });
+
+    const withoutLanguage = Object.fromEntries(
+      Object.entries(initialSettings).filter(([key]) => key !== "language"),
+    );
+    expect(useAppStore.getState().desktopSettings).toEqual(withoutLanguage);
+  });
+
   it("accepts a later write after a rejected queued write", async () => {
     mocks.isTauri.mockReturnValue(true);
     mocks.invoke
       .mockRejectedValueOnce(new Error("permission denied"))
       .mockResolvedValueOnce({ ...initialSettings, theme: "light" });
 
-    await expect(persistDesktopSettings({ theme: "system" })).rejects.toThrow(
-      "permission denied",
-    );
+    await expect(persistDesktopSettings({ theme: "system" })).rejects.toThrow("permission denied");
     await expect(persistDesktopSettings({ theme: "light" })).resolves.toBeUndefined();
 
     expect(mocks.invoke).toHaveBeenCalledTimes(2);

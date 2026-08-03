@@ -35,9 +35,7 @@ import {
   type MethodContextScope,
 } from "./methods.js";
 
-export type ValidationResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: HostError };
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: HostError };
 
 function fail(message: string, details?: JsonValue): ValidationResult<never> {
   return {
@@ -229,9 +227,7 @@ export function validateMethodContext<M extends HostMethod>(
       ? ["expectedHostInstanceId"]
       : scope === "workspace"
         ? [...workspaceFields]
-        : scope === "nullableSession" ||
-            scope === "activeSession" ||
-            scope === "sessionTarget"
+        : scope === "nullableSession" || scope === "activeSession" || scope === "sessionTarget"
           ? [...sessionFields]
           : scope === "toolMutation"
             ? [...sessionFields, "expectedToolRevision"]
@@ -260,11 +256,7 @@ export function validateMethodContext<M extends HostMethod>(
     return { ok: true, value: context as HostContextMap[M] };
   }
 
-  if (
-    scope === "activeSession" ||
-    scope === "sessionTarget" ||
-    scope === "toolMutation"
-  ) {
+  if (scope === "activeSession" || scope === "sessionTarget" || scope === "toolMutation") {
     if (!isUuid(context.expectedSessionId)) {
       return fail("expectedSessionId must be UUID", { method });
     }
@@ -329,7 +321,6 @@ export function validateRequestParams<M extends HostMethod>(
     case "model.list":
     case "package.updateAll":
     case "package.reloadResources":
-    case "piSettings.get":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "workspace.searchFiles":
       return exactObject(params, ["query"], ["limit"]) &&
@@ -500,8 +491,7 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail(`invalid ${method} params`, { method });
     case "agent.clearQueue":
-      return exactObject(params, ["expectedRevision"]) &&
-        isSafeRevision(params.expectedRevision)
+      return exactObject(params, ["expectedRevision"]) && isSafeRevision(params.expectedRevision)
         ? ok(params)
         : fail("invalid agent.clearQueue params", { method });
     case "agent.setQueue":
@@ -535,16 +525,13 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["entryId"], ["position"]) &&
         isString(params.entryId) &&
         params.entryId.length > 0 &&
-        (params.position === undefined ||
-          params.position === "before" ||
-          params.position === "at")
+        (params.position === undefined || params.position === "before" || params.position === "at")
         ? ok(params)
         : fail("invalid session.fork params", { method });
     case "session.export":
       return exactObject(params, ["format"], ["path"]) &&
         (params.format === "html" || params.format === "jsonl") &&
-        (params.path === undefined ||
-          (isString(params.path) && params.path.length > 0))
+        (params.path === undefined || (isString(params.path) && params.path.length > 0))
         ? ok(params)
         : fail("invalid session.export params", { method });
     case "agent.setAutoCompaction":
@@ -652,33 +639,6 @@ export function validateRequestParams<M extends HostMethod>(
         params.updates.every(isResourcePreferenceUpdate)
         ? ok(params)
         : fail("invalid resource.setPreferences params", { method });
-    case "piSettings.patch": {
-      if (!exactObject(params, ["patch"]) || !isPlainObject(params.patch)) {
-        return fail("invalid piSettings.patch params", { method });
-      }
-      const patch = params.patch;
-      if (
-        !hasExactKeys(
-          patch,
-          [],
-          [
-            "defaultThinkingLevel",
-            "steeringMode",
-            "followUpMode",
-            "autoCompaction",
-            "autoRetry",
-          ],
-        ) ||
-        (patch.defaultThinkingLevel !== undefined && !isString(patch.defaultThinkingLevel)) ||
-        (patch.steeringMode !== undefined && !["all", "one-at-a-time"].includes(String(patch.steeringMode))) ||
-        (patch.followUpMode !== undefined && !["all", "one-at-a-time"].includes(String(patch.followUpMode))) ||
-        (patch.autoCompaction !== undefined && !isBoolean(patch.autoCompaction)) ||
-        (patch.autoRetry !== undefined && !isBoolean(patch.autoRetry))
-      ) {
-        return fail("invalid Pi settings patch", { method });
-      }
-      return ok(params);
-    }
     case "extensionUi.configure":
       return exactObject(params, ["extensionDecisionPresentation"]) &&
         ["legacy-modal", "auto", "inline-first"].includes(
@@ -787,12 +747,19 @@ function hasHostIdentity(value: Record<string, unknown>): boolean {
 }
 
 export function isHostResponse(value: unknown): value is HostResponseMessage {
-  if (!isPlainObject(value) || value.protocolVersion !== 1 || !isUuid(value.id) || !isHostMethod(value.method)) {
+  if (
+    !isPlainObject(value) ||
+    value.protocolVersion !== 1 ||
+    !isUuid(value.id) ||
+    !isHostMethod(value.method)
+  ) {
     return false;
   }
   if (!hasHostIdentity(value) || typeof value.ok !== "boolean") return false;
   if (value.ok) {
-    if (!hasExactKeys(value, ["protocolVersion", ...identityKeys, "id", "method", "ok", "result"])) {
+    if (
+      !hasExactKeys(value, ["protocolVersion", ...identityKeys, "id", "method", "ok", "result"])
+    ) {
       return false;
     }
     return validateMethodResultShape(value.method, value.result) === null;
@@ -806,7 +773,14 @@ export function isHostResponse(value: unknown): value is HostResponseMessage {
 export function isHostEvent(value: unknown): value is HostEventMessage {
   if (
     !isPlainObject(value) ||
-    !hasExactKeys(value, ["protocolVersion", ...identityKeys, "event", "sequence", "timestamp", "payload"]) ||
+    !hasExactKeys(value, [
+      "protocolVersion",
+      ...identityKeys,
+      "event",
+      "sequence",
+      "timestamp",
+      "payload",
+    ]) ||
     value.protocolVersion !== 1 ||
     !isHostEventName(value.event) ||
     !hasHostIdentity(value) ||
@@ -845,9 +819,7 @@ export function parseHostEvent(raw: unknown): ValidationResult<HostEventMessage>
   return isHostEvent(raw) ? { ok: true, value: raw } : fail("invalid Host event");
 }
 
-export function validateSerializableAgentToolResult(
-  value: unknown,
-): ValidationResult<{
+export function validateSerializableAgentToolResult(value: unknown): ValidationResult<{
   content: unknown[];
   details: JsonValue;
   addedToolNames?: string[];

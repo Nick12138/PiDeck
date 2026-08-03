@@ -32,8 +32,6 @@ import type {
   PackageRecord,
   ResourcePreferenceUpdate,
   ResourceRecord,
-  PiSettingsSnapshot,
-  PiSettingsPatch,
   ExtensionUiClosed,
   ExtensionUiGroupClosed,
   ExtensionUiRequest,
@@ -154,8 +152,6 @@ export type HostContextMap = {
   "package.reloadResources": SessionPackageContext;
   "resource.setPreference": SessionPackageContext;
   "resource.setPreferences": SessionPackageContext;
-  "piSettings.get": WorkspaceContext;
-  "piSettings.patch": NullableSessionContext;
   "extensionUi.configure": HostContext;
   "extensionUi.respond": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
@@ -280,8 +276,6 @@ export type HostRequestParams = {
   "package.reloadResources": null;
   "resource.setPreference": ResourcePreferenceUpdate;
   "resource.setPreferences": { updates: ResourcePreferenceUpdate[] };
-  "piSettings.get": null;
-  "piSettings.patch": { patch: PiSettingsPatch };
   "extensionUi.configure": {
     extensionDecisionPresentation: ExtensionDecisionPresentation;
   };
@@ -431,8 +425,6 @@ export type HostResultMap = {
   "package.reloadResources": PackageMutationResult;
   "resource.setPreference": PackageMutationResult;
   "resource.setPreferences": PackageMutationResult;
-  "piSettings.get": PiSettingsSnapshot;
-  "piSettings.patch": PiSettingsSnapshot;
   "extensionUi.configure": {
     extensionDecisionPresentation: ExtensionDecisionPresentation;
   };

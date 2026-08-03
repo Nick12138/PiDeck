@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -168,37 +162,6 @@ describe("Session file lifecycle", () => {
     });
   });
 
-  it("invalidates a retained idle Runtime before mutating its Session file", async () => {
-    const fixture = createFixture();
-    const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
-    const dispose = vi.fn();
-    fixture.graph.retainedSessions = new Map([
-      [
-        SESSION_ID,
-        {
-          sessionId: SESSION_ID,
-          agentSession: {
-            isIdle: true,
-            abort: vi.fn(),
-            dispose,
-          },
-          sessionSnapshot: { sessionPath },
-        } as never,
-      ],
-    ]);
-
-    const renamed = await fixture.factory.renameSession(
-      "rename-retained",
-      SESSION_ID,
-      sessionPath,
-      "Updated on disk",
-    );
-
-    expect(renamed).toEqual({ sessionId: SESSION_ID, name: "Updated on disk" });
-    expect(dispose).toHaveBeenCalledTimes(1);
-    expect(fixture.graph.retainedSessions.has(SESSION_ID)).toBe(false);
-  });
-
   it("archives, lists, restores, and permanently deletes a Session", async () => {
     const fixture = createFixture();
     const originalPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
@@ -246,11 +209,7 @@ describe("Session file lifecycle", () => {
     const fixture = createFixture();
     const sessionPath = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
 
-    const deleted = await fixture.factory.deleteSession(
-      "delete-inactive",
-      SESSION_ID,
-      sessionPath,
-    );
+    const deleted = await fixture.factory.deleteSession("delete-inactive", SESSION_ID, sessionPath);
 
     expect(deleted).toEqual({ sessionId: SESSION_ID, deleted: true });
     expect(existsSync(sessionPath)).toBe(false);
@@ -258,11 +217,7 @@ describe("Session file lifecycle", () => {
 
   it("refuses to delete the active Session or a running background Runtime", async () => {
     const activeFixture = createFixture();
-    const activePath = writeSession(
-      activeFixture.activeDir,
-      SESSION_ID,
-      activeFixture.cwd,
-    );
+    const activePath = writeSession(activeFixture.activeDir, SESSION_ID, activeFixture.cwd);
     activeFixture.graph.sessionSnapshot = {
       sessionId: SESSION_ID,
       sessionPath: activePath,
@@ -313,11 +268,7 @@ describe("Session file lifecycle", () => {
       runtimeState: "idle",
       sessionRevision: 1,
     });
-    const occupied = await fixture.factory.archiveSession(
-      "occupied",
-      SESSION_ID,
-      sessionPath,
-    );
+    const occupied = await fixture.factory.archiveSession("occupied", SESSION_ID, sessionPath);
     expect("error" in occupied && occupied.error.code).toBe("AGENT_BUSY");
     expect(existsSync(sessionPath)).toBe(true);
     expect(invalidate).not.toHaveBeenCalled();

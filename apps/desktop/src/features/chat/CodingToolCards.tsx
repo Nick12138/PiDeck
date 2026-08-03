@@ -1,11 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import {
-  ChevronRight,
-  FileCode2,
-  FilePenLine,
-  Terminal,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight, FileCode2, FilePenLine, Terminal, type LucideIcon } from "lucide-react";
 import { sanitizeAgentText } from "./markdown-utils";
 import {
   formatDuration,
@@ -26,7 +20,7 @@ function parseJsonish(value: unknown): unknown {
   }
 }
 
-export function toolRecord(value: unknown): Record<string, unknown> | null {
+function toolRecord(value: unknown): Record<string, unknown> | null {
   const parsed = parseJsonish(value);
   return parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? (parsed as Record<string, unknown>)
@@ -143,7 +137,10 @@ const SHELL_NAMES = new Set(["bash", "shell", "exec", "exec_command", "command"]
 const MUTATION_NAMES = new Set(["edit", "write", "write_file", "apply_patch"]);
 
 function normalizedName(name: string): string {
-  return name.trim().toLocaleLowerCase().replace(/[\s.-]+/g, "_");
+  return name
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s.-]+/g, "_");
 }
 
 export function isFileReadTool(name: string): boolean {
@@ -211,9 +208,7 @@ export function ShellToolCard(props: ToolCardProps) {
           <span className="whitespace-pre-wrap break-words">{command}</span>
         </div>
         <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-5">
-          {output || (
-            props.status === "running" ? t("toolRunningOutput") : t("toolNoOutput")
-          )}
+          {output || (props.status === "running" ? t("toolRunningOutput") : t("toolNoOutput"))}
         </pre>
       </div>
     </ToolRow>
@@ -226,7 +221,9 @@ function detailsRecord(props: ToolCardProps): Record<string, unknown> | null {
   return toolRecord(toolRecord(props.result)?.details);
 }
 
-export function mutationDiff(props: Pick<ToolCardProps, "name" | "args" | "result" | "details">): string {
+export function mutationDiff(
+  props: Pick<ToolCardProps, "name" | "args" | "result" | "details">,
+): string {
   const details = detailsRecord(props as ToolCardProps);
   const persistedDiff = stringField(details, ["patch", "diff"]);
   if (persistedDiff) return sanitizeAgentText(persistedDiff);
@@ -248,14 +245,19 @@ export function mutationDiff(props: Pick<ToolCardProps, "name" | "args" | "resul
   }
 
   const content = stringField(args, ["content"]);
-  return content ? content.split("\n").map((line) => `+${line}`).join("\n") : "";
+  return content
+    ? content
+        .split("\n")
+        .map((line) => `+${line}`)
+        .join("\n")
+    : "";
 }
 
 function diffCounts(diff: string): { additions: number; deletions: number } {
   const lines = diff.split("\n");
   return {
-    additions: lines.filter((line) => line.startsWith("+") && !line.startsWith("+++" )).length,
-    deletions: lines.filter((line) => line.startsWith("-") && !line.startsWith("---" )).length,
+    additions: lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length,
+    deletions: lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length,
   };
 }
 
@@ -277,29 +279,34 @@ export function FileMutationToolCard(props: ToolCardProps) {
     >
       <div className="overflow-hidden rounded-md border border-border bg-surface-overlay/30">
         <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[10px] text-muted">
-          <span className="min-w-0 flex-1 truncate font-mono" title={path}>{path}</span>
+          <span className="min-w-0 flex-1 truncate font-mono" title={path}>
+            {path}
+          </span>
           <span className="text-success">+{counts.additions}</span>
           <span className="text-danger">-{counts.deletions}</span>
         </div>
         <pre className="max-h-80 overflow-auto py-2 font-mono text-[11px] leading-5">
-          {diff.split("\n").slice(0, 500).map((line, index) => {
-            const addition = line.startsWith("+") && !line.startsWith("+++");
-            const deletion = line.startsWith("-") && !line.startsWith("---");
-            return (
-              <span
-                key={index}
-                className={`block min-w-max whitespace-pre px-3 ${
-                  addition
-                    ? "bg-success/10 text-success"
-                    : deletion
-                      ? "bg-danger/10 text-danger"
-                      : "text-foreground/70"
-                }`}
-              >
-                {line || " "}
-              </span>
-            );
-          })}
+          {diff
+            .split("\n")
+            .slice(0, 500)
+            .map((line, index) => {
+              const addition = line.startsWith("+") && !line.startsWith("+++");
+              const deletion = line.startsWith("-") && !line.startsWith("---");
+              return (
+                <span
+                  key={index}
+                  className={`block min-w-max whitespace-pre px-3 ${
+                    addition
+                      ? "bg-success/10 text-success"
+                      : deletion
+                        ? "bg-danger/10 text-danger"
+                        : "text-foreground/70"
+                  }`}
+                >
+                  {line || " "}
+                </span>
+              );
+            })}
         </pre>
       </div>
     </ToolRow>

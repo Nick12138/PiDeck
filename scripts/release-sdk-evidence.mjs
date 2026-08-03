@@ -34,7 +34,7 @@ function readJson(path, label) {
   }
 }
 
-export function sha256File(path) {
+function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
@@ -147,7 +147,9 @@ export function loadReleaseSdkEvidence(root, runtimeLockOverride) {
     const resolvedVersion = importerDependencies[name]?.version;
     if (String(specifier).startsWith("workspace:")) {
       if (typeof resolvedVersion !== "string" || !resolvedVersion.startsWith("link:")) {
-        fail(`pnpm lock must resolve workspace dependency ${name} to a link, got ${resolvedVersion}`);
+        fail(
+          `pnpm lock must resolve workspace dependency ${name} to a link, got ${resolvedVersion}`,
+        );
       }
     } else if (lockVersion(resolvedVersion) !== specifier) {
       fail(`pnpm lock resolves ${name} to ${resolvedVersion}, expected ${specifier}`);
@@ -272,9 +274,7 @@ export function assertPiPackageTree(hostRoot, expected, label = "package tree") 
 
 export function deriveReleaseProductionDependencies(expected, workspaceVersions) {
   const dependencies = {};
-  for (const [name, specifier] of Object.entries(
-    expected.hostManifest.productionDependencies,
-  )) {
+  for (const [name, specifier] of Object.entries(expected.hostManifest.productionDependencies)) {
     if (!String(specifier).startsWith("workspace:")) {
       dependencies[name] = specifier;
       continue;

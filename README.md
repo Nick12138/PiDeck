@@ -105,3 +105,7 @@ More in the [documentation index](./docs/README.md).
 ## License
 
 MIT — see [LICENSE](./LICENSE) and [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+## Friends
+
+- **[Linux DO](https://linux.do/)** — Learn AI? Visit Linux DO!

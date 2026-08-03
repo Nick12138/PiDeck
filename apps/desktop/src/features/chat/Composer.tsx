@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import {
   Bug,
   CircleAlert,
@@ -18,10 +18,8 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import {
-  isExtensionDecisionBlockingSession,
-  useAppStore,
-} from "../../lib/stores/app-store";
+import { useAppStore } from "../../lib/stores/app-store";
+import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
@@ -38,16 +36,15 @@ import {
 import { buildAttachedFileBlock } from "./transcript-model";
 import { ContextUsageRing, ModelControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
-import {
-  ExtensionWidgetsPopover,
-  ExtensionWidgetsButton,
-} from "./ExtensionWidgets";
+import { ExtensionWidgetsPopover, ExtensionWidgetsButton } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
 import {
   activeSessionContext,
   captureRequestGeneration,
   isCurrentRequestGeneration,
+  workspaceContext,
 } from "../../lib/bridge/host-context";
+import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { subscribeComposerInsert } from "../../lib/composer-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
@@ -238,9 +235,7 @@ function builtinCompletionItems(t: Translate): CompletionItem[] {
     insert: `/${command.name} `,
     label: `/${command.name}`,
     detail: [
-      command.name === "compact"
-        ? t("composerBuiltinInstructionsHint")
-        : command.argumentHint,
+      command.name === "compact" ? t("composerBuiltinInstructionsHint") : command.argumentHint,
       t(descriptions[command.name as keyof typeof descriptions]),
       `(${t("composerCommandKindBuiltin")})`,
     ]
@@ -268,10 +263,7 @@ export function commandTokenAt(
 }
 
 /** `@token` preceded by whitespace/start, token touching the caret. */
-export function fileTokenAt(
-  text: string,
-  caret: number,
-): { start: number; query: string } | null {
+export function fileTokenAt(text: string, caret: number): { start: number; query: string } | null {
   const before = text.slice(0, caret);
   const match = /(^|\s)@([^\s@]*)$/.exec(before);
   if (!match) return null;
@@ -280,7 +272,7 @@ export function fileTokenAt(
 
 /** LiveAgent-style rank: filename prefix < path prefix < filename substring
  * < rest, then shallower, then dirs before files. */
-export function fileSortKey(
+function fileSortKey(
   entry: { path: string; kind: "file" | "dir" },
   query: string,
 ): [number, number, number] {
@@ -312,9 +304,7 @@ export function Composer({
   const session = useAppStore((s) => s.session);
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
-  const text = useAppStore((s) =>
-    session ? (s.sessionDrafts[session.sessionId] ?? "") : "",
-  );
+  const text = useAppStore((s) => (session ? (s.sessionDrafts[session.sessionId] ?? "") : ""));
   const extensionWidgetsOpen = useAppStore((s) => s.extensionWidgetsOpen);
   const setExtensionWidgetsOpen = useAppStore((s) => s.setExtensionWidgetsOpen);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
@@ -334,6 +324,12 @@ export function Composer({
   const previousBlockedSessionRef = useRef<string | null>(null);
   const documentsRef = useRef<PendingDocument[]>([]);
   const recoveringPastedTextRef = useRef(new Set<string>());
+  const recoverFailedPastedTextCallbackRef = useRef<
+    (document: PendingPastedText, error?: string) => Promise<void>
+  >(async () => undefined);
+  const addLocalPathsCallbackRef = useRef<(paths: readonly string[]) => Promise<void>>(
+    async () => undefined,
+  );
   const decisionHintId = useId();
   const extensionWidgetAnchorRef = useRef<HTMLDivElement>(null);
   const templatesRef = useRef<{ key: string; items: CompletionItem[] } | null>(null);
@@ -342,7 +338,7 @@ export function Composer({
     entries: { path: string; kind: "file" | "dir" }[];
     truncated: boolean;
   } | null>(null);
-  const fileSearchSeq = useRef(0);
+  const completionGeneration = useRef(0);
   const ime = useImeComposition();
   const busy = session ? !session.isIdle : false;
   const sessionId = session?.sessionId ?? null;
@@ -352,6 +348,11 @@ export function Composer({
     sessionId,
   );
   const blockedSessionId = decisionBlocked ? sessionId : null;
+
+  const dismissCompletion = useCallback(() => {
+    completionGeneration.current += 1;
+    setCompletion(null);
+  }, []);
 
   function updateDocuments(
     updater: (current: PendingDocument[]) => PendingDocument[],
@@ -374,7 +375,7 @@ export function Composer({
     const end = draftIsUnchanged ? recovery.selectionEnd : start;
     const next = currentDraft.slice(0, start) + recovery.text + currentDraft.slice(end);
     state.setSessionDraft(recovery.sessionId, next);
-    setCompletion(null);
+    dismissCompletion();
     const caret = start + recovery.text.length;
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
@@ -432,24 +433,24 @@ export function Composer({
     setDocuments([]);
     recoveringPastedTextRef.current.clear();
     setDragOver(false);
-    setCompletion(null);
+    dismissCompletion();
     setStatsOpen(false);
     setForkOpen(false);
     fileSnapshotRef.current = null;
-  }, [sessionId]);
+  }, [dismissCompletion, sessionId]);
 
-  useEffect(
-    () =>
-      hostClient.onEvent((event) => {
-        if (event.event !== "attachment.changed" || event.sessionId !== sessionId) return;
+  useEffect(() => {
+    if (!host || !workspace || !session) return;
+    return subscribeValidatedHostEvent(
+      "attachment.changed",
+      activeSessionContext(host, workspace, session),
+      (event) => {
+        if (event.sessionId !== sessionId) return;
         const current = documentsRef.current.find(
           (document) => document.id === event.payload.attachment.id,
         );
-        if (
-          current?.kind === "pasted-text" &&
-          event.payload.attachment.status === "failed"
-        ) {
-          void recoverFailedPastedText(current, event.payload.attachment.error);
+        if (current?.kind === "pasted-text" && event.payload.attachment.status === "failed") {
+          void recoverFailedPastedTextCallbackRef.current(current, event.payload.attachment.error);
           return;
         }
         updateDocuments((current) =>
@@ -459,9 +460,9 @@ export function Composer({
               : document,
           ),
         );
-      }),
-    [sessionId],
-  );
+      },
+    );
+  }, [host, workspace, session, sessionId]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -478,7 +479,7 @@ export function Composer({
             setDragOver(false);
           } else if (event.payload.type === "drop") {
             setDragOver(false);
-            void addLocalPaths(event.payload.paths);
+            void addLocalPathsCallbackRef.current(event.payload.paths);
           }
         });
       })
@@ -497,17 +498,22 @@ export function Composer({
     setExtensionWidgetsOpen(!extensionWidgetsOpen);
   }
 
-  async function loadCommandItems(): Promise<CompletionItem[]> {
-    if (!host || !workspace || !session) return [];
+  async function loadCommandItems(): Promise<{
+    cacheKey: string | null;
+    items: CompletionItem[];
+  }> {
+    if (!host || !workspace || !session) return { cacheKey: null, items: [] };
     const key = `${locale}:${session.sessionId}:${session.revision}`;
-    if (templatesRef.current?.key === key) return templatesRef.current.items;
+    if (templatesRef.current?.key === key) {
+      return { cacheKey: key, items: templatesRef.current.items };
+    }
     const res = await hostClient.request(
       "session.getCommands",
       activeSessionContext(host, workspace, session),
       null,
     );
     const builtins = builtinCompletionItems(t);
-    if (!res.ok) return builtins;
+    if (!res.ok) return { cacheKey: null, items: builtins };
     const kindLabel = {
       template: t("composerCommandKindPrompt"),
       command: t("composerCommandKindExtension"),
@@ -523,44 +529,55 @@ export function Composer({
       })),
       ...builtins,
     ];
-    templatesRef.current = { key, items };
-    return items;
+    return { cacheKey: key, items };
   }
 
   function updateCompletion(nextText: string, caret: number) {
+    const generation = ++completionGeneration.current;
     const command = commandTokenAt(nextText, caret);
     if (command) {
-      void loadCommandItems().then((all) => {
-        const query = command.query.toLocaleLowerCase();
-        // Prefix matches rank first, substring matches anywhere follow
-        // (so /con still finds fast-context); stable sort keeps the
-        // template/command/skill grouping within each rank.
-        const items = all
-          .map((item) => {
-            const name = item.label.toLocaleLowerCase();
-            const rank = !query
-              ? 0
-              : name.startsWith(`/${query}`)
+      void loadCommandItems()
+        .then(({ cacheKey, items: all }) => {
+          if (generation !== completionGeneration.current) return;
+          if (cacheKey) templatesRef.current = { key: cacheKey, items: all };
+          const query = command.query.toLocaleLowerCase();
+          // Prefix matches rank first, substring matches anywhere follow
+          // (so /con still finds fast-context); stable sort keeps the
+          // template/command/skill grouping within each rank.
+          const items = all
+            .map((item) => {
+              const name = item.label.toLocaleLowerCase();
+              const rank = !query
                 ? 0
-                : name.includes(query)
-                  ? 1
-                  : 2;
-            return { item, rank };
-          })
-          .filter(({ rank }) => rank < 2)
-          .sort((a, b) => a.rank - b.rank)
-          .map(({ item }) => item);
-        setCompletion(
-          items.length > 0
-            ? { kind: "command", tokenStart: command.start, query: command.query, items, selected: 0 }
-            : null,
-        );
-      });
+                : name.startsWith(`/${query}`)
+                  ? 0
+                  : name.includes(query)
+                    ? 1
+                    : 2;
+              return { item, rank };
+            })
+            .filter(({ rank }) => rank < 2)
+            .sort((a, b) => a.rank - b.rank)
+            .map(({ item }) => item);
+          setCompletion(
+            items.length > 0
+              ? {
+                  kind: "command",
+                  tokenStart: command.start,
+                  query: command.query,
+                  items,
+                  selected: 0,
+                }
+              : null,
+          );
+        })
+        .catch(() => {
+          if (generation === completionGeneration.current) setCompletion(null);
+        });
       return;
     }
     const file = fileTokenAt(nextText, caret);
     if (file && host && workspace) {
-      const seq = ++fileSearchSeq.current;
       const query = file.query.toLocaleLowerCase();
 
       const applySnapshot = (snapshot: {
@@ -568,7 +585,7 @@ export function Composer({
         entries: { path: string; kind: "file" | "dir" }[];
         truncated: boolean;
       }) => {
-        if (seq !== fileSearchSeq.current) return;
+        if (generation !== completionGeneration.current) return;
         const matches = snapshot.entries
           .filter((entry) => entry.path.toLocaleLowerCase().includes(query))
           .map((entry) => ({ entry, key: fileSortKey(entry, query) }))
@@ -588,7 +605,13 @@ export function Composer({
           }));
         setCompletion(
           matches.length > 0
-            ? { kind: "file", tokenStart: file.start, query: file.query, items: matches, selected: 0 }
+            ? {
+                kind: "file",
+                tokenStart: file.start,
+                query: file.query,
+                items: matches,
+                selected: 0,
+              }
             : null,
         );
       };
@@ -601,15 +624,12 @@ export function Composer({
         applySnapshot(cached);
         return;
       }
-      const context = {
-        expectedHostInstanceId: host.hostInstanceId,
-        expectedWorkspaceId: host.workspaceId,
-        expectedWorkspaceRevision: host.workspaceRevision,
-      };
+      const context = workspaceContext(host, workspace);
       void hostClient
         .request("workspace.searchFiles", context, { query: file.query, limit: 3000 })
         .then((res) => {
           if (!res.ok) return;
+          if (generation !== completionGeneration.current) return;
           const snapshot = {
             query,
             entries: res.result.files,
@@ -630,7 +650,7 @@ export function Composer({
     const caret = textareaRef.current?.selectionStart ?? text.length;
     const nextText = text.slice(0, state.tokenStart) + item.insert + text.slice(caret);
     setSessionDraft(session.sessionId, nextText);
-    setCompletion(null);
+    dismissCompletion();
     const nextCaret = state.tokenStart + item.insert.length;
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
@@ -654,12 +674,7 @@ export function Composer({
     const context = activeSessionContext(host, workspace, session);
     const generation = captureRequestGeneration(host);
     try {
-      const response = await hostClient.request(
-        "attachment.create",
-        context,
-        { path },
-        120_000,
-      );
+      const response = await hostClient.request("attachment.create", context, { path }, 120_000);
       if (!response.ok) {
         pushNotification(localizedDocumentError(response.error?.message, t), "error");
         return;
@@ -700,9 +715,7 @@ export function Composer({
           if (!latest.ok) return;
           updateDocuments((current) =>
             current.map((document) =>
-              document.id === latest.result.id
-                ? { ...document, ...latest.result }
-                : document,
+              document.id === latest.result.id ? { ...document, ...latest.result } : document,
             ),
           );
         })
@@ -752,11 +765,9 @@ export function Composer({
     try {
       if (document.remote && host && workspace && session) {
         await hostClient
-          .request(
-            "attachment.remove",
-            activeSessionContext(host, workspace, session),
-            { attachmentId: document.id },
-          )
+          .request("attachment.remove", activeSessionContext(host, workspace, session), {
+            attachmentId: document.id,
+          })
           .catch(() => undefined);
       }
       updateDocuments((current) => current.filter((item) => item.id !== document.id));
@@ -771,6 +782,7 @@ export function Composer({
       recoveringPastedTextRef.current.delete(document.id);
     }
   }
+  recoverFailedPastedTextCallbackRef.current = recoverFailedPastedText;
 
   async function restorePastedText(document: PendingPastedText): Promise<void> {
     if (!document.remote) return;
@@ -853,18 +865,14 @@ export function Composer({
         .request("attachment.get", context, { attachmentId: created.id })
         .then((latest) => {
           if (!latest.ok) return;
-          const current = documentsRef.current.find(
-            (document) => document.id === latest.result.id,
-          );
+          const current = documentsRef.current.find((document) => document.id === latest.result.id);
           if (current?.kind === "pasted-text" && latest.result.status === "failed") {
             void recoverFailedPastedText(current, latest.result.error);
             return;
           }
           updateDocuments((documents) =>
             documents.map((document) =>
-              document.id === latest.result.id
-                ? { ...document, ...latest.result }
-                : document,
+              document.id === latest.result.id ? { ...document, ...latest.result } : document,
             ),
           );
         })
@@ -935,6 +943,7 @@ export function Composer({
       }
     }
   }
+  addLocalPathsCallbackRef.current = addLocalPaths;
 
   async function chooseAttachments() {
     try {
@@ -993,10 +1002,7 @@ export function Composer({
       setImages((current) => {
         const next = [...current, ...loaded];
         if (next.length > MAX_AGENT_REQUEST_IMAGES) {
-          pushNotification(
-            t("composerImageLimit", { max: MAX_AGENT_REQUEST_IMAGES }),
-            "warning",
-          );
+          pushNotification(t("composerImageLimit", { max: MAX_AGENT_REQUEST_IMAGES }), "warning");
         }
         return next.slice(0, MAX_AGENT_REQUEST_IMAGES);
       });
@@ -1116,19 +1122,19 @@ export function Composer({
     const builtin = matchBuiltinCommand(text);
     if (builtin?.name === "session") {
       setSessionDraft(session.sessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       setStatsOpen(true);
       return;
     }
     if (builtin?.name === "tree") {
       setSessionDraft(session.sessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       requestTreePanel();
       return;
     }
     if (builtin?.name === "fork") {
       setSessionDraft(session.sessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       setForkOpen(true);
       return;
     }
@@ -1139,7 +1145,7 @@ export function Composer({
         return;
       }
       setSessionDraft(session.sessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       void requestExport(arg === "jsonl" ? "jsonl" : "html");
       return;
     }
@@ -1152,7 +1158,7 @@ export function Composer({
       const targetSessionId = session.sessionId;
       const draftText = text;
       setSessionDraft(targetSessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       if (!(await requestCompact(builtin.args))) {
         setSessionDraft(targetSessionId, draftText);
       }
@@ -1163,7 +1169,7 @@ export function Composer({
       // would go to the model as plain text and, in the no-credentials case,
       // echo back the same "run /login" guidance forever.
       setSessionDraft(session.sessionId, "");
-      setCompletion(null);
+      dismissCompletion();
       openSettingsSection("providers");
       pushNotification(t("composerLoginGuidance"), "info");
       return;
@@ -1175,6 +1181,7 @@ export function Composer({
     const sentDocuments = documents;
     const targetSessionId = session.sessionId;
     setSessionDraft(targetSessionId, "");
+    dismissCompletion();
     setImages([]);
     setFiles([]);
     documentsRef.current = [];
@@ -1250,10 +1257,7 @@ export function Composer({
         setAuthBlocked(null);
       }
     } catch (error) {
-      pushNotification(
-        error instanceof Error ? error.message : t("composerSendFailed"),
-        "error",
-      );
+      pushNotification(error instanceof Error ? error.message : t("composerSendFailed"), "error");
       restoreDraft();
     }
   }
@@ -1291,7 +1295,7 @@ export function Composer({
   function selectStarterPrompt(prompt: string) {
     if (!session || disabled) return;
     setSessionDraft(session.sessionId, prompt);
-    setCompletion(null);
+    dismissCompletion();
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(prompt.length, prompt.length);
@@ -1341,348 +1345,352 @@ export function Composer({
             void addFiles(event.dataTransfer.files);
           }}
         >
-        {documents.length > 0 && (
-          <div
-            className="grid gap-1.5 px-2 pt-1.5 sm:grid-cols-2"
-            aria-live="polite"
-            aria-label={t("composerDocuments")}
-          >
-            {documents.map((document) => {
-              const active = document.status === "copying" || document.status === "parsing";
-              const failed = document.status === "failed" || document.status === "needs_ocr";
-              const progress =
-                document.unitCount && document.processedUnits !== undefined
-                  ? Math.min(100, Math.round((document.processedUnits / document.unitCount) * 100))
-                  : 0;
-              const status = documentStatusText(document, t);
-              return (
-                <div
-                  key={document.id}
-                  className={`relative min-w-0 overflow-hidden rounded-md border bg-surface px-2 py-1.5 text-xs ${
-                    failed ? "border-danger/35" : "border-border"
-                  }`}
-                  title={`${document.name} · ${formatFileSize(document.sizeBytes)} · ${status}`}
-                  {...(failed ? { role: "alert" as const } : {})}
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    {active ? (
-                      <LoaderCircle
-                        size={14}
-                        className="shrink-0 animate-spin text-accent motion-reduce:animate-none"
-                      />
-                    ) : failed ? (
-                      <CircleAlert size={14} className="shrink-0 text-danger" />
-                    ) : (
-                      <CircleCheck size={14} className="shrink-0 text-success" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{document.name}</div>
-                      <div className={`truncate text-[10px] ${failed ? "text-danger" : "text-muted"}`}>
-                        {formatFileSize(document.sizeBytes)} · {status}
+          {documents.length > 0 && (
+            <div
+              className="grid gap-1.5 px-2 pt-1.5 sm:grid-cols-2"
+              aria-live="polite"
+              aria-label={t("composerDocuments")}
+            >
+              {documents.map((document) => {
+                const active = document.status === "copying" || document.status === "parsing";
+                const failed = document.status === "failed" || document.status === "needs_ocr";
+                const progress =
+                  document.unitCount && document.processedUnits !== undefined
+                    ? Math.min(
+                        100,
+                        Math.round((document.processedUnits / document.unitCount) * 100),
+                      )
+                    : 0;
+                const status = documentStatusText(document, t);
+                return (
+                  <div
+                    key={document.id}
+                    className={`relative min-w-0 overflow-hidden rounded-md border bg-surface px-2 py-1.5 text-xs ${
+                      failed ? "border-danger/35" : "border-border"
+                    }`}
+                    title={`${document.name} · ${formatFileSize(document.sizeBytes)} · ${status}`}
+                    {...(failed ? { role: "alert" as const } : {})}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      {active ? (
+                        <LoaderCircle
+                          size={14}
+                          className="shrink-0 animate-spin text-accent motion-reduce:animate-none"
+                        />
+                      ) : failed ? (
+                        <CircleAlert size={14} className="shrink-0 text-danger" />
+                      ) : (
+                        <CircleCheck size={14} className="shrink-0 text-success" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{document.name}</div>
+                        <div
+                          className={`truncate text-[10px] ${failed ? "text-danger" : "text-muted"}`}
+                        >
+                          {formatFileSize(document.sizeBytes)} · {status}
+                        </div>
                       </div>
-                    </div>
-                    {document.kind === "path" && document.status === "failed" && (
-                      <button
-                        type="button"
-                        title={t("composerDocumentRetry")}
-                        aria-label={t("composerDocumentRetryNamed", { name: document.name })}
-                        className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
-                        onClick={() => void retryDocument(document)}
-                      >
-                        <RefreshCw size={12} />
-                      </button>
-                    )}
-                    {document.kind === "pasted-text" &&
-                      document.remote &&
-                      document.status === "ready" && (
+                      {document.kind === "path" && document.status === "failed" && (
                         <button
                           type="button"
-                          title={t("composerPastedTextRestore")}
-                          aria-label={t("composerPastedTextRestoreNamed", {
-                            name: document.name,
-                          })}
+                          title={t("composerDocumentRetry")}
+                          aria-label={t("composerDocumentRetryNamed", { name: document.name })}
                           className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
-                          onClick={() => void restorePastedText(document)}
+                          onClick={() => void retryDocument(document)}
                         >
-                          <Undo2 size={12} />
+                          <RefreshCw size={12} />
                         </button>
                       )}
-                    <button
-                      type="button"
-                      title={t("composerRemoveFile")}
-                      aria-label={t("composerRemoveNamedFile", { name: document.name })}
-                      className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={document.kind === "pasted-text" && !document.remote}
-                      onClick={() => void removeDocument(document)}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                  {active && document.unitCount !== undefined && (
-                    <div
-                      className="mt-1 h-0.5 overflow-hidden rounded-full bg-surface-overlay"
-                      role="progressbar"
-                      aria-label={status}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={progress}
-                    >
-                      <div
-                        className="h-full bg-accent"
-                        style={{ width: `${progress}%` }}
-                      />
+                      {document.kind === "pasted-text" &&
+                        document.remote &&
+                        document.status === "ready" && (
+                          <button
+                            type="button"
+                            title={t("composerPastedTextRestore")}
+                            aria-label={t("composerPastedTextRestoreNamed", {
+                              name: document.name,
+                            })}
+                            className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+                            onClick={() => void restorePastedText(document)}
+                          >
+                            <Undo2 size={12} />
+                          </button>
+                        )}
+                      <button
+                        type="button"
+                        title={t("composerRemoveFile")}
+                        aria-label={t("composerRemoveNamedFile", { name: document.name })}
+                        className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={document.kind === "pasted-text" && !document.remote}
+                        onClick={() => void removeDocument(document)}
+                      >
+                        <X size={12} />
+                      </button>
                     </div>
-                  )}
+                    {active && document.unitCount !== undefined && (
+                      <div
+                        className="mt-1 h-0.5 overflow-hidden rounded-full bg-surface-overlay"
+                        role="progressbar"
+                        aria-label={status}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progress}
+                      >
+                        <div className="h-full bg-accent" style={{ width: `${progress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {files.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-2 pt-1.5">
+              {files.map((file) => (
+                <div
+                  key={file.id}
+                  className="group flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs"
+                  title={`${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB`}
+                >
+                  <FileText size={12} className="shrink-0 text-muted" />
+                  <span className="max-w-40 truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    title={t("composerRemoveFile")}
+                    aria-label={t("composerRemoveNamedFile", { name: file.name })}
+                    className="text-muted hover:text-danger"
+                    onClick={() => setFiles((current) => current.filter((it) => it.id !== file.id))}
+                  >
+                    <X size={11} />
+                  </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        {files.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-2 pt-1.5">
-            {files.map((file) => (
-              <div
-                key={file.id}
-                className="group flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs"
-                title={`${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB`}
-              >
-                <FileText size={12} className="shrink-0 text-muted" />
-                <span className="max-w-40 truncate">{file.name}</span>
-                <button
-                  type="button"
-                  title={t("composerRemoveFile")}
-                  aria-label={t("composerRemoveNamedFile", { name: file.name })}
-                  className="text-muted hover:text-danger"
-                  onClick={() =>
-                    setFiles((current) => current.filter((it) => it.id !== file.id))
-                  }
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {images.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-2 pt-1.5">
-            {images.map((image) => (
-              <div key={image.id} className="group relative">
-                <img
-                  src={`data:${image.mediaType};base64,${image.data}`}
-                  alt={t("transcriptAttachmentAlt")}
-                  className="size-16 rounded-md border border-border object-cover"
-                />
-                <button
-                  type="button"
-                  title={t("composerRemoveImage")}
-                  aria-label={t("composerRemoveImage")}
-                  className="absolute -right-1.5 -top-1.5 hidden size-5 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow group-hover:flex hover:text-danger"
-                  onClick={() =>
-                    setImages((current) => current.filter((it) => it.id !== image.id))
-                  }
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {decisionBlocked ? (
-          <div
-            id={decisionHintId}
-            role="status"
-            aria-live="polite"
-            className="flex min-h-8 items-center gap-1.5 px-2 pb-1 text-xs text-muted"
-          >
-            <MessageCircleQuestion size={13} className="shrink-0 text-accent" aria-hidden="true" />
-            <span>{t("composerDecisionPending")}</span>
-          </div>
-        ) : null}
-        <div className="relative">
-          {completion && (
-            <div
-              data-composer-completion
-              className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
-            >
-              {completion.items.map((item, index) => (
-                <button
-                  key={`${item.label}:${index}`}
-                  type="button"
-                  title={item.detail ? `${item.label}\n${item.detail}` : item.label}
-                  ref={(node) => {
-                    if (node && index === completion.selected) {
-                      node.scrollIntoView({ block: "nearest" });
-                    }
-                  }}
-                  className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left text-xs ${
-                    index === completion.selected
-                      ? "bg-surface-overlay text-foreground"
-                      : "text-foreground/85 hover:bg-surface-overlay/60"
-                  }`}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    acceptCompletion(completion, index);
-                  }}
-                >
-                  <span className="shrink-0 font-medium">{item.label}</span>
-                  {item.detail && (
-                    <span className="min-w-0 truncate text-muted">{item.detail}</span>
-                  )}
-                </button>
               ))}
             </div>
           )}
-          <textarea
-            ref={textareaRef}
-            className="chat-composer-input min-h-[60px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
-            placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
-            value={text}
-            disabled={disabled}
-            aria-describedby={decisionBlocked ? decisionHintId : undefined}
-            onChange={(event) => {
-              if (!session) return;
-              setSessionDraft(session.sessionId, event.target.value);
-              updateCompletion(
-                event.target.value,
-                event.target.selectionStart ?? event.target.value.length,
-              );
-            }}
-            onBlur={() => setCompletion(null)}
-            onPaste={handleComposerPaste}
-            onContextMenu={(event) => {
-              if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              const selectionStart = event.currentTarget.selectionStart ?? text.length;
-              const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
-              openContextMenu({
-                x: event.clientX,
-                y: event.clientY,
-                trigger: contextMenuTrigger(event.target),
-                items: buildTextContextMenuItems(event.currentTarget, t, [
-                  {
-                    id: "composer.pasteAsAttachment",
-                    label: t("menuPasteAsAttachment"),
-                    icon: ClipboardPaste,
-                    separatorBefore: true,
-                    disabled: disabled || !session,
-                    onSelect: async () => {
-                      const pastedText = await readClipboardText();
-                      pasteTextAsAttachment(pastedText, selectionStart, selectionEnd);
-                    },
-                  },
-                ]),
-              });
-            }}
-            onCompositionStart={ime.onCompositionStart}
-            onCompositionEnd={ime.onCompositionEnd}
-            onKeyDown={(event) => {
-              if (ime.isImeKey(event)) return;
-              if (completion) {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  const delta = event.key === "ArrowDown" ? 1 : -1;
-                  setCompletion((current) =>
-                    current
-                      ? {
-                          ...current,
-                          selected:
-                            (current.selected + delta + current.items.length) %
-                            current.items.length,
-                        }
-                      : null,
-                  );
-                  return;
-                }
-                if (event.key === "Enter" || event.key === "Tab") {
-                  event.preventDefault();
-                  acceptCompletion(completion, completion.selected);
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setCompletion(null);
-                  return;
-                }
-              }
-              if (event.key === "Enter" && !event.shiftKey) {
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-2 pt-1.5">
+              {images.map((image) => (
+                <div key={image.id} className="group relative">
+                  <img
+                    src={`data:${image.mediaType};base64,${image.data}`}
+                    alt={t("transcriptAttachmentAlt")}
+                    className="size-16 rounded-md border border-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    title={t("composerRemoveImage")}
+                    aria-label={t("composerRemoveImage")}
+                    className="absolute -right-1.5 -top-1.5 hidden size-5 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow group-hover:flex hover:text-danger"
+                    onClick={() =>
+                      setImages((current) => current.filter((it) => it.id !== image.id))
+                    }
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {decisionBlocked ? (
+            <div
+              id={decisionHintId}
+              role="status"
+              aria-live="polite"
+              className="flex min-h-8 items-center gap-1.5 px-2 pb-1 text-xs text-muted"
+            >
+              <MessageCircleQuestion
+                size={13}
+                className="shrink-0 text-accent"
+                aria-hidden="true"
+              />
+              <span>{t("composerDecisionPending")}</span>
+            </div>
+          ) : null}
+          <div className="relative">
+            {completion && (
+              <div
+                data-composer-completion
+                className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+              >
+                {completion.items.map((item, index) => (
+                  <button
+                    key={`${item.label}:${index}`}
+                    type="button"
+                    title={item.detail ? `${item.label}\n${item.detail}` : item.label}
+                    ref={(node) => {
+                      if (node && index === completion.selected) {
+                        node.scrollIntoView({ block: "nearest" });
+                      }
+                    }}
+                    className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left text-xs ${
+                      index === completion.selected
+                        ? "bg-surface-overlay text-foreground"
+                        : "text-foreground/85 hover:bg-surface-overlay/60"
+                    }`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      acceptCompletion(completion, index);
+                    }}
+                  >
+                    <span className="shrink-0 font-medium">{item.label}</span>
+                    {item.detail && (
+                      <span className="min-w-0 truncate text-muted">{item.detail}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <textarea
+              ref={textareaRef}
+              className="chat-composer-input min-h-[60px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
+              placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
+              value={text}
+              disabled={disabled}
+              aria-describedby={decisionBlocked ? decisionHintId : undefined}
+              onChange={(event) => {
+                if (!session) return;
+                setSessionDraft(session.sessionId, event.target.value);
+                updateCompletion(
+                  event.target.value,
+                  event.target.selectionStart ?? event.target.value.length,
+                );
+              }}
+              onBlur={dismissCompletion}
+              onPaste={handleComposerPaste}
+              onContextMenu={(event) => {
+                if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
                 event.preventDefault();
-                void send();
-              }
-            }}
-          />
-        </div>
-        <div className="flex h-8 items-center gap-2 px-1">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,.pdf,.docx,text/*,.md,.mdx,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.sh,.sql,.log"
-            className="hidden"
-            onChange={(event) => {
-              if (event.target.files) void addFiles(event.target.files);
-              event.target.value = "";
-            }}
-          />
-          <button
-            type="button"
-            title={t("composerAttach")}
-            aria-label={t("composerAttach")}
-            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-            disabled={
-              disabled ||
-              (images.length >= MAX_AGENT_REQUEST_IMAGES &&
-                files.length >= MAX_FILES &&
-                documents.length >= MAX_AGENT_REQUEST_ATTACHMENTS)
-            }
-            onClick={() => void chooseAttachments()}
-          >
-            <Plus size={16} />
-          </button>
-          <ModelControls />
-          <div className="ml-auto flex items-center gap-1.5">
-            <ExtensionWidgetsButton
-              open={extensionWidgetsOpen}
-              onToggle={toggleExtensionWidgets}
+                event.stopPropagation();
+                const selectionStart = event.currentTarget.selectionStart ?? text.length;
+                const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
+                openContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  trigger: contextMenuTrigger(event.target),
+                  items: buildTextContextMenuItems(event.currentTarget, t, [
+                    {
+                      id: "composer.pasteAsAttachment",
+                      label: t("menuPasteAsAttachment"),
+                      icon: ClipboardPaste,
+                      separatorBefore: true,
+                      disabled: disabled || !session,
+                      onSelect: async () => {
+                        const pastedText = await readClipboardText();
+                        pasteTextAsAttachment(pastedText, selectionStart, selectionEnd);
+                      },
+                    },
+                  ]),
+                });
+              }}
+              onCompositionStart={ime.onCompositionStart}
+              onCompositionEnd={ime.onCompositionEnd}
+              onKeyDown={(event) => {
+                if (ime.isImeKey(event)) return;
+                if (completion) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const delta = event.key === "ArrowDown" ? 1 : -1;
+                    setCompletion((current) =>
+                      current
+                        ? {
+                            ...current,
+                            selected:
+                              (current.selected + delta + current.items.length) %
+                              current.items.length,
+                          }
+                        : null,
+                    );
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    acceptCompletion(completion, completion.selected);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    dismissCompletion();
+                    return;
+                  }
+                }
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
             />
-            <ContextUsageRing />
-            {busy ? (
-              canSend ? (
+          </div>
+          <div className="flex h-8 items-center gap-2 px-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.docx,text/*,.md,.mdx,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.sh,.sql,.log"
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) void addFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              title={t("composerAttach")}
+              aria-label={t("composerAttach")}
+              className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+              disabled={
+                disabled ||
+                (images.length >= MAX_AGENT_REQUEST_IMAGES &&
+                  files.length >= MAX_FILES &&
+                  documents.length >= MAX_AGENT_REQUEST_ATTACHMENTS)
+              }
+              onClick={() => void chooseAttachments()}
+            >
+              <Plus size={16} />
+            </button>
+            <ModelControls />
+            <div className="ml-auto flex items-center gap-1.5">
+              <ExtensionWidgetsButton
+                open={extensionWidgetsOpen}
+                onToggle={toggleExtensionWidgets}
+              />
+              <ContextUsageRing />
+              {busy ? (
+                canSend ? (
+                  <button
+                    type="button"
+                    title={t("composerQueueMessageShortcut")}
+                    aria-label={t("composerQueueMessage")}
+                    className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
+                    onClick={() => void send()}
+                  >
+                    <Send size={15} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    title={session?.isCompacting ? t("composerStopCompaction") : t("composerStop")}
+                    aria-label={
+                      session?.isCompacting ? t("composerStopCompaction") : t("composerStop")
+                    }
+                    className="flex size-8 items-center justify-center rounded-md bg-danger/15 text-danger hover:bg-danger/20"
+                    onClick={() => void (session?.isCompacting ? abortCompaction() : abort())}
+                  >
+                    <Square size={14} fill="currentColor" />
+                  </button>
+                )
+              ) : (
                 <button
                   type="button"
-                  title={t("composerQueueMessageShortcut")}
-                  aria-label={t("composerQueueMessage")}
-                  className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
+                  title={t("composerSend")}
+                  aria-label={t("composerSend")}
+                  className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                  disabled={!canSend}
                   onClick={() => void send()}
                 >
                   <Send size={15} />
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  title={session?.isCompacting ? t("composerStopCompaction") : t("composerStop")}
-                  aria-label={session?.isCompacting ? t("composerStopCompaction") : t("composerStop")}
-                  className="flex size-8 items-center justify-center rounded-md bg-danger/15 text-danger hover:bg-danger/20"
-                  onClick={() =>
-                    void (session?.isCompacting ? abortCompaction() : abort())
-                  }
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              )
-            ) : (
-              <button
-                type="button"
-                title={t("composerSend")}
-                aria-label={t("composerSend")}
-                className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
-                disabled={!canSend}
-                onClick={() => void send()}
-              >
-                <Send size={15} />
-              </button>
-            )}
-          </div>
+              )}
+            </div>
           </div>
         </div>
         <ExtensionWidgetsPopover

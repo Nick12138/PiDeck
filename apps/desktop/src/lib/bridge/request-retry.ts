@@ -1,8 +1,6 @@
-type RetryableResponse =
-  | { ok: true }
-  | { ok: false; error?: { retryable?: boolean } };
+type RetryableResponse = { ok: true } | { ok: false; error?: { retryable?: boolean } };
 
-export const REQUEST_RETRY_DELAYS_MS = [80, 160, 240, 320] as const;
+const REQUEST_RETRY_DELAYS_MS = [80, 160, 240, 320] as const;
 
 /**
  * Retry a Host request while it fails with a retryable error — typically a

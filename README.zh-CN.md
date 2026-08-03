@@ -97,3 +97,7 @@ pnpm --filter @pideck/desktop run tauri:dev
 ## 许可证
 
 MIT —— 参阅 [LICENSE](./LICENSE) 和 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
+## 友情链接
+
+- **[Linux DO](https://linux.do/)** — Linux DO：学AI，上L站！

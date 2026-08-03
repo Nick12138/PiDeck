@@ -1,14 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  chmod,
-  copyFile,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, copyFile, mkdir, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   ModelRuntime,
@@ -50,13 +41,18 @@ import { rebindCurrentSessionModel } from "./model-thinking.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import { ProviderMutationJournal } from "./provider-journal.js";
+import { modelBackupDir, PIDECK_MODEL_BACKUP_PATTERN } from "./pideck-data.js";
 import {
-  modelBackupDir,
-  PIDECK_MODEL_BACKUP_PATTERN,
-} from "./pideck-data.js";
+  ENABLED_PROVIDERS_KEY,
+  isObject,
+  LEGACY_ACTIVE_PROVIDER_KEY,
+  PROVIDER_MODELS_KEY,
+  readModelsConfig,
+  readProviderModelAllowLists,
+  resolveEnabledProviders,
+  type JsonObject,
+} from "./provider-models-config.js";
 
-type JsonObject = Record<string, unknown>;
-type ModelsConfig = { root: JsonObject; providers: JsonObject; original: string | null };
 type ProviderFetchCapture =
   | {
       snapshot: {
@@ -76,12 +72,7 @@ type ProviderConnectionCapture =
       };
     }
   | { error: HostError };
-const ENABLED_PROVIDERS_KEY = "pideckEnabledProviders";
-const LEGACY_ACTIVE_PROVIDER_KEY = "pideckActiveProvider";
 const MODELS_BACKUP_RETENTION = 5;
-// Per-builtin-provider model allow-lists: { providerId: modelId[] }. A missing
-// entry means every model of that provider is offered.
-const PROVIDER_MODELS_KEY = "pideckProviderModels";
 
 const PROVIDER_APIS = new Set<ProviderApi>([
   "openai-completions",
@@ -94,14 +85,12 @@ function defaultAuthHeader(api: ProviderApi): boolean {
   return api === "openai-completions" || api === "openai-responses";
 }
 
-function isObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function stringRecord(value: unknown): Record<string, string> {
   if (!isObject(value)) return {};
   return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
   );
 }
 
@@ -127,20 +116,21 @@ function normalizeModel(value: unknown): ProviderModelConfig | null {
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     input: input.length > 0 ? [...new Set(input)] : ["text"],
     contextWindow:
-      typeof value.contextWindow === "number" && Number.isSafeInteger(value.contextWindow) && value.contextWindow > 0
+      typeof value.contextWindow === "number" &&
+      Number.isSafeInteger(value.contextWindow) &&
+      value.contextWindow > 0
         ? value.contextWindow
         : DEFAULT_MODEL_CONTEXT_WINDOW,
     maxTokens:
-      typeof value.maxTokens === "number" && Number.isSafeInteger(value.maxTokens) && value.maxTokens > 0
+      typeof value.maxTokens === "number" &&
+      Number.isSafeInteger(value.maxTokens) &&
+      value.maxTokens > 0
         ? value.maxTokens
         : DEFAULT_MODEL_MAX_TOKENS,
   };
 }
 
-const MANAGED_COMPAT_KEYS = [
-  "supportsDeveloperRole",
-  "supportsReasoningEffort",
-] as const;
+const MANAGED_COMPAT_KEYS = ["supportsDeveloperRole", "supportsReasoningEffort"] as const;
 
 function normalizeCompatibilityDraft(value: unknown): ProviderCompatibilityDraft | undefined {
   if (!isObject(value)) return undefined;
@@ -213,96 +203,6 @@ function validateDraft(input: ProviderDraft): HostError | null {
     }
   }
   return null;
-}
-
-async function readModelsConfig(path: string): Promise<ModelsConfig> {
-  let original: string | null = null;
-  try {
-    original = await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  if (original === null || !original.trim()) {
-    const providers: JsonObject = {};
-    return { root: { providers }, providers, original };
-  }
-  const parsed = JSON.parse(original) as unknown;
-  if (!isObject(parsed)) throw new Error("models.json root must be an object");
-  const providers = parsed.providers;
-  if (providers === undefined) {
-    const next: JsonObject = {};
-    parsed.providers = next;
-    return { root: parsed, providers: next, original };
-  }
-  if (!isObject(providers)) throw new Error("models.json providers must be an object");
-  return { root: parsed, providers, original };
-}
-
-function resolveEnabledProviders(
-  config: ModelsConfig,
-  preferredProvider?: string,
-  extraProviderIds: readonly string[] = [],
-): string[] {
-  const customIds = Object.entries(config.providers)
-    .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
-    .map(([id]) => id);
-  // Builtin (SDK) providers become enableable after a login, so the id
-  // universe is custom providers plus whatever the runtime composes.
-  const knownIds = new Set([...customIds, ...extraProviderIds]);
-  if (knownIds.size === 0) return [];
-  const configured = config.root[ENABLED_PROVIDERS_KEY];
-  if (Array.isArray(configured)) {
-    return [...new Set(configured.filter((id): id is string => typeof id === "string" && knownIds.has(id)))];
-  }
-  const legacyActive = config.root[LEGACY_ACTIVE_PROVIDER_KEY];
-  if (typeof legacyActive === "string" && customIds.includes(legacyActive)) return [legacyActive];
-  if (preferredProvider && knownIds.has(preferredProvider)) return [preferredProvider];
-  const fallback = customIds.find((id) => {
-    const provider = config.providers[id];
-    return isObject(provider) && Array.isArray(provider.models) && provider.models.length > 0;
-  }) ?? customIds[0];
-  return fallback ? [fallback] : [];
-}
-
-export async function getEnabledProviderIds(
-  agentDir: string,
-  preferredProvider?: string,
-  knownProviderIds: readonly string[] = [],
-): Promise<string[] | undefined> {
-  try {
-    const config = await readModelsConfig(join(agentDir, "models.json"));
-    const hasCustomProviders = Object.values(config.providers).some(isObject);
-    const hasConfiguredList = Array.isArray(config.root[ENABLED_PROVIDERS_KEY]);
-    if (!hasCustomProviders && !hasConfiguredList) return undefined;
-    return resolveEnabledProviders(config, preferredProvider, knownProviderIds);
-  } catch {
-    return undefined;
-  }
-}
-
-function readProviderModelAllowLists(config: ModelsConfig): Record<string, string[]> {
-  const raw = config.root[PROVIDER_MODELS_KEY];
-  if (!isObject(raw)) return {};
-  const lists: Record<string, string[]> = {};
-  for (const [providerId, value] of Object.entries(raw)) {
-    if (!Array.isArray(value)) continue;
-    lists[providerId] = [
-      ...new Set(value.filter((id): id is string => typeof id === "string")),
-    ];
-  }
-  return lists;
-}
-
-export async function getProviderModelAllowLists(
-  agentDir: string,
-): Promise<Record<string, string[]> | undefined> {
-  try {
-    const config = await readModelsConfig(join(agentDir, "models.json"));
-    const lists = readProviderModelAllowLists(config);
-    return Object.keys(lists).length > 0 ? lists : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function runtimeProviderIds(factory: WorkspaceGraphFactory): string[] {
@@ -433,12 +333,11 @@ async function pruneModelsBackups(directory: string): Promise<void> {
     if (!match) return [];
     return [{ name: entry.name, timestamp: Number(match[1]) }];
   });
-  backups.sort((left, right) =>
-    left.timestamp - right.timestamp || left.name.localeCompare(right.name));
-  const stale = backups.slice(0, Math.max(0, backups.length - MODELS_BACKUP_RETENTION));
-  await Promise.all(
-    stale.map(({ name }) => unlink(join(directory, name)).catch(() => undefined)),
+  backups.sort(
+    (left, right) => left.timestamp - right.timestamp || left.name.localeCompare(right.name),
   );
+  const stale = backups.slice(0, Math.max(0, backups.length - MODELS_BACKUP_RETENTION));
+  await Promise.all(stale.map(({ name }) => unlink(join(directory, name)).catch(() => undefined)));
 }
 
 async function commitModelsConfig(
@@ -451,10 +350,7 @@ async function commitModelsConfig(
   await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
   const candidate = JSON.stringify(root, null, 2) + "\n";
   const tempPath = join(backupDirectory, `.models-${randomUUID()}.tmp`);
-  const backupPath = join(
-    backupDirectory,
-    `models-${Date.now()}-${randomUUID().slice(0, 8)}.bak`,
-  );
+  const backupPath = join(backupDirectory, `models-${Date.now()}-${randomUUID().slice(0, 8)}.bak`);
   await writeFile(tempPath, candidate, { encoding: "utf8", mode: 0o600 });
   try {
     await validateCandidateModelsConfig(tempPath);
@@ -518,7 +414,10 @@ function providerMutationConflict(
   });
 }
 
-async function refreshRegistry(factory: WorkspaceGraphFactory, rebindCurrentModel = false): Promise<void> {
+async function refreshRegistry(
+  factory: WorkspaceGraphFactory,
+  rebindCurrentModel = false,
+): Promise<void> {
   await Promise.resolve(factory.deps.refreshModelHealth());
   factory.onModelHealthChanged?.();
   if (!rebindCurrentModel) return;
@@ -547,9 +446,7 @@ async function reconcileIdleActiveSessionModel(
   const enabled = [...new Set(enabledProviderIds)];
   const enabledSet = new Set(enabled);
   const currentProvider =
-    options.remapProvider?.from === current.provider
-      ? options.remapProvider.to
-      : current.provider;
+    options.remapProvider?.from === current.provider ? options.remapProvider.to : current.provider;
   const candidates: Model<Api>[] = [];
   const add = (model: Model<Api> | undefined) => {
     if (!model || !enabledSet.has(model.provider)) return;
@@ -645,14 +542,12 @@ function catalogEndpointLabel(url: URL): string {
   return `${url.origin}${url.pathname}`;
 }
 
-function redactedProviderMessage(
-  payload: unknown,
-  sensitiveValues: string[],
-): string | undefined {
+function redactedProviderMessage(payload: unknown, sensitiveValues: string[]): string | undefined {
   if (!isObject(payload)) return undefined;
   const nestedError = isObject(payload.error) ? payload.error.message : payload.error;
-  const raw = [nestedError, payload.message, payload.detail]
-    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const raw = [nestedError, payload.message, payload.detail].find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
   if (!raw) return undefined;
   let message = raw.replace(/\s+/g, " ").trim();
   for (const value of sensitiveValues) {
@@ -674,13 +569,18 @@ function providerSensitiveValues(
   headers: Record<string, string>,
 ): string[] {
   const headerValues = Object.entries(headers)
-    .filter(([name, value]) =>
-      value.length >= 6 || /authorization|api.?key|token|secret|cookie/i.test(name),
+    .filter(
+      ([name, value]) =>
+        value.length >= 6 || /authorization|api.?key|token|secret|cookie/i.test(name),
     )
     .map(([, value]) => value);
-  return [...new Set([apiKey, ...headerValues].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  ))];
+  return [
+    ...new Set(
+      [apiKey, ...headerValues].filter(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      ),
+    ),
+  ];
 }
 
 type CatalogResponse = {
@@ -704,9 +604,10 @@ async function fetchModelCatalog(
   try {
     payload = JSON.parse(text) as unknown;
   } catch {
-    const kind = response.headers.get("content-type")?.includes("text/html") || /^\s*</.test(text)
-      ? "HTML instead of JSON"
-      : "invalid JSON";
+    const kind =
+      response.headers.get("content-type")?.includes("text/html") || /^\s*</.test(text)
+        ? "HTML instead of JSON"
+        : "invalid JSON";
     return {
       error: `Provider model endpoint ${catalogEndpointLabel(url)} returned ${kind}`,
       retryAlternatePath: response.ok || response.status === 404 || response.status === 405,
@@ -771,7 +672,8 @@ async function discoverModels(
     } catch (error) {
       signal.throwIfAborted();
       const raw = error instanceof Error ? error.message : String(error);
-      const timeout = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      const timeout =
+        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
       result = {
         error: `Could not reach Provider model endpoint ${catalogEndpointLabel(url)}: ${
           timeout ? "request timed out" : redactedProviderText(raw, sensitiveValues)
@@ -793,14 +695,18 @@ async function discoverModels(
   const discovered = new Map<string, DiscoveredProviderModel>();
   for (const item of items) {
     if (!isObject(item)) continue;
-    const rawId = typeof item.id === "string" ? item.id : typeof item.name === "string" ? item.name : "";
+    const rawId =
+      typeof item.id === "string" ? item.id : typeof item.name === "string" ? item.name : "";
     const id = rawId.replace(/^models\//, "").trim();
     if (!id) continue;
     const existing = enabled.get(id);
     const detected = detectModelThinking(id, item);
     const useDetectedMap =
-      existing?.thinkingLevelMap === undefined && existing?.reasoning === true && detected.reasoning;
-    const thinkingLevelMap = existing?.thinkingLevelMap ??
+      existing?.thinkingLevelMap === undefined &&
+      existing?.reasoning === true &&
+      detected.reasoning;
+    const thinkingLevelMap =
+      existing?.thinkingLevelMap ??
       (existing === undefined || useDetectedMap ? detected.thinkingLevelMap : undefined);
     const reasoning = existing?.reasoning ?? detected.reasoning;
     const thinkingSource = existing?.thinkingLevelMap
@@ -823,7 +729,8 @@ async function discoverModels(
   for (const model of provider.models) {
     if (!discovered.has(model.id)) {
       const detected = detectModelThinking(model.id);
-      const thinkingLevelMap = model.thinkingLevelMap ??
+      const thinkingLevelMap =
+        model.thinkingLevelMap ??
         (model.reasoning && detected.reasoning ? detected.thinkingLevelMap : undefined);
       discovered.set(model.id, {
         ...model,
@@ -853,8 +760,9 @@ function headersForAuthMode(
   const headers = Object.fromEntries(
     Object.entries(resolvedHeaders ?? {}).filter(([key]) => key.toLowerCase() !== "authorization"),
   );
-  const explicitAuthorization = Object.entries(provider.headers)
-    .find(([key]) => key.toLowerCase() === "authorization");
+  const explicitAuthorization = Object.entries(provider.headers).find(
+    ([key]) => key.toLowerCase() === "authorization",
+  );
   if (explicitAuthorization) headers[explicitAuthorization[0]] = explicitAuthorization[1];
   else if (authHeader && apiKey) headers.Authorization = `Bearer ${apiKey}`;
   return headers;
@@ -870,34 +778,49 @@ function classifyConnectionFailure(
   let category: ProviderConnectionCategory = "provider";
   let suggestion: string | undefined;
 
-  if (/\b401\b|unauthorized|(?:invalid|missing|no) api.?key|api.?key.*(?:not found|required)|authentication|authentication_error/.test(lower)) {
+  if (
+    /\b401\b|unauthorized|(?:invalid|missing|no) api.?key|api.?key.*(?:not found|required)|authentication|authentication_error/.test(
+      lower,
+    )
+  ) {
     category = "authentication";
     suggestion = "Check the API key and the Provider's authentication header settings.";
   } else if (/\b403\b|forbidden|blocked|cloudflare|\bwaf\b|access denied/.test(lower)) {
     category = "blocked";
-    suggestion = provider.api === "anthropic-messages" && !hasHeader(provider.headers, "user-agent")
-      ? "This relay may block the Anthropic SDK fingerprint. Set User-Agent to PiDeck/0.1 and retry."
-      : "The relay or its WAF rejected the request. Check IP policy, headers, and User-Agent rules.";
+    suggestion =
+      provider.api === "anthropic-messages" && !hasHeader(provider.headers, "user-agent")
+        ? "This relay may block the Anthropic SDK fingerprint. Set User-Agent to PiDeck/0.1 and retry."
+        : "The relay or its WAF rejected the request. Check IP policy, headers, and User-Agent rules.";
   } else if (/\b429\b|rate.?limit|too many requests|quota/.test(lower)) {
     category = "rate_limit";
-    suggestion = "The endpoint is reachable but rate-limited. Retry later or check the account quota.";
+    suggestion =
+      "The endpoint is reachable but rate-limited. Retry later or check the account quota.";
   } else if (/\b404\b|not found|unknown endpoint|no route/.test(lower)) {
     category = "not_found";
     suggestion = `Check that the Base URL and ${provider.api} protocol point to the same API.`;
   } else if (/timeout|timed out|aborted|deadline exceeded/.test(lower)) {
     category = "timeout";
-    suggestion = "The generation request did not complete within 15 seconds. Check relay latency and routing.";
-  } else if (/fetch failed|enotfound|econnrefused|eai_again|socket|network|connection reset/.test(lower)) {
+    suggestion =
+      "The generation request did not complete within 15 seconds. Check relay latency and routing.";
+  } else if (
+    /fetch failed|enotfound|econnrefused|eai_again|socket|network|connection reset/.test(lower)
+  ) {
     category = "network";
-    suggestion = "Check DNS, proxy settings, TLS, and whether the endpoint is reachable from this machine.";
-  } else if (/unexpected token|<!doctype|<html|invalid json|parse|stream ended|protocol/.test(lower)) {
+    suggestion =
+      "Check DNS, proxy settings, TLS, and whether the endpoint is reachable from this machine.";
+  } else if (
+    /unexpected token|<!doctype|<html|invalid json|parse|stream ended|protocol/.test(lower)
+  ) {
     category = "protocol";
     suggestion = `The response did not match ${provider.api}. Check the protocol selection and Base URL.`;
-  } else if (/\b400\b|\b422\b|bad request|invalid_request|model.*required|unknown model/.test(lower)) {
+  } else if (
+    /\b400\b|\b422\b|bad request|invalid_request|model.*required|unknown model/.test(lower)
+  ) {
     category = "configuration";
-    suggestion = provider.api === "openai-completions"
-      ? "The relay rejected the Coding Agent request shape. Try System role and omit reasoning_effort in OpenAI compatibility."
-      : "Check the model ID, protocol selection, and provider-specific request requirements.";
+    suggestion =
+      provider.api === "openai-completions"
+        ? "The relay rejected the Coding Agent request shape. Try System role and omit reasoning_effort in OpenAI compatibility."
+        : "Check the model ID, protocol selection, and provider-specific request requirements.";
   }
   return { category, message, ...(suggestion ? { suggestion } : {}) };
 }
@@ -922,23 +845,26 @@ async function checkProviderConnection(
       ...failure,
     };
   }
-  const headers = authHeaderOverride === undefined
-    ? auth.headers
-    : headersForAuthMode(provider, auth.headers, auth.apiKey, authHeaderOverride);
+  const headers =
+    authHeaderOverride === undefined
+      ? auth.headers
+      : headersForAuthMode(provider, auth.headers, auth.apiKey, authHeaderOverride);
   const sensitiveValues = providerSensitiveValues(auth.apiKey, headers ?? {});
   const context: Context = {
     systemPrompt: "You are validating a coding assistant Provider.",
     messages: [{ role: "user", content: "Reply with OK.", timestamp: Date.now() }],
-    tools: [{
-      name: "pideck_connection_test",
-      description: "Return a diagnostic label for the Provider connection test.",
-      parameters: {
-        type: "object",
-        properties: { label: { type: "string" } },
-        required: ["label"],
-        additionalProperties: false,
-      } as never,
-    }],
+    tools: [
+      {
+        name: "pideck_connection_test",
+        description: "Return a diagnostic label for the Provider connection test.",
+        parameters: {
+          type: "object",
+          properties: { label: { type: "string" } },
+          required: ["label"],
+          additionalProperties: false,
+        } as never,
+      },
+    ],
   };
   try {
     const response = await completeSimple(model, context, {
@@ -1076,12 +1002,14 @@ function hostShuttingDownError(): HostError {
 }
 
 function hostIdentitiesEqual(left: HostIdentity, right: HostIdentity): boolean {
-  return left.hostInstanceId === right.hostInstanceId &&
+  return (
+    left.hostInstanceId === right.hostInstanceId &&
     left.workspaceId === right.workspaceId &&
     left.workspaceRevision === right.workspaceRevision &&
     left.sessionId === right.sessionId &&
     left.sessionRevision === right.sessionRevision &&
-    left.packageRevision === right.packageRevision;
+    left.packageRevision === right.packageRevision
+  );
 }
 
 function providerReadStaleError(args: {
@@ -1139,11 +1067,13 @@ async function applyProviderEnabledMutation(
         }
         await invalidateRetainedRuntimes(factory);
         signal.throwIfAborted();
-        const nextEnabled = new Set(resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-          runtimeProviderIds(factory),
-        ));
+        const nextEnabled = new Set(
+          resolveEnabledProviders(
+            config,
+            factory.getGraph()?.agentSession?.model?.provider,
+            runtimeProviderIds(factory),
+          ),
+        );
         if (enabled) nextEnabled.add(providerId);
         else nextEnabled.delete(providerId);
         config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
@@ -1154,12 +1084,13 @@ async function applyProviderEnabledMutation(
           const preferredModelIds = new Map<string, string[]>();
           for (const targetProvider of nextEnabled) {
             const targetRaw = config.providers[targetProvider];
-            const modelIds = isObject(targetRaw) && Array.isArray(targetRaw.models)
-              ? targetRaw.models
-                  .filter((model): model is JsonObject => isObject(model))
-                  .map((model) => model.id)
-                  .filter((id): id is string => typeof id === "string")
-              : [];
+            const modelIds =
+              isObject(targetRaw) && Array.isArray(targetRaw.models)
+                ? targetRaw.models
+                    .filter((model): model is JsonObject => isObject(model))
+                    .map((model) => model.id)
+                    .filter((id): id is string => typeof id === "string")
+                : [];
             preferredModelIds.set(targetProvider, modelIds);
           }
           await reconcileIdleActiveSessionModel(factory, nextEnabled, {
@@ -1206,22 +1137,24 @@ function asText(value: unknown, fallback = ""): string {
 
 export function createProviderHandlers(
   factory: WorkspaceGraphFactory,
-): Partial<Record<
-  | "provider.list"
-  | "provider.setEnabled"
-  | "provider.save"
-  | "provider.remove"
-  | "provider.fetchModels"
-  | "provider.checkConnection"
-  | "provider.authStatus"
-  | "provider.loginStart"
-  | "provider.loginRespond"
-  | "provider.loginCancel"
-  | "provider.logout"
-  | "provider.builtinModels"
-  | "provider.setBuiltinModels",
-  MethodHandler
->> {
+): Partial<
+  Record<
+    | "provider.list"
+    | "provider.setEnabled"
+    | "provider.save"
+    | "provider.remove"
+    | "provider.fetchModels"
+    | "provider.checkConnection"
+    | "provider.authStatus"
+    | "provider.loginStart"
+    | "provider.loginRespond"
+    | "provider.loginCancel"
+    | "provider.logout"
+    | "provider.builtinModels"
+    | "provider.setBuiltinModels",
+    MethodHandler
+  >
+> {
   const modelsPath = join(factory.deps.agentDir, "models.json");
 
   let activeLogin: ActiveLoginFlow | null = null;
@@ -1287,9 +1220,7 @@ export function createProviderHandlers(
         emitLoginEvent(flow, {
           kind: "auth_url",
           url: asText(event.url),
-          ...(typeof event.instructions === "string"
-            ? { instructions: event.instructions }
-            : {}),
+          ...(typeof event.instructions === "string" ? { instructions: event.instructions } : {}),
         });
         return;
       case "device_code":
@@ -1322,15 +1253,16 @@ export function createProviderHandlers(
           reject(new Error("Login prompt superseded"));
         }
       });
-      const options = prompt.type === "select"
-        ? prompt.options.map((option) => ({
-            id: asText(option.id),
-            label: asText(option.label, asText(option.id)),
-            ...(typeof option.description === "string"
-              ? { description: option.description }
-              : {}),
-          }))
-        : undefined;
+      const options =
+        prompt.type === "select"
+          ? prompt.options.map((option) => ({
+              id: asText(option.id),
+              label: asText(option.label, asText(option.id)),
+              ...(typeof option.description === "string"
+                ? { description: option.description }
+                : {}),
+            }))
+          : undefined;
       emitLoginEvent(flow, {
         kind: "prompt",
         prompt: {
@@ -1419,11 +1351,13 @@ export function createProviderHandlers(
         run: async () => {
           await refreshRegistry(factory);
           const config = await readModelsConfig(modelsPath);
-          const enabledProviders = new Set(resolveEnabledProviders(
-            config,
-            factory.getGraph()?.agentSession?.model?.provider,
-            runtimeProviderIds(factory),
-          ));
+          const enabledProviders = new Set(
+            resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+              runtimeProviderIds(factory),
+            ),
+          );
           const providers = Object.entries(config.providers)
             .filter((entry): entry is [string, JsonObject] => isObject(entry[1]))
             .map(([id, raw]) => providerSnapshot(id, raw, factory, enabledProviders.has(id)))
@@ -1491,16 +1425,20 @@ export function createProviderHandlers(
             );
             const wasFirstProvider = Object.keys(config.providers).length === 0;
             if (draft.id !== originalId && config.providers[draft.id] !== undefined) {
-              return { error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`) };
+              return {
+                error: createHostError("INVALID_REQUEST", `Provider already exists: ${draft.id}`),
+              };
             }
-            const existing = isObject(config.providers[originalId]) ? config.providers[originalId] : {};
+            const existing = isObject(config.providers[originalId])
+              ? config.providers[originalId]
+              : {};
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
             const merged = mergeProvider(existing, draft);
             if (params.apiKey !== undefined || params.clearApiKey === true) delete merged.apiKey;
             if (draft.id !== originalId) delete config.providers[originalId];
             config.providers[draft.id] = merged;
-            const enabledAfter = enabledBefore.map((id) => id === originalId ? draft.id : id);
+            const enabledAfter = enabledBefore.map((id) => (id === originalId ? draft.id : id));
             if (wasFirstProvider && !enabledAfter.includes(draft.id)) enabledAfter.push(draft.id);
             config.root[ENABLED_PROVIDERS_KEY] = [...new Set(enabledAfter)];
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
@@ -1540,9 +1478,7 @@ export function createProviderHandlers(
                 ...(draft.id !== originalId
                   ? { remapProvider: { from: originalId, to: draft.id } }
                   : {}),
-                preferredModelIds: new Map([
-                  [draft.id, draft.models.map((model) => model.id)],
-                ]),
+                preferredModelIds: new Map([[draft.id, draft.models.map((model) => model.id)]]),
               });
             } catch (error) {
               // Restores both files from the journal copies. A journal that
@@ -1553,10 +1489,17 @@ export function createProviderHandlers(
               throw error;
             }
             await journal.finish();
-            const enabledProviders = new Set(resolveEnabledProviders(config, undefined, runtimeProviderIds(factory)));
+            const enabledProviders = new Set(
+              resolveEnabledProviders(config, undefined, runtimeProviderIds(factory)),
+            );
             return {
               result: {
-                provider: providerSnapshot(draft.id, merged, factory, enabledProviders.has(draft.id)),
+                provider: providerSnapshot(
+                  draft.id,
+                  merged,
+                  factory,
+                  enabledProviders.has(draft.id),
+                ),
               },
             };
           } catch (error) {
@@ -1597,7 +1540,9 @@ export function createProviderHandlers(
             if (conflictUnderLock) return { error: conflictUnderLock };
             const config = await readModelsConfig(modelsPath);
             if (config.providers[providerId] === undefined) {
-              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+              return {
+                error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+              };
             }
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
@@ -1658,7 +1603,9 @@ export function createProviderHandlers(
             const config = await readModelsConfig(modelsPath);
             const raw = config.providers[providerId];
             if (!isObject(raw)) {
-              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+              return {
+                error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+              };
             }
             const provider = providerSnapshot(
               providerId,
@@ -1728,7 +1675,9 @@ export function createProviderHandlers(
             const config = await readModelsConfig(modelsPath);
             const raw = config.providers[providerId];
             if (!isObject(raw)) {
-              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+              return {
+                error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+              };
             }
             const provider = providerSnapshot(
               providerId,
@@ -1768,16 +1717,8 @@ export function createProviderHandlers(
         }
 
         const { original, provider, model, auth } = captured.result.snapshot;
-        const result = await checkProviderConnection(
-          provider,
-          model,
-          auth,
-          shutdownSignal,
-        );
-        if (
-          result.category !== "authentication" ||
-          hasHeader(provider.headers, "authorization")
-        ) {
+        const result = await checkProviderConnection(provider, model, auth, shutdownSignal);
+        if (result.category !== "authentication" || hasHeader(provider.headers, "authorization")) {
           const validated = await readModelsOriginalUnderLock(server, modelsPath, ctx.id);
           if (!validated.ok) return { error: validated.error, identity: validated.identity };
           const stale = providerReadStaleError({
@@ -1863,11 +1804,13 @@ export function createProviderHandlers(
         const stored = new Set(
           (await runtime.listCredentials()).map((credential) => credential.providerId),
         );
-        const enabled = new Set(resolveEnabledProviders(
-          config,
-          factory.getGraph()?.agentSession?.model?.provider,
-          runtimeProviderIds(factory),
-        ));
+        const enabled = new Set(
+          resolveEnabledProviders(
+            config,
+            factory.getGraph()?.agentSession?.model?.provider,
+            runtimeProviderIds(factory),
+          ),
+        );
         const providers: BuiltinProviderAuthStatus[] = runtime
           .getProviders()
           .filter((provider) => !customIds.has(provider.id))
@@ -1929,9 +1872,10 @@ export function createProviderHandlers(
               error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
             };
           }
-          const supported = authType === "oauth"
-            ? provider.auth?.oauth !== undefined
-            : typeof provider.auth?.apiKey?.login === "function";
+          const supported =
+            authType === "oauth"
+              ? provider.auth?.oauth !== undefined
+              : typeof provider.auth?.apiKey?.login === "function";
           if (!supported) {
             return {
               error: createHostError(
@@ -2026,17 +1970,22 @@ export function createProviderHandlers(
             const stored = await factory.deps.credentialStore.readRaw(providerId);
             if (!stored) {
               return {
-                error: createHostError("INVALID_REQUEST", `No stored credential to log out for Provider: ${providerId}`),
+                error: createHostError(
+                  "INVALID_REQUEST",
+                  `No stored credential to log out for Provider: ${providerId}`,
+                ),
               };
             }
             const config = await readModelsConfig(modelsPath);
             await invalidateRetainedRuntimes(factory);
             signal.throwIfAborted();
-            const nextEnabled = new Set(resolveEnabledProviders(
-              config,
-              factory.getGraph()?.agentSession?.model?.provider,
-              runtimeProviderIds(factory),
-            ));
+            const nextEnabled = new Set(
+              resolveEnabledProviders(
+                config,
+                factory.getGraph()?.agentSession?.model?.provider,
+                runtimeProviderIds(factory),
+              ),
+            );
             nextEnabled.delete(providerId);
             config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
@@ -2128,7 +2077,9 @@ export function createProviderHandlers(
             if (conflict) return { error: conflict };
             const runtime = factory.deps.modelRuntime;
             if (!runtime.getProviders().some((candidate) => candidate.id === providerId)) {
-              return { error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`) };
+              return {
+                error: createHostError("MODEL_NOT_FOUND", `Provider not found: ${providerId}`),
+              };
             }
             const config = await readModelsConfig(modelsPath);
             if (isObject(config.providers[providerId])) {
@@ -2157,9 +2108,7 @@ export function createProviderHandlers(
                 factory.getGraph()?.agentSession?.model?.provider,
                 runtimeProviderIds(factory),
               );
-              const preferredModelIds = new Map<string, string[]>(
-                Object.entries(lists),
-              );
+              const preferredModelIds = new Map<string, string[]>(Object.entries(lists));
               preferredModelIds.set(providerId, [...selected]);
               await reconcileIdleActiveSessionModel(factory, enabledProviders, {
                 preferredModelIds,

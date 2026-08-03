@@ -21,11 +21,7 @@
  *   queued events are dropped; responses are always kept.
  */
 import type { HostEventName, HostIdentity } from "@pideck/protocol";
-import {
-  createEvent,
-  createHostError,
-  MAX_HOST_JSONL_FRAME_BYTES,
-} from "@pideck/protocol";
+import { createEvent, createHostError, MAX_HOST_JSONL_FRAME_BYTES } from "@pideck/protocol";
 import { logger } from "./logger.js";
 
 export type WritableLike = {
@@ -53,8 +49,8 @@ type ResponseEntry = {
 
 type Entry = EventEntry | ResponseEntry;
 
-export const OUTBOUND_SOFT_WATERMARK_BYTES = 1024 * 1024;
-export const OUTBOUND_HARD_CAP_BYTES = 16 * 1024 * 1024;
+const OUTBOUND_SOFT_WATERMARK_BYTES = 1024 * 1024;
+const OUTBOUND_HARD_CAP_BYTES = 16 * 1024 * 1024;
 
 function jsonLine(value: unknown): { line: string; bytes: number } {
   const line = `${JSON.stringify(value)}\n`;

@@ -4,7 +4,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { tCurrent, useT } from "../../lib/i18n/use-t";
 
-export async function restartHost(): Promise<void> {
+async function restartHost(): Promise<void> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     useAppStore.getState().setHostFatal(null);

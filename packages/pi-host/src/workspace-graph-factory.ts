@@ -1,8 +1,5 @@
 import { resolve as pathResolve } from "node:path";
-import type {
-  AgentSession,
-  ExtensionCommandContextActions,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ExtensionCommandContextActions } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
   type HostError,
@@ -14,10 +11,7 @@ import {
 import type { PiHostServer } from "./server.js";
 import { activateOnce } from "./extension-ui-lifecycle.js";
 import { createExtensionCommandContextActions } from "./extension-command-actions.js";
-import {
-  SessionRuntimeCache,
-  type ActiveSessionState,
-} from "./session-runtime-cache.js";
+import { SessionRuntimeCache, type ActiveSessionState } from "./session-runtime-cache.js";
 import type { AgentOperationLock } from "./locks.js";
 import { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 export * from "./workspace-graph-types.js";
@@ -59,7 +53,6 @@ export class WorkspaceGraphFactory {
       getServer: () => this.server,
       getCurrentRunId: () => this.currentRunId,
       sessionPathsEqual: (left, right) => this.sessionPathsEqual(left, right),
-      getCommandContextActions: (session) => this.extensionCommandContextActions(session),
     });
     this.workspaceLifecycle = new WorkspaceLifecycle(
       {
@@ -132,10 +125,7 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.getSessionRuntimeInfo(sessionId, sessionPath);
   }
 
-  resolveSessionIdentity(
-    sessionId: unknown,
-    sessionRevision: unknown,
-  ): HostIdentity | null {
+  resolveSessionIdentity(sessionId: unknown, sessionRevision: unknown): HostIdentity | null {
     return this.sessionRuntimeCache.resolveSessionIdentity(sessionId, sessionRevision);
   }
 
@@ -170,30 +160,6 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.retainBusySession(graph, previous);
   }
 
-  /** Idle runtimes are intentionally cold-opened; busy runtimes use retainBusySession. */
-  async retainIdleSession(
-    graph: WorkspaceGraph,
-    previous: ActiveSessionState,
-  ): Promise<BackgroundSessionRuntime | null> {
-    return this.sessionRuntimeCache.retainIdleSession(graph, previous);
-  }
-
-  async disposeRetainedSessionRuntimes(graph: WorkspaceGraph): Promise<void> {
-    return this.sessionRuntimeCache.disposeRetainedSessionRuntimes(graph);
-  }
-
-  async disposeRetainedSessionRuntimeIfPresent(
-    graph: WorkspaceGraph,
-    sessionId: string,
-    sessionPath: string,
-  ): Promise<boolean> {
-    return this.sessionRuntimeCache.disposeRetainedSessionRuntimeIfPresent(
-      graph,
-      sessionId,
-      sessionPath,
-    );
-  }
-
   /** @internal - session lifecycle file mutations */
   async disposeBackgroundSessionRuntimeIfIdle(
     graph: WorkspaceGraph,
@@ -225,15 +191,6 @@ export class WorkspaceGraphFactory {
     runtime: BackgroundSessionRuntime,
   ): Promise<SessionSnapshot | { error: HostError }> {
     return this.sessionRuntimeCache.promoteBackgroundRuntime(graph, runtime);
-  }
-
-  /** Reactivate an idle runtime retained from an earlier Session visit. */
-  async promoteRetainedSessionRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-    signal?: AbortSignal,
-  ): Promise<SessionSnapshot | { error: HostError } | null> {
-    return this.sessionRuntimeCache.promoteRetainedSessionRuntime(graph, runtime, signal);
   }
 
   async disposeGraph(g: WorkspaceGraph): Promise<void> {
@@ -275,11 +232,7 @@ export class WorkspaceGraphFactory {
   }
 
   /** @internal — session-lifecycle module */
-  handleAgentEvent(
-    graph: WorkspaceGraph,
-    sourceSession: AgentSession,
-    event: unknown,
-  ): void {
+  handleAgentEvent(graph: WorkspaceGraph, sourceSession: AgentSession, event: unknown): void {
     this.sessionRuntimeCache.handleAgentEvent(graph, sourceSession, event);
   }
 
@@ -287,27 +240,15 @@ export class WorkspaceGraphFactory {
     return listSessions(this);
   }
 
-  async archiveSession(
-    requestId: string,
-    sessionId: string,
-    sessionPath: string,
-  ) {
+  async archiveSession(requestId: string, sessionId: string, sessionPath: string) {
     return archiveSession(this, requestId, sessionId, sessionPath);
   }
 
-  async restoreSession(
-    requestId: string,
-    sessionId: string,
-    sessionPath: string,
-  ) {
+  async restoreSession(requestId: string, sessionId: string, sessionPath: string) {
     return restoreSession(this, requestId, sessionId, sessionPath);
   }
 
-  async deleteSession(
-    requestId: string,
-    sessionId: string,
-    sessionPath: string,
-  ) {
+  async deleteSession(requestId: string, sessionId: string, sessionPath: string) {
     return deleteSession(this, requestId, sessionId, sessionPath);
   }
 
@@ -315,12 +256,7 @@ export class WorkspaceGraphFactory {
     return cleanupArchivedSessions(this, requestId);
   }
 
-  async renameSession(
-    requestId: string,
-    sessionId: string,
-    sessionPath: string,
-    name: string,
-  ) {
+  async renameSession(requestId: string, sessionId: string, sessionPath: string, name: string) {
     return renameSession(this, requestId, sessionId, sessionPath, name);
   }
 
@@ -347,10 +283,7 @@ export class WorkspaceGraphFactory {
       : resolvedLeft === resolvedRight;
   }
 
-  async createSession(
-    requestId: string,
-    name?: string,
-  ) {
+  async createSession(requestId: string, name?: string) {
     return createSession(this, requestId, name);
   }
 

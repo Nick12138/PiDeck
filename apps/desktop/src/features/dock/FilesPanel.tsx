@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
+import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -66,9 +67,8 @@ export function FilesPanel({ visible }: { visible: boolean }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchGeneration = useRef(0);
-  const workspaceKey = host && workspace
-    ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}`
-    : "none";
+  const workspaceKey =
+    host && workspace ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}` : "none";
 
   useEffect(() => {
     searchGeneration.current += 1;
@@ -106,7 +106,9 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           throw new Error(response.error?.message ?? t("dockFilesListFailed"));
         }
         if (!isCurrentWorkspace()) return;
-        setDirectories((items) => new Map(items).set(response.result.path, response.result.entries));
+        setDirectories((items) =>
+          new Map(items).set(response.result.path, response.result.entries),
+        );
         setErrors((items) => {
           const next = new Map(items);
           next.delete(path);
@@ -144,19 +146,16 @@ export function FilesPanel({ visible }: { visible: boolean }) {
     const timer = window.setTimeout(() => {
       const paths = visible ? ["", ...expanded] : [];
       void hostClient
-        .request(
-          "workspace.setDirectoryWatches",
-          workspaceContext(host, workspace),
-          { paths },
-        )
+        .request("workspace.setDirectoryWatches", workspaceContext(host, workspace), { paths })
         .catch(() => undefined);
     }, 50);
     return () => window.clearTimeout(timer);
   }, [visible, host, workspace, expanded]);
 
   useEffect(() => {
-    if (!host || !workspace) return;
-    const context = workspaceContext(host, workspace);
+    const current = useAppStore.getState();
+    if (!current.host || !current.workspace) return;
+    const context = workspaceContext(current.host, current.workspace);
     return () => {
       void hostClient
         .request("workspace.setDirectoryWatches", context, { paths: [] })
@@ -166,21 +165,19 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
   useEffect(
     () =>
-      hostClient.onEvent((event) => {
-        if (
-          !visible ||
-          event.event !== "workspace.filesChanged" ||
-          !workspace ||
-          event.workspaceId !== workspace.id ||
-          event.workspaceRevision !== workspace.revision
-        ) {
-          return;
-        }
-        for (const path of event.payload.directories) {
-          if (path === "" || expanded.has(path)) void loadDirectory(path);
-        }
-      }),
-    [visible, workspace, expanded, loadDirectory],
+      host && workspace
+        ? subscribeValidatedHostEvent(
+            "workspace.filesChanged",
+            workspaceContext(host, workspace),
+            (event) => {
+              if (!visible) return;
+              for (const path of event.payload.directories) {
+                if (path === "" || expanded.has(path)) void loadDirectory(path);
+              }
+            },
+          )
+        : undefined,
+    [visible, host, workspace, expanded, loadDirectory],
   );
 
   useEffect(() => {
@@ -284,7 +281,10 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
   const onTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (rows.length === 0) return;
-    const index = Math.max(0, rows.findIndex((row) => row.entry.path === selectedPath));
+    const index = Math.max(
+      0,
+      rows.findIndex((row) => row.entry.path === selectedPath),
+    );
     const row = rows[index]!;
     let nextIndex = index;
     if (event.key === "ArrowDown") nextIndex = Math.min(rows.length - 1, index + 1);
@@ -302,7 +302,8 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         if (parentIndex >= 0) nextIndex = parentIndex;
       }
     } else if (event.key === "Enter") {
-      row.entry.kind === "dir" ? toggleDirectory(row.entry) : insertReference(row.entry);
+      if (row.entry.kind === "dir") toggleDirectory(row.entry);
+      else insertReference(row.entry);
     } else {
       return;
     }
@@ -315,10 +316,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
   const rootError = errors.get("");
   return (
-    <section
-      className="flex min-h-0 flex-1 flex-col bg-surface"
-      aria-label={t("dockFilesRegion")}
-    >
+    <section className="flex min-h-0 flex-1 flex-col bg-surface" aria-label={t("dockFilesRegion")}>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -391,7 +389,9 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           role="tree"
           tabIndex={0}
           aria-label={t("dockFilesTree")}
-          aria-activedescendant={selectedPath ? `file-tree-${encodeURIComponent(selectedPath)}` : undefined}
+          aria-activedescendant={
+            selectedPath ? `file-tree-${encodeURIComponent(selectedPath)}` : undefined
+          }
           className="min-h-0 flex-1 overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
           onKeyDown={onTreeKeyDown}
         >
@@ -434,12 +434,9 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       tabIndex={-1}
                       aria-label={
                         isDirectory
-                          ? t(
-                              isExpanded
-                                ? "dockFilesCollapseNamed"
-                                : "dockFilesExpandNamed",
-                              { name: entry.name },
-                            )
+                          ? t(isExpanded ? "dockFilesCollapseNamed" : "dockFilesExpandNamed", {
+                              name: entry.name,
+                            })
                           : undefined
                       }
                       className="flex size-5 shrink-0 items-center justify-center text-muted"
@@ -500,11 +497,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       </button>
                       <button
                         type="button"
-                        title={
-                          isDirectory
-                            ? t("dockFilesOpenFolder")
-                            : t("dockFilesReveal")
-                        }
+                        title={isDirectory ? t("dockFilesOpenFolder") : t("dockFilesReveal")}
                         aria-label={
                           isDirectory
                             ? t("dockFilesOpenFolderNamed", { path: entry.path })

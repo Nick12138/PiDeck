@@ -35,11 +35,3 @@ export function createTempAgentLayout(prefix = "pideck-test-"): TempAgentLayout 
     },
   };
 }
-
-/** Env for spawning Host: always pin PI_CODING_AGENT_DIR. */
-export function hostEnv(agentDir: string): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    PI_CODING_AGENT_DIR: agentDir,
-  };
-}

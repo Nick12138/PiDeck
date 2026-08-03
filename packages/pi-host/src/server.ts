@@ -1,5 +1,4 @@
 import {
-  createEvent,
   createFailureResponse,
   createHostError,
   createSuccessResponse,
@@ -51,10 +50,7 @@ export type HostRuntimeDeps = {
   capabilities: HostCapabilities;
   /** Method handlers registered by controllers */
   handlers: Partial<Record<HostMethod, MethodHandler>>;
-  getRehydrateState?: () => Pick<
-    RehydrateSnapshot,
-    "workspace" | "session" | "tools" | "packages"
-  >;
+  getRehydrateState?: () => Pick<RehydrateSnapshot, "workspace" | "session" | "tools" | "packages">;
   /** Optional graceful cleanup before process exit */
   onShutdown?: () => Promise<void>;
 };
@@ -62,8 +58,7 @@ export type HostRuntimeDeps = {
 export type MethodHandler = (
   ctx: HandlerContext,
 ) => Promise<
-  | { result: unknown; identity?: HostIdentity }
-  | { error: HostError; identity?: HostIdentity }
+  { result: unknown; identity?: HostIdentity } | { error: HostError; identity?: HostIdentity }
 >;
 
 export type HandlerContext = {
@@ -268,10 +263,7 @@ export class PiHostServer {
           operationKind: active.operationKind,
           operationId: active.operationId,
         });
-        const operationCompleted = await completesWithin(
-          active.completion,
-          deadline - Date.now(),
-        );
+        const operationCompleted = await completesWithin(active.completion, deadline - Date.now());
         if (!operationCompleted) return false;
       }
 
@@ -350,9 +342,7 @@ export class PiHostServer {
         typeof (raw as { method: unknown }).method === "string"
           ? (raw as { method: string }).method
           : "unknown";
-      this.writeResponse(
-        createFailureResponse(this.identity.snapshot(), id, method, parsed.error),
-      );
+      this.writeResponse(createFailureResponse(this.identity.snapshot(), id, method, parsed.error));
       return;
     }
 
@@ -372,9 +362,11 @@ export class PiHostServer {
 
     // Built-in system handlers
     if (method === "system.hello") {
-      const requestedMode = (params as {
-        extensionDecisionPresentation?: ExtensionDecisionPresentation;
-      }).extensionDecisionPresentation;
+      const requestedMode = (
+        params as {
+          extensionDecisionPresentation?: ExtensionDecisionPresentation;
+        }
+      ).extensionDecisionPresentation;
       if (requestedMode) this.setExtensionDecisionPresentation(requestedMode);
       this.writeResponse(
         createSuccessResponse(this.identity.snapshot(), id, method, this.buildStatus()),
@@ -581,9 +573,7 @@ export class PiHostServer {
         ) {
           // Generation moved after handler finished without capturing correctly
           if ("error" in outcome) {
-            this.writeResponse(
-              createFailureResponse(cur, id, method, outcome.error),
-            );
+            this.writeResponse(createFailureResponse(cur, id, method, outcome.error));
           } else {
             this.writeResponse(
               createFailureResponse(
@@ -632,10 +622,7 @@ export class PiHostServer {
           this.identity.snapshot(),
           id,
           method,
-          createHostError(
-            "INTERNAL_ERROR",
-            err instanceof Error ? err.message : "Internal error",
-          ),
+          createHostError("INTERNAL_ERROR", err instanceof Error ? err.message : "Internal error"),
         ),
       );
     }

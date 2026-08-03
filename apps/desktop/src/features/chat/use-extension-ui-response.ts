@@ -3,12 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { hostClient } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import { useT } from "../../lib/i18n/use-t";
+import { useAppStore } from "../../lib/stores/app-store";
 import {
   type ExtensionDecisionStepOutcome,
   isExtensionUiRequestExpired,
-  useAppStore,
   type ExtensionUiRequestState,
-} from "../../lib/stores/app-store";
+} from "../../lib/stores/extension-ui-state";
 
 export type ExtensionUiResponseController = {
   input: string;
@@ -45,15 +45,18 @@ export function useExtensionUiResponse(
     setInputState(request?.defaultValue ?? "");
     setSubmitting(false);
     setError(null);
-  }, [request?.requestId]);
+  }, [request?.requestId, request?.defaultValue]);
 
   useEffect(() => {
     if (!request?.expiresAt) return;
     const requestId = request.requestId;
-    const timer = window.setTimeout(() => {
-      if (!clearIfCurrent(requestId, "expired")) return;
-      pushNotification(t("extUiExpired"), "warning");
-    }, Math.max(0, request.expiresAt - Date.now()));
+    const timer = window.setTimeout(
+      () => {
+        if (!clearIfCurrent(requestId, "expired")) return;
+        pushNotification(t("extUiExpired"), "warning");
+      },
+      Math.max(0, request.expiresAt - Date.now()),
+    );
     return () => window.clearTimeout(timer);
   }, [request?.requestId, request?.expiresAt, clearIfCurrent, pushNotification, t]);
 
@@ -75,12 +78,7 @@ export function useExtensionUiResponse(
         const state = useAppStore.getState();
         const response = await hostClient.request(
           "extensionUi.respond",
-          latestSessionTargetContext(
-            request.context,
-            state.host,
-            state.workspace,
-            state.session,
-          ),
+          latestSessionTargetContext(request.context, state.host, state.workspace, state.session),
           { requestId, status, value },
         );
         if (!response.ok) {
@@ -91,10 +89,7 @@ export function useExtensionUiResponse(
           }
           return false;
         }
-        clearIfCurrent(
-          requestId,
-          status === "resolved" ? "answered" : "cancelled",
-        );
+        clearIfCurrent(requestId, status === "resolved" ? "answered" : "cancelled");
         return true;
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : t("extUiRespondFailed");

@@ -20,16 +20,10 @@ import { buildSessionSnapshot } from "./session-snapshot.js";
 import { getQueueSnapshot } from "./queue-state.js";
 import { bindForCandidate } from "./extension-ui-lifecycle.js";
 import { type GraphOperationKind } from "./locks.js";
-import {
-  extractLatestAssistantText,
-  generateRefinedSessionTitle,
-} from "./session-title.js";
+import { extractLatestAssistantText, generateRefinedSessionTitle } from "./session-title.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { ManagedSessionInfo, WorkspaceGraph } from "./workspace-graph-types.js";
-import {
-  captureActiveSessionState,
-  commitActiveSessionState,
-} from "./session-runtime-cache.js";
+import { captureActiveSessionState, commitActiveSessionState } from "./session-runtime-cache.js";
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
@@ -49,9 +43,7 @@ async function listSessionFiles(
   return sessions.map((session) => ({ ...session, archived }));
 }
 
-export async function listSessions(
-  factory: WorkspaceGraphFactory,
-): Promise<ManagedSessionInfo[]> {
+export async function listSessions(factory: WorkspaceGraphFactory): Promise<ManagedSessionInfo[]> {
   const g = factory.graph;
   if (!g || !g.servicesReady) return [];
   const [active, archived] = await Promise.all([
@@ -118,9 +110,7 @@ export async function archiveSession(
   requestId: string,
   sessionId: string,
   sessionPath: string,
-): Promise<
-  { sessionId: string; sessionPath: string; archived: true } | { error: HostError }
-> {
+): Promise<{ sessionId: string; sessionPath: string; archived: true } | { error: HostError }> {
   return withSessionFileMutation(factory, requestId, "session.archive", async (g) => {
     const session = (await listSessionFiles(factory, g, false)).find(
       (item) => item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
@@ -137,7 +127,6 @@ export async function archiveSession(
         ),
       };
     }
-    await factory.disposeRetainedSessionRuntimeIfPresent(g, session.id, session.path);
     const { archiveDir } = sessionStorageDirs(factory, g);
     await mkdir(archiveDir, { recursive: true, mode: 0o700 });
     const archivedPath = join(archiveDir, basename(session.path));
@@ -157,9 +146,7 @@ export async function restoreSession(
   requestId: string,
   sessionId: string,
   sessionPath: string,
-): Promise<
-  { sessionId: string; sessionPath: string; archived: false } | { error: HostError }
-> {
+): Promise<{ sessionId: string; sessionPath: string; archived: false } | { error: HostError }> {
   return withSessionFileMutation(factory, requestId, "session.restore", async (g) => {
     const session = (await listSessionFiles(factory, g, true)).find(
       (item) => item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
@@ -177,7 +164,6 @@ export async function restoreSession(
         ),
       };
     }
-    await factory.disposeRetainedSessionRuntimeIfPresent(g, session.id, session.path);
     await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await rename(session.path, restoredPath);
     return { sessionId, sessionPath: restoredPath, archived: false as const };
@@ -213,11 +199,7 @@ export async function deleteSession(
         ),
       };
     }
-    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(
-      g,
-      sessionId,
-      sessionPath,
-    );
+    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(g, sessionId, sessionPath);
     if (runtime === "busy") {
       return {
         error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
@@ -225,7 +207,6 @@ export async function deleteSession(
         }),
       };
     }
-    await factory.disposeRetainedSessionRuntimeIfPresent(g, sessionId, sessionPath);
     await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     await unlink(session.path);
     await factory.deps.attachmentStore?.releaseSession(sessionId).catch((error: unknown) => {
@@ -272,17 +253,14 @@ export async function renameSession(
   sessionId: string,
   sessionPath: string,
   name: string,
-): Promise<
-  { sessionId: string; name: string; session?: SessionSnapshot } | { error: HostError }
-> {
+): Promise<{ sessionId: string; name: string; session?: SessionSnapshot } | { error: HostError }> {
   return withSessionFileMutation(factory, requestId, "session.rename", async (g) => {
     const [activeSessions, archivedSessions] = await Promise.all([
       listSessionFiles(factory, g, false),
       listSessionFiles(factory, g, true),
     ]);
     const target = [...activeSessions, ...archivedSessions].find(
-      (item) =>
-        item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
+      (item) => item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
     );
     if (!target) {
       return { error: createHostError("SESSION_NOT_FOUND", "Session not found") };
@@ -290,7 +268,7 @@ export async function renameSession(
 
     const isActive = Boolean(
       g.sessionSnapshot?.sessionId === sessionId &&
-        factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
+      factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
     );
     if (isActive) {
       if (
@@ -323,7 +301,6 @@ export async function renameSession(
         }),
       };
     }
-    await factory.disposeRetainedSessionRuntimeIfPresent(g, target.id, target.path);
     await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     const sessionManager = SessionManager.open(target.path, undefined, g.canonicalCwd);
     sessionManager.appendSessionInfo(name);
@@ -704,26 +681,21 @@ export async function createSession(
     }
 
     if (!retainedPrevious) {
-      const retainedIdle = prev.agentSession?.isIdle
-        ? await factory.retainIdleSession(g, prev)
-        : null;
-      if (!retainedIdle) {
+      try {
+        prev.extensionUiCleanup?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        prev.unsubscribeAgent?.();
+      } catch {
+        /* ignore */
+      }
+      if (prev.agentSession) {
         try {
-          prev.extensionUiCleanup?.();
+          await factory.disposeAgentSessionOnly(prev.agentSession);
         } catch {
           /* ignore */
-        }
-        try {
-          prev.unsubscribeAgent?.();
-        } catch {
-          /* ignore */
-        }
-        if (prev.agentSession) {
-          try {
-            await factory.disposeAgentSessionOnly(prev.agentSession);
-          } catch {
-            /* ignore */
-          }
         }
       }
     }
@@ -805,8 +777,7 @@ export async function openSession(
   try {
     operation.signal.throwIfAborted();
     const isCurrentSession = Boolean(
-      g.sessionSnapshot &&
-        factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
+      g.sessionSnapshot && factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
     );
     if (options.forceReload && !isCurrentSession) {
       return {
@@ -850,18 +821,6 @@ export async function openSession(
       operation.signal.throwIfAborted();
       return await factory.promoteBackgroundRuntime(g, retained);
     }
-    const retainedIdle = [...(g.retainedSessions?.values() ?? [])].find((runtime) =>
-      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
-    );
-    if (retainedIdle) {
-      const promoted = await factory.promoteRetainedSessionRuntime(
-        g,
-        retainedIdle,
-        operation.signal,
-      );
-      if (promoted !== null) return promoted;
-    }
-
     const startedAt = Date.now();
     const stepTimings: Record<string, number> = {};
     let lastStepAt = startedAt;
@@ -1005,23 +964,18 @@ export async function openSession(
       }
 
       if (!retainedPrevious) {
-        const retainedIdle = prev.agentSession?.isIdle
-          ? await factory.retainIdleSession(g, prev)
-          : null;
-        if (!retainedIdle) {
-          try {
-            prev.unsubscribeAgent?.();
-          } catch {
-            /* ignore */
-          }
-          try {
-            prev.extensionUiCleanup?.();
-          } catch {
-            /* ignore */
-          }
-          if (prev.agentSession) {
-            await factory.disposeAgentSessionOnly(prev.agentSession);
-          }
+        try {
+          prev.unsubscribeAgent?.();
+        } catch {
+          /* ignore */
+        }
+        try {
+          prev.extensionUiCleanup?.();
+        } catch {
+          /* ignore */
+        }
+        if (prev.agentSession) {
+          await factory.disposeAgentSessionOnly(prev.agentSession);
         }
       }
 
@@ -1184,8 +1138,7 @@ export function prepareForkFile(args: {
       });
     }
   }
-  const selectedText =
-    position === "before" ? forkedUserText(entry.message?.content) : undefined;
+  const selectedText = position === "before" ? forkedUserText(entry.message?.content) : undefined;
   return {
     forkedPath,
     ...(selectedText !== undefined ? { selectedText } : {}),

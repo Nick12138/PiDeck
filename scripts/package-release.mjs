@@ -216,13 +216,18 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
         }
       }
     } catch (error) {
-      errors.push(`invalid packaged resource manifest: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(
+        `invalid packaged resource manifest: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   if (existsSync(mainPath)) {
     const main = readFileSync(mainPath, "utf8");
-    if (!main.includes("node_modules.zip") || !main.includes("host-main.js")) {
-      errors.push("packaged pi-host/main.js is not the compacted bootstrap");
+    if (
+      !main.includes("pi-host-bootstrap-runtime.mjs") ||
+      !main.includes("PIDECK_HOST_CACHE_DIR")
+    ) {
+      errors.push("packaged pi-host/main.js is not the writable-cache bootstrap");
     }
   }
   if (existsSync(hostPackagePath)) {
@@ -237,7 +242,13 @@ function validatePackagedRuntime(releaseDir, expectedResourceManifest) {
   if (existsSync(join(hostDir, "node_modules"))) {
     errors.push("packaged pi-host unexpectedly contains expanded node_modules");
   }
-  for (const forbidden of ["src", "apps", ".staging-host-deploy", "tsconfig.json", "vitest.config.ts"]) {
+  for (const forbidden of [
+    "src",
+    "apps",
+    ".staging-host-deploy",
+    "tsconfig.json",
+    "vitest.config.ts",
+  ]) {
     if (existsSync(join(hostDir, forbidden))) {
       errors.push(`packaged pi-host contains forbidden deploy payload: ${forbidden}`);
     }
@@ -272,28 +283,9 @@ if (reusedSourceBuildCommit) {
 } else {
   timedStage("build JavaScript packages", () => run("pnpm", ["build"]));
 }
-timedStage("stage controlled sidecar runtime", () =>
-  run("pnpm", ["package:sidecar:with-node"]),
-);
+timedStage("stage controlled sidecar runtime", () => run("pnpm", ["package:sidecar:with-node"]));
 timedStage("validate staged resources", () => run("pnpm", ["validate:resources"]));
-
-// Compact pi-host node_modules into a zip to avoid NSIS MAX_PATH failures (C1/C8)
-const compact = timedStage("compact Pi Host dependencies", () =>
-  spawnSync(
-    process.execPath,
-    [join(root, "scripts/compact-pi-host-resources.mjs")],
-    { cwd: root, stdio: "inherit", shell: false },
-  ),
-);
-if (compact.status !== 0) {
-  writeManifest({
-    status: "failed",
-    startedAt,
-    exitCode: 1,
-    residualRisk: "compact-pi-host-resources failed",
-  });
-  process.exit(1);
-}
+timedStage("smoke staged Host", () => run("pnpm", ["smoke:staged-host"]));
 
 const stagedResourceDir = join(root, "apps", "desktop", "src-tauri", "resources");
 let resourceManifestProof;
@@ -323,13 +315,8 @@ for (const stalePath of [
   rmSync(stalePath, { recursive: true, force: true });
 }
 
-const tauriCli = join(
-  root,
-  "apps/desktop/node_modules/@tauri-apps/cli/tauri.js",
-);
-const tauriArgs = existsSync(tauriCli)
-  ? [tauriCli, "build", "--bundles", "nsis"]
-  : null;
+const tauriCli = join(root, "apps/desktop/node_modules/@tauri-apps/cli/tauri.js");
+const tauriArgs = existsSync(tauriCli) ? [tauriCli, "build", "--bundles", "nsis"] : null;
 
 const tauriStatus = timedStage("build Tauri NSIS candidate", () => {
   if (tauriArgs) {
@@ -456,9 +443,7 @@ try {
 } catch (error) {
   acceptedInstallerError = error instanceof Error ? error.message : String(error);
 }
-const sourceHashAfterCopy = timedStage("rehash source installer", () =>
-  sha256File(installer),
-);
+const sourceHashAfterCopy = timedStage("rehash source installer", () => sha256File(installer));
 const acceptedMatchesSource =
   Boolean(acceptedProof) &&
   sourceHashAfterCopy === installerProof.hash &&
@@ -481,7 +466,9 @@ if (!acceptedProof || !acceptedInstallerIntegrity?.ok || !acceptedMatchesSource)
   });
   console.error(
     "package:release FAIL",
-    acceptedInstallerError || acceptedInstallerIntegrity?.errors?.join("; ") || "accepted installer hash mismatch",
+    acceptedInstallerError ||
+      acceptedInstallerIntegrity?.errors?.join("; ") ||
+      "accepted installer hash mismatch",
   );
   process.exit(1);
 }

@@ -1,13 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertCircle,
-  AlertTriangle,
-  Bell,
-  CheckCircle2,
-  Info,
-  Trash2,
-  X,
-} from "lucide-react";
+import { AlertCircle, AlertTriangle, Bell, CheckCircle2, Info, Trash2, X } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 import { useAppStore, type AppNotification } from "../lib/stores/app-store";
 
@@ -120,14 +112,15 @@ export function NotificationCenter() {
   const rootRef = useRef<HTMLDivElement>(null);
   const previousLatestId = useRef<string | null>(null);
   const latest = notifications.at(-1) ?? null;
+  const latestId = latest?.id ?? null;
 
   useEffect(() => {
-    if (!latest || latest.id === previousLatestId.current) return;
-    previousLatestId.current = latest.id;
-    setToastId(latest.id);
+    if (!latestId || latestId === previousLatestId.current) return;
+    previousLatestId.current = latestId;
+    setToastId(latestId);
     const timer = window.setTimeout(() => setToastId(null), 6_000);
     return () => window.clearTimeout(timer);
-  }, [latest?.id]);
+  }, [latestId]);
 
   useEffect(() => {
     if (!open) return;
@@ -153,40 +146,40 @@ export function NotificationCenter() {
 
   return (
     <>
-    {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
+      {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
         the toast is a sibling so its own z-[70] layer stays on top of both. */}
-    <div ref={rootRef} className="relative z-30">
-      <button
-        type="button"
-        title={t("notifCenterTitle")}
-        aria-label={t("notifCenterLabel", { count: notifications.length })}
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((value) => !value);
-          setToastId(null);
-        }}
-        className={`relative flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
-          urgentCount > 0 ? "text-warning" : ""
-        }`}
-      >
-        <Bell size={15} />
-        {notifications.length > 0 && (
-          <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
-            {notifications.length > 99 ? "99+" : notifications.length}
-          </span>
-        )}
-      </button>
+      <div ref={rootRef} className="relative z-30">
+        <button
+          type="button"
+          title={t("notifCenterTitle")}
+          aria-label={t("notifCenterLabel", { count: notifications.length })}
+          aria-expanded={open}
+          onClick={() => {
+            setOpen((value) => !value);
+            setToastId(null);
+          }}
+          className={`relative flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
+            urgentCount > 0 ? "text-warning" : ""
+          }`}
+        >
+          <Bell size={15} />
+          {notifications.length > 0 && (
+            <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
+              {notifications.length > 99 ? "99+" : notifications.length}
+            </span>
+          )}
+        </button>
 
-      {open && (
-        <div>
-          <NotificationPanel
-            notifications={notifications}
-            onDismiss={dismissNotification}
-            onClear={clearNotifications}
-          />
-        </div>
-      )}
-    </div>
+        {open && (
+          <div>
+            <NotificationPanel
+              notifications={notifications}
+              onDismiss={dismissNotification}
+              onClear={clearNotifications}
+            />
+          </div>
+        )}
+      </div>
       {toast && (
         <button
           type="button"

@@ -8,6 +8,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../lib/bridge/host-client";
 import { RecoveryEventBuffer } from "../lib/bridge/rehydrate";
+import { subscribeValidatedHostEvent } from "../lib/bridge/validated-host-events";
 import { useAppStore } from "../lib/stores/app-store";
 import { emptySessionCatalog } from "../lib/stores/session-catalog";
 import { runFullRehydrate } from "./App";
@@ -103,12 +104,19 @@ describe("atomic rehydrate replay", () => {
     const recoveryEvents = new RecoveryEventBuffer();
     const requestRecovery = vi.fn();
     const agentEventBuffer = { enqueue: vi.fn(), flush: vi.fn() };
-    const running = runFullRehydrate(
-      HOST_ID,
-      recoveryEvents,
-      requestRecovery,
-      agentEventBuffer,
+    const replayedEvents: number[] = [];
+    const unsubscribe = subscribeValidatedHostEvent(
+      "session.snapshot",
+      {
+        expectedHostInstanceId: HOST_ID,
+        expectedWorkspaceId: WORKSPACE_ID,
+        expectedWorkspaceRevision: 4,
+        expectedSessionId: SESSION_ID,
+        expectedSessionRevision: 6,
+      },
+      (event) => replayedEvents.push(event.sequence),
     );
+    const running = runFullRehydrate(HOST_ID, recoveryEvents, requestRecovery, agentEventBuffer);
 
     const latestSession = session("complete transcript");
     const inFlightEvent = {
@@ -143,7 +151,11 @@ describe("atomic rehydrate replay", () => {
       },
     };
     resolveResponse({ ok: true, result: snapshot });
-    await expect(running).resolves.toBe(true);
+    try {
+      await expect(running).resolves.toBe(true);
+    } finally {
+      unsubscribe();
+    }
 
     expect(requestRecovery).not.toHaveBeenCalled();
     expect(useAppStore.getState()).toMatchObject({
@@ -152,6 +164,7 @@ describe("atomic rehydrate replay", () => {
       rehydrating: false,
     });
     expect(useAppStore.getState().session?.messages).toEqual(latestSession.messages);
+    expect(replayedEvents).toEqual([11]);
   });
 
   it("reports overflow as superseded so startup does not continue", async () => {
@@ -194,12 +207,10 @@ describe("atomic rehydrate replay", () => {
       } as never;
     });
 
-    const recovered = await runFullRehydrate(
-      HOST_ID,
-      recoveryEvents,
-      requestRecovery,
-      { enqueue: vi.fn(), flush: vi.fn() },
-    );
+    const recovered = await runFullRehydrate(HOST_ID, recoveryEvents, requestRecovery, {
+      enqueue: vi.fn(),
+      flush: vi.fn(),
+    });
 
     expect(recovered).toBe(false);
     expect(requestRecovery).toHaveBeenCalledWith("recovery event buffer overflowed");

@@ -28,10 +28,7 @@ import { buildSessionSnapshot } from "./session-snapshot.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
-import type {
-  GraphFactoryDeps,
-  WorkspaceGraph,
-} from "./workspace-graph-types.js";
+import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
 
 export type WorkspaceLifecycleContext = {
   deps: GraphFactoryDeps;
@@ -47,9 +44,7 @@ export function workspaceIdentityKey(
   canonicalCwd: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  return platform === "win32"
-    ? win32.normalize(canonicalCwd).toLowerCase()
-    : canonicalCwd;
+  return platform === "win32" ? win32.normalize(canonicalCwd).toLowerCase() : canonicalCwd;
 }
 
 function workspaceCanonicalPathsEqual(
@@ -72,11 +67,10 @@ export class WorkspaceLifecycle {
   canonicalizeCwd(cwd: string): string {
     const resolved = pathResolve(cwd);
     if (!existsSync(resolved)) {
-      throw createHostError(
-        "WORKSPACE_SWITCH_FAILED",
-        `Directory does not exist: ${resolved}`,
-        { retryable: false, details: { cwd: resolved } },
-      );
+      throw createHostError("WORKSPACE_SWITCH_FAILED", `Directory does not exist: ${resolved}`, {
+        retryable: false,
+        details: { cwd: resolved },
+      });
     }
     let canonical: string;
     try {
@@ -139,10 +133,7 @@ export class WorkspaceLifecycle {
 
   private resumeGraphProviders(graph: WorkspaceGraph): void {
     if (!graph.providerOwner || graph.suspendedProviders === undefined) return;
-    this.context.deps.providerOwnership.resumeOwner(
-      graph.providerOwner,
-      graph.suspendedProviders,
-    );
+    this.context.deps.providerOwnership.resumeOwner(graph.providerOwner, graph.suspendedProviders);
     graph.suspendedProviders = undefined;
   }
 
@@ -179,20 +170,13 @@ export class WorkspaceLifecycle {
   }
 
   async invalidateRetainedRuntimeCaches(): Promise<void> {
-    const graph = this.context.getGraph();
-    if (graph) {
-      await this.sessionRuntimeCache.disposeRetainedSessionRuntimes(graph);
-    }
     await this.disposeRetainedGraphs();
   }
 
   async setCurrent(
     cwd: string,
     requestId: string,
-  ): Promise<
-    | { workspace: WorkspaceSnapshot; session?: SessionSnapshot }
-    | { error: HostError }
-  > {
+  ): Promise<{ workspace: WorkspaceSnapshot; session?: SessionSnapshot } | { error: HostError }> {
     const server = this.context.getServer();
     if (!server) {
       return { error: createHostError("HOST_NOT_READY", "Server not bound") };
@@ -335,13 +319,8 @@ export class WorkspaceLifecycle {
       }
 
       if (previousGraph) await this.retainGraph(previousGraph, operation.signal);
-      if (
-        previousIdentity.sessionId &&
-        previousIdentity.sessionId !== server.identity.sessionId
-      ) {
-        await this.context.deps.attachmentStore?.discardSessionDrafts(
-          previousIdentity.sessionId,
-        );
+      if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
+        await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
       }
       server.setPhase("ready");
       server.setLastError(undefined);
@@ -392,8 +371,7 @@ export class WorkspaceLifecycle {
       try {
         for (const item of graph.packageManager.listConfiguredPackages()) {
           const installedPath =
-            item.installedPath ??
-            graph.packageManager.getInstalledPath(item.source, item.scope);
+            item.installedPath ?? graph.packageManager.getInstalledPath(item.source, item.scope);
           if (installedPath) roots.add(installedPath);
         }
       } catch {
@@ -415,7 +393,6 @@ export class WorkspaceLifecycle {
       await this.disposeGraph(graph);
       return;
     }
-    await this.sessionRuntimeCache.disposeRetainedSessionRuntimes(graph);
     graph.unsubscribeAgent?.();
     graph.unsubscribeAgent = null;
     graph.extensionUiActivate = null;
@@ -457,11 +434,7 @@ export class WorkspaceLifecycle {
     const graph = this.retainedGraphs.get(key) ?? null;
     if (
       graph &&
-      !workspaceCanonicalPathsEqual(
-        graph.canonicalCwd,
-        canonicalCwd,
-        this.context.platform,
-      )
+      !workspaceCanonicalPathsEqual(graph.canonicalCwd, canonicalCwd, this.context.platform)
     ) {
       logger.warn("Retained Workspace identity mismatch", {
         requestedCwd: canonicalCwd,
@@ -626,13 +599,8 @@ export class WorkspaceLifecycle {
     }
 
     if (args.previousGraph) await this.retainGraph(args.previousGraph, args.signal);
-    if (
-      previousIdentity.sessionId &&
-      previousIdentity.sessionId !== server.identity.sessionId
-    ) {
-      await this.context.deps.attachmentStore?.discardSessionDrafts(
-        previousIdentity.sessionId,
-      );
+    if (previousIdentity.sessionId && previousIdentity.sessionId !== server.identity.sessionId) {
+      await this.context.deps.attachmentStore?.discardSessionDrafts(previousIdentity.sessionId);
     }
     server.setPhase("ready");
     server.setLastError(undefined);
@@ -681,7 +649,6 @@ export class WorkspaceLifecycle {
       extensionUiReplayState: null,
       resourceReloadRequired: false,
       backgroundSessions: new Map(),
-      retainedSessions: new Map(),
       providerOwner: null,
     };
     this.context.setGraph(failedGraph);
@@ -792,7 +759,6 @@ export class WorkspaceLifecycle {
         extensionUiReplayState: null,
         resourceReloadRequired: false,
         backgroundSessions: new Map(),
-        retainedSessions: new Map(),
         providerOwner,
       };
       const candidateIdentity: HostIdentity = {

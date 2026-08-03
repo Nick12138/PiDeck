@@ -2,18 +2,17 @@
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
-    use crate::pi_host::unix_child_exited_without_reaping;
     #[cfg(windows)]
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
         build_shutdown_line, drain_complete_lines, extract_host_instance_id, finish_monitor_task,
-        is_current_child_generation, is_executable_file, node_executable_name,
-        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
-        should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
-        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
-        MAX_HOST_STDOUT_LINE_BYTES,
+        is_current_child_generation, node_executable_name, node_runtime_candidates,
+        push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line, should_auto_restart,
+        strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch, HostChildSession,
+        APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE, MAX_HOST_STDOUT_LINE_BYTES,
     };
+    #[cfg(unix)]
+    use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;

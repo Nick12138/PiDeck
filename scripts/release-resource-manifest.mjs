@@ -12,7 +12,7 @@ function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-export function criticalReleaseResourcePaths(runtimeTarget) {
+function criticalReleaseResourcePaths(runtimeTarget) {
   const platformResources = [
     `node/${runtimeTarget.stagedNodeExecutable}`,
     `node/${runtimeTarget.stagedNpmExecutable}`,
@@ -35,6 +35,10 @@ export function criticalReleaseResourcePaths(runtimeTarget) {
     "pi-host/package.json",
     "pi-host/STAGING.json",
     "pi-host/node_modules.zip",
+    "pi-host/NODE_MODULES_LINKS.json",
+    "pi-host/NODE_MODULES_GRAPH.json",
+    "pi-host/portable-node-modules.mjs",
+    "pi-host/pi-host-bootstrap-runtime.mjs",
   ];
 }
 
@@ -44,9 +48,7 @@ export function writeReleaseResourceManifest(root, resourceDir) {
   );
   const runtimeTarget = resolveReleaseRuntimeTarget(runtimeLock);
   const sdkEvidence = loadReleaseSdkEvidence(root, runtimeLock);
-  const staging = JSON.parse(
-    readFileSync(join(resourceDir, "pi-host", "STAGING.json"), "utf8"),
-  );
+  const staging = JSON.parse(readFileSync(join(resourceDir, "pi-host", "STAGING.json"), "utf8"));
   assertReleaseSdkEvidence(staging.sdkEvidence, sdkEvidence, "STAGING SDK evidence");
   const protocolVersion = JSON.parse(
     readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
@@ -66,11 +68,9 @@ export function writeReleaseResourceManifest(root, resourceDir) {
     const stat = statSync(path);
     return { path: relativePath, sha256: sha256File(path), size: stat.size };
   });
-  const gitRuntime = JSON.parse(
-    readFileSync(join(resourceDir, "git/RUNTIME.json"), "utf8"),
-  );
+  const gitRuntime = JSON.parse(readFileSync(join(resourceDir, "git/RUNTIME.json"), "utf8"));
   const manifest = {
-    schemaVersion: 3,
+    schemaVersion: 5,
     generatedAt: new Date().toISOString(),
     runtimeTarget: runtimeTarget.key,
     sdkVersion: sdkEvidence.sdkVersion,

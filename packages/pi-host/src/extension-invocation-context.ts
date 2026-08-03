@@ -26,10 +26,8 @@ export type ExtensionInvocationContext = {
   widgetAttentionRequested: boolean;
 };
 
-export type ExtensionInvocationCompletionStatus = "completed" | "failed";
-type ExtensionInvocationCompletion = (
-  status: ExtensionInvocationCompletionStatus,
-) => void;
+type ExtensionInvocationCompletionStatus = "completed" | "failed";
+type ExtensionInvocationCompletion = (status: ExtensionInvocationCompletionStatus) => void;
 
 export type ExtensionCommandOrigin = ExtensionInvocationContext & {
   readonly runId: string;
@@ -50,7 +48,10 @@ function boundedText(value: string, maxLength: number, fallback: string): string
 }
 
 function normalizedPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+  return value
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/$/, "");
 }
 
 function entrypointKey(sourceInfo: SourceInfo): string {
@@ -88,18 +89,22 @@ function sourceDisplayName(sourceInfo: SourceInfo): string {
   if (npmName) return boundedText(npmName, 120, "Extension");
 
   const normalizedSource = normalizedPath(source.replace(/^git:/, "").replace(/#.*$/, ""));
-  const sourceLeaf = normalizedSource.split("/").at(-1)?.replace(/\.git$/, "");
-  const pathLeaf = normalizedPath(sourceInfo.path).split("/").at(-1)?.replace(/\.[^.]+$/, "");
-  const syntheticSource =
-    source.match(/^<(.+)>$/)?.[1] ?? source.match(/^extension:(.+)$/)?.[1];
+  const sourceLeaf = normalizedSource
+    .split("/")
+    .at(-1)
+    ?.replace(/\.git$/, "");
+  const pathLeaf = normalizedPath(sourceInfo.path)
+    .split("/")
+    .at(-1)
+    ?.replace(/\.[^.]+$/, "");
+  const syntheticSource = source.match(/^<(.+)>$/)?.[1] ?? source.match(/^extension:(.+)$/)?.[1];
   const syntheticLeaf = syntheticSource
-    ? normalizedPath(syntheticSource).split("/").at(-1)?.replace(/\.[^.]+$/, "")
+    ? normalizedPath(syntheticSource)
+        .split("/")
+        .at(-1)
+        ?.replace(/\.[^.]+$/, "")
     : undefined;
-  return boundedText(
-    syntheticLeaf ?? sourceLeaf ?? pathLeaf ?? "Extension",
-    120,
-    "Extension",
-  );
+  return boundedText(syntheticLeaf ?? sourceLeaf ?? pathLeaf ?? "Extension", 120, "Extension");
 }
 
 export function normalizeExtensionIdentity(sourceInfo: SourceInfo): {
@@ -109,9 +114,12 @@ export function normalizeExtensionIdentity(sourceInfo: SourceInfo): {
 } {
   const hash = createHash("sha256")
     .update(
-      [sourceInfo.scope, sourceInfo.origin, stableSourceKey(sourceInfo), entrypointKey(sourceInfo)].join(
-        "\0",
-      ),
+      [
+        sourceInfo.scope,
+        sourceInfo.origin,
+        stableSourceKey(sourceInfo),
+        entrypointKey(sourceInfo),
+      ].join("\0"),
     )
     .digest("hex")
     .slice(0, 24);

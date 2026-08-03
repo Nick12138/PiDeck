@@ -33,6 +33,7 @@ import {
 import { Dialog } from "../../components/Dialog";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
+import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -60,38 +61,59 @@ function splitPath(path: string): { name: string; directory: string } {
 
 export function gitChangeLetter(change: GitChangeKind): string {
   switch (change) {
-    case "added": return "A";
-    case "modified": return "M";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    case "copied": return "C";
-    case "type_changed": return "T";
-    case "untracked": return "U";
-    case "conflicted": return "!";
+    case "added":
+      return "A";
+    case "modified":
+      return "M";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "type_changed":
+      return "T";
+    case "untracked":
+      return "U";
+    case "conflicted":
+      return "!";
   }
 }
 
 function changeLabel(change: GitChangeKind, t: Translate): string {
   switch (change) {
-    case "added": return t("gitChangeAdded");
-    case "modified": return t("gitChangeModified");
-    case "deleted": return t("gitChangeDeleted");
-    case "renamed": return t("gitChangeRenamed");
-    case "copied": return t("gitChangeCopied");
-    case "type_changed": return t("gitChangeTypeChanged");
-    case "untracked": return t("gitChangeUntracked");
-    case "conflicted": return t("gitChangeConflicted");
+    case "added":
+      return t("gitChangeAdded");
+    case "modified":
+      return t("gitChangeModified");
+    case "deleted":
+      return t("gitChangeDeleted");
+    case "renamed":
+      return t("gitChangeRenamed");
+    case "copied":
+      return t("gitChangeCopied");
+    case "type_changed":
+      return t("gitChangeTypeChanged");
+    case "untracked":
+      return t("gitChangeUntracked");
+    case "conflicted":
+      return t("gitChangeConflicted");
   }
 }
 
 function errorMessage(error: HostError | undefined, fallback: string, t: Translate): string {
   if (!error) return fallback;
   switch (error.code) {
-    case "GIT_UNAVAILABLE": return t("gitUnavailable");
-    case "GIT_OUTPUT_LIMIT": return t("gitOutputTooLarge");
-    case "STALE_REVISION": return t("gitStatusStale");
-    case "SERVICE_GRAPH_BUSY": return t("gitBusy");
-    default: return error.message || fallback;
+    case "GIT_UNAVAILABLE":
+      return t("gitUnavailable");
+    case "GIT_OUTPUT_LIMIT":
+      return t("gitOutputTooLarge");
+    case "STALE_REVISION":
+      return t("gitStatusStale");
+    case "SERVICE_GRAPH_BUSY":
+      return t("gitBusy");
+    default:
+      return error.message || fallback;
   }
 }
 
@@ -101,7 +123,9 @@ export function buildGitListRows(status: ReadyStatus): ListRow[] {
   const rows: ListRow[] = [];
   if (unstaged.length > 0) {
     rows.push({ kind: "header", area: "unstaged", count: unstaged.length });
-    rows.push(...unstaged.map((file) => ({ kind: "file" as const, area: "unstaged" as const, file })));
+    rows.push(
+      ...unstaged.map((file) => ({ kind: "file" as const, area: "unstaged" as const, file })),
+    );
   }
   if (staged.length > 0) {
     rows.push({ kind: "header", area: "staged", count: staged.length });
@@ -190,15 +214,15 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [commitDiff, setCommitDiff] = useState<GitCommitDiffSnapshot | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
-  const workspaceKey = host && workspace
-    ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}`
-    : "none";
-  const historyHeadKey = snapshot?.state === "ready"
-    ? `${snapshot.branch ?? "detached"}:${snapshot.headSha ?? "unborn"}`
-    : "none";
+  const workspaceKey =
+    host && workspace ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}` : "none";
+  const historyHeadKey =
+    snapshot?.state === "ready"
+      ? `${snapshot.branch ?? "detached"}:${snapshot.headSha ?? "unborn"}`
+      : "none";
 
   const acceptSnapshot = useCallback((next: GitStatusSnapshot) => {
-    setSnapshot((current) => current && current.revision > next.revision ? current : next);
+    setSnapshot((current) => (current && current.revision > next.revision ? current : next));
     setError(null);
   }, []);
 
@@ -292,24 +316,19 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       });
     return () => {
       generation.current += 1;
-      void hostClient.request("git.setWatching", context, { enabled: false }, 12_000).catch(() => undefined);
+      void hostClient
+        .request("git.setWatching", context, { enabled: false }, 12_000)
+        .catch(() => undefined);
     };
   }, [visible, workspaceKey, acceptSnapshot, host, t, workspace]);
 
   useEffect(
     () =>
-      hostClient.onEvent((event) => {
-        if (
-          !visible ||
-          event.event !== "git.changed" ||
-          !host ||
-          !workspace ||
-          event.hostInstanceId !== host.hostInstanceId ||
-          event.workspaceId !== workspace.id ||
-          event.workspaceRevision !== workspace.revision
-        ) return;
-        acceptSnapshot(event.payload.snapshot);
-      }),
+      host && workspace
+        ? subscribeValidatedHostEvent("git.changed", workspaceContext(host, workspace), (event) => {
+            if (visible) acceptSnapshot(event.payload.snapshot);
+          })
+        : undefined,
     [acceptSnapshot, host, visible, workspace],
   );
 
@@ -318,7 +337,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => listRef.current,
-    estimateSize: (index) => rows[index]?.kind === "header" ? 30 : 36,
+    estimateSize: (index) => (rows[index]?.kind === "header" ? 30 : 36),
     getItemKey: (index) => {
       const row = rows[index];
       return row?.kind === "file" ? `${row.area}:${row.file.path}` : `header:${row?.area ?? index}`;
@@ -373,7 +392,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         setError(errorMessage(response.error, t("gitHistoryFailed"), t));
         return;
       }
-      setHistory((current) => append ? [...current, ...response.result.commits] : response.result.commits);
+      setHistory((current) =>
+        append ? [...current, ...response.result.commits] : response.result.commits,
+      );
       setHistoryCursor(response.result.nextCursor);
       setHistoryLoaded(true);
     } catch (requestError) {
@@ -506,7 +527,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       );
     } catch (requestError) {
       if (requestGeneration === generation.current) {
-        setError(requestError instanceof Error ? requestError.message : t("gitBranchOperationFailed"));
+        setError(
+          requestError instanceof Error ? requestError.message : t("gitBranchOperationFailed"),
+        );
       }
     } finally {
       if (requestGeneration === generation.current) setOperation(null);
@@ -717,17 +740,30 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   }
 
   if (!snapshot && loading) {
-    return <div className="flex min-h-0 flex-1 items-center justify-center text-muted"><LoaderCircle className="animate-spin" size={20} aria-label={t("gitLoading")} /></div>;
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted">
+        <LoaderCircle className="animate-spin" size={20} aria-label={t("gitLoading")} />
+      </div>
+    );
   }
 
   if (!ready) {
-    const title = snapshot?.state === "not_repository"
-      ? t("gitNotRepository")
-      : snapshot?.state === "unavailable"
-        ? t("gitUnavailable")
-        : t("gitLoadFailed");
-    const detail = snapshot && "message" in snapshot ? snapshot.message : error ?? t("gitNotRepositoryDetail");
-    return <GitEmptyState title={title} detail={detail} loading={loading} onRefresh={() => void refresh()} />;
+    const title =
+      snapshot?.state === "not_repository"
+        ? t("gitNotRepository")
+        : snapshot?.state === "unavailable"
+          ? t("gitUnavailable")
+          : t("gitLoadFailed");
+    const detail =
+      snapshot && "message" in snapshot ? snapshot.message : (error ?? t("gitNotRepositoryDetail"));
+    return (
+      <GitEmptyState
+        title={title}
+        detail={detail}
+        loading={loading}
+        onRefresh={() => void refresh()}
+      />
+    );
   }
 
   if (selectedCommit) {
@@ -739,7 +775,11 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         loading={diffLoading}
         error={error}
         backLabel={t("gitBackToHistory")}
-        onBack={() => { setSelectedCommit(null); setCommitDiff(null); setError(null); }}
+        onBack={() => {
+          setSelectedCommit(null);
+          setCommitDiff(null);
+          setError(null);
+        }}
         t={t}
       />
     );
@@ -748,38 +788,42 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   if (selection) {
     return (
       <>
-      <DiffView
-        title={selection.path}
-        diff={diff}
-        loading={diffLoading}
-        error={error}
-        backLabel={t("gitBackToChanges")}
-        area={selection.area}
-        operation={operation}
-        onMutateHunk={(hunk, hunkOperation) => {
-          if (hunkOperation === "discard") setHunkDiscardTarget(hunk);
-          else void mutateHunk(hunk, hunkOperation);
-        }}
-        onBack={() => { setSelection(null); setDiff(null); setError(null); }}
-        t={t}
-      />
-      {hunkDiscardTarget && (
-        <Dialog
-          title={t("gitDiscardHunkTitle")}
-          confirmLabel={t("gitDiscardHunk")}
-          tone="danger"
-          icon={Trash2}
-          onCancel={() => setHunkDiscardTarget(null)}
-          onConfirm={() => {
-            const target = hunkDiscardTarget;
-            setHunkDiscardTarget(null);
-            void mutateHunk(target, "discard");
+        <DiffView
+          title={selection.path}
+          diff={diff}
+          loading={diffLoading}
+          error={error}
+          backLabel={t("gitBackToChanges")}
+          area={selection.area}
+          operation={operation}
+          onMutateHunk={(hunk, hunkOperation) => {
+            if (hunkOperation === "discard") setHunkDiscardTarget(hunk);
+            else void mutateHunk(hunk, hunkOperation);
           }}
-        >
-          <p>{t("gitDiscardHunkConfirm", { path: selection.path })}</p>
-          <p className="mt-2 font-mono text-xs">{hunkDiscardTarget.header}</p>
-        </Dialog>
-      )}
+          onBack={() => {
+            setSelection(null);
+            setDiff(null);
+            setError(null);
+          }}
+          t={t}
+        />
+        {hunkDiscardTarget && (
+          <Dialog
+            title={t("gitDiscardHunkTitle")}
+            confirmLabel={t("gitDiscardHunk")}
+            tone="danger"
+            icon={Trash2}
+            onCancel={() => setHunkDiscardTarget(null)}
+            onConfirm={() => {
+              const target = hunkDiscardTarget;
+              setHunkDiscardTarget(null);
+              void mutateHunk(target, "discard");
+            }}
+          >
+            <p>{t("gitDiscardHunkConfirm", { path: selection.path })}</p>
+            <p className="mt-2 font-mono text-xs">{hunkDiscardTarget.header}</p>
+          </Dialog>
+        )}
       </>
     );
   }
@@ -788,263 +832,481 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     ? t("gitUnbornBranch", { branch: ready.branch ?? t("gitUnknownBranch") })
     : ready.detached
       ? t("gitDetached", { sha: ready.headSha?.slice(0, 8) ?? "?" })
-      : ready.branch ?? t("gitUnknownBranch");
+      : (ready.branch ?? t("gitUnknownBranch"));
 
   return (
     <>
-    <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col text-sm">
-      <header className="shrink-0 border-b border-border px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <GitCompareArrows size={16} className="mt-0.5 shrink-0 text-muted" />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                title={t("gitChooseBranch")}
-                aria-label={t("gitChooseBranch")}
-                disabled={branchLoading || Boolean(operation)}
-                className="flex min-w-0 items-center gap-1 truncate rounded px-1 py-0.5 font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
-                onClick={(event) => {
-                  const trigger = contextMenuTrigger(event.currentTarget);
-                  if (trigger) void openBranchChooser(trigger);
-                }}
+      <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col text-sm">
+        <header className="shrink-0 border-b border-border px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <GitCompareArrows size={16} className="mt-0.5 shrink-0 text-muted" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  title={t("gitChooseBranch")}
+                  aria-label={t("gitChooseBranch")}
+                  disabled={branchLoading || Boolean(operation)}
+                  className="flex min-w-0 items-center gap-1 truncate rounded px-1 py-0.5 font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
+                  onClick={(event) => {
+                    const trigger = contextMenuTrigger(event.currentTarget);
+                    if (trigger) void openBranchChooser(trigger);
+                  }}
+                >
+                  {branchLoading ? (
+                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
+                  ) : (
+                    <GitBranch size={12} className="shrink-0" />
+                  )}
+                  <span className="truncate">{branchLabel}</span>
+                  <ChevronDown size={11} className="shrink-0 text-muted" />
+                </button>
+                {ready.ahead > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-xs text-muted">
+                    <ArrowUp size={11} />
+                    {ready.ahead}
+                  </span>
+                )}
+                {ready.behind > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-xs text-muted">
+                    <ArrowDown size={11} />
+                    {ready.behind}
+                  </span>
+                )}
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted">
+                  {view === "changes"
+                    ? t("gitChangeCount", { count: ready.files.length })
+                    : t("gitCommitCount", { count: history.length })}
+                </span>
+              </div>
+              <p
+                className="mt-0.5 truncate font-mono text-[10px] text-muted"
+                title={ready.repositoryRoot}
               >
-                {branchLoading ? <LoaderCircle size={12} className="shrink-0 animate-spin" /> : <GitBranch size={12} className="shrink-0" />}
-                <span className="truncate">{branchLabel}</span>
-                <ChevronDown size={11} className="shrink-0 text-muted" />
-              </button>
-              {ready.ahead > 0 && <span className="inline-flex items-center gap-0.5 text-xs text-muted"><ArrowUp size={11} />{ready.ahead}</span>}
-              {ready.behind > 0 && <span className="inline-flex items-center gap-0.5 text-xs text-muted"><ArrowDown size={11} />{ready.behind}</span>}
-              <span className="ml-auto shrink-0 text-xs tabular-nums text-muted">
-                {view === "changes" ? t("gitChangeCount", { count: ready.files.length }) : t("gitCommitCount", { count: history.length })}
-              </span>
+                {ready.repositoryRoot}
+              </p>
             </div>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-muted" title={ready.repositoryRoot}>{ready.repositoryRoot}</p>
+            <button
+              type="button"
+              title={t("gitRefresh")}
+              aria-label={t("gitRefresh")}
+              disabled={loading || historyLoading || Boolean(operation)}
+              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+              onClick={() => {
+                if (view === "history") void loadHistory(false);
+                else void refresh();
+              }}
+            >
+              <RefreshCw size={14} className={loading || historyLoading ? "animate-spin" : ""} />
+            </button>
           </div>
-          <button type="button" title={t("gitRefresh")} aria-label={t("gitRefresh")} disabled={loading || historyLoading || Boolean(operation)} className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40" onClick={() => {
-            if (view === "history") void loadHistory(false);
-            else void refresh();
-          }}>
-            <RefreshCw size={14} className={loading || historyLoading ? "animate-spin" : ""} />
+        </header>
+
+        <div
+          role="tablist"
+          aria-label={t("gitViews")}
+          className="grid h-9 shrink-0 grid-cols-2 border-b border-border bg-surface-raised/25 p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "changes"}
+            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "changes" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+            onClick={() => setView("changes")}
+          >
+            <GitCompareArrows size={13} />
+            {t("gitChanges")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "history"}
+            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "history" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+            onClick={() => {
+              setView("history");
+              if (!historyLoaded) void loadHistory(false);
+            }}
+          >
+            <History size={13} />
+            {t("gitHistory")}
           </button>
         </div>
-      </header>
 
-      <div role="tablist" aria-label={t("gitViews")} className="grid h-9 shrink-0 grid-cols-2 border-b border-border bg-surface-raised/25 p-1">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "changes"}
-          className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "changes" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
-          onClick={() => setView("changes")}
-        >
-          <GitCompareArrows size={13} />{t("gitChanges")}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "history"}
-          className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "history" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
-          onClick={() => {
-            setView("history");
-            if (!historyLoaded) void loadHistory(false);
-          }}
-        >
-          <History size={13} />{t("gitHistory")}
-        </button>
-      </div>
-
-      {!ready.workspaceIsRepositoryRoot && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-warning/35 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-          <span>{t("gitParentRepositoryWarning")}</span>
-        </div>
-      )}
-      {ready.warnings.map((warning) => <div key={warning} className="shrink-0 border-b border-warning/35 bg-warning/10 px-3 py-1.5 text-xs text-warning">{warning}</div>)}
-      {error && <div role="alert" className="shrink-0 border-b border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
-
-      {view === "changes" ? <>
-      <div ref={listRef} role="list" className="min-h-0 flex-1 overflow-auto" aria-label={t("gitChangesList")}>
-        {rows.length === 0 ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-muted">
-            <Check size={24} />
-            <p className="text-sm">{t("gitClean")}</p>
-          </div>
-        ) : (
-          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index]!;
-              return (
-                <div key={virtualRow.key} className="absolute left-0 top-0 w-full" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
-                  {row.kind === "header" ? (
-                    <div className="flex h-full items-center border-b border-border bg-surface-raised/55 px-3 text-[11px] font-semibold uppercase text-muted">
-                      <span>{row.area === "staged" ? t("gitStagedChanges") : t("gitChanges")}</span>
-                      <span className="ml-auto tabular-nums">{row.count}</span>
-                      <button
-                        type="button"
-                        title={row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")}
-                        aria-label={row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")}
-                        disabled={Boolean(operation) || ready.files.some((file) => file[row.area] !== null && !file.pathSupported)}
-                        className="ml-1 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30"
-                        onClick={() => void mutateAll(row.area)}
-                      >
-                        {operation === (row.area === "staged" ? "git.unstageAll" : "git.stageAll")
-                          ? <LoaderCircle size={12} className="animate-spin" />
-                          : row.area === "staged" ? <Undo2 size={12} /> : <Plus size={12} />}
-                      </button>
-                    </div>
-                  ) : (
-                    <FileRow
-                      row={row}
-                      busy={Boolean(operation)}
-                      active={operation === `${row.area === "unstaged" ? "git.stage" : "git.unstage"}:${row.file.path}`}
-                      onOpen={() => void loadDiff({ path: row.file.path, area: row.area })}
-                      onMutate={() => void mutate(row.file, row.area)}
-                      onDiscard={row.area === "unstaged" && canDiscardGitChange(row.file) ? () => setDiscardTarget(row.file) : undefined}
-                      discardActive={operation === `git.discard:${row.file.path}`}
-                      t={t}
-                    />
-                  )}
-                </div>
-              );
-            })}
+        {!ready.workspaceIsRepositoryRoot && (
+          <div className="flex shrink-0 items-start gap-2 border-b border-warning/35 bg-warning/10 px-3 py-2 text-xs text-warning">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <span>{t("gitParentRepositoryWarning")}</span>
           </div>
         )}
-      </div>
+        {ready.warnings.map((warning) => (
+          <div
+            key={warning}
+            className="shrink-0 border-b border-warning/35 bg-warning/10 px-3 py-1.5 text-xs text-warning"
+          >
+            {warning}
+          </div>
+        ))}
+        {error && (
+          <div
+            role="alert"
+            className="shrink-0 border-b border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger"
+          >
+            {error}
+          </div>
+        )}
 
-      <footer className="shrink-0 border-t border-border bg-surface p-3">
-        {hasConflicts && <p className="mb-2 text-xs text-warning">{t("gitResolveConflicts")}</p>}
-        {commitSha && <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-success"><Check size={12} />{t("gitCommitSuccess", { sha: commitSha })}</p>}
-        <label htmlFor="git-commit-message" className="mb-1.5 block text-[11px] font-medium text-muted">{t("gitCommitMessage")}</label>
-        <textarea
-          id="git-commit-message"
-          value={commitMessage}
-          maxLength={16 * 1024}
-          rows={3}
-          disabled={Boolean(operation)}
-          placeholder={stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")}
-          className="w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-accent disabled:opacity-50"
-          onChange={(event) => setCommitMessage(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void commit();
-            }
+        {view === "changes" ? (
+          <>
+            <div
+              ref={listRef}
+              role="list"
+              className="min-h-0 flex-1 overflow-auto"
+              aria-label={t("gitChangesList")}
+            >
+              {rows.length === 0 ? (
+                <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-muted">
+                  <Check size={24} />
+                  <p className="text-sm">{t("gitClean")}</p>
+                </div>
+              ) : (
+                <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+                  {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = rows[virtualRow.index]!;
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        className="absolute left-0 top-0 w-full"
+                        style={{
+                          height: virtualRow.size,
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {row.kind === "header" ? (
+                          <div className="flex h-full items-center border-b border-border bg-surface-raised/55 px-3 text-[11px] font-semibold uppercase text-muted">
+                            <span>
+                              {row.area === "staged" ? t("gitStagedChanges") : t("gitChanges")}
+                            </span>
+                            <span className="ml-auto tabular-nums">{row.count}</span>
+                            <button
+                              type="button"
+                              title={row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")}
+                              aria-label={
+                                row.area === "staged" ? t("gitUnstageAll") : t("gitStageAll")
+                              }
+                              disabled={
+                                Boolean(operation) ||
+                                ready.files.some(
+                                  (file) => file[row.area] !== null && !file.pathSupported,
+                                )
+                              }
+                              className="ml-1 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30"
+                              onClick={() => void mutateAll(row.area)}
+                            >
+                              {operation ===
+                              (row.area === "staged" ? "git.unstageAll" : "git.stageAll") ? (
+                                <LoaderCircle size={12} className="animate-spin" />
+                              ) : row.area === "staged" ? (
+                                <Undo2 size={12} />
+                              ) : (
+                                <Plus size={12} />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <FileRow
+                            row={row}
+                            busy={Boolean(operation)}
+                            active={
+                              operation ===
+                              `${row.area === "unstaged" ? "git.stage" : "git.unstage"}:${row.file.path}`
+                            }
+                            onOpen={() => void loadDiff({ path: row.file.path, area: row.area })}
+                            onMutate={() => void mutate(row.file, row.area)}
+                            onDiscard={
+                              row.area === "unstaged" && canDiscardGitChange(row.file)
+                                ? () => setDiscardTarget(row.file)
+                                : undefined
+                            }
+                            discardActive={operation === `git.discard:${row.file.path}`}
+                            t={t}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <footer className="shrink-0 border-t border-border bg-surface p-3">
+              {hasConflicts && (
+                <p className="mb-2 text-xs text-warning">{t("gitResolveConflicts")}</p>
+              )}
+              {commitSha && (
+                <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-success">
+                  <Check size={12} />
+                  {t("gitCommitSuccess", { sha: commitSha })}
+                </p>
+              )}
+              <label
+                htmlFor="git-commit-message"
+                className="mb-1.5 block text-[11px] font-medium text-muted"
+              >
+                {t("gitCommitMessage")}
+              </label>
+              <textarea
+                id="git-commit-message"
+                value={commitMessage}
+                maxLength={16 * 1024}
+                rows={3}
+                disabled={Boolean(operation)}
+                placeholder={
+                  stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")
+                }
+                className="w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-accent disabled:opacity-50"
+                onChange={(event) => setCommitMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    void commit();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={!canCommit}
+                className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void commit()}
+              >
+                {operation === "commit" ? (
+                  <LoaderCircle size={13} className="animate-spin" />
+                ) : (
+                  <GitCommitHorizontal size={13} />
+                )}
+                {operation === "commit" ? t("gitCommitting") : t("gitCommit")}
+              </button>
+            </footer>
+          </>
+        ) : (
+          <HistoryView
+            commits={history}
+            loading={historyLoading}
+            loaded={historyLoaded}
+            hasMore={historyCursor !== null}
+            onOpen={(commit) => void loadCommitDiff(commit)}
+            onLoadMore={() => void loadHistory(true)}
+            locale={locale}
+            t={t}
+          />
+        )}
+      </div>
+      {discardTarget && (
+        <Dialog
+          title={t("gitDiscardTitle")}
+          confirmLabel={t("gitDiscard")}
+          tone="danger"
+          icon={Trash2}
+          onCancel={() => setDiscardTarget(null)}
+          onConfirm={() => {
+            const target = discardTarget;
+            setDiscardTarget(null);
+            void discard(target);
           }}
-        />
-        <button type="button" disabled={!canCommit} className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => void commit()}>
-          {operation === "commit" ? <LoaderCircle size={13} className="animate-spin" /> : <GitCommitHorizontal size={13} />}
-          {operation === "commit" ? t("gitCommitting") : t("gitCommit")}
-        </button>
-      </footer>
-      </> : (
-        <HistoryView
-          commits={history}
-          loading={historyLoading}
-          loaded={historyLoaded}
-          hasMore={historyCursor !== null}
-          onOpen={(commit) => void loadCommitDiff(commit)}
-          onLoadMore={() => void loadHistory(true)}
-          locale={locale}
-          t={t}
-        />
+        >
+          <p>{t("gitDiscardConfirm", { path: discardTarget.path })}</p>
+          {discardTarget.staged !== null && <p className="mt-2">{t("gitDiscardKeepsStaged")}</p>}
+        </Dialog>
       )}
-    </div>
-    {discardTarget && (
-      <Dialog
-        title={t("gitDiscardTitle")}
-        confirmLabel={t("gitDiscard")}
-        tone="danger"
-        icon={Trash2}
-        onCancel={() => setDiscardTarget(null)}
-        onConfirm={() => {
-          const target = discardTarget;
-          setDiscardTarget(null);
-          void discard(target);
-        }}
-      >
-        <p>{t("gitDiscardConfirm", { path: discardTarget.path })}</p>
-        {discardTarget.staged !== null && <p className="mt-2">{t("gitDiscardKeepsStaged")}</p>}
-      </Dialog>
-    )}
-    {createBranchOpen && (
-      <Dialog
-        title={t("gitCreateBranch")}
-        confirmLabel={operation === "git.createBranch" ? t("gitCreatingBranch") : t("gitCreateBranch")}
-        icon={GitBranchPlus}
-        onCancel={() => {
-          if (operation !== "git.createBranch") setCreateBranchOpen(false);
-        }}
-        onConfirm={() => {
-          const name = branchName.trim();
-          if (!name || operation) return;
-          setCreateBranchOpen(false);
-          void mutateBranch("git.createBranch", name, ready.revision);
-        }}
-      >
-        <label htmlFor="git-branch-name" className="mb-1.5 block text-xs font-medium text-foreground">{t("gitBranchName")}</label>
-        <input
-          id="git-branch-name"
-          value={branchName}
-          maxLength={255}
-          placeholder={t("gitBranchNamePlaceholder")}
-          className="h-9 w-full rounded border border-border bg-surface px-2.5 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
-          onChange={(event) => setBranchName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
+      {createBranchOpen && (
+        <Dialog
+          title={t("gitCreateBranch")}
+          confirmLabel={
+            operation === "git.createBranch" ? t("gitCreatingBranch") : t("gitCreateBranch")
+          }
+          icon={GitBranchPlus}
+          onCancel={() => {
+            if (operation !== "git.createBranch") setCreateBranchOpen(false);
+          }}
+          onConfirm={() => {
             const name = branchName.trim();
             if (!name || operation) return;
             setCreateBranchOpen(false);
             void mutateBranch("git.createBranch", name, ready.revision);
           }}
-        />
-      </Dialog>
-    )}
+        >
+          <label
+            htmlFor="git-branch-name"
+            className="mb-1.5 block text-xs font-medium text-foreground"
+          >
+            {t("gitBranchName")}
+          </label>
+          <input
+            id="git-branch-name"
+            value={branchName}
+            maxLength={255}
+            placeholder={t("gitBranchNamePlaceholder")}
+            className="h-9 w-full rounded border border-border bg-surface px-2.5 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
+            onChange={(event) => setBranchName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              const name = branchName.trim();
+              if (!name || operation) return;
+              setCreateBranchOpen(false);
+              void mutateBranch("git.createBranch", name, ready.revision);
+            }}
+          />
+        </Dialog>
+      )}
     </>
   );
 }
 
-function FileRow({ row, busy, active, discardActive, onOpen, onMutate, onDiscard, t }: { row: Extract<ListRow, { kind: "file" }>; busy: boolean; active: boolean; discardActive: boolean; onOpen: () => void; onMutate: () => void; onDiscard?: () => void; t: Translate }) {
+function FileRow({
+  row,
+  busy,
+  active,
+  discardActive,
+  onOpen,
+  onMutate,
+  onDiscard,
+  t,
+}: {
+  row: Extract<ListRow, { kind: "file" }>;
+  busy: boolean;
+  active: boolean;
+  discardActive: boolean;
+  onOpen: () => void;
+  onMutate: () => void;
+  onDiscard?: () => void;
+  t: Translate;
+}) {
   const { name, directory } = splitPath(row.file.path);
   const change = row.file[row.area]!;
-  const actionLabel = row.area === "unstaged" ? t("gitStageFile", { path: row.file.path }) : t("gitUnstageFile", { path: row.file.path });
+  const actionLabel =
+    row.area === "unstaged"
+      ? t("gitStageFile", { path: row.file.path })
+      : t("gitUnstageFile", { path: row.file.path });
   const diffLabel = `${row.area === "staged" ? t("gitStagedChanges") : t("gitChanges")}: ${row.file.path}`;
   const ActionIcon = row.area === "unstaged" ? Plus : Undo2;
   return (
-    <div role="listitem" className="group flex h-full min-w-0 items-center border-b border-border/60 px-2 hover:bg-surface-overlay">
-      <button type="button" aria-label={diffLabel} disabled={!row.file.pathSupported} className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-55" title={row.file.path} onClick={onOpen}>
+    <div
+      role="listitem"
+      className="group flex h-full min-w-0 items-center border-b border-border/60 px-2 hover:bg-surface-overlay"
+    >
+      <button
+        type="button"
+        aria-label={diffLabel}
+        disabled={!row.file.pathSupported}
+        className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-55"
+        title={row.file.path}
+        onClick={onOpen}
+      >
         <FileCode2 size={14} className="shrink-0 text-muted" />
-        <span className="min-w-0 flex-1 truncate text-xs"><span className="text-foreground">{name}</span>{directory && <span className="ml-1.5 text-[10px] text-muted">{directory}</span>}</span>
-        {row.file.submodule && <span className="shrink-0 text-[9px] uppercase text-muted">{t("gitSubmodule")}</span>}
-        <span title={changeLabel(change, t)} aria-label={changeLabel(change, t)} className={`w-4 shrink-0 text-center font-mono text-xs font-semibold ${change === "conflicted" ? "text-warning" : change === "deleted" ? "text-danger" : "text-accent"}`}>{gitChangeLetter(change)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs">
+          <span className="text-foreground">{name}</span>
+          {directory && <span className="ml-1.5 text-[10px] text-muted">{directory}</span>}
+        </span>
+        {row.file.submodule && (
+          <span className="shrink-0 text-[9px] uppercase text-muted">{t("gitSubmodule")}</span>
+        )}
+        <span
+          title={changeLabel(change, t)}
+          aria-label={changeLabel(change, t)}
+          className={`w-4 shrink-0 text-center font-mono text-xs font-semibold ${change === "conflicted" ? "text-warning" : change === "deleted" ? "text-danger" : "text-accent"}`}
+        >
+          {gitChangeLetter(change)}
+        </span>
       </button>
       {onDiscard && (
-        <button type="button" title={t("gitDiscardFile", { path: row.file.path })} aria-label={t("gitDiscardFile", { path: row.file.path })} disabled={busy} className={`ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:cursor-not-allowed disabled:opacity-30 ${discardActive ? "opacity-100 text-danger" : "opacity-0 group-hover:opacity-100"}`} onClick={onDiscard}>
-          {discardActive ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
+        <button
+          type="button"
+          title={t("gitDiscardFile", { path: row.file.path })}
+          aria-label={t("gitDiscardFile", { path: row.file.path })}
+          disabled={busy}
+          className={`ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:cursor-not-allowed disabled:opacity-30 ${discardActive ? "opacity-100 text-danger" : "opacity-0 group-hover:opacity-100"}`}
+          onClick={onDiscard}
+        >
+          {discardActive ? (
+            <LoaderCircle size={13} className="animate-spin" />
+          ) : (
+            <Trash2 size={13} />
+          )}
         </button>
       )}
-      <button type="button" title={actionLabel} aria-label={actionLabel} disabled={busy || !row.file.pathSupported} className="ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface-raised hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 group-hover:opacity-100" onClick={onMutate}>
+      <button
+        type="button"
+        title={actionLabel}
+        aria-label={actionLabel}
+        disabled={busy || !row.file.pathSupported}
+        className="ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface-raised hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 group-hover:opacity-100"
+        onClick={onMutate}
+      >
         {active ? <LoaderCircle size={13} className="animate-spin" /> : <ActionIcon size={13} />}
       </button>
     </div>
   );
 }
 
-function GitEmptyState({ title, detail, loading = false, onRefresh }: { title: string; detail: string; loading?: boolean; onRefresh?: () => void }) {
+function GitEmptyState({
+  title,
+  detail,
+  loading = false,
+  onRefresh,
+}: {
+  title: string;
+  detail: string;
+  loading?: boolean;
+  onRefresh?: () => void;
+}) {
   const t = useT();
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
       <GitCompareArrows size={28} className="text-muted" />
-      <div><p className="text-sm font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-muted">{detail}</p></div>
-      {onRefresh && <button type="button" disabled={loading} className="flex h-8 items-center gap-2 rounded border border-border px-3 text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40" onClick={onRefresh}><RefreshCw size={13} className={loading ? "animate-spin" : ""} />{t("gitRefresh")}</button>}
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-muted">{detail}</p>
+      </div>
+      {onRefresh && (
+        <button
+          type="button"
+          disabled={loading}
+          className="flex h-8 items-center gap-2 rounded border border-border px-3 text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+          onClick={onRefresh}
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          {t("gitRefresh")}
+        </button>
+      )}
     </div>
   );
 }
 
-function HistoryView({ commits, loading, loaded, hasMore, onOpen, onLoadMore, locale, t }: { commits: GitCommitSummary[]; loading: boolean; loaded: boolean; hasMore: boolean; onOpen: (commit: GitCommitSummary) => void; onLoadMore: () => void; locale: "en" | "zh"; t: Translate }) {
+function HistoryView({
+  commits,
+  loading,
+  loaded,
+  hasMore,
+  onOpen,
+  onLoadMore,
+  locale,
+  t,
+}: {
+  commits: GitCommitSummary[];
+  loading: boolean;
+  loaded: boolean;
+  hasMore: boolean;
+  onOpen: (commit: GitCommitSummary) => void;
+  onLoadMore: () => void;
+  locale: "en" | "zh";
+  t: Translate;
+}) {
   if (loading && commits.length === 0) {
-    return <div className="flex min-h-0 flex-1 items-center justify-center text-muted"><LoaderCircle size={20} className="animate-spin" aria-label={t("gitHistoryLoading")} /></div>;
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted">
+        <LoaderCircle size={20} className="animate-spin" aria-label={t("gitHistoryLoading")} />
+      </div>
+    );
   }
   if (loaded && commits.length === 0) {
     return <GitEmptyState title={t("gitHistoryEmpty")} detail={t("gitHistoryEmptyDetail")} />;
@@ -1052,33 +1314,52 @@ function HistoryView({ commits, loading, loaded, hasMore, onOpen, onLoadMore, lo
   return (
     <div role="list" aria-label={t("gitHistoryList")} className="min-h-0 flex-1 overflow-auto">
       {commits.map((commit) => {
-        const date = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(commit.authoredAt));
+        const date = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(commit.authoredAt));
         return (
           <div key={commit.sha} role="listitem" className="border-b border-border/60">
-          <button
-            type="button"
-            className="group flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
-            aria-label={t("gitOpenCommit", { subject: commit.subject || commit.shortSha })}
-            onClick={() => onOpen(commit)}
-          >
-            <GitCommitHorizontal size={14} className="mt-0.5 shrink-0 text-muted group-hover:text-accent" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-foreground">{commit.subject || t("gitCommitWithoutSubject")}</span>
-              <span className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted">
-                <span className="shrink-0 font-mono text-accent">{commit.shortSha}</span>
-                <span className="truncate">{commit.authorName}</span>
-                <span className="ml-auto shrink-0">{date}</span>
+            <button
+              type="button"
+              className="group flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+              aria-label={t("gitOpenCommit", { subject: commit.subject || commit.shortSha })}
+              onClick={() => onOpen(commit)}
+            >
+              <GitCommitHorizontal
+                size={14}
+                className="mt-0.5 shrink-0 text-muted group-hover:text-accent"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-foreground">
+                  {commit.subject || t("gitCommitWithoutSubject")}
+                </span>
+                <span className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted">
+                  <span className="shrink-0 font-mono text-accent">{commit.shortSha}</span>
+                  <span className="truncate">{commit.authorName}</span>
+                  <span className="ml-auto shrink-0">{date}</span>
+                </span>
+                {commit.refs.length > 0 && (
+                  <span className="mt-1 flex items-center gap-1 truncate text-[10px] text-muted">
+                    <GitBranch size={10} className="shrink-0" />
+                    {commit.refs.join(", ")}
+                  </span>
+                )}
               </span>
-              {commit.refs.length > 0 && <span className="mt-1 flex items-center gap-1 truncate text-[10px] text-muted"><GitBranch size={10} className="shrink-0" />{commit.refs.join(", ")}</span>}
-            </span>
-          </button>
+            </button>
           </div>
         );
       })}
       {hasMore && (
         <div className="p-3">
-          <button type="button" disabled={loading} className="flex h-8 w-full items-center justify-center gap-2 rounded border border-border text-xs text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40" onClick={onLoadMore}>
-            {loading && <LoaderCircle size={13} className="animate-spin" />}{t("gitLoadMoreHistory")}
+          <button
+            type="button"
+            disabled={loading}
+            className="flex h-8 w-full items-center justify-center gap-2 rounded border border-border text-xs text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+            onClick={onLoadMore}
+          >
+            {loading && <LoaderCircle size={13} className="animate-spin" />}
+            {t("gitLoadMoreHistory")}
           </button>
         </div>
       )}
@@ -1086,7 +1367,31 @@ function HistoryView({ commits, loading, loaded, hasMore, onOpen, onLoadMore, lo
   );
 }
 
-function DiffView({ title, detail, diff, loading, error, backLabel, area, operation, onMutateHunk, onBack, t }: { title: string; detail?: string; diff: GitDiffSnapshot | GitCommitDiffSnapshot | null; loading: boolean; error: string | null; backLabel: string; area?: "staged" | "unstaged"; operation?: string | null; onMutateHunk?: (hunk: GitDiffHunk, operation: "stage" | "unstage" | "discard") => void; onBack: () => void; t: Translate }) {
+function DiffView({
+  title,
+  detail,
+  diff,
+  loading,
+  error,
+  backLabel,
+  area,
+  operation,
+  onMutateHunk,
+  onBack,
+  t,
+}: {
+  title: string;
+  detail?: string;
+  diff: GitDiffSnapshot | GitCommitDiffSnapshot | null;
+  loading: boolean;
+  error: string | null;
+  backLabel: string;
+  area?: "staged" | "unstaged";
+  operation?: string | null;
+  onMutateHunk?: (hunk: GitDiffHunk, operation: "stage" | "unstage" | "discard") => void;
+  onBack: () => void;
+  t: Translate;
+}) {
   const lines = useMemo(() => parseUnifiedDiffLines(diff?.patch ?? ""), [diff?.patch]);
   const hunks = diff && "hunks" in diff ? diff.hunks : [];
   const hunkOperations = diff && "hunkOperations" in diff ? diff.hunkOperations : [];
@@ -1094,38 +1399,119 @@ function DiffView({ title, detail, diff, loading, error, backLabel, area, operat
   return (
     <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-2">
-        <button type="button" title={backLabel} aria-label={backLabel} className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent" onClick={onBack}><ArrowLeft size={14} /></button>
-        <span className="min-w-0 flex-1 truncate text-xs" title={title}>{title}</span>
+        <button
+          type="button"
+          title={backLabel}
+          aria-label={backLabel}
+          className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          onClick={onBack}
+        >
+          <ArrowLeft size={14} />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-xs" title={title}>
+          {title}
+        </span>
         {detail && <span className="shrink-0 font-mono text-[10px] text-muted">{detail}</span>}
-        {diff && <span className="shrink-0 text-[11px]"><span className="text-success">+{diff.additions}</span><span className="ml-1.5 text-danger">-{diff.deletions}</span></span>}
+        {diff && (
+          <span className="shrink-0 text-[11px]">
+            <span className="text-success">+{diff.additions}</span>
+            <span className="ml-1.5 text-danger">-{diff.deletions}</span>
+          </span>
+        )}
       </header>
-      {diff?.truncated && <div className="shrink-0 border-b border-warning/35 bg-warning/10 px-3 py-2 text-xs text-warning">{t("gitDiffTruncated")}</div>}
-      {error && <div role="alert" className="shrink-0 border-b border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+      {diff?.truncated && (
+        <div className="shrink-0 border-b border-warning/35 bg-warning/10 px-3 py-2 text-xs text-warning">
+          {t("gitDiffTruncated")}
+        </div>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger"
+        >
+          {error}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto bg-surface-raised/25">
-        {loading ? <div className="flex h-full items-center justify-center text-muted"><LoaderCircle size={20} className="animate-spin" /></div>
-          : diff?.binary ? <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted"><FileCode2 size={24} /><p className="text-sm">{t("gitBinaryDiff")}</p></div>
-          : diff && !diff.patch ? <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">{t("gitEmptyDiff")}</div>
-          : <div className="min-w-max py-1 font-mono text-[11px] leading-5">{lines.map((line, index) => {
-            const hunk = line.kind === "hunk" ? hunks[hunkIndex++] : null;
-            const hunkOperation = area === "staged" ? "unstage" : "stage";
-            const canMutate = hunkOperations.includes(hunkOperation);
-            const busy = Boolean(operation);
-            return <div key={`${index}:${line.content}`} className={`grid grid-cols-[3rem_3rem_minmax(max-content,1fr)] ${line.kind === "addition" ? "bg-success/10 text-success" : line.kind === "deletion" ? "bg-danger/10 text-danger" : line.kind === "hunk" ? "bg-accent/10 text-accent" : line.kind === "meta" ? "text-muted" : "text-foreground/80"}`}>
-              <span className="select-none border-r border-border/50 px-1.5 text-right text-muted/65">{line.oldLine ?? ""}</span>
-              <span className="select-none border-r border-border/50 px-1.5 text-right text-muted/65">{line.newLine ?? ""}</span>
-              {hunk && onMutateHunk && (canMutate || hunkOperations.includes("discard")) ? (
-                <span className="flex min-w-0 items-center">
-                  <pre className="min-w-0 flex-1 px-2 whitespace-pre">{line.content || " "}</pre>
-                  {hunkOperations.includes("discard") && (
-                    <button type="button" title={t("gitDiscardHunk")} aria-label={t("gitDiscardHunk")} disabled={busy} className="sticky right-7 flex size-6 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:opacity-40" onClick={() => onMutateHunk(hunk, "discard")}><Trash2 size={12} /></button>
+        {loading ? (
+          <div className="flex h-full items-center justify-center text-muted">
+            <LoaderCircle size={20} className="animate-spin" />
+          </div>
+        ) : diff?.binary ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted">
+            <FileCode2 size={24} />
+            <p className="text-sm">{t("gitBinaryDiff")}</p>
+          </div>
+        ) : diff && !diff.patch ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+            {t("gitEmptyDiff")}
+          </div>
+        ) : (
+          <div className="min-w-max py-1 font-mono text-[11px] leading-5">
+            {lines.map((line, index) => {
+              const hunk = line.kind === "hunk" ? hunks[hunkIndex++] : null;
+              const hunkOperation = area === "staged" ? "unstage" : "stage";
+              const canMutate = hunkOperations.includes(hunkOperation);
+              const busy = Boolean(operation);
+              return (
+                <div
+                  key={`${index}:${line.content}`}
+                  className={`grid grid-cols-[3rem_3rem_minmax(max-content,1fr)] ${line.kind === "addition" ? "bg-success/10 text-success" : line.kind === "deletion" ? "bg-danger/10 text-danger" : line.kind === "hunk" ? "bg-accent/10 text-accent" : line.kind === "meta" ? "text-muted" : "text-foreground/80"}`}
+                >
+                  <span className="select-none border-r border-border/50 px-1.5 text-right text-muted/65">
+                    {line.oldLine ?? ""}
+                  </span>
+                  <span className="select-none border-r border-border/50 px-1.5 text-right text-muted/65">
+                    {line.newLine ?? ""}
+                  </span>
+                  {hunk && onMutateHunk && (canMutate || hunkOperations.includes("discard")) ? (
+                    <span className="flex min-w-0 items-center">
+                      <pre className="min-w-0 flex-1 px-2 whitespace-pre">
+                        {line.content || " "}
+                      </pre>
+                      {hunkOperations.includes("discard") && (
+                        <button
+                          type="button"
+                          title={t("gitDiscardHunk")}
+                          aria-label={t("gitDiscardHunk")}
+                          disabled={busy}
+                          className="sticky right-7 flex size-6 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger disabled:opacity-40"
+                          onClick={() => onMutateHunk(hunk, "discard")}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                      {canMutate && (
+                        <button
+                          type="button"
+                          title={
+                            hunkOperation === "stage" ? t("gitStageHunk") : t("gitUnstageHunk")
+                          }
+                          aria-label={
+                            hunkOperation === "stage" ? t("gitStageHunk") : t("gitUnstageHunk")
+                          }
+                          disabled={busy}
+                          className="sticky right-0 flex size-7 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                          onClick={() => onMutateHunk(hunk, hunkOperation)}
+                        >
+                          {operation === `hunk:${hunkOperation}:${hunk.id}` ? (
+                            <LoaderCircle size={12} className="animate-spin" />
+                          ) : hunkOperation === "stage" ? (
+                            <Plus size={12} />
+                          ) : (
+                            <Undo2 size={12} />
+                          )}
+                        </button>
+                      )}
+                    </span>
+                  ) : (
+                    <pre className="px-2 whitespace-pre">{line.content || " "}</pre>
                   )}
-                  {canMutate && <button type="button" title={hunkOperation === "stage" ? t("gitStageHunk") : t("gitUnstageHunk")} aria-label={hunkOperation === "stage" ? t("gitStageHunk") : t("gitUnstageHunk")} disabled={busy} className="sticky right-0 flex size-7 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40" onClick={() => onMutateHunk(hunk, hunkOperation)}>
-                    {operation === `hunk:${hunkOperation}:${hunk.id}` ? <LoaderCircle size={12} className="animate-spin" /> : hunkOperation === "stage" ? <Plus size={12} /> : <Undo2 size={12} />}
-                  </button>}
-                </span>
-              ) : <pre className="px-2 whitespace-pre">{line.content || " "}</pre>}
-            </div>;
-          })}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ import { renderExtensionMessageEntries } from "./extension-message-renderer.js";
 import { getQueueSnapshot } from "./queue-state.js";
 import { logger } from "./logger.js";
 
-export const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
+const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
 const OMITTED_IMAGE_TEXT = "[Image omitted from desktop snapshot: size limit]";
 
 function jsonByteLength(value: unknown): number {
@@ -46,9 +46,7 @@ function entriesByteLength(
   );
 }
 
-function omitImages(
-  messages: readonly SerializableAgentMessage[],
-): SerializableAgentMessage[] {
+function omitImages(messages: readonly SerializableAgentMessage[]): SerializableAgentMessage[] {
   return messages.map((message) => {
     if (!Array.isArray(message.content)) return message;
     let changed = false;
@@ -129,8 +127,7 @@ export function buildToolSnapshot(args: {
       source?: { kind?: string } | string;
     };
     const source =
-      anyT.sourceLabel ??
-      (typeof anyT.source === "string" ? anyT.source : anyT.source?.kind);
+      anyT.sourceLabel ?? (typeof anyT.source === "string" ? anyT.source : anyT.source?.kind);
     return {
       name: anyT.name,
       description: anyT.description,
@@ -170,8 +167,8 @@ export function buildSessionSnapshot(args: {
       }
     : undefined;
 
-  const messages: SerializableAgentMessage[] = session.messages.map((m) =>
-    toJsonValue(m) as SerializableAgentMessage,
+  const messages: SerializableAgentMessage[] = session.messages.map(
+    (m) => toJsonValue(m) as SerializableAgentMessage,
   );
   const contextUsage = session.getContextUsage?.();
   const contextBreakdown = contextUsage
@@ -241,8 +238,7 @@ export function buildSessionSnapshot(args: {
         (entry, error) => {
           logger.warn("Extension message renderer failed", {
             entryId: entry.id,
-            customType:
-              typeof entry.customType === "string" ? entry.customType : undefined,
+            customType: typeof entry.customType === "string" ? entry.customType : undefined,
             error: error instanceof Error ? error.message : String(error),
           });
         },
@@ -251,9 +247,7 @@ export function buildSessionSnapshot(args: {
         ...snapshot,
         entries,
         leafId,
-        ...(Object.keys(extensionMessageRenders).length > 0
-          ? { extensionMessageRenders }
-          : {}),
+        ...(Object.keys(extensionMessageRenders).length > 0 ? { extensionMessageRenders } : {}),
       };
       if (snapshotByteLength(candidate) <= maxSnapshotBytes) return candidate;
       return { ...snapshot, entries, leafId };

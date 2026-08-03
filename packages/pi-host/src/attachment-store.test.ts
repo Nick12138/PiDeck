@@ -3,16 +3,18 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ZipFile } from "yazl";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_PASTED_TEXT_ATTACHMENT_BYTES, type AttachmentSnapshot } from "@pideck/protocol";
 import { parseAttachment } from "./attachment-parser.js";
 import { AttachmentStore, AttachmentStoreError } from "./attachment-store.js";
+import { logger } from "./logger.js";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000001";
 const OTHER_SESSION_ID = "00000000-0000-4000-8000-000000000002";
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -89,8 +91,8 @@ async function writeDocx(path: string, body?: string): Promise<void> {
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
         "<w:body>" +
         (body ??
-          '<w:p><w:r><w:t>Quarterly report</w:t></w:r></w:p>' +
-            '<w:p><w:r><w:t>Revenue increased.</w:t></w:r></w:p>') +
+          "<w:p><w:r><w:t>Quarterly report</w:t></w:r></w:p>" +
+            "<w:p><w:r><w:t>Revenue increased.</w:t></w:r></w:p>") +
         "<w:sectPr/>" +
         "</w:body></w:document>",
     ),
@@ -116,10 +118,7 @@ async function writeDocx(path: string, body?: string): Promise<void> {
     "word/numbering.xml",
   );
   await new Promise<void>((resolve, reject) => {
-    zip.outputStream
-      .pipe(createWriteStream(path))
-      .once("close", resolve)
-      .once("error", reject);
+    zip.outputStream.pipe(createWriteStream(path)).once("close", resolve).once("error", reject);
     zip.end();
   });
 }
@@ -200,12 +199,57 @@ describe("AttachmentStore", () => {
     expect(metadata.sha256).toMatch(/^[a-f0-9]{64}$/u);
     const unitNames = await readdir(join(store.root, ready.id, "units"));
     const reconstructed = (
-      await Promise.all(unitNames.sort().map((name) => readFile(join(store.root, ready.id, "units", name), "utf8")))
+      await Promise.all(
+        unitNames.sort().map((name) => readFile(join(store.root, ready.id, "units", name), "utf8")),
+      )
     ).join("");
     expect(reconstructed).toBe(text);
     await expect(store.get(ready.id, OTHER_SESSION_ID)).rejects.toMatchObject({
       kind: "unauthorized",
     });
+  });
+
+  it("contains terminal metadata failures from background parsing", async () => {
+    const layout = await tempLayout();
+    const logError = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const store = new AttachmentStore({
+      agentDir: layout.agentDir,
+      parser: async ({ outputDir }) => {
+        await rm(join(outputDir, ".."), { recursive: true, force: true });
+        return { status: "ready", unit: "chunk", unitCount: 1 };
+      },
+    });
+    await store.initialize();
+
+    const initial = await store.createText({ text: "content", sessionId: SESSION_ID });
+    expect(initial.status).toBe("parsing");
+    await expect(store.waitForIdle()).resolves.toBeUndefined();
+    expect(logError).toHaveBeenCalledWith(
+      "Failed to persist attachment parse failure",
+      expect.objectContaining({ attachmentId: initial.id }),
+    );
+  });
+
+  it("does not let change listener failures corrupt attachment state", async () => {
+    const layout = await tempLayout();
+    const logWarning = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
+    await store.initialize();
+
+    const initial = await store.createText({
+      text: "content",
+      sessionId: SESSION_ID,
+      onChange: () => {
+        throw new Error("listener failed");
+      },
+    });
+    await store.waitForIdle();
+
+    await expect(store.get(initial.id, SESSION_ID)).resolves.toMatchObject({ status: "ready" });
+    expect(logWarning).toHaveBeenCalledWith(
+      "Attachment change listener failed",
+      expect.objectContaining({ attachmentId: initial.id, error: "listener failed" }),
+    );
   });
 
   it("rejects unsafe or oversized pasted text", async () => {
@@ -220,7 +264,10 @@ describe("AttachmentStore", () => {
       store.createText({ text: "before\u0000after", sessionId: SESSION_ID }),
     ).rejects.toMatchObject({ kind: "invalid" });
     await expect(
-      store.createText({ text: "x".repeat(MAX_PASTED_TEXT_ATTACHMENT_BYTES + 1), sessionId: SESSION_ID }),
+      store.createText({
+        text: "x".repeat(MAX_PASTED_TEXT_ATTACHMENT_BYTES + 1),
+        sessionId: SESSION_ID,
+      }),
     ).rejects.toMatchObject({ kind: "too_large" });
   });
 
@@ -307,8 +354,8 @@ describe("AttachmentStore", () => {
       source,
       '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>季度报告</w:t></w:r></w:p>' +
         '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>第一项</w:t></w:r></w:p>' +
-        '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>指标</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>数值</w:t></w:r></w:p></w:tc></w:tr>' +
-        '<w:tr><w:tc><w:p><w:r><w:t>收入</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>42</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>指标</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>数值</w:t></w:r></w:p></w:tc></w:tr>" +
+        "<w:tr><w:tc><w:p><w:r><w:t>收入</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>42</w:t></w:r></w:p></w:tc></w:tr></w:tbl>",
     );
     const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
     await store.initialize();
@@ -356,9 +403,9 @@ describe("AttachmentStore", () => {
     const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
     await store.initialize();
 
-    await expect(
-      store.create({ sourcePath: source, sessionId: SESSION_ID }),
-    ).rejects.toMatchObject({ kind: "too_large" });
+    await expect(store.create({ sourcePath: source, sessionId: SESSION_ID })).rejects.toMatchObject(
+      { kind: "too_large" },
+    );
   });
 
   it("rejects extension-spoofed files and prevents committed draft removal", async () => {
@@ -370,12 +417,14 @@ describe("AttachmentStore", () => {
     const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
     await store.initialize();
 
-    await expect(
-      store.create({ sourcePath: fake, sessionId: SESSION_ID }),
-    ).rejects.toBeInstanceOf(AttachmentStoreError);
+    await expect(store.create({ sourcePath: fake, sessionId: SESSION_ID })).rejects.toBeInstanceOf(
+      AttachmentStoreError,
+    );
     const ready = await createAndWait(store, source);
     await store.commitToSession([ready.id], SESSION_ID);
-    await expect(store.removeDraft(ready.id, SESSION_ID)).rejects.toMatchObject({ kind: "invalid" });
+    await expect(store.removeDraft(ready.id, SESSION_ID)).rejects.toMatchObject({
+      kind: "invalid",
+    });
     expect(await readFile(join(store.root, ready.id, "source.pdf"))).toHaveLength(ready.sizeBytes);
   });
 

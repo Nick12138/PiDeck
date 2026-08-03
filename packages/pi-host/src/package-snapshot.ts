@@ -26,7 +26,7 @@ import {
 type ResourceType = ResourceRecord["type"];
 type ResourceScope = ResourceRecord["scope"];
 
-export type ResourceIdMetadata = {
+type ResourceIdMetadata = {
   type: ResourceType;
   scope: ResourceScope;
   path: string;
@@ -72,9 +72,10 @@ export type PackageIdentityContext = {
 };
 
 function normalizeLocalIdentity(source: string, context: PackageIdentityContext): string {
-  const baseDir = context.scope === "project"
-    ? join(context.cwd ?? process.cwd(), ".pi")
-    : context.agentDir ?? process.cwd();
+  const baseDir =
+    context.scope === "project"
+      ? join(context.cwd ?? process.cwd(), ".pi")
+      : (context.agentDir ?? process.cwd());
   let localSource = source.trim();
   const home = process.env.HOME || homedir();
   if (localSource === "~") {
@@ -102,9 +103,10 @@ export function normalizePackageIdentity(
   source: string,
   installedPathOrContext?: string | PackageIdentityContext,
 ): { identity: string; kind: PackageRecord["kind"] } {
-  const context = typeof installedPathOrContext === "string"
-    ? { installedPath: installedPathOrContext }
-    : installedPathOrContext ?? {};
+  const context =
+    typeof installedPathOrContext === "string"
+      ? { installedPath: installedPathOrContext }
+      : (installedPathOrContext ?? {});
   const trimmed = source.trim();
   if (trimmed.startsWith("npm:")) {
     const spec = trimmed.slice(4);
@@ -171,7 +173,12 @@ function packageId(identity: string, scope: "user" | "project"): string {
 
 function resourceId(type: ResourceType, path: string, owner: string): string {
   const normalized = toPosixPath(resolve(path));
-  return stableId("res", type, owner, process.platform === "win32" ? normalized.toLowerCase() : normalized);
+  return stableId(
+    "res",
+    type,
+    owner,
+    process.platform === "win32" ? normalized.toLowerCase() : normalized,
+  );
 }
 
 function displayName(source: string): string {
@@ -179,9 +186,10 @@ function displayName(source: string): string {
   return basename(source.replace(/\\/g, "/")) || source;
 }
 
-function installedPackageMetadata(
-  installedPath: string | undefined,
-): { description?: string; versionOrRef?: string } {
+function installedPackageMetadata(installedPath: string | undefined): {
+  description?: string;
+  versionOrRef?: string;
+} {
   if (!installedPath) return {};
   try {
     const value = JSON.parse(readFileSync(join(installedPath, "package.json"), "utf8")) as {
@@ -253,7 +261,8 @@ function findSource(
 ): PackageSource | undefined {
   const candidateContext = { ...context, installedPath: undefined };
   return sources.find(
-    (source) => normalizePackageIdentity(sourceString(source), candidateContext).identity === identity,
+    (source) =>
+      normalizePackageIdentity(sourceString(source), candidateContext).identity === identity,
   );
 }
 
@@ -286,9 +295,15 @@ function explicitPreference(
     return enabled === undefined ? undefined : enabled ? "enabled" : "disabled";
   }
   const includes = patterns.filter((pattern) => !/^[!+-]/.test(pattern));
-  const excludes = patterns.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-  const forceIncludes = patterns.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-  const forceExcludes = patterns.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+  const excludes = patterns
+    .filter((pattern) => pattern.startsWith("!"))
+    .map((pattern) => pattern.slice(1));
+  const forceIncludes = patterns
+    .filter((pattern) => pattern.startsWith("+"))
+    .map((pattern) => pattern.slice(1));
+  const forceExcludes = patterns
+    .filter((pattern) => pattern.startsWith("-"))
+    .map((pattern) => pattern.slice(1));
 
   let enabled = includes.length === 0 || includes.some((pattern) => matches(pattern));
   if (excludes.some((pattern) => matches(pattern))) enabled = false;
@@ -327,9 +342,11 @@ function topLevelProjectPreference(
   return result;
 }
 
-function toDiagnostic(
-  diagnostic: { type?: string; message: string; path?: string },
-): PackageDiagnostic {
+function toDiagnostic(diagnostic: {
+  type?: string;
+  message: string;
+  path?: string;
+}): PackageDiagnostic {
   return {
     severity: diagnostic.type === "error" ? "error" : "warning",
     ...(diagnostic.path ? { source: diagnostic.path } : {}),
@@ -346,11 +363,11 @@ function appendLoaderDiagnostic(
     collision?: { winnerPath: string; loserPath: string };
   },
 ): void {
-  const paths = new Set([
-    diagnostic.path,
-    diagnostic.collision?.winnerPath,
-    diagnostic.collision?.loserPath,
-  ].filter((path): path is string => Boolean(path)));
+  const paths = new Set(
+    [diagnostic.path, diagnostic.collision?.winnerPath, diagnostic.collision?.loserPath].filter(
+      (path): path is string => Boolean(path),
+    ),
+  );
   if (paths.size === 0) {
     target.push(toDiagnostic(diagnostic));
     return;
@@ -386,7 +403,12 @@ function loaderInventory(resourceLoader?: DefaultResourceLoader | null): {
     });
   }
   for (const error of extensions.errors) {
-    diagnostics.push({ severity: "error", source: error.path, path: error.path, message: error.error });
+    diagnostics.push({
+      severity: "error",
+      source: error.path,
+      path: error.path,
+      message: error.error,
+    });
   }
 
   const skills = loader.getSkills();
@@ -462,7 +484,8 @@ export async function buildPackageSnapshot(args: {
   const resolved = await packageManager.resolve(async () => "skip");
 
   const configuredInfo = configured.map((item) => {
-    const installedPath = item.installedPath ?? packageManager.getInstalledPath(item.source, item.scope);
+    const installedPath =
+      item.installedPath ?? packageManager.getInstalledPath(item.source, item.scope);
     return {
       ...item,
       installedPath,
@@ -498,16 +521,26 @@ export async function buildPackageSnapshot(args: {
   const shadowedIdentities = new Set(
     configuredInfo
       .filter((item) => item.scope === "user")
-      .filter((item) => configuredInfo.some(
-        (candidate) => candidate.scope === "project" && candidate.identity === item.identity && !matchedDeltas.has(item.identity),
-      ))
+      .filter((item) =>
+        configuredInfo.some(
+          (candidate) =>
+            candidate.scope === "project" &&
+            candidate.identity === item.identity &&
+            !matchedDeltas.has(item.identity),
+        ),
+      )
       .map((item) => item.identity),
   );
   let globalProjection:
-    | { manager: DefaultPackageManager; resolved: Awaited<ReturnType<DefaultPackageManager["resolve"]>> }
+    | {
+        manager: DefaultPackageManager;
+        resolved: Awaited<ReturnType<DefaultPackageManager["resolve"]>>;
+      }
     | undefined;
   if (shadowedIdentities.size > 0 && args.cwd && args.agentDir) {
-    const globalSettingsManager = SettingsManager.inMemory(globalSettings, { projectTrusted: false });
+    const globalSettingsManager = SettingsManager.inMemory(globalSettings, {
+      projectTrusted: false,
+    });
     const manager = new DefaultPackageManager({
       cwd: args.cwd,
       agentDir: args.agentDir,
@@ -518,10 +551,7 @@ export async function buildPackageSnapshot(args: {
 
   const diagnostics: PackageDiagnostic[] = [];
   for (const item of configuredInfo) {
-    if (
-      item.installedPath ||
-      (item.scope === "project" && matchedDeltas.has(item.identity))
-    ) {
+    if (item.installedPath || (item.scope === "project" && matchedDeltas.has(item.identity))) {
       continue;
     }
     diagnostics.push({
@@ -535,7 +565,8 @@ export async function buildPackageSnapshot(args: {
     diagnostics.push({
       severity: "warning",
       source: sourceString(source),
-      message: "Project package override has no matching user package and is loaded as a project package.",
+      message:
+        "Project package override has no matching user package and is loaded as a project package.",
     });
   }
 
@@ -546,7 +577,10 @@ export async function buildPackageSnapshot(args: {
     if (args.scope !== "all" && args.scope !== item.scope) continue;
     const user = userByIdentity.get(item.identity);
     const project = configuredInfo.find(
-      (candidate) => candidate.scope === "project" && candidate.identity === item.identity && !matchedDeltas.has(item.identity),
+      (candidate) =>
+        candidate.scope === "project" &&
+        candidate.identity === item.identity &&
+        !matchedDeltas.has(item.identity),
     );
     const replaced = Boolean(user && project);
     const id = packageId(item.identity, item.scope);
@@ -605,10 +639,14 @@ export async function buildPackageSnapshot(args: {
     ["prompts", "prompt"],
     ["themes", "theme"],
   ] as const) {
-    for (const resource of resolved[plural]) resolvedByPath.set(pathKey(type, resource.path), { type, resource });
+    for (const resource of resolved[plural])
+      resolvedByPath.set(pathKey(type, resource.path), { type, resource });
     for (const resource of globalProjection?.resolved[plural] ?? []) {
       if (resource.metadata.origin !== "package") continue;
-      const installedPath = globalProjection!.manager.getInstalledPath(resource.metadata.source, "user");
+      const installedPath = globalProjection!.manager.getInstalledPath(
+        resource.metadata.source,
+        "user",
+      );
       const identity = normalizePackageIdentity(resource.metadata.source, {
         installedPath,
         scope: "user",
@@ -625,7 +663,9 @@ export async function buildPackageSnapshot(args: {
   }
   const loader = loaderInventory(args.resourceLoader);
   diagnostics.push(...loader.diagnostics.map(({ path: _path, ...diagnostic }) => diagnostic));
-  const loaderByPath = new Map(loader.resources.map((resource) => [pathKey(resource.type, resource.path), resource]));
+  const loaderByPath = new Map(
+    loader.resources.map((resource) => [pathKey(resource.type, resource.path), resource]),
+  );
   const allKeys = new Set([...resolvedByPath.keys(), ...loaderByPath.keys()]);
   const resources: ResourceRecord[] = [];
   const dynamicBaseDirs = new Map<string, string | undefined>();
@@ -641,18 +681,22 @@ export async function buildPackageSnapshot(args: {
     };
     const dynamic = !resolvedEntry && info.source.startsWith("extension:");
     const origin: ResourceRecord["origin"] = dynamic ? "extension" : info.origin;
-    const installedPath = info.origin === "package"
-      ? (resolvedEntry?.globalOnly ? globalProjection!.manager : packageManager)
-          .getInstalledPath(info.source, info.scope === "project" ? "project" : "user")
-      : undefined;
-    const packageIdentity = info.origin === "package"
-      ? normalizePackageIdentity(info.source, {
-          installedPath,
-          scope: info.scope === "project" ? "project" : "user",
-          cwd: args.cwd,
-          agentDir: args.agentDir,
-        }).identity
-      : undefined;
+    const installedPath =
+      info.origin === "package"
+        ? (resolvedEntry?.globalOnly ? globalProjection!.manager : packageManager).getInstalledPath(
+            info.source,
+            info.scope === "project" ? "project" : "user",
+          )
+        : undefined;
+    const packageIdentity =
+      info.origin === "package"
+        ? normalizePackageIdentity(info.source, {
+            installedPath,
+            scope: info.scope === "project" ? "project" : "user",
+            cwd: args.cwd,
+            agentDir: args.agentDir,
+          }).identity
+        : undefined;
     const isDelta = packageIdentity ? matchedDeltas.has(packageIdentity) : false;
     const packageScope = isDelta ? "user" : info.scope === "project" ? "project" : "user";
     const logicalScope: ResourceScope = info.origin === "package" ? packageScope : info.scope;
@@ -660,9 +704,7 @@ export async function buildPackageSnapshot(args: {
     const packageRecord = packageIdentity
       ? recordByIdentityScope.get(`${packageIdentity}:${packageScope}`)
       : undefined;
-    const relativePath = toPosixPath(
-      info.baseDir ? relative(info.baseDir, path) : basename(path),
-    );
+    const relativePath = toPosixPath(info.baseDir ? relative(info.baseDir, path) : basename(path));
     const ownerKey = packageRecord?.id ?? `${origin}:${info.scope}:${info.source}`;
     const id = resourceId(type, path, ownerKey);
     if (dynamic) dynamicBaseDirs.set(id, loaded?.sourceInfo.baseDir);
@@ -681,9 +723,14 @@ export async function buildPackageSnapshot(args: {
           agentDir: args.agentDir,
         })
       : undefined;
-    const userPreference = packageIdentity && packageScope === "user"
-      ? explicitPreference(userSource, type, relativePath, path) ?? "enabled"
-      : info.scope === "user" ? (resolvedEntry?.resource.enabled === false ? "disabled" : "enabled") : undefined;
+    const userPreference =
+      packageIdentity && packageScope === "user"
+        ? (explicitPreference(userSource, type, relativePath, path) ?? "enabled")
+        : info.scope === "user"
+          ? resolvedEntry?.resource.enabled === false
+            ? "disabled"
+            : "enabled"
+          : undefined;
     let projectPreference: "inherit" | "enabled" | "disabled" | undefined;
     if (packageIdentity && packageScope === "user") {
       projectPreference = projectOverridePreference(projectSource, type, relativePath, path);
@@ -699,9 +746,15 @@ export async function buildPackageSnapshot(args: {
         ? []
         : info.origin === "package"
           ? packageScope === "user"
-            ? resolvedEntry?.globalOnly ? ["user"] : ["user", "project"]
+            ? resolvedEntry?.globalOnly
+              ? ["user"]
+              : ["user", "project"]
             : ["project"]
-          : info.scope === "project" ? ["project"] : info.scope === "user" ? ["user", "project"] : [];
+          : info.scope === "project"
+            ? ["project"]
+            : info.scope === "user"
+              ? ["user", "project"]
+              : [];
     const resourceDiagnostics = loader.diagnostics
       .filter((diagnostic) => diagnostic.path && pathKey(type, diagnostic.path) === key)
       .map(({ path: _path, ...diagnostic }) => diagnostic);
@@ -710,7 +763,8 @@ export async function buildPackageSnapshot(args: {
       id,
       type,
       name:
-        loaded?.name ?? skillMetadata.name ??
+        loaded?.name ??
+        skillMetadata.name ??
         (type === "skill" && basename(path).toLocaleLowerCase() === "skill.md"
           ? basename(dirname(path))
           : basename(path)),
@@ -728,9 +782,13 @@ export async function buildPackageSnapshot(args: {
         ...(userPreference ? { user: userPreference } : {}),
         ...(projectPreference ? { project: projectPreference } : {}),
       },
-      control: configurableScopes.length > 0
-        ? { kind: "preference", scopes: configurableScopes }
-        : { kind: "read-only", reason: dynamic ? "Runtime resource owner is unavailable" : "Temporary resource" },
+      control:
+        configurableScopes.length > 0
+          ? { kind: "preference", scopes: configurableScopes }
+          : {
+              kind: "read-only",
+              reason: dynamic ? "Runtime resource owner is unavailable" : "Temporary resource",
+            },
       ...(loaded?.manualOnly !== undefined ? { manualOnly: loaded.manualOnly } : {}),
       diagnostics: resourceDiagnostics,
     });
@@ -766,9 +824,10 @@ export async function buildPackageSnapshot(args: {
     if (resource.origin !== "extension") continue;
     const candidates = extensionsByLabel.get(resource.source) ?? [];
     const baseDir = dynamicBaseDirs.get(resource.id);
-    const owner = candidates.length === 1
-      ? candidates[0]
-      : candidates.find((candidate) => baseDir && samePath(baseDir, dirname(candidate.path)));
+    const owner =
+      candidates.length === 1
+        ? candidates[0]
+        : candidates.find((candidate) => baseDir && samePath(baseDir, dirname(candidate.path)));
     if (!owner) continue;
     resource.control = { kind: "owner-extension", ownerResourceId: owner.id };
     if (owner.packageId) resource.packageId = owner.packageId;
@@ -776,10 +835,17 @@ export async function buildPackageSnapshot(args: {
 
   for (const record of records) {
     if (record.resourceCountsState === "unknownShadowed") continue;
-    const owned = resources.filter((resource) => resource.packageId === record.id && resource.origin !== "extension");
+    const owned = resources.filter(
+      (resource) => resource.packageId === record.id && resource.origin !== "extension",
+    );
     const counts = { extensions: 0, skills: 0, prompts: 0, themes: 0, enabled: 0, disabled: 0 };
     for (const resource of owned) {
-      counts[`${resource.type}s` as keyof Pick<typeof counts, "extensions" | "skills" | "prompts" | "themes">]++;
+      counts[
+        `${resource.type}s` as keyof Pick<
+          typeof counts,
+          "extensions" | "skills" | "prompts" | "themes"
+        >
+      ]++;
       counts[resource.enabled ? "enabled" : "disabled"]++;
     }
     record.resourceCounts = counts;

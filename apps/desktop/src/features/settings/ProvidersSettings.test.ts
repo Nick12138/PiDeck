@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@pideck/protocol";
 import {
   automaticThinkingConfig,
+  newProviderModel,
   providerDraftForSave,
   providerSaveFailureMessage,
   shouldOpenAdvancedEndpoint,
-} from "./ProvidersSettings";
+} from "./provider-settings-model";
+
+describe("newProviderModel", () => {
+  it("creates a conservative manual model draft for an unknown model", () => {
+    expect(newProviderModel("vendor-new-model")).toEqual({
+      id: "vendor-new-model",
+      name: "vendor-new-model",
+      reasoning: false,
+      input: ["text"],
+      contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: DEFAULT_MODEL_MAX_TOKENS,
+      enabled: true,
+      thinkingSource: "default",
+    });
+  });
+
+  it("applies the maintained profile when the model is recognized", () => {
+    expect(newProviderModel("grok-4.5")).toMatchObject({
+      reasoning: true,
+      thinkingSource: "profile",
+      thinkingLevelMap: {
+        low: "low",
+        medium: "medium",
+        high: "high",
+      },
+    });
+  });
+});
 
 describe("automaticThinkingConfig", () => {
   it("enables generic automatic reasoning for an unknown model", () => {
@@ -103,15 +132,20 @@ describe("providerDraftForSave", () => {
   });
 
   it("keeps new endpoint and compatibility fields when they are needed", () => {
-    expect(providerDraftForSave({
-      ...baseDraft,
-      modelsUrl: "  https://relay.example/catalog  ",
-      api: "anthropic-messages",
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: null,
-      },
-    }, true)).toMatchObject({
+    expect(
+      providerDraftForSave(
+        {
+          ...baseDraft,
+          modelsUrl: "  https://relay.example/catalog  ",
+          api: "anthropic-messages",
+          compat: {
+            supportsDeveloperRole: false,
+            supportsReasoningEffort: null,
+          },
+        },
+        true,
+      ),
+    ).toMatchObject({
       modelsUrl: "https://relay.example/catalog",
       api: "anthropic-messages",
       authHeader: false,

@@ -64,10 +64,6 @@ export function beginQueueTransaction(session: AgentSession): QueueSnapshot {
   return snapshot(state);
 }
 
-export function isQueueTransactionActive(session: AgentSession): boolean {
-  return stateFor(session).transactionDepth > 0;
-}
-
 export function observeQueueUpdate(
   session: AgentSession,
   nextQueue: Omit<QueueSnapshot, "revision"> = readQueue(session),
@@ -86,9 +82,10 @@ export function observeQueueUpdate(
   };
 }
 
-export function finishQueueTransaction(
-  session: AgentSession,
-): { changed: boolean; queue: QueueSnapshot } {
+export function finishQueueTransaction(session: AgentSession): {
+  changed: boolean;
+  queue: QueueSnapshot;
+} {
   const state = stateFor(session);
   if (state.transactionDepth <= 0) {
     throw new Error("No active queue transaction");

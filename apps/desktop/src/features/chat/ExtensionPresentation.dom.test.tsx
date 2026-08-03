@@ -5,7 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { useAppStore, type ExtensionUiRequestState } from "../../lib/stores/app-store";
+import { useAppStore } from "../../lib/stores/app-store";
+import type { ExtensionUiRequestState } from "../../lib/stores/extension-ui-state";
 import { AssistantOrderedContent, ExtensionMessageRow } from "./Transcript";
 import { Composer } from "./Composer";
 import { ExtensionUiModal } from "./ExtensionUiModal";
@@ -265,9 +266,7 @@ describe("Extension presentation surfaces", () => {
 
   it("renders exactly one surface and keeps legacy requests modal", async () => {
     act(() => {
-      useAppStore.getState().setExtensionUiRequest(
-        extensionRequest({ presentation: "inline" }),
-      );
+      useAppStore.getState().setExtensionUiRequest(extensionRequest({ presentation: "inline" }));
     });
     renderRequestSurfaces();
 
@@ -313,12 +312,13 @@ describe("Extension presentation surfaces", () => {
   it("shows a local failure and lets the same action retry", async () => {
     const hostRequest = vi
       .spyOn(hostClient, "request")
-      .mockResolvedValueOnce({ ok: false, error: { message: "Host temporarily unavailable" } } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { message: "Host temporarily unavailable" },
+      } as never)
       .mockResolvedValueOnce({ ok: true, result: null } as never);
     act(() => {
-      useAppStore.getState().setExtensionUiRequest(
-        extensionRequest({ presentation: "inline" }),
-      );
+      useAppStore.getState().setExtensionUiRequest(extensionRequest({ presentation: "inline" }));
     });
     const user = userEvent.setup();
     renderRequestSurfaces();
@@ -342,14 +342,13 @@ describe("Extension presentation surfaces", () => {
   it("disables duplicate actions while a response is in flight", async () => {
     let resolveResponse: ((value: unknown) => void) | undefined;
     const hostRequest = vi.spyOn(hostClient, "request").mockImplementation(
-      () => new Promise((resolve) => {
-        resolveResponse = resolve;
-      }) as never,
+      () =>
+        new Promise((resolve) => {
+          resolveResponse = resolve;
+        }) as never,
     );
     act(() => {
-      useAppStore.getState().setExtensionUiRequest(
-        extensionRequest({ presentation: "inline" }),
-      );
+      useAppStore.getState().setExtensionUiRequest(extensionRequest({ presentation: "inline" }));
     });
     const user = userEvent.setup();
     renderRequestSurfaces();
@@ -368,16 +367,18 @@ describe("Extension presentation surfaces", () => {
   });
 
   it("keeps select progress on the option that is being submitted", async () => {
-    vi.spyOn(hostClient, "request").mockImplementation(
-      () => new Promise(() => {}) as never,
-    );
+    vi.spyOn(hostClient, "request").mockImplementation(() => new Promise(() => {}) as never);
     act(() => {
       useAppStore.getState().setExtensionUiRequest(
         extensionRequest({
           presentation: "inline",
           kind: "select",
           options: [
-            { id: "apply", label: "Apply the recommendation", description: "Use shared semantics." },
+            {
+              id: "apply",
+              label: "Apply the recommendation",
+              description: "Use shared semantics.",
+            },
             { id: "later", label: "Decide later" },
           ],
           allowFreeform: true,
@@ -423,7 +424,9 @@ describe("Extension presentation surfaces", () => {
     const search = screen.getByRole("searchbox", { name: "Search options" });
     await user.type(search, "Option 149");
     expect(screen.getByRole("button", { name: "Option 149. Description 149" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Option 14. Description 14" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Option 14. Description 14" }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Option 149. Description 149" }));
     await waitFor(() => expect(hostRequest).toHaveBeenCalledOnce());
@@ -572,8 +575,11 @@ describe("Extension presentation surfaces", () => {
 
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Next modal request" })).toBeVisible();
-    expect(useAppStore.getState().notifications.filter((item) => item.message === "Extension request expired"))
-      .toHaveLength(1);
+    expect(
+      useAppStore
+        .getState()
+        .notifications.filter((item) => item.message === "Extension request expired"),
+    ).toHaveLength(1);
   });
 
   it("keeps one Inline group shell across sequential select and input requests", async () => {
@@ -657,9 +663,7 @@ describe("Extension presentation surfaces", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() =>
-      expect(screen.getByText("Waiting for the next question…")).toBeVisible(),
-    );
+    await waitFor(() => expect(screen.getByText("Waiting for the next question…")).toBeVisible());
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(composer).not.toHaveFocus();
 

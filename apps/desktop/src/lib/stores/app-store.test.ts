@@ -2,16 +2,12 @@
  * R7: app-store epoch wiring — host/workspace changes clear stale state.
  */
 import { describe, expect, it, beforeEach } from "vitest";
+import { useAppStore } from "./app-store";
 import {
   deriveExtensionUiWaitingBySession,
   isExtensionDecisionBlockingSession,
-  useAppStore,
-} from "./app-store";
-import type {
-  HostStatusSnapshot,
-  SessionSnapshot,
-  WorkspaceSnapshot,
-} from "@pideck/protocol";
+} from "./extension-ui-state";
+import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { emptySessionCatalog } from "./session-catalog";
 
 function host(id: string): HostStatusSnapshot {
@@ -623,13 +619,7 @@ describe("app-store epoch wiring", () => {
       context: { ...context, expectedSessionId: "s2" },
     };
 
-    expect(
-      deriveExtensionUiWaitingBySession(
-        active,
-        [active, background, expired],
-        now,
-      ),
-    ).toEqual({
+    expect(deriveExtensionUiWaitingBySession(active, [active, background, expired], now)).toEqual({
       s1: { count: 1, hasHighRisk: false },
       s2: { count: 1, hasHighRisk: true },
     });
@@ -654,12 +644,8 @@ describe("app-store epoch wiring", () => {
       status: "active" as const,
     };
 
-    expect(
-      isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s1"),
-    ).toBe(true);
-    expect(
-      isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s2"),
-    ).toBe(false);
+    expect(isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s1")).toBe(true);
+    expect(isExtensionDecisionBlockingSession(null, { [group.groupKey]: group }, "s2")).toBe(false);
     expect(
       isExtensionDecisionBlockingSession(
         null,
@@ -792,9 +778,7 @@ describe("app-store epoch wiring", () => {
   it("projects the active Pi snapshot into the Session Catalog runtime state", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
-    useAppStore.getState().applySessionSnapshot(
-      session("s1"),
-    );
+    useAppStore.getState().applySessionSnapshot(session("s1"));
     expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("idle");
 
     useAppStore.getState().applySessionSnapshot({
@@ -802,20 +786,14 @@ describe("app-store epoch wiring", () => {
       isIdle: false,
       isStreaming: true,
     });
-    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe(
-      "running",
-    );
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
 
     useAppStore.getState().applySessionSnapshot(session("s2"));
-    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe(
-      "inactive",
-    );
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("inactive");
     expect(useAppStore.getState().sessionCatalog.entries.s2?.runtimeState).toBe("idle");
 
     useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 20);
-    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe(
-      "running",
-    );
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
   });
 
   it("clears the Session Catalog only when the workspace epoch changes", () => {

@@ -209,13 +209,7 @@ export type SessionSummary = {
   sessionRevision?: number;
 };
 
-export type SessionRuntimeState =
-  | "starting"
-  | "running"
-  | "queued"
-  | "idle"
-  | "error"
-  | "inactive";
+export type SessionRuntimeState = "starting" | "running" | "queued" | "idle" | "error" | "inactive";
 
 export type ModelSummary = {
   provider: string;
@@ -225,19 +219,9 @@ export type ModelSummary = {
 };
 
 export type ProviderApi =
-  | "openai-completions"
-  | "openai-responses"
-  | "anthropic-messages"
-  | "google-generative-ai";
+  "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
 
-export type ThinkingLevel =
-  | "off"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
 
@@ -259,12 +243,7 @@ export type DiscoveredProviderModel = ProviderModelConfig & {
 export type ProviderAuthStatus = {
   configured: boolean;
   source?:
-    | "stored"
-    | "runtime"
-    | "environment"
-    | "fallback"
-    | "models_json_key"
-    | "models_json_command";
+    "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
   label?: string;
 };
 
@@ -622,37 +601,10 @@ export type PackageResourceType = ResourceRecord["type"];
 /** @deprecated Prefer PackageResourceType for package/resource APIs. */
 export type ResourceType = PackageResourceType;
 
-export type PiSettingsSnapshot = {
-  defaultModel?: ModelSummary;
-  defaultThinkingLevel?: string;
-  steeringMode: "all" | "one-at-a-time";
-  followUpMode: "all" | "one-at-a-time";
-  autoCompaction: boolean;
-  autoRetry: boolean;
-};
-
-export type PiSettingsPatch = {
-  defaultThinkingLevel?: string;
-  steeringMode?: "all" | "one-at-a-time";
-  followUpMode?: "all" | "one-at-a-time";
-  autoCompaction?: boolean;
-  autoRetry?: boolean;
-};
-
 export type ExtensionPresentationAudience = "agent" | "user";
-export type ExtensionPresentationKind =
-  | "activity"
-  | "progress"
-  | "decision"
-  | "result"
-  | "warning";
+export type ExtensionPresentationKind = "activity" | "progress" | "decision" | "result" | "warning";
 export type ExtensionPresentationStatus =
-  | "pending"
-  | "running"
-  | "resolved"
-  | "cancelled"
-  | "expired"
-  | "failed";
+  "pending" | "running" | "resolved" | "cancelled" | "expired" | "failed";
 export type ExtensionPresentationSeverity = "neutral" | "info" | "warning" | "danger";
 
 /** Portable, declarative presentation hints for custom Extension messages. */
@@ -687,11 +639,7 @@ export type ExtensionUiClosed = {
   reason: ExtensionUiClosedReason;
 };
 
-export type ExtensionUiGroupStatus =
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "stale";
+export type ExtensionUiGroupStatus = "completed" | "failed" | "cancelled" | "stale";
 
 export type ExtensionUiGroupClosed = {
   groupKey: string;
@@ -729,10 +677,7 @@ export type ExtensionUiOrigin =
     })
   | (ExtensionUiKnownOrigin & { invocationKind: "background" });
 
-export type ExtensionDecisionPresentation =
-  | "legacy-modal"
-  | "auto"
-  | "inline-first";
+export type ExtensionDecisionPresentation = "legacy-modal" | "auto" | "inline-first";
 
 export type ExtensionUiPresentation = "inline" | "modal";
 export type ExtensionUiRisk = "normal" | "high";
@@ -887,8 +832,28 @@ export type SerializableAgentSessionEvent = {
   [key: string]: JsonValue | undefined;
 };
 
+export const DESKTOP_THEMES = ["light", "dark", "system"] as const;
+export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
+
+export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;
+export type DesktopLanguage = (typeof DESKTOP_LANGUAGES)[number];
+
+export const TERMINAL_PROFILE_IDS = [
+  "auto",
+  "pwsh",
+  "windows-powershell",
+  "cmd",
+  "git-bash",
+  "wsl-default",
+  "zsh",
+  "bash",
+  "fish",
+  "sh",
+] as const;
+export type TerminalProfileId = (typeof TERMINAL_PROFILE_IDS)[number];
+
 export type DesktopSettings = {
-  theme: "light" | "dark" | "system";
+  theme: DesktopTheme;
   defaultWorkspace?: string;
   restoreLastSession: boolean;
   lastWorkspace?: string;
@@ -898,7 +863,7 @@ export type DesktopSettings = {
   extensionDecisionPresentation: ExtensionDecisionPresentation;
   terminalProfile: TerminalProfileId;
   /** UI language; "system" (or absent) follows the OS locale. */
-  language?: "system" | "en" | "zh";
+  language?: DesktopLanguage;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */
   conversationContentWidth?: number;
   /** Persistent list of workspace folders shown in the sidebar. */
@@ -906,17 +871,5 @@ export type DesktopSettings = {
   /** Per-command shortcut overrides. null explicitly disables a command binding. */
   shortcutOverrides?: Record<string, string | null>;
 };
-
-export type TerminalProfileId =
-  | "auto"
-  | "pwsh"
-  | "windows-powershell"
-  | "cmd"
-  | "git-bash"
-  | "wsl-default"
-  | "zsh"
-  | "bash"
-  | "fish"
-  | "sh";
 
 export type DesktopSettingsPatch = Partial<DesktopSettings>;

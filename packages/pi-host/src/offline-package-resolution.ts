@@ -22,8 +22,6 @@
  * disable the update-check capability. Every caller below runs under
  * `serviceGraphLock`, so no other resolution can observe the temporary value.
  */
-import { logger } from "./logger.js";
-
 const OFFLINE_ENV = "PI_OFFLINE";
 
 /**
@@ -51,17 +49,4 @@ export function implicitPackageInstallSuppressed(): boolean {
   if (!value) return false;
   const normalized = value.toLowerCase();
   return value === "1" || normalized === "true" || normalized === "yes";
-}
-
-/**
- * Report configured packages that implicit loading refused to fetch, so a
- * skipped package is visible instead of silently missing.
- */
-export function logSkippedPackageInstalls(scope: string, missingSources: string[]): void {
-  if (missingSources.length === 0) return;
-  logger.info("Configured packages were not installed during implicit resource load", {
-    scope,
-    count: missingSources.length,
-    sources: missingSources,
-  });
 }

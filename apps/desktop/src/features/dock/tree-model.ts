@@ -2,7 +2,7 @@ import type { JsonValue, SerializableSessionTreeNode } from "@pideck/protocol";
 
 export type TreeRowKind = "user" | "assistant" | "other";
 
-export type TreeRailMark = { lane: number; accent: boolean };
+type TreeRailMark = { lane: number; accent: boolean };
 
 export type TreeRow = {
   id: string;
@@ -36,9 +36,7 @@ const ASSISTANT_PLACEHOLDER = "(assistant message)";
 function firstTextLine(text: string): string {
   const line = text.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
   const trimmed = line.trim();
-  return trimmed.length > EXCERPT_LIMIT
-    ? `${trimmed.slice(0, EXCERPT_LIMIT - 1)}…`
-    : trimmed;
+  return trimmed.length > EXCERPT_LIMIT ? `${trimmed.slice(0, EXCERPT_LIMIT - 1)}…` : trimmed;
 }
 
 function messageText(content: JsonValue | undefined): string {
@@ -58,10 +56,10 @@ function messageText(content: JsonValue | undefined): string {
   return "";
 }
 
-export function entryExcerpt(entry: {
-  type: string;
-  [key: string]: JsonValue | undefined;
-}): { kind: TreeRowKind; excerpt: string } {
+export function entryExcerpt(entry: { type: string; [key: string]: JsonValue | undefined }): {
+  kind: TreeRowKind;
+  excerpt: string;
+} {
   if (entry.type === "message") {
     const message = entry.message;
     if (typeof message === "object" && message !== null && !Array.isArray(message)) {
@@ -132,9 +130,7 @@ type TurnNode = {
  * entries (tool-call segments) collapses into one node ending at the last
  * segment. Branch points break the run so every branch stays addressable.
  */
-export function buildConversationTurns(
-  nodes: SerializableSessionTreeNode[],
-): TurnNode[] {
+function buildConversationTurns(nodes: SerializableSessionTreeNode[]): TurnNode[] {
   const toTurn = (node: SerializableSessionTreeNode): TurnNode => {
     const { kind, excerpt } = entryExcerpt(node.entry);
     const ids = [node.entry.id];

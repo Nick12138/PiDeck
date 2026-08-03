@@ -88,8 +88,6 @@ export const HOST_METHODS = [
   "package.reloadResources",
   "resource.setPreference",
   "resource.setPreferences",
-  "piSettings.get",
-  "piSettings.patch",
   "extensionUi.configure",
   "extensionUi.respond",
   "extensionUi.customInput",
@@ -186,9 +184,8 @@ export type WorkspaceOnlyMethod =
   | "session.rename"
   | "session.usageReport"
   | "package.list"
-  | "package.checkUpdates"
-  | "piSettings.get";
-export type NullableSessionMethod = "session.create" | "session.open" | "piSettings.patch";
+  | "package.checkUpdates";
+export type NullableSessionMethod = "session.create" | "session.open";
 export type ActiveSessionMethod =
   | "attachment.create"
   | "attachment.createText"
@@ -221,9 +218,7 @@ export type ActiveSessionMethod =
   | "model.setCurrent"
   | "model.setThinkingLevel";
 export type SessionTargetMethod =
-  | "extensionUi.respond"
-  | "extensionUi.customInput"
-  | "extensionUi.customResize";
+  "extensionUi.respond" | "extensionUi.customInput" | "extensionUi.customResize";
 export type ToolMutationMethod = "agent.setActiveTools";
 export type SessionPackageMethod =
   | "package.install"
@@ -355,8 +350,6 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "package.reloadResources": "sessionPackage",
   "resource.setPreference": "sessionPackage",
   "resource.setPreferences": "sessionPackage",
-  "piSettings.get": "workspace",
-  "piSettings.patch": "nullableSession",
   "extensionUi.configure": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",

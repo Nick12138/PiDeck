@@ -3,10 +3,7 @@ import type { Readable } from "node:stream";
 /**
  * JSONL line reader with partial-line buffering.
  */
-export function createLineReader(
-  stream: Readable,
-  onLine: (line: string) => void,
-): () => void {
+export function createLineReader(stream: Readable, onLine: (line: string) => void): () => void {
   let buffer = "";
 
   const onData = (chunk: Buffer | string) => {
@@ -30,8 +27,4 @@ export function createLineReader(
       buffer = "";
     }
   };
-}
-
-export function encodeJsonl(obj: unknown): string {
-  return JSON.stringify(obj) + "\n";
 }

@@ -13,8 +13,8 @@ export type StartupStage =
 
 export type StartupPhase = "active" | "exiting" | "complete";
 
-export const STARTUP_MIN_VISIBLE_MS = 360;
-export const STARTUP_EXIT_MS = 200;
+const STARTUP_MIN_VISIBLE_MS = 360;
+const STARTUP_EXIT_MS = 200;
 
 const STAGE_LABELS: Record<StartupStage, MessageKey> = {
   preparing: "startupPreparing",
@@ -37,9 +37,7 @@ export function resolveStartupStage(args: {
   if (!args.settingsReady) return "preparing";
   if (args.desynchronized) return "reconnecting";
   if (args.rehydrating) {
-    return args.workspaceReady || args.sessionReady
-      ? "restoring-session"
-      : "restoring-workspace";
+    return args.workspaceReady || args.sessionReady ? "restoring-session" : "restoring-workspace";
   }
   if (args.connecting && !args.hostReady) return "starting-host";
   if (args.connecting && !args.workspaceReady) return "restoring-workspace";
@@ -72,13 +70,7 @@ export function useInitialStartupScreen(
   return phase;
 }
 
-export function StartupScreen({
-  stage,
-  exiting,
-}: {
-  stage: StartupStage;
-  exiting: boolean;
-}) {
+export function StartupScreen({ stage, exiting }: { stage: StartupStage; exiting: boolean }) {
   const t = useT();
   return (
     <div

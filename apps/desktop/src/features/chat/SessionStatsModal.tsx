@@ -27,13 +27,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SessionStatsModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+export function SessionStatsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
@@ -84,7 +78,7 @@ export function SessionStatsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, hostInstanceId, workspaceId, workspaceRevision, sessionId, sessionRevision]);
+  }, [open, hostInstanceId, workspaceId, workspaceRevision, sessionId, sessionRevision, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,14 +158,19 @@ export function SessionStatsModal({
                   <StatRow label={t("usageInput")} value={formatTokenCount(tokens.input)} />
                   <StatRow label={t("usageOutput")} value={formatTokenCount(tokens.output)} />
                   <StatRow label={t("usageCacheRead")} value={formatTokenCount(tokens.cacheRead)} />
-                  <StatRow label={t("usageCacheWrite")} value={formatTokenCount(tokens.cacheWrite)} />
+                  <StatRow
+                    label={t("usageCacheWrite")}
+                    value={formatTokenCount(tokens.cacheWrite)}
+                  />
                   <StatRow label={t("statsTotal")} value={formatTokenCount(tokens.total)} />
                 </div>
               </>
             )}
             {stats.cost !== undefined && (
               <div className="mt-3 grid grid-cols-[1fr_auto] gap-x-6">
-                <span className="text-[10px] font-medium uppercase text-muted">{t("statsCost")}</span>
+                <span className="text-[10px] font-medium uppercase text-muted">
+                  {t("statsCost")}
+                </span>
                 <span className="tabular-nums">{usd.format(stats.cost)}</span>
               </div>
             )}
@@ -180,9 +179,7 @@ export function SessionStatsModal({
                 {stats.sessionFile}
               </p>
             )}
-            <p className="mt-3 text-[10px] text-muted">
-{t("statsFootnote")}
-            </p>
+            <p className="mt-3 text-[10px] text-muted">{t("statsFootnote")}</p>
           </div>
         )}
         <div className="mt-4 flex items-center justify-end gap-2">

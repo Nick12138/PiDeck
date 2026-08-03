@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,16 +23,12 @@ import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const resources = join(root, "apps", "desktop", "src-tauri", "resources");
-const lock = JSON.parse(
-  readFileSync(join(root, "scripts", "release-runtime.lock.json"), "utf8"),
-);
+const lock = JSON.parse(readFileSync(join(root, "scripts", "release-runtime.lock.json"), "utf8"));
 const runtimeTarget = resolveReleaseRuntimeTarget(lock);
 const sdkEvidence = loadReleaseSdkEvidence(root, lock);
 const stagedHostRoot = join(resources, "pi-host");
 const staging = JSON.parse(readFileSync(join(stagedHostRoot, "STAGING.json"), "utf8"));
-const stagedManifest = JSON.parse(
-  readFileSync(join(stagedHostRoot, "package.json"), "utf8"),
-);
+const stagedManifest = JSON.parse(readFileSync(join(stagedHostRoot, "package.json"), "utf8"));
 const protocolVersion = JSON.parse(
   readFileSync(join(root, "packages/protocol/package.json"), "utf8"),
 ).version;
@@ -42,16 +40,13 @@ assertReleaseProductionManifest(
   "staged release Host manifest",
 );
 const nodePath =
-  process.env.PIDECK_STAGED_NODE ??
-  join(resources, "node", runtimeTarget.stagedNodeExecutable);
-const hostEntry =
-  process.env.PIDECK_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
+  process.env.PIDECK_STAGED_NODE ?? join(resources, "node", runtimeTarget.stagedNodeExecutable);
+const hostEntry = process.env.PIDECK_STAGED_HOST_ENTRY ?? join(resources, "pi-host", "main.js");
 const portableGit = join(resources, "git", "cmd", "git.exe");
 const gitExecutable =
   process.env.PIDECK_STAGED_GIT ??
   (process.platform === "win32" && existsSync(portableGit) ? portableGit : "git");
-const expectedNodeVersion =
-  process.env.PIDECK_EXPECT_NODE_VERSION ?? runtimeTarget.node.version;
+const expectedNodeVersion = process.env.PIDECK_EXPECT_NODE_VERSION ?? runtimeTarget.node.version;
 const timeoutMs = parseTimeout(process.env.PIDECK_STAGED_SMOKE_TIMEOUT_MS, 180_000);
 
 function parseTimeout(value, fallback) {
@@ -78,6 +73,7 @@ assert(existsSync(hostEntry), `Staged Host entry is missing: ${hostEntry}`);
 const tempRoot = mkdtempSync(join(tmpdir(), "pideck-staged-smoke-"));
 const agentDir = join(tempRoot, "agent");
 const workspaceDir = join(tempRoot, "workspace");
+const hostCacheDir = join(tempRoot, "host-cache");
 mkdirSync(agentDir, { recursive: true, mode: 0o700 });
 mkdirSync(workspaceDir, { recursive: true, mode: 0o700 });
 for (const name of ["auth.json", "models.json", "settings.json"]) {
@@ -89,14 +85,33 @@ if (process.platform === "win32") {
 execFileSync(gitExecutable, ["init", workspaceDir], { stdio: "pipe" });
 writeFileSync(join(workspaceDir, "smoke.txt"), "staged host Git smoke\n", "utf8");
 
+function snapshotFiles(directory, relativeDirectory = "", snapshot = {}) {
+  for (const name of readdirSync(join(directory, relativeDirectory)).sort()) {
+    const relativePath = join(relativeDirectory, name);
+    const path = join(directory, relativePath);
+    const stats = statSync(path);
+    if (stats.isDirectory()) {
+      snapshotFiles(directory, relativePath, snapshot);
+    } else if (stats.isFile()) {
+      snapshot[relativePath] = createHash("sha256").update(readFileSync(path)).digest("hex");
+    }
+  }
+  return snapshot;
+}
+
+const stagedHostSnapshot = snapshotFiles(stagedHostRoot);
+
+function assertStagedHostUnchanged() {
+  assert(
+    JSON.stringify(snapshotFiles(stagedHostRoot)) === JSON.stringify(stagedHostSnapshot),
+    "staged Host resources changed while bootstrapping the writable cache",
+  );
+}
+
 const controlledPath = [dirname(nodePath)];
 if (existsSync(portableGit)) {
   const gitRoot = dirname(dirname(portableGit));
-  controlledPath.push(
-    dirname(portableGit),
-    join(gitRoot, "bin"),
-    join(gitRoot, "mingw64", "bin"),
-  );
+  controlledPath.push(dirname(portableGit), join(gitRoot, "bin"), join(gitRoot, "mingw64", "bin"));
 }
 if (process.platform === "win32" && process.env.SystemRoot) {
   controlledPath.push(join(process.env.SystemRoot, "System32"));
@@ -109,6 +124,7 @@ const child = spawn(nodePath, [hostEntry], {
   env: {
     ...process.env,
     PI_CODING_AGENT_DIR: agentDir,
+    PIDECK_HOST_CACHE_DIR: hostCacheDir,
     PATH: controlledPath.join(delimiter),
   },
   stdio: ["pipe", "pipe", "pipe"],
@@ -238,7 +254,15 @@ try {
     readyStatus?.sdkVersion === sdkEvidence.sdkVersion,
     `Expected SDK ${sdkEvidence.sdkVersion}, got ${readyStatus?.sdkVersion}`,
   );
-  assertPiPackageTree(stagedHostRoot, sdkEvidence, "smoke-extracted staged Host tree");
+  const cachedHostRoot = join(hostCacheDir, staging.nodeModulesZipSha256);
+  assert(existsSync(join(cachedHostRoot, "READY.json")), "Host cache readiness marker is missing");
+  assert(
+    existsSync(join(cachedHostRoot, "host-runtime", "host-main.js")),
+    "cached Host runtime entry is missing",
+  );
+  assertPiPackageTree(cachedHostRoot, sdkEvidence, "smoke cached Host tree");
+  assert(!existsSync(join(stagedHostRoot, "node_modules")), "staged Host was extracted in place");
+  assertStagedHostUnchanged();
   assert(
     readyStatus?.nodeVersion === `v${expectedNodeVersion}`,
     `Expected Node v${expectedNodeVersion}, got ${readyStatus?.nodeVersion}`,
@@ -292,6 +316,7 @@ try {
 
   const exited = await waitForExit(deadline);
   assert(exited.code === 0, withStderr(`Staged Host exited with code=${exited.code}`, stderrTail));
+  assertStagedHostUnchanged();
   cleanExit = true;
   console.log(
     JSON.stringify({
@@ -306,10 +331,7 @@ try {
 } finally {
   if (!cleanExit) {
     child.kill();
-    await Promise.race([
-      exitPromise,
-      new Promise((resolve) => setTimeout(resolve, 5_000)),
-    ]);
+    await Promise.race([exitPromise, new Promise((resolve) => setTimeout(resolve, 5_000))]);
   }
   rmSync(tempRoot, { recursive: true, force: true });
 }

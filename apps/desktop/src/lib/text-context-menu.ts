@@ -16,13 +16,11 @@ export function resolveTextMenuTarget(target: EventTarget | null): TextMenuTarge
   return element as TextMenuTarget;
 }
 
-function isFormField(
-  target: TextMenuTarget,
-): target is HTMLInputElement | HTMLTextAreaElement {
+function isFormField(target: TextMenuTarget): target is HTMLInputElement | HTMLTextAreaElement {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
-export function selectedTextForTarget(target: TextMenuTarget): string {
+function selectedTextForTarget(target: TextMenuTarget): string {
   if (isFormField(target)) {
     const start = target.selectionStart ?? 0;
     const end = target.selectionEnd ?? start;
@@ -35,9 +33,7 @@ export function selectedTextForTarget(target: TextMenuTarget): string {
 }
 
 function emitInput(target: HTMLElement, inputType: string, data: string | null): void {
-  target.dispatchEvent(
-    new InputEvent("input", { bubbles: true, inputType, data }),
-  );
+  target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data }));
 }
 
 export function insertTextAtSelection(target: TextMenuTarget, text: string): void {
@@ -75,7 +71,7 @@ async function cutSelection(target: TextMenuTarget): Promise<void> {
   }
 }
 
-export function selectAllText(target: TextMenuTarget): void {
+function selectAllText(target: TextMenuTarget): void {
   target.focus();
   if (isFormField(target)) {
     target.select();
@@ -95,8 +91,7 @@ export function buildTextContextMenuItems(
 ): MenuItem[] {
   const selection = selectedTextForTarget(target);
   const isMac = resolveWindowControlsPlatform() === "macos";
-  const readOnly =
-    isFormField(target) && (target.readOnly || target.disabled);
+  const readOnly = isFormField(target) && (target.readOnly || target.disabled);
   return [
     {
       id: "edit.cut",

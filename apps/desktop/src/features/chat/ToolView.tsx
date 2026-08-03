@@ -16,7 +16,7 @@ export type ToolRendererDefinition = {
   Component: ComponentType<ToolCardProps>;
 };
 
-export const toolRenderers: ToolRendererDefinition[] = [
+const toolRenderers: ToolRendererDefinition[] = [
   {
     id: "web-search",
     matches: (props) => isWebSearchTool(props.name),

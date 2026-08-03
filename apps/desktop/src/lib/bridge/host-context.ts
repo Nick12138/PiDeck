@@ -11,9 +11,7 @@ import type {
   SessionPackageContext,
   SessionSnapshot,
   SessionTargetContext,
-  ToolMutationContext,
   WorkspaceContext,
-  WorkspacePackageContext,
   WorkspaceSnapshot,
 } from "@pideck/protocol";
 
@@ -23,12 +21,12 @@ export function hostContext(host: HostStatusSnapshot): HostContext {
 
 export function workspaceContext(
   host: HostStatusSnapshot,
-  workspace: WorkspaceSnapshot,
+  workspace: WorkspaceSnapshot | null,
 ): WorkspaceContext {
   return {
     expectedHostInstanceId: host.hostInstanceId,
-    expectedWorkspaceId: workspace.id,
-    expectedWorkspaceRevision: workspace.revision,
+    expectedWorkspaceId: workspace?.id ?? host.workspaceId,
+    expectedWorkspaceRevision: workspace?.revision ?? host.workspaceRevision,
   };
 }
 
@@ -79,18 +77,6 @@ export function latestSessionTargetContext(
   return activeSessionContext(host, workspace, session);
 }
 
-export function toolMutationContext(
-  host: HostStatusSnapshot,
-  workspace: WorkspaceSnapshot,
-  session: SessionSnapshot,
-  toolRevision: number,
-): ToolMutationContext {
-  return {
-    ...activeSessionContext(host, workspace, session),
-    expectedToolRevision: toolRevision,
-  };
-}
-
 export function sessionPackageContext(
   host: HostStatusSnapshot,
   workspace: WorkspaceSnapshot,
@@ -101,16 +87,6 @@ export function sessionPackageContext(
     expectedWorkspaceRevision: workspace.revision,
     expectedSessionId: host.sessionId,
     expectedSessionRevision: host.sessionRevision,
-    expectedPackageRevision: host.packageRevision,
-  };
-}
-
-export function workspacePackageContext(
-  host: HostStatusSnapshot,
-  workspace: WorkspaceSnapshot,
-): WorkspacePackageContext {
-  return {
-    ...workspaceContext(host, workspace),
     expectedPackageRevision: host.packageRevision,
   };
 }

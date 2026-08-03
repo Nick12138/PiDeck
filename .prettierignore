@@ -1,0 +1,9 @@
+**/dist
+**/node_modules
+**/target
+.runtime-cache
+artifacts
+apps/desktop/src-tauri/gen
+apps/desktop/src-tauri/resources
+pnpm-lock.yaml
+patches

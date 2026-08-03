@@ -14,18 +14,46 @@ const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
 const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
 const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopTheme {
+    Light,
+    Dark,
+    #[default]
+    System,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopLanguage {
+    System,
+    En,
+    Zh,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalProfileId {
+    #[default]
+    Auto,
+    Pwsh,
+    WindowsPowershell,
+    Cmd,
+    GitBash,
+    WslDefault,
+    Zsh,
+    Bash,
+    Fish,
+    Sh,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExtensionDecisionPresentation {
     LegacyModal,
+    #[default]
     Auto,
     InlineFirst,
-}
-
-impl Default for ExtensionDecisionPresentation {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
@@ -35,7 +63,7 @@ fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DesktopSettings {
-    pub theme: String,
+    pub theme: DesktopTheme,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_workspace: Option<String>,
     pub restore_last_session: bool,
@@ -48,9 +76,9 @@ pub struct DesktopSettings {
     pub auto_restart_host_once: bool,
     #[serde(default = "legacy_extension_decision_presentation")]
     pub extension_decision_presentation: ExtensionDecisionPresentation,
-    pub terminal_profile: String,
+    pub terminal_profile: TerminalProfileId,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
+    pub language: Option<DesktopLanguage>,
     pub conversation_content_width: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
@@ -61,7 +89,7 @@ pub struct DesktopSettings {
 impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
-            theme: "system".into(),
+            theme: DesktopTheme::System,
             default_workspace: None,
             restore_last_session: true,
             last_workspace: None,
@@ -69,7 +97,7 @@ impl Default for DesktopSettings {
             agent_dir: None,
             auto_restart_host_once: true,
             extension_decision_presentation: ExtensionDecisionPresentation::Auto,
-            terminal_profile: "auto".into(),
+            terminal_profile: TerminalProfileId::Auto,
             language: None,
             conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
             known_workspaces: Vec::new(),
@@ -299,10 +327,34 @@ impl DesktopSettingsStore {
 
     pub fn patch(&mut self, patch: serde_json::Value) -> Result<DesktopSettings, String> {
         let mut current = serde_json::to_value(&self.settings).map_err(|e| e.to_string())?;
-        if let (Some(obj), Some(patch_object)) = (current.as_object_mut(), patch.as_object()) {
-            for (key, value) in patch_object {
-                obj.insert(key.clone(), value.clone());
+        let patch_object = patch
+            .as_object()
+            .ok_or_else(|| "desktop settings patch must be an object".to_string())?;
+        for key in patch_object.keys() {
+            if !matches!(
+                key.as_str(),
+                "theme"
+                    | "defaultWorkspace"
+                    | "restoreLastSession"
+                    | "lastWorkspace"
+                    | "lastSessionPath"
+                    | "agentDir"
+                    | "autoRestartHostOnce"
+                    | "extensionDecisionPresentation"
+                    | "terminalProfile"
+                    | "language"
+                    | "conversationContentWidth"
+                    | "knownWorkspaces"
+                    | "shortcutOverrides"
+            ) {
+                return Err(format!("unknown desktop settings field: {key}"));
             }
+        }
+        let current_object = current
+            .as_object_mut()
+            .ok_or_else(|| "desktop settings must serialize as an object".to_string())?;
+        for (key, value) in patch_object {
+            current_object.insert(key.clone(), value.clone());
         }
         let next = serde_json::from_value(current).map_err(|e| e.to_string())?;
         Self::validate_settings(&next)?;
@@ -385,16 +437,35 @@ mod tests {
         store
             .patch(serde_json::json!({ "language": "zh" }))
             .unwrap();
-        assert_eq!(store.settings.language.as_deref(), Some("zh"));
+        assert_eq!(store.settings.language, Some(DesktopLanguage::Zh));
 
         let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(reloaded.settings.language.as_deref(), Some("zh"));
+        assert_eq!(reloaded.settings.language, Some(DesktopLanguage::Zh));
 
         let mut cleared = reloaded;
         cleared
             .patch(serde_json::json!({ "language": null }))
             .unwrap();
         assert_eq!(cleared.settings.language, None);
+    }
+
+    #[test]
+    fn rejects_values_outside_the_desktop_settings_contract() {
+        let dir = test_dir("contract-validation");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        let before = serde_json::to_value(&store.settings).unwrap();
+
+        for patch in [
+            serde_json::json!({ "theme": "neon" }),
+            serde_json::json!({ "language": "fr" }),
+            serde_json::json!({ "terminalProfile": "nu" }),
+            serde_json::json!({ "futureSetting": true }),
+            serde_json::json!(["theme", "dark"]),
+        ] {
+            assert!(store.patch(patch).is_err());
+            assert_eq!(serde_json::to_value(&store.settings).unwrap(), before);
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -535,7 +606,7 @@ mod tests {
             .ends_with(".tmp")));
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(loaded.settings.theme, "dark");
+        assert_eq!(loaded.settings.theme, DesktopTheme::Dark);
         assert_eq!(loaded.settings.last_workspace.as_deref(), Some("C:\\repo"));
         fs::remove_dir_all(dir).unwrap();
     }
@@ -550,7 +621,7 @@ mod tests {
         .unwrap();
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(loaded.settings.theme, "light");
+        assert_eq!(loaded.settings.theme, DesktopTheme::Light);
         assert!(!loaded.settings.restore_last_session);
         assert_eq!(
             loaded.settings.extension_decision_presentation,
@@ -571,7 +642,7 @@ mod tests {
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         let snapshot = loaded.snapshot();
-        assert_eq!(loaded.settings.theme, "system");
+        assert_eq!(loaded.settings.theme, DesktopTheme::System);
         assert_eq!(
             loaded.settings.extension_decision_presentation,
             ExtensionDecisionPresentation::LegacyModal

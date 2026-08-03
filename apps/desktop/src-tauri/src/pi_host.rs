@@ -510,6 +510,7 @@ pub struct AutoRestartEpoch {
 }
 
 impl AutoRestartEpoch {
+    #[cfg(test)]
     pub fn new(auto_restart_once: bool) -> Self {
         Self {
             auto_restart_once,
@@ -544,7 +545,7 @@ pub fn build_shutdown_line(host_instance_id: &str, request_id: &str) -> String {
 }
 
 /// Split stdout stream into complete lines (same buffering logic as PiHostManager reader).
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn drain_complete_lines(buffer: &mut String, chunk: &str) -> Vec<String> {
     buffer.push_str(chunk);
     let mut lines = Vec::new();
@@ -562,7 +563,6 @@ pub fn drain_complete_lines(buffer: &mut String, chunk: &str) -> Vec<String> {
 }
 
 /// Bound stderr ring buffer (matches PiHostManager 50-line cap).
-#[allow(dead_code)]
 pub fn push_stderr_tail(logs: &mut Vec<String>, line: String, max: usize) {
     logs.push(line);
     if logs.len() > max {
@@ -573,7 +573,7 @@ pub fn push_stderr_tail(logs: &mut Vec<String>, line: String, max: usize) {
 
 /// Testable Host child session — process protocol used by PiHostManager.
 /// Unit tests drive this type directly (no Tauri AppHandle required).
-#[allow(dead_code)]
+#[cfg(test)]
 pub struct HostChildSession {
     child: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
@@ -581,12 +581,11 @@ pub struct HostChildSession {
     pub host_instance_id: Option<String>,
     pub restart: AutoRestartEpoch,
     pub shutting_down: bool,
-    pub stderr_tail: Vec<String>,
-    stdout_buf: String,
     #[cfg(unix)]
     unix_process_group: Option<UnixHostProcessGroup>,
 }
 
+#[cfg(test)]
 impl HostChildSession {
     pub fn spawn_node_script(script: &str, auto_restart_once: bool) -> Result<Self, String> {
         let node = std::env::var("NODE").unwrap_or_else(|_| "node".into());
@@ -618,8 +617,6 @@ impl HostChildSession {
             host_instance_id: None,
             restart: AutoRestartEpoch::new(auto_restart_once),
             shutting_down: false,
-            stderr_tail: Vec::new(),
-            stdout_buf: String::new(),
             #[cfg(unix)]
             unix_process_group: Some(unix_process_group),
         })
@@ -781,6 +778,7 @@ impl HostChildSession {
     }
 }
 
+#[cfg(test)]
 impl Drop for HostChildSession {
     fn drop(&mut self) {
         #[cfg(unix)]
@@ -881,11 +879,11 @@ impl PiHostManager {
             if let Ok(path) = which_node() {
                 return Ok(path);
             }
-            return Ok(PathBuf::from(if cfg!(windows) {
+            Ok(PathBuf::from(if cfg!(windows) {
                 "node.exe"
             } else {
                 "node"
-            }));
+            }))
         }
 
         #[cfg(not(debug_assertions))]
@@ -987,6 +985,13 @@ impl PiHostManager {
         let portable_git_cmd = Self::resolve_portable_git(&self.app)?;
         let entry = Self::resolve_host_entry(&self.app)?;
         let agent_dir = self.agent_dir.clone();
+        let host_cache_dir = strip_verbatim_prefix(
+            self.app
+                .path()
+                .app_cache_dir()
+                .map_err(|e| format!("resolve app cache directory: {e}"))?
+                .join("pi-host"),
+        );
         let work_dir = entry
             .parent()
             .map(|p| p.to_path_buf())
@@ -995,13 +1000,20 @@ impl PiHostManager {
         // Ensure agentDir exists before spawn
         std::fs::create_dir_all(&agent_dir)
             .map_err(|e| format!("create agentDir {}: {e}", agent_dir.display()))?;
+        std::fs::create_dir_all(&host_cache_dir).map_err(|e| {
+            format!(
+                "create Pi Host cache directory {}: {e}",
+                host_cache_dir.display()
+            )
+        })?;
 
         eprintln!(
-            "[pideck] starting host node={} entry={} cwd={} agentDir={}",
+            "[pideck] starting host node={} entry={} cwd={} agentDir={} cacheDir={}",
             node.display(),
             entry.display(),
             work_dir.display(),
-            agent_dir.display()
+            agent_dir.display(),
+            host_cache_dir.display()
         );
 
         let mut cmd = Command::new(&node);
@@ -1027,6 +1039,7 @@ impl PiHostManager {
             }
         }
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
+        cmd.env("PIDECK_HOST_CACHE_DIR", &host_cache_dir);
 
         let mut controlled_path = Vec::<PathBuf>::new();
         if let Some(node_dir) = node.parent() {
@@ -1686,7 +1699,7 @@ fn canonicalize_path(p: PathBuf) -> PathBuf {
     } else {
         std::env::current_dir()
             .map(|cwd| cwd.join(&p))
-            .and_then(|abs| abs.canonicalize().or_else(|_| Ok(abs)))
+            .and_then(|abs| abs.canonicalize().or(Ok(abs)))
             .unwrap_or(p)
     };
     strip_verbatim_prefix(resolved)

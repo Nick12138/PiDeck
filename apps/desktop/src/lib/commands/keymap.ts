@@ -12,11 +12,7 @@ function normalizedKey(event: KeyboardEvent): string {
   return event.key.toLocaleLowerCase();
 }
 
-export function matchesCommandChord(
-  event: KeyboardEvent,
-  chord: string,
-  isMac: boolean,
-): boolean {
+export function matchesCommandChord(event: KeyboardEvent, chord: string, isMac: boolean): boolean {
   const normalizedChord = normalizeShortcutChord(chord);
   if (!normalizedChord) return false;
   const parts = normalizedChord.split("+");
@@ -39,7 +35,7 @@ function closest(target: EventTarget | null, selector: string): Element | null {
   return target instanceof Element ? target.closest(selector) : null;
 }
 
-export function isTextInputTarget(target: EventTarget | null): boolean {
+function isTextInputTarget(target: EventTarget | null): boolean {
   return Boolean(
     closest(
       target,
@@ -56,8 +52,7 @@ export function findMatchingCommand(
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return null;
   if (closest(event.target, "[data-shortcut-recorder]")) return null;
   const command = commands.find(
-    (candidate) =>
-      candidate.chord && matchesCommandChord(event, candidate.chord, context.isMac),
+    (candidate) => candidate.chord && matchesCommandChord(event, candidate.chord, context.isMac),
   );
   if (!command) return null;
   if (closest(event.target, ".xterm") && !command.worksInTerminal) return null;

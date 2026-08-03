@@ -32,10 +32,7 @@ export function executionTraceIsActive(
   tools: readonly Pick<ToolTrace, "status">[],
   turnActive: boolean,
 ): boolean {
-  return (
-    turnActive ||
-    tools.some((tool) => tool.status === "running" || tool.status === "waiting")
-  );
+  return turnActive || tools.some((tool) => tool.status === "running" || tool.status === "waiting");
 }
 
 export type TranscriptContentBlock =
@@ -49,13 +46,13 @@ export type TranscriptBlock =
   | { kind: "tool"; tool: ToolTrace }
   | { kind: "extension"; row: TranscriptRow };
 
-export type AssistantOutcome = {
+type AssistantOutcome = {
   status: "streaming" | "complete" | "error" | "aborted";
   stopReason?: string;
   errorMessage?: string;
 };
 
-export type BashExecution = {
+type BashExecution = {
   command: string;
   output: string;
   exitCode?: number;
@@ -65,7 +62,7 @@ export type BashExecution = {
   excludeFromContext: boolean;
 };
 
-export type TranscriptSummary = {
+type TranscriptSummary = {
   kind: "compaction" | "branch";
   text: string;
   tokensBefore?: number;
@@ -74,13 +71,13 @@ export type TranscriptSummary = {
   fromHook?: boolean;
 };
 
-export type TranscriptEvent = {
+type TranscriptEvent = {
   kind: "model" | "thinkingLevel" | "unknown";
   label: string;
   details?: unknown;
 };
 
-export type AssistantTurnSections = {
+type AssistantTurnSections = {
   ordered: TranscriptBlock[];
   initialThinking: Extract<TranscriptBlock, { kind: "thinking" }>[];
   intro: TranscriptBlock[];
@@ -347,10 +344,7 @@ function toolResultForMessage(message: SerializableAgentMessage): ToolResultReco
   };
 }
 
-function toolTraceFromPart(
-  part: SerializableAgentContent,
-  index: number,
-): ToolTrace | null {
+function toolTraceFromPart(part: SerializableAgentContent, index: number): ToolTrace | null {
   if (!["toolCall", "tool_use", "functionCall"].includes(part.type)) return null;
   const record = asRecord(part);
   const id = typeof record.id === "string" ? record.id : `tool:${index}`;
@@ -362,10 +356,9 @@ function toolTraceFromPart(
         ? "running"
         : "waiting";
   const inlineResult = record.result;
-  const resultBlocks =
-    Array.isArray(record.resultBlocks)
-      ? contentBlocksForValue(record.resultBlocks)
-      : contentBlocksForValue(inlineResult);
+  const resultBlocks = Array.isArray(record.resultBlocks)
+    ? contentBlocksForValue(record.resultBlocks)
+    : contentBlocksForValue(inlineResult);
   const details = record.details;
   return {
     id,
@@ -410,11 +403,7 @@ function applyToolResult(trace: ToolTrace, result: ToolResultRecord): void {
   if (trace.details === undefined && result.details !== undefined) trace.details = result.details;
 }
 
-function extendRowTiming(
-  row: WorkingTranscriptRow,
-  startedAt?: number,
-  endedAt?: number,
-) {
+function extendRowTiming(row: WorkingTranscriptRow, startedAt?: number, endedAt?: number) {
   if (startedAt !== undefined) {
     row.startedAt = row.startedAt === undefined ? startedAt : Math.min(row.startedAt, startedAt);
   }
@@ -441,9 +430,7 @@ function copyTextForBlocks(blocks: TranscriptBlock[]): string {
 function assistantSections(rounds: TranscriptBlock[][]): AssistantTurnSections {
   const isExecutionActivity = (block: TranscriptBlock) =>
     block.kind === "tool" || block.kind === "extension";
-  const firstActivityRound = rounds.findIndex((round) =>
-    round.some(isExecutionActivity),
-  );
+  const firstActivityRound = rounds.findIndex((round) => round.some(isExecutionActivity));
 
   if (firstActivityRound < 0) {
     const blocks = rounds.flat();
@@ -523,7 +510,11 @@ function assistantOutcome(message: SerializableAgentMessage): AssistantOutcome |
     return { status: "aborted", stopReason, ...(errorMessage ? { errorMessage } : {}) };
   }
   if (stopReason === "error" || errorMessage) {
-    return { status: "error", ...(stopReason ? { stopReason } : {}), ...(errorMessage ? { errorMessage } : {}) };
+    return {
+      status: "error",
+      ...(stopReason ? { stopReason } : {}),
+      ...(errorMessage ? { errorMessage } : {}),
+    };
   }
   return {
     status: stopReason === "toolUse" ? "streaming" : "complete",
@@ -536,7 +527,8 @@ function applyAssistantOutcomeToBlocks(
   outcome: AssistantOutcome | undefined,
 ): TranscriptBlock[] {
   if (!outcome || (outcome.status !== "error" && outcome.status !== "aborted")) return blocks;
-  const fallback = outcome.errorMessage ?? (outcome.status === "aborted" ? "Operation aborted" : "Error");
+  const fallback =
+    outcome.errorMessage ?? (outcome.status === "aborted" ? "Operation aborted" : "Error");
   return blocks.map((block) => {
     if (block.kind !== "tool") return block;
     if (block.tool.status !== "waiting" && block.tool.status !== "running") return block;
@@ -673,9 +665,11 @@ function rowForNonAssistantMessage(
     if (blocks.length === 0 && role !== "error") return null;
     const errorText =
       role === "error" && blocks.length === 0
-        ? stringField(message, "errorMessage") ?? "Agent error"
+        ? (stringField(message, "errorMessage") ?? "Agent error")
         : undefined;
-    const finalBlocks = errorText ? [{ kind: "text", text: errorText } satisfies TranscriptBlock] : blocks;
+    const finalBlocks = errorText
+      ? [{ kind: "text", text: errorText } satisfies TranscriptBlock]
+      : blocks;
     return {
       key: `${role}:${sourceKey}`,
       role,
@@ -902,7 +896,9 @@ export function buildTranscriptRows(
   const input: { messages: readonly SerializableAgentMessage[] } & BuildTranscriptOptions =
     Array.isArray(inputOrMessages)
       ? { messages: inputOrMessages, ...(options ?? {}) }
-      : (inputOrMessages as { messages: readonly SerializableAgentMessage[] } & BuildTranscriptOptions);
+      : (inputOrMessages as {
+          messages: readonly SerializableAgentMessage[];
+        } & BuildTranscriptOptions);
   const messages = input.messages;
   const { sources } = sourceMessages(messages, input);
   const rows: WorkingTranscriptRow[] = [];
@@ -1007,10 +1003,7 @@ export function buildTranscriptRows(
     }
     if (role === "assistant") {
       const outcome = assistantOutcome(message);
-      const blocks = applyAssistantOutcomeToBlocks(
-        blocksForMessage(message, sourceIndex),
-        outcome,
-      );
+      const blocks = applyAssistantOutcomeToBlocks(blocksForMessage(message, sourceIndex), outcome);
       for (const block of blocks) {
         if (block.kind === "tool") registerToolTrace(block.tool);
       }
@@ -1094,9 +1087,7 @@ export function buildTranscriptRows(
 
   return rows.map(({ rounds, ...row }) => ({
     ...row,
-    ...(row.role === "assistant"
-      ? { sections: assistantSections(rounds ?? [row.blocks]) }
-      : {}),
+    ...(row.role === "assistant" ? { sections: assistantSections(rounds ?? [row.blocks]) } : {}),
   }));
 }
 

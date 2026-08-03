@@ -22,7 +22,6 @@ export type GraphOperationKind =
   | "package.reload"
   | "resource.setPreference"
   | "resource.setPreferences"
-  | "piSettings.patch"
   | "git.mutation"
   | "sdk.read";
 

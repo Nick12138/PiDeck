@@ -1,10 +1,13 @@
 /**
- * Pack pi-host node_modules into a single zip for NSIS MAX_PATH safety (C1/C8).
- * main.js becomes a bootstrap that extracts zip once, then loads host-main.js.
+ * Pack the Pi Host runtime and node_modules into one archive for NSIS MAX_PATH
+ * safety (C1/C8). main.js materializes that signed payload in a versioned,
+ * writable cache and runs the cached Host entry.
  */
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   rmSync,
   writeFileSync,
   readFileSync,
@@ -15,11 +18,23 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import {
+  detachNodeModulesLinks,
+  restoreNodeModulesLinks,
+  snapshotNodeModulesGraph,
+} from "./portable-node-modules.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDir = join(root, "apps/desktop/src-tauri/resources/pi-host");
 const nm = join(hostDir, "node_modules");
 const zipPath = join(hostDir, "node_modules.zip");
+const linksPath = join(hostDir, "NODE_MODULES_LINKS.json");
+const graphPath = join(hostDir, "NODE_MODULES_GRAPH.json");
+const portableHelperSource = join(root, "scripts/portable-node-modules.mjs");
+const portableHelperPath = join(hostDir, "portable-node-modules.mjs");
+const bootstrapRuntimeSource = join(root, "scripts/pi-host-bootstrap-runtime.mjs");
+const bootstrapRuntimePath = join(hostDir, "pi-host-bootstrap-runtime.mjs");
+const hostRuntimePayload = join(hostDir, "host-runtime");
 const MIN_ZIP_BYTES = 1_000_000; // real SDK tree is tens of MB
 
 function die(msg) {
@@ -46,7 +61,7 @@ function createNodeModulesZip() {
   if (process.platform === "win32") {
     return spawnSync(
       windowsBsdTar(),
-      ["-a", "-c", "-h", "-f", zipPath, "-C", hostDir, "node_modules"],
+      ["-a", "-c", "-f", zipPath, "-C", hostDir, "node_modules", "host-runtime"],
       { encoding: "utf8", shell: false },
     );
   }
@@ -56,39 +71,115 @@ function createNodeModulesZip() {
   // packaged Windows runtime checks.
   const tar = spawnSync(
     "tar",
-    ["-a", "-c", "-h", "-f", zipPath, "-C", hostDir, "node_modules"],
+    ["-a", "-c", "-f", zipPath, "-C", hostDir, "node_modules", "host-runtime"],
     { encoding: "utf8", shell: false },
   );
   if (tar.status === 0) return tar;
 
-  // GNU tar cannot create zip archives, so use Info-ZIP when available. Its
-  // default behavior follows symlinks, matching tar's -h behavior above.
-  return spawnSync("zip", ["-q", "-r", zipPath, "node_modules"], {
+  // GNU tar cannot create zip archives, so use Info-ZIP when available. All
+  // pnpm links were detached into NODE_MODULES_LINKS.json before this point.
+  return spawnSync("zip", ["-q", "-r", zipPath, "node_modules", "host-runtime"], {
     cwd: hostDir,
     encoding: "utf8",
     shell: false,
   });
 }
 
+function copyHostRuntimeTree(source, destination, isRoot = false) {
+  mkdirSync(destination, { recursive: true });
+  for (const name of readdirSync(source)) {
+    if (isRoot && ["main.js", "node_modules", "host-runtime", "vendor"].includes(name)) continue;
+    const from = join(source, name);
+    const to = join(destination, name);
+    const stats = statSync(from);
+    if (stats.isDirectory()) {
+      copyHostRuntimeTree(from, to);
+      continue;
+    }
+    if (
+      (isRoot && name === "package.json") ||
+      name === "host-main.js" ||
+      name.endsWith(".js") ||
+      name.endsWith(".js.map")
+    ) {
+      copyFileSync(from, to);
+    }
+  }
+}
+
 if (!existsSync(join(hostDir, "main.js")) && !existsSync(join(hostDir, "host-main.js"))) {
   die("pi-host main.js missing — run package:sidecar first");
 }
+const mainJs = join(hostDir, "main.js");
+const hostMain = join(hostDir, "host-main.js");
+if (!existsSync(hostMain)) {
+  if (!existsSync(mainJs)) die("no main.js to rename");
+  const currentMain = readFileSync(mainJs, "utf8");
+  if (
+    (currentMain.includes("node_modules.zip") && currentMain.includes("host-main.js")) ||
+    currentMain.includes("pi-host-bootstrap-runtime.mjs") ||
+    currentMain.includes("PIDECK_HOST_CACHE_DIR")
+  ) {
+    die("host-main.js missing but main.js is already bootstrap — re-run package:sidecar");
+  }
+  renameSync(mainJs, hostMain);
+}
+copyFileSync(portableHelperSource, portableHelperPath);
+copyFileSync(bootstrapRuntimeSource, bootstrapRuntimePath);
 
 // Zip if missing or too small
-const zipOk = existsSync(zipPath) && statSync(zipPath).size >= MIN_ZIP_BYTES;
+const stagingPath = join(hostDir, "STAGING.json");
+const priorStaging = existsSync(stagingPath) ? JSON.parse(readFileSync(stagingPath, "utf8")) : {};
+const zipOk =
+  existsSync(zipPath) &&
+  statSync(zipPath).size >= MIN_ZIP_BYTES &&
+  priorStaging.hostRuntimePackagedInZip === true;
 if (!zipOk) {
   if (!existsSync(nm)) die("node_modules missing and no valid zip");
   if (existsSync(zipPath)) rmSync(zipPath, { force: true });
-  console.log("[compact] creating node_modules.zip via tar -h (dereference junctions)...");
-  // -h / --dereference follows junctions/symlinks so the archive contains real
-  // SDK files. Windows junctions from pnpm deploy are unusable after extract.
-  const tar = createNodeModulesZip();
-  if (tar.status !== 0 || !existsSync(zipPath) || statSync(zipPath).size < MIN_ZIP_BYTES) {
-    console.error(tar.stdout ?? "", tar.stderr ?? tar.error?.message ?? "");
-    die(`tar zip failed size=${existsSync(zipPath) ? statSync(zipPath).size : 0}`);
+  let detached;
+  try {
+    rmSync(hostRuntimePayload, { recursive: true, force: true });
+    copyHostRuntimeTree(hostDir, hostRuntimePayload, true);
+    if (
+      !existsSync(join(hostRuntimePayload, "host-main.js")) ||
+      !existsSync(join(hostRuntimePayload, "package.json"))
+    ) {
+      throw new Error("host-runtime cache payload is incomplete");
+    }
+    const releasePackage = JSON.parse(readFileSync(join(hostDir, "package.json"), "utf8"));
+    const dependencyGraph = snapshotNodeModulesGraph(nm, releasePackage.dependencies);
+    writeFileSync(graphPath, `${JSON.stringify(dependencyGraph, null, 2)}\n`);
+    detached = detachNodeModulesLinks(nm);
+    writeFileSync(linksPath, `${JSON.stringify(detached.manifest, null, 2)}\n`);
+    console.log(
+      "[compact] creating node_modules.zip from portable pnpm store; links:",
+      detached.manifest.links.length,
+    );
+    const tar = createNodeModulesZip();
+    if (tar.status !== 0 || !existsSync(zipPath) || statSync(zipPath).size < MIN_ZIP_BYTES) {
+      console.error(tar.stdout ?? "", tar.stderr ?? tar.error?.message ?? "");
+      throw new Error(`tar zip failed size=${existsSync(zipPath) ? statSync(zipPath).size : 0}`);
+    }
+  } catch (error) {
+    if (detached) {
+      try {
+        restoreNodeModulesLinks(nm, detached.manifest);
+      } catch (restoreError) {
+        console.error(
+          "[compact] failed to restore node_modules after archive error",
+          restoreError instanceof Error ? restoreError.message : String(restoreError),
+        );
+      }
+    }
+    rmSync(hostRuntimePayload, { recursive: true, force: true });
+    die(error instanceof Error ? error.message : String(error));
   }
   console.log("[compact] zip bytes", statSync(zipPath).size);
 } else {
+  for (const required of [linksPath, graphPath, portableHelperPath, bootstrapRuntimePath]) {
+    if (!existsSync(required)) die(`portable node_modules metadata missing: ${required}`);
+  }
   console.log("[compact] reusing existing zip bytes", statSync(zipPath).size);
 }
 
@@ -97,106 +188,38 @@ if (existsSync(nm)) {
   console.log("[compact] removing expanded node_modules...");
   rmSync(nm, { recursive: true, force: true });
 }
-
-// Ensure host-main.js is the real entry and main.js is bootstrap
-const mainJs = join(hostDir, "main.js");
-const hostMain = join(hostDir, "host-main.js");
-if (!existsSync(hostMain)) {
-  if (!existsSync(mainJs)) die("no main.js to rename");
-  // Only rename if main.js looks like real host (not already bootstrap)
-  const cur = readFileSync(mainJs, "utf8");
-  if (cur.includes("node_modules.zip") && cur.includes("host-main.js")) {
-    // already bootstrap — need host-main from somewhere
-    die("host-main.js missing but main.js is already bootstrap — re-run package:sidecar");
-  }
-  renameSync(mainJs, hostMain);
-}
+rmSync(hostRuntimePayload, { recursive: true, force: true });
 
 const bootstrap = `/**
- * Bootstrap: extract node_modules.zip once, then load host-main.js.
+ * Bootstrap: materialize the signed Host payload in a versioned writable cache.
  * Generated by scripts/compact-pi-host-resources.mjs
  */
-import { existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawnSync } from "node:child_process";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { runPiHostBootstrap } from "./pi-host-bootstrap-runtime.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const nmDir = join(__dirname, "node_modules");
-const zip = join(__dirname, "node_modules.zip");
-
-if (!existsSync(join(nmDir, "@earendil-works", "pi-coding-agent", "package.json"))) {
-  if (!existsSync(zip)) {
-    console.error("[pi-host bootstrap] missing node_modules and node_modules.zip");
-    process.exit(1);
-  }
-  mkdirSync(nmDir, { recursive: true });
-  let r;
-  if (process.platform === "win32") {
-    // Extract with Windows bsdtar (System32) — a bare "tar.exe" may resolve to
-    // GNU tar, which rejects C:\ paths as remote hosts.
-    const systemTar = process.env.SystemRoot
-      ? join(process.env.SystemRoot, "System32", "tar.exe")
-      : null;
-    const tarExe = systemTar && existsSync(systemTar) ? systemTar : "tar.exe";
-    r = spawnSync(
-      tarExe,
-      ["-x", "-f", zip, "-C", __dirname],
-      { encoding: "utf8", shell: false },
-    );
-  } else {
-    r = spawnSync(
-      "unzip",
-      ["-q", "-o", zip, "-d", __dirname],
-      { encoding: "utf8", shell: false },
-    );
-    if (r.status !== 0) {
-      r = spawnSync(
-        "tar",
-        ["-x", "-f", zip, "-C", __dirname],
-        { encoding: "utf8", shell: false },
-      );
-    }
-  }
-  if (r.status !== 0) {
-    if (process.platform === "win32") {
-      // Fallback: PowerShell Expand-Archive (zip root may be node_modules/)
-      const ps = spawnSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-Command",
-          \`Expand-Archive -LiteralPath '\${zip.replace(/'/g, "''")}' -DestinationPath '\${__dirname.replace(/'/g, "''")}' -Force\`,
-        ],
-        { encoding: "utf8" },
-      );
-      if (ps.status !== 0) {
-        console.error("[pi-host bootstrap] extract failed", r.stderr || ps.stderr || r.stdout || ps.stdout);
-        process.exit(1);
-      }
-    } else {
-      console.error("[pi-host bootstrap] extract failed", r.stderr || r.stdout || r.error?.message);
-      process.exit(1);
-    }
-  }
-  if (!existsSync(join(nmDir, "@earendil-works", "pi-coding-agent", "package.json"))) {
-    console.error("[pi-host bootstrap] SDK missing after extract");
-    process.exit(1);
-  }
+const cacheRoot = process.env.PIDECK_HOST_CACHE_DIR;
+if (!cacheRoot) {
+  console.error("[pi-host bootstrap] PIDECK_HOST_CACHE_DIR is required");
+  process.exit(1);
 }
-
-await import(pathToFileURL(join(__dirname, "host-main.js")).href);
+await runPiHostBootstrap({ resourceDir: __dirname, cacheRoot });
 `;
 
 writeFileSync(mainJs, bootstrap);
 
-const stagingPath = join(hostDir, "STAGING.json");
 if (existsSync(stagingPath)) {
   const s = JSON.parse(readFileSync(stagingPath, "utf8"));
   s.nodeModulesPackagedAs = "node_modules.zip";
-  s.bootstrapEntry = "main.js -> extract zip -> host-main.js";
+  s.bootstrapEntry = "main.js -> versioned writable cache -> cached host-runtime/host-main.js";
+  s.hostRuntimePackagedInZip = true;
+  s.hostCacheSchemaVersion = 1;
   s.zipBytes = statSync(zipPath).size;
   s.nodeModulesZipSha256 = sha256File(zipPath);
+  s.nodeModulesLinks = JSON.parse(readFileSync(linksPath, "utf8")).links.length;
+  s.nodeModulesLinksSha256 = sha256File(linksPath);
+  s.nodeModulesGraphSha256 = sha256File(graphPath);
   writeFileSync(stagingPath, JSON.stringify(s, null, 2));
 }
 

@@ -49,8 +49,6 @@ export type WorkspaceGraph = {
   /** After package mutation reload failure — block prompts until reload succeeds */
   resourceReloadRequired: boolean;
   backgroundSessions: Map<string, BackgroundSessionRuntime>;
-  /** Idle runtimes parked for fast switching within this workspace. */
-  retainedSessions: Map<string, BackgroundSessionRuntime>;
   /** Disk/config fingerprint captured when this graph was parked. */
   retainedFingerprint?: string;
   /** Ownership token for providers registered by this workspace's extensions. */

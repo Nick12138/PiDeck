@@ -15,10 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "typebox": "1.1.38"
+    "lint": "eslint src *.config.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

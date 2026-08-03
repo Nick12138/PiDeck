@@ -26,7 +26,7 @@ export function modelBackupDir(agentDir: string): string {
   return join(pideckDataDir(agentDir), "model-backups");
 }
 
-export function sessionArchiveRoot(agentDir: string): string {
+function sessionArchiveRoot(agentDir: string): string {
   return join(pideckDataDir(agentDir), "session-archive");
 }
 

@@ -23,7 +23,7 @@ import { Switch } from "../../components/Switch";
 import { primaryButton, secondaryButton } from "../../components/Dialog";
 
 /** Rows shown before "show all": signed-in, enabled, or subscription (OAuth) providers. */
-export function isFeaturedLoginProvider(provider: BuiltinProviderAuthStatus): boolean {
+function isFeaturedLoginProvider(provider: BuiltinProviderAuthStatus): boolean {
   return provider.configured || provider.enabled || provider.supportsOauth;
 }
 
@@ -55,11 +55,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
     const currentHost = useAppStore.getState().host;
     if (!currentHost) return;
     const request = ++requestSeq.current;
-    const res = await hostClient.request(
-      "provider.authStatus",
-      hostContext(currentHost),
-      null,
-    );
+    const res = await hostClient.request("provider.authStatus", hostContext(currentHost), null);
     if (request !== requestSeq.current) return;
     if (res.ok) {
       setProviders(res.result.providers);
@@ -69,7 +65,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (host && workspace?.servicesReady) void refresh();
-  }, [host?.hostInstanceId, workspace?.servicesReady, refresh]);
+  }, [host, workspace?.servicesReady, refresh]);
 
   const loginDone = providerLogin?.done;
   useEffect(() => {
@@ -250,88 +246,90 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
               return (
                 <div key={provider.providerId} className="border-b border-border last:border-b-0">
                   <div className="flex items-center gap-3 px-4 py-3">
-                  <span
-                    className={`size-2 shrink-0 rounded-full ${
-                      provider.configured ? "bg-success" : "bg-muted/50"
-                    }`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {provider.oauthLabel ?? provider.name}
+                    <span
+                      className={`size-2 shrink-0 rounded-full ${
+                        provider.configured ? "bg-success" : "bg-muted/50"
+                      }`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {provider.oauthLabel ?? provider.name}
+                      </span>
+                      <span className="block truncate text-[11px] text-muted">
+                        {loggingIn
+                          ? t("providersLoginInProgress")
+                          : provider.configured
+                            ? (provider.authLabel ?? t("providersLoginConfigured"))
+                            : t("providersLoginNotConfigured")}
+                      </span>
                     </span>
-                    <span className="block truncate text-[11px] text-muted">
-                      {loggingIn
-                        ? t("providersLoginInProgress")
-                        : provider.configured
-                          ? provider.authLabel ?? t("providersLoginConfigured")
-                          : t("providersLoginNotConfigured")}
-                    </span>
-                  </span>
-                  {busy ? (
-                    <Loader2 className="animate-spin text-muted" size={14} />
-                  ) : (
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      {provider.supportsOauth && (
-                        <button
-                          type="button"
-                          className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] hover:bg-surface-overlay disabled:opacity-40"
-                          disabled={Boolean(providerLogin)}
-                          onClick={() => void startLogin(provider, "oauth")}
-                        >
-                          <LogIn size={12} />
-                          {t("providersLoginOauth")}
-                        </button>
-                      )}
-                      {provider.supportsApiKeyLogin && (
-                        <button
-                          type="button"
-                          className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] hover:bg-surface-overlay disabled:opacity-40"
-                          disabled={Boolean(providerLogin)}
-                          onClick={() => void startLogin(provider, "api_key")}
-                        >
-                          <KeyRound size={12} />
-                          {t("providersLoginApiKey")}
-                        </button>
-                      )}
-                      {provider.hasStoredCredential && (
-                        <button
-                          type="button"
-                          title={t("providersLogout")}
-                          aria-label={`${t("providersLogout")} ${provider.name}`}
-                          className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-40"
-                          disabled={Boolean(providerLogin)}
-                          onClick={() => void logout(provider)}
-                        >
-                          <LogOut size={13} />
-                        </button>
-                      )}
-                      {(provider.configured || provider.enabled) && (
-                        <button
-                          type="button"
-                          title={t("providersLoginModels")}
-                          aria-label={`${t("providersLoginModels")} ${provider.name}`}
-                          aria-expanded={panelOpen}
-                          className={`flex size-7 items-center justify-center rounded-md ${
-                            panelOpen
-                              ? "bg-accent/15 text-accent"
-                              : "text-muted hover:bg-surface-overlay hover:text-foreground"
-                          }`}
-                          onClick={() => {
-                            if (panelOpen) setModelPanel(null);
-                            else void loadModelPanel(provider.providerId);
-                          }}
-                        >
-                          <SlidersHorizontal size={13} />
-                        </button>
-                      )}
-                      <Switch
-                        checked={provider.enabled}
-                        label={`${provider.enabled ? "Disable" : "Enable"} ${provider.name}`}
-                        disabled={Boolean(providerLogin) || (!provider.configured && !provider.enabled)}
-                        onChange={(next) => void toggleEnabled(provider, next)}
-                      />
-                    </span>
-                  )}
+                    {busy ? (
+                      <Loader2 className="animate-spin text-muted" size={14} />
+                    ) : (
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {provider.supportsOauth && (
+                          <button
+                            type="button"
+                            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] hover:bg-surface-overlay disabled:opacity-40"
+                            disabled={Boolean(providerLogin)}
+                            onClick={() => void startLogin(provider, "oauth")}
+                          >
+                            <LogIn size={12} />
+                            {t("providersLoginOauth")}
+                          </button>
+                        )}
+                        {provider.supportsApiKeyLogin && (
+                          <button
+                            type="button"
+                            className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] hover:bg-surface-overlay disabled:opacity-40"
+                            disabled={Boolean(providerLogin)}
+                            onClick={() => void startLogin(provider, "api_key")}
+                          >
+                            <KeyRound size={12} />
+                            {t("providersLoginApiKey")}
+                          </button>
+                        )}
+                        {provider.hasStoredCredential && (
+                          <button
+                            type="button"
+                            title={t("providersLogout")}
+                            aria-label={`${t("providersLogout")} ${provider.name}`}
+                            className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-danger disabled:opacity-40"
+                            disabled={Boolean(providerLogin)}
+                            onClick={() => void logout(provider)}
+                          >
+                            <LogOut size={13} />
+                          </button>
+                        )}
+                        {(provider.configured || provider.enabled) && (
+                          <button
+                            type="button"
+                            title={t("providersLoginModels")}
+                            aria-label={`${t("providersLoginModels")} ${provider.name}`}
+                            aria-expanded={panelOpen}
+                            className={`flex size-7 items-center justify-center rounded-md ${
+                              panelOpen
+                                ? "bg-accent/15 text-accent"
+                                : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                            }`}
+                            onClick={() => {
+                              if (panelOpen) setModelPanel(null);
+                              else void loadModelPanel(provider.providerId);
+                            }}
+                          >
+                            <SlidersHorizontal size={13} />
+                          </button>
+                        )}
+                        <Switch
+                          checked={provider.enabled}
+                          label={`${provider.enabled ? "Disable" : "Enable"} ${provider.name}`}
+                          disabled={
+                            Boolean(providerLogin) || (!provider.configured && !provider.enabled)
+                          }
+                          onChange={(next) => void toggleEnabled(provider, next)}
+                        />
+                      </span>
+                    )}
                   </div>
                   {panelOpen && modelPanel && (
                     <div className="border-t border-border bg-surface-raised/60 p-3">

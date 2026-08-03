@@ -13,20 +13,20 @@ export function ExtensionUiModal() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const wasSubmittingRef = useRef(false);
   const titleId = useId();
+  const requestId = request?.requestId ?? null;
 
   useEffect(() => {
-    if (!request) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!requestId) return;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const timer = window.setTimeout(() => {
-      dialogRef.current
-        ?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
-        ?.focus();
+      dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
     }, 0);
     return () => {
       window.clearTimeout(timer);
       previousFocus?.focus();
     };
-  }, [request?.requestId]);
+  }, [requestId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -48,9 +48,7 @@ export function ExtensionUiModal() {
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
-    const focusable = [
-      ...dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-    ];
+    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
     if (focusable.length === 0) {
       event.preventDefault();
       dialogRef.current.focus();

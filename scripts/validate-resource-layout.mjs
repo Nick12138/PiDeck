@@ -1,6 +1,6 @@
 /**
  * Validate staged Tauri resources layout (C1 / B-LAYOUT-01).
- * Accepts either expanded node_modules OR compacted node_modules.zip + host-main.js.
+ * Accepts either expanded node_modules or the compacted, cache-materialized Host payload.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -58,12 +58,13 @@ need(join(res, "pi-host/main.js"), "pi-host/main.js missing");
 need(join(res, "pi-host/package.json"), "pi-host/package.json missing");
 need(join(res, "pi-host/STAGING.json"), "pi-host/STAGING.json missing");
 
-const expandedSdk = join(
-  res,
-  "pi-host/node_modules/@earendil-works/pi-coding-agent/package.json",
-);
+const expandedSdk = join(res, "pi-host/node_modules/@earendil-works/pi-coding-agent/package.json");
 const zipPath = join(res, "pi-host/node_modules.zip");
 const hostMain = join(res, "pi-host/host-main.js");
+const nodeModulesLinks = join(res, "pi-host/NODE_MODULES_LINKS.json");
+const nodeModulesGraph = join(res, "pi-host/NODE_MODULES_GRAPH.json");
+const portableNodeModules = join(res, "pi-host/portable-node-modules.mjs");
+const bootstrapRuntime = join(res, "pi-host/pi-host-bootstrap-runtime.mjs");
 const compacted = existsSync(zipPath) && statSync(zipPath).size > 1_000_000;
 
 if (compacted) {
@@ -71,10 +72,17 @@ if (compacted) {
   info.zipBytes = statSync(zipPath).size;
   info.nodeModulesZipSha256 = sha256File(zipPath);
   need(hostMain, "host-main.js missing in compacted layout");
-  // Bootstrap main.js must reference zip
+  need(nodeModulesLinks, "NODE_MODULES_LINKS.json missing in compacted layout");
+  need(nodeModulesGraph, "NODE_MODULES_GRAPH.json missing in compacted layout");
+  need(portableNodeModules, "portable-node-modules.mjs missing in compacted layout");
+  need(bootstrapRuntime, "pi-host-bootstrap-runtime.mjs missing in compacted layout");
+  // The signed resource bootstrap must delegate all writes to the app cache.
   const mainSrc = readFileSync(join(res, "pi-host/main.js"), "utf8");
-  if (!mainSrc.includes("node_modules.zip")) {
-    errors.push("compacted main.js bootstrap must reference node_modules.zip");
+  if (
+    !mainSrc.includes("pi-host-bootstrap-runtime.mjs") ||
+    !mainSrc.includes("PIDECK_HOST_CACHE_DIR")
+  ) {
+    errors.push("compacted main.js must delegate extraction to the writable Host cache runtime");
   }
 } else {
   info.layout = "expanded-node_modules";
@@ -86,7 +94,13 @@ if (compacted) {
 }
 
 const hostRoot = join(res, "pi-host");
-for (const forbidden of ["src", "apps", ".staging-host-deploy", "tsconfig.json", "vitest.config.ts"]) {
+for (const forbidden of [
+  "src",
+  "apps",
+  ".staging-host-deploy",
+  "tsconfig.json",
+  "vitest.config.ts",
+]) {
   if (existsSync(join(hostRoot, forbidden))) {
     errors.push(`pi-host contains forbidden deploy payload: ${forbidden}`);
   }
@@ -143,9 +157,7 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
           `STAGING pnpmLockSha256Expected ${s.pnpmLockSha256Expected ?? "missing"} !== ${expectedSdkEvidence.pnpmLock.sha256}`,
         );
       }
-      const releaseManifest = JSON.parse(
-        readFileSync(join(res, "pi-host/package.json"), "utf8"),
-      );
+      const releaseManifest = JSON.parse(readFileSync(join(res, "pi-host/package.json"), "utf8"));
       assertReleaseProductionManifest(
         releaseManifest,
         expectedSdkEvidence,
@@ -167,6 +179,30 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
       `STAGING node_modules zip SHA-256 ${s.nodeModulesZipSha256 ?? "missing"} !== ${info.nodeModulesZipSha256}`,
     );
   }
+  if (compacted && s.hostRuntimePackagedInZip !== true) {
+    errors.push("STAGING hostRuntimePackagedInZip must be true");
+  }
+  if (compacted && s.hostCacheSchemaVersion !== 1) {
+    errors.push(`STAGING hostCacheSchemaVersion ${s.hostCacheSchemaVersion ?? "missing"} !== 1`);
+  }
+  if (compacted && existsSync(nodeModulesLinks)) {
+    const linksSha256 = sha256File(nodeModulesLinks);
+    info.nodeModulesLinksSha256 = linksSha256;
+    if (s.nodeModulesLinksSha256 !== linksSha256) {
+      errors.push(
+        `STAGING node_modules links SHA-256 ${s.nodeModulesLinksSha256 ?? "missing"} !== ${linksSha256}`,
+      );
+    }
+  }
+  if (compacted && existsSync(nodeModulesGraph)) {
+    const graphSha256 = sha256File(nodeModulesGraph);
+    info.nodeModulesGraphSha256 = graphSha256;
+    if (s.nodeModulesGraphSha256 !== graphSha256) {
+      errors.push(
+        `STAGING node_modules graph SHA-256 ${s.nodeModulesGraphSha256 ?? "missing"} !== ${graphSha256}`,
+      );
+    }
+  }
   info.staging = {
     sdkVersion: s.sdkVersion,
     sdkEvidence: s.sdkEvidence ?? null,
@@ -177,6 +213,8 @@ if (existsSync(join(res, "pi-host/STAGING.json"))) {
     stagingStrategy: s.stagingStrategy,
     nodeModulesPackagedAs: s.nodeModulesPackagedAs ?? null,
     nodeModulesZipSha256: s.nodeModulesZipSha256 ?? null,
+    hostRuntimePackagedInZip: s.hostRuntimePackagedInZip ?? false,
+    hostCacheSchemaVersion: s.hostCacheSchemaVersion ?? null,
     pnpmLockSha256: s.pnpmLockSha256 ?? null,
     pnpmLockVerified: s.pnpmLockVerified ?? false,
   };

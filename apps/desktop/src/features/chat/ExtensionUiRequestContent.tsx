@@ -1,8 +1,16 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Check, CircleAlert, LoaderCircle, MessageCircleQuestion, Search, Send, X } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  LoaderCircle,
+  MessageCircleQuestion,
+  Search,
+  Send,
+  X,
+} from "lucide-react";
 import { useT } from "../../lib/i18n/use-t";
-import type { ExtensionUiRequestState } from "../../lib/stores/app-store";
+import type { ExtensionUiRequestState } from "../../lib/stores/extension-ui-state";
 import type { ExtensionUiResponseController } from "./use-extension-ui-response";
 
 type KnownExtensionUiOrigin = Exclude<
@@ -41,10 +49,18 @@ function ExpiryLabel({ expiresAt }: { expiresAt?: number }) {
   if (!expiresAt) return null;
   const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1_000));
   if (seconds >= 3_600) {
-    return <span className="tabular-nums">{t("extUiExpiresInHours", { hours: Math.ceil(seconds / 3_600) })}</span>;
+    return (
+      <span className="tabular-nums">
+        {t("extUiExpiresInHours", { hours: Math.ceil(seconds / 3_600) })}
+      </span>
+    );
   }
   if (seconds >= 60) {
-    return <span className="tabular-nums">{t("extUiExpiresInMinutes", { minutes: Math.ceil(seconds / 60) })}</span>;
+    return (
+      <span className="tabular-nums">
+        {t("extUiExpiresInMinutes", { minutes: Math.ceil(seconds / 60) })}
+      </span>
+    );
   }
   return <span className="tabular-nums">{t("extUiExpiresIn", { seconds })}</span>;
 }
@@ -86,12 +102,11 @@ export function ExtensionUiRequestContent({
     { kind: "option"; id: string } | { kind: "freeform" } | null
   >(null);
   const highRisk = request.risk === "high";
-  const trustedOrigin =
-    request.origin?.invocationKind === "unknown" ? undefined : request.origin;
+  const trustedOrigin = request.origin?.invocationKind === "unknown" ? undefined : request.origin;
   const sourceLabel = trustedOrigin?.extensionDisplayName ?? request.sourceLabel;
   const sourceActivity = trustedOrigin ? originActivity(trustedOrigin) : undefined;
   const sourceTitle = sourceActivity ? `${sourceLabel} · ${sourceActivity}` : sourceLabel;
-  const options = request.options ?? [];
+  const options = useMemo(() => request.options ?? [], [request.options]);
   const normalizedOptionQuery = optionQuery.trim().toLocaleLowerCase();
   const filteredOptions = useMemo(
     () =>
@@ -125,10 +140,7 @@ export function ExtensionUiRequestContent({
     if (optionScrollRef.current) optionScrollRef.current.scrollTop = 0;
   }, [optionQuery]);
 
-  async function respondToSelect(
-    source: NonNullable<typeof selectSubmitSource>,
-    value: string,
-  ) {
+  async function respondToSelect(source: NonNullable<typeof selectSubmitSource>, value: string) {
     setSelectSubmitSource(source);
     if (!(await respond("resolved", value))) setSelectSubmitSource(null);
   }
@@ -146,17 +158,11 @@ export function ExtensionUiRequestContent({
 
   function renderOption(option: (typeof options)[number], index: number) {
     const optionSubmitting =
-      submitting &&
-      selectSubmitSource?.kind === "option" &&
-      selectSubmitSource.id === option.id;
+      submitting && selectSubmitSource?.kind === "option" && selectSubmitSource.id === option.id;
     return (
       <button
         type="button"
-        aria-label={
-          option.description
-            ? `${option.label}. ${option.description}`
-            : option.label
-        }
+        aria-label={option.description ? `${option.label}. ${option.description}` : option.label}
         aria-posinset={virtualizeOptions ? index + 1 : undefined}
         aria-setsize={virtualizeOptions ? filteredOptions.length : undefined}
         className={`flex min-h-10 w-full flex-col justify-center rounded-md border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed ${
@@ -168,9 +174,7 @@ export function ExtensionUiRequestContent({
               ? "border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-45"
               : "border-border text-foreground/90 hover:bg-surface-overlay disabled:opacity-45"
         }`}
-        onClick={() =>
-          void respondToSelect({ kind: "option", id: option.id }, option.id)
-        }
+        onClick={() => void respondToSelect({ kind: "option", id: option.id }, option.id)}
       >
         <span className="text-xs font-medium">{option.label}</span>
         {option.description && (
@@ -210,7 +214,11 @@ export function ExtensionUiRequestContent({
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <h2
               id={titleId}
-              className={variant === "modal" ? "break-words text-base font-semibold" : "break-words text-sm font-semibold"}
+              className={
+                variant === "modal"
+                  ? "break-words text-base font-semibold"
+                  : "break-words text-sm font-semibold"
+              }
             >
               {request.title ?? t("extUiDefaultTitle")}
             </h2>
@@ -219,7 +227,9 @@ export function ExtensionUiRequestContent({
                 {sourceLabel}
               </span>
             )}
-            {highRisk && <span className="text-[10px] font-medium text-warning">{t("extUiHighRisk")}</span>}
+            {highRisk && (
+              <span className="text-[10px] font-medium text-warning">{t("extUiHighRisk")}</span>
+            )}
             <span className="ml-auto shrink-0 text-[10px] text-muted">
               <ExpiryLabel expiresAt={request.expiresAt} />
             </span>
@@ -343,7 +353,10 @@ export function ExtensionUiRequestContent({
 
           {request.allowFreeform && (
             <div className="mt-3 border-t border-border/70 pt-3">
-              <label htmlFor={fieldId} className="mb-1.5 block text-xs font-medium text-foreground/80">
+              <label
+                htmlFor={fieldId}
+                className="mb-1.5 block text-xs font-medium text-foreground/80"
+              >
                 {t("extUiCustomResponse")}
               </label>
               <div className="flex items-end gap-2">

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   closeContextMenu,
@@ -18,10 +18,13 @@ function Menu({ request }: { request: ContextMenuRequest }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: request.x, top: request.y });
 
-  const close = (restoreFocus = true) => {
-    closeContextMenu();
-    if (restoreFocus && request.trigger?.isConnected) request.trigger.focus();
-  };
+  const close = useCallback(
+    (restoreFocus = true) => {
+      closeContextMenu();
+      if (restoreFocus && request.trigger?.isConnected) request.trigger.focus();
+    },
+    [request.trigger],
+  );
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -60,13 +63,12 @@ function Menu({ request }: { request: ContextMenuRequest }) {
       window.removeEventListener("resize", onDismiss);
       window.removeEventListener("scroll", onDismiss, true);
     };
-  }, []);
+  }, [close]);
 
   const focusByKey = (key: string) => {
     const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]:not(:disabled)',
-      ) ?? [],
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ??
+        [],
     );
     if (items.length === 0) return;
     const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -122,12 +124,14 @@ function Menu({ request }: { request: ContextMenuRequest }) {
                 void Promise.resolve(item.onSelect()).catch(() => undefined);
               }}
             >
-              {Icon ? <Icon size={14} className="shrink-0" aria-hidden="true" /> : <span className="w-3.5" />}
+              {Icon ? (
+                <Icon size={14} className="shrink-0" aria-hidden="true" />
+              ) : (
+                <span className="w-3.5" />
+              )}
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
               {item.chordHint && (
-                <kbd className="shrink-0 font-mono text-[10px] text-muted">
-                  {item.chordHint}
-                </kbd>
+                <kbd className="shrink-0 font-mono text-[10px] text-muted">{item.chordHint}</kbd>
               )}
             </button>
           </div>

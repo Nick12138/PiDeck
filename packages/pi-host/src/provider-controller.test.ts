@@ -5,11 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelConfigHealth, ProviderDraft } from "@pideck/protocol";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
-import {
-  createProviderHandlers,
-  getEnabledProviderIds,
-  getProviderModelAllowLists,
-} from "./provider-controller.js";
+import { createProviderHandlers } from "./provider-controller.js";
+import { getEnabledProviderIds, getProviderModelAllowLists } from "./provider-models-config.js";
 import { PiHostServer } from "./server.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 import { createTestModelServices, putApiKey } from "./test-helpers/model-runtime.js";
@@ -147,33 +144,34 @@ function attachRuntimeGraph(
   Reflect.set(factory, "graph", {
     agentSession: active,
     backgroundSessions,
-    retainedSessions: new Map(),
   } as WorkspaceGraph);
 }
 
 function writeAnthropicSuccess(response: import("node:http").ServerResponse): void {
   response.writeHead(200, { "Content-Type": "text/event-stream" });
-  response.end([
-    "event: message_start",
-    'data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"relay-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}',
-    "",
-    "event: content_block_start",
-    'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-    "",
-    "event: content_block_delta",
-    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}',
-    "",
-    "event: content_block_stop",
-    'data: {"type":"content_block_stop","index":0}',
-    "",
-    "event: message_delta",
-    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
-    "",
-    "event: message_stop",
-    'data: {"type":"message_stop"}',
-    "",
-    "",
-  ].join("\n"));
+  response.end(
+    [
+      "event: message_start",
+      'data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"relay-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}',
+      "",
+      "event: content_block_start",
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      "",
+      "event: content_block_delta",
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}',
+      "",
+      "event: content_block_stop",
+      'data: {"type":"content_block_stop","index":0}',
+      "",
+      "event: message_delta",
+      'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
+      "",
+      "event: message_stop",
+      'data: {"type":"message_stop"}',
+      "",
+      "",
+    ].join("\n"),
+  );
 }
 
 describe("Provider controller", () => {
@@ -230,9 +228,14 @@ describe("Provider controller", () => {
     const list = await handlers["provider.list"]!({ id: "list-providers", params: null } as never);
     expect("error" in list).toBe(false);
     if (!("error" in list)) {
-      const providers = (list.result as { providers: Array<{ id: string; enabled: boolean }> }).providers;
-      expect(providers.filter((provider) => provider.enabled).map((provider) => provider.id).sort())
-        .toEqual(["custom", "other"]);
+      const providers = (list.result as { providers: Array<{ id: string; enabled: boolean }> })
+        .providers;
+      expect(
+        providers
+          .filter((provider) => provider.enabled)
+          .map((provider) => provider.id)
+          .sort(),
+      ).toEqual(["custom", "other"]);
     }
   });
 
@@ -584,8 +587,9 @@ describe("Provider controller", () => {
     const { layout, handlers } = await setup({ providers: {} });
     const backupDir = modelBackupDir(layout.agentDir);
     mkdirSync(backupDir, { recursive: true });
-    const seeded = Array.from({ length: 6 }, (_, index) =>
-      `models-${1_001 + index}-${(index + 1).toString(16).padStart(8, "0")}.bak`
+    const seeded = Array.from(
+      { length: 6 },
+      (_, index) => `models-${1_001 + index}-${(index + 1).toString(16).padStart(8, "0")}.bak`,
     );
     for (const name of seeded) writeFileSync(join(backupDir, name), name);
     writeFileSync(join(layout.agentDir, "models-user-copy.bak"), "keep");
@@ -596,14 +600,16 @@ describe("Provider controller", () => {
     } as never);
 
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
-    const backups = readdirSync(backupDir)
-      .filter((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name));
+    const backups = readdirSync(backupDir).filter((name) =>
+      /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name),
+    );
     expect(backups).toHaveLength(5);
     expect(backups).toEqual(expect.arrayContaining(seeded.slice(2)));
     expect(backups.some((name) => !seeded.includes(name))).toBe(true);
     expect(readdirSync(layout.agentDir)).toContain("models-user-copy.bak");
-    expect(readdirSync(layout.agentDir).some((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name)))
-      .toBe(false);
+    expect(
+      readdirSync(layout.agentDir).some((name) => /^models-\d+-[0-9a-f]{8}\.bak$/u.test(name)),
+    ).toBe(false);
   });
 
   it("preserves unrelated configuration and keeps API keys out of models.json", async () => {
@@ -624,10 +630,7 @@ describe("Provider controller", () => {
             supportsReasoningEffort: true,
             supportsStore: false,
           },
-          models: [
-            { id: "keep", compat: { supportsReasoningEffort: false } },
-            { id: "hide" },
-          ],
+          models: [{ id: "keep", compat: { supportsReasoningEffort: false } }, { id: "hide" }],
         },
       },
     });
@@ -663,7 +666,10 @@ describe("Provider controller", () => {
     expect(persisted.providers.custom.apiKey).toBeUndefined();
     expect(await credentialStore.readRaw("custom")).toEqual({ type: "api_key", key: "secret-key" });
     if (!("error" in outcome)) {
-      expect((outcome.result as { provider: { auth: { configured: boolean } } }).provider.auth.configured).toBe(true);
+      expect(
+        (outcome.result as { provider: { auth: { configured: boolean } } }).provider.auth
+          .configured,
+      ).toBe(true);
     }
   });
 
@@ -735,14 +741,16 @@ describe("Provider controller", () => {
 
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     if (!("error" in outcome)) {
-      const models = (outcome.result as {
-        models: Array<{
-          id: string;
-          enabled: boolean;
-          thinkingSource: string;
-          thinkingLevelMap?: Record<string, string | null>;
-        }>;
-      }).models;
+      const models = (
+        outcome.result as {
+          models: Array<{
+            id: string;
+            enabled: boolean;
+            thinkingSource: string;
+            thinkingLevelMap?: Record<string, string | null>;
+          }>;
+        }
+      ).models;
       expect(models).toEqual([
         expect.objectContaining({
           id: "deepseek-v4-pro",
@@ -1010,8 +1018,9 @@ describe("Provider controller", () => {
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     expect(requestPaths).toEqual(["/v1/models", "/models"]);
     if (!("error" in outcome)) {
-      expect((outcome.result as { models: Array<{ id: string }> }).models)
-        .toEqual([expect.objectContaining({ id: "fallback-model" })]);
+      expect((outcome.result as { models: Array<{ id: string }> }).models).toEqual([
+        expect.objectContaining({ id: "fallback-model" }),
+      ]);
     }
   });
 
@@ -1040,7 +1049,9 @@ describe("Provider controller", () => {
       params: { providerId: "custom" },
     } as never);
 
-    expect("error" in outcome ? outcome.error.message : "").toContain("returned HTML instead of JSON");
+    expect("error" in outcome ? outcome.error.message : "").toContain(
+      "returned HTML instead of JSON",
+    );
     expect("error" in outcome ? outcome.error.message : "").toContain("Check the Base URL");
     expect("error" in outcome ? outcome.error.message : "").not.toContain("Unexpected token");
   });
@@ -1048,9 +1059,11 @@ describe("Provider controller", () => {
   it("reports JSON API errors without exposing stored credentials", async () => {
     const catalogServer = createServer((request, response) => {
       response.writeHead(401, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        error: { message: `Invalid API key ${request.headers.authorization}` },
-      }));
+      response.end(
+        JSON.stringify({
+          error: { message: `Invalid API key ${request.headers.authorization}` },
+        }),
+      );
     });
     httpServers.push(catalogServer);
     await new Promise<void>((resolve) => catalogServer.listen(0, "127.0.0.1", resolve));
@@ -1180,43 +1193,48 @@ describe("Provider controller", () => {
   it("classifies a real Anthropic SDK request blocked by User-Agent", async () => {
     const requests: Array<{ url: string; userAgent?: string }> = [];
     const apiServer = createServer((request, response) => {
-      const userAgent = typeof request.headers["user-agent"] === "string"
-        ? request.headers["user-agent"]
-        : undefined;
+      const userAgent =
+        typeof request.headers["user-agent"] === "string"
+          ? request.headers["user-agent"]
+          : undefined;
       requests.push({
         url: request.url ?? "",
         ...(userAgent ? { userAgent } : {}),
       });
       if (userAgent === "PiDeck/0.1") {
         response.writeHead(200, { "Content-Type": "text/event-stream" });
-        response.end([
-          "event: message_start",
-          'data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"relay-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}',
-          "",
-          "event: content_block_start",
-          'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-          "",
-          "event: content_block_delta",
-          'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}',
-          "",
-          "event: content_block_stop",
-          'data: {"type":"content_block_stop","index":0}',
-          "",
-          "event: message_delta",
-          'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
-          "",
-          "event: message_stop",
-          'data: {"type":"message_stop"}',
-          "",
-          "",
-        ].join("\n"));
+        response.end(
+          [
+            "event: message_start",
+            'data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"relay-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}',
+            "",
+            "event: content_block_start",
+            'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+            "",
+            "event: content_block_delta",
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}',
+            "",
+            "event: content_block_stop",
+            'data: {"type":"content_block_stop","index":0}',
+            "",
+            "event: message_delta",
+            'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
+            "",
+            "event: message_stop",
+            'data: {"type":"message_stop"}',
+            "",
+            "",
+          ].join("\n"),
+        );
         return;
       }
       response.writeHead(403, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        type: "error",
-        error: { type: "permission_error", message: "Your request was blocked." },
-      }));
+      response.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "permission_error", message: "Your request was blocked." },
+        }),
+      );
     });
     httpServers.push(apiServer);
     await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -1247,14 +1265,16 @@ describe("Provider controller", () => {
       userAgent: expect.stringMatching(/^Anthropic\/JS /),
     });
     if (!("error" in outcome)) {
-      expect(outcome.result).toEqual(expect.objectContaining({
-        providerId: "custom",
-        modelId: "relay-model",
-        api: "anthropic-messages",
-        ok: false,
-        category: "blocked",
-        suggestion: expect.stringContaining("User-Agent"),
-      }));
+      expect(outcome.result).toEqual(
+        expect.objectContaining({
+          providerId: "custom",
+          modelId: "relay-model",
+          api: "anthropic-messages",
+          ok: false,
+          category: "blocked",
+          suggestion: expect.stringContaining("User-Agent"),
+        }),
+      );
       expect(JSON.stringify(outcome.result)).not.toContain("do-not-expose");
     }
 
@@ -1279,29 +1299,34 @@ describe("Provider controller", () => {
     expect("error" in compatibleOutcome ? compatibleOutcome.error.message : null).toBeNull();
     expect(requests[1]).toEqual({ url: "/v1/messages", userAgent: "PiDeck/0.1" });
     if (!("error" in compatibleOutcome)) {
-      expect(compatibleOutcome.result).toEqual(expect.objectContaining({
-        ok: true,
-        category: "ok",
-      }));
+      expect(compatibleOutcome.result).toEqual(
+        expect.objectContaining({
+          ok: true,
+          category: "ok",
+        }),
+      );
     }
   });
 
   it("detects and persists Bearer authentication after a native-auth 401", async () => {
     const authorizations: Array<string | undefined> = [];
     const apiServer = createServer((request, response) => {
-      const authorization = typeof request.headers.authorization === "string"
-        ? request.headers.authorization
-        : undefined;
+      const authorization =
+        typeof request.headers.authorization === "string"
+          ? request.headers.authorization
+          : undefined;
       authorizations.push(authorization);
       if (authorization === "Bearer do-not-expose") {
         writeAnthropicSuccess(response);
         return;
       }
       response.writeHead(401, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        type: "error",
-        error: { type: "authentication_error", message: "Authorization header required" },
-      }));
+      response.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "authentication_error", message: "Authorization header required" },
+        }),
+      );
     });
     httpServers.push(apiServer);
     await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -1331,11 +1356,13 @@ describe("Provider controller", () => {
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.providers.custom.authHeader).toBe(true);
     if (!("error" in outcome)) {
-      expect(outcome.result).toEqual(expect.objectContaining({
-        ok: true,
-        category: "ok",
-        message: expect.stringContaining("detected automatically"),
-      }));
+      expect(outcome.result).toEqual(
+        expect.objectContaining({
+          ok: true,
+          category: "ok",
+          message: expect.stringContaining("detected automatically"),
+        }),
+      );
       expect(JSON.stringify(outcome.result)).not.toContain("do-not-expose");
     }
 
@@ -1358,10 +1385,12 @@ describe("Provider controller", () => {
         return;
       }
       response.writeHead(401, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        type: "error",
-        error: { type: "authentication_error", message: "Authorization header required" },
-      }));
+      response.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "authentication_error", message: "Authorization header required" },
+        }),
+      );
     });
     httpServers.push(apiServer);
     await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -1410,33 +1439,39 @@ describe("Provider controller", () => {
       };
       const roles = payload.messages?.map((message) => message.role ?? "") ?? [];
       requestRoles.push(roles);
-      expect(payload.tools).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: "function",
-          function: expect.objectContaining({ name: "pideck_connection_test" }),
-        }),
-      ]));
+      expect(payload.tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "function",
+            function: expect.objectContaining({ name: "pideck_connection_test" }),
+          }),
+        ]),
+      );
       if (roles.includes("developer")) {
         response.writeHead(422, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({
-          error: {
-            message: "openai_error",
-            type: "bad_response_status_code",
-            code: "bad_response_status_code",
-          },
-        }));
+        response.end(
+          JSON.stringify({
+            error: {
+              message: "openai_error",
+              type: "bad_response_status_code",
+              code: "bad_response_status_code",
+            },
+          }),
+        );
         return;
       }
       response.writeHead(200, { "Content-Type": "text/event-stream" });
-      response.end([
-        'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"relay-model","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":null}]}',
-        "",
-        'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"relay-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}',
-        "",
-        "data: [DONE]",
-        "",
-        "",
-      ].join("\n"));
+      response.end(
+        [
+          'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"relay-model","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":null}]}',
+          "",
+          'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"relay-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}',
+          "",
+          "data: [DONE]",
+          "",
+          "",
+        ].join("\n"),
+      );
     });
     httpServers.push(apiServer);
     await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
@@ -1461,11 +1496,13 @@ describe("Provider controller", () => {
     expect("error" in automaticOutcome ? automaticOutcome.error.message : null).toBeNull();
     expect(requestRoles[0]).toContain("developer");
     if (!("error" in automaticOutcome)) {
-      expect(automaticOutcome.result).toEqual(expect.objectContaining({
-        ok: false,
-        category: "configuration",
-        suggestion: expect.stringContaining("System role"),
-      }));
+      expect(automaticOutcome.result).toEqual(
+        expect.objectContaining({
+          ok: false,
+          category: "configuration",
+          suggestion: expect.stringContaining("System role"),
+        }),
+      );
     }
 
     const compatible = await setup({
@@ -1486,10 +1523,12 @@ describe("Provider controller", () => {
     expect(requestRoles[1]).toContain("system");
     expect(requestRoles[1]).not.toContain("developer");
     if (!("error" in compatibleOutcome)) {
-      expect(compatibleOutcome.result).toEqual(expect.objectContaining({
-        ok: true,
-        category: "ok",
-      }));
+      expect(compatibleOutcome.result).toEqual(
+        expect.objectContaining({
+          ok: true,
+          category: "ok",
+        }),
+      );
     }
   });
 });
@@ -1524,14 +1563,16 @@ describe("Provider login", () => {
     } as never);
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     if ("error" in outcome) return;
-    const providers = (outcome.result as {
-      providers: Array<{
-        providerId: string;
-        supportsOauth: boolean;
-        hasStoredCredential: boolean;
-        enabled: boolean;
-      }>;
-    }).providers;
+    const providers = (
+      outcome.result as {
+        providers: Array<{
+          providerId: string;
+          supportsOauth: boolean;
+          hasStoredCredential: boolean;
+          enabled: boolean;
+        }>;
+      }
+    ).providers;
     const ids = providers.map((provider) => provider.providerId);
     expect(ids).toContain("anthropic");
     expect(ids).toContain("github-copilot");
@@ -1577,9 +1618,9 @@ describe("Provider login", () => {
     expect("error" in respond ? respond.error.message : null).toBeNull();
 
     await vi.waitFor(() => {
-      expect(
-        events.some((entry) => entry.event.kind === "done" && entry.event.ok === true),
-      ).toBe(true);
+      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
+        true,
+      );
     });
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.pideckEnabledProviders).toContain("anthropic");
@@ -1610,9 +1651,9 @@ describe("Provider login", () => {
     } as never);
     expect("error" in cancel).toBe(false);
     await vi.waitFor(() => {
-      expect(
-        events.some((entry) => entry.event.kind === "done" && entry.event.ok === false),
-      ).toBe(true);
+      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === false)).toBe(
+        true,
+      );
     });
 
     const followUp = await handlers["provider.loginStart"]!({
@@ -1714,16 +1755,14 @@ describe("Provider login", () => {
     const saveCredentialReached = deferred();
     const failSaveCredential = deferred();
     const modifyCredential = credentialStore.modify.bind(credentialStore);
-    vi.spyOn(credentialStore, "modify").mockImplementation(
-      async (providerId, update) => {
-        if (providerId === "custom") {
-          saveCredentialReached.resolve();
-          await failSaveCredential.promise;
-          throw new Error("forced Provider save failure");
-        }
-        return modifyCredential(providerId, update);
-      },
-    );
+    vi.spyOn(credentialStore, "modify").mockImplementation(async (providerId, update) => {
+      if (providerId === "custom") {
+        saveCredentialReached.resolve();
+        await failSaveCredential.promise;
+        throw new Error("forced Provider save failure");
+      }
+      return modifyCredential(providerId, update);
+    });
     vi.spyOn(modelRuntime, "login").mockImplementation(async (providerId) => {
       await allowLoginPersist.promise;
       await modifyCredential(providerId, async () => ({
@@ -1754,9 +1793,9 @@ describe("Provider login", () => {
 
     allowLoginPersist.resolve();
     await vi.waitFor(() => {
-      expect(
-        events.some((entry) => entry.event.kind === "done" && entry.event.ok === true),
-      ).toBe(true);
+      expect(events.some((entry) => entry.event.kind === "done" && entry.event.ok === true)).toBe(
+        true,
+      );
     });
     if (admission === "journal-started") failSaveCredential.resolve();
     const save = await savePromise;
@@ -1812,8 +1851,9 @@ describe("Provider login", () => {
 
   it("keeps builtin ids in the enabled filter once the list exists", async () => {
     const { layout } = await setup({ pideckEnabledProviders: ["anthropic"], providers: {} });
-    expect(await getEnabledProviderIds(layout.agentDir, undefined, ["anthropic", "openai"]))
-      .toEqual(["anthropic"]);
+    expect(
+      await getEnabledProviderIds(layout.agentDir, undefined, ["anthropic", "openai"]),
+    ).toEqual(["anthropic"]);
     expect(await getEnabledProviderIds(layout.agentDir, undefined, [])).toEqual([]);
   });
 });
@@ -1855,8 +1895,12 @@ describe("Builtin provider models", () => {
     expect("error" in set ? set.error.message : null).toBeNull();
     if ("error" in set) return;
     const filtered = (set.result as { models: Array<{ id: string; enabled: boolean }> }).models;
-    expect(filtered.filter((model) => model.enabled).map((model) => model.id).sort())
-      .toEqual([...keep].sort());
+    expect(
+      filtered
+        .filter((model) => model.enabled)
+        .map((model) => model.id)
+        .sort(),
+    ).toEqual([...keep].sort());
     let persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect([...persisted.pideckProviderModels.anthropic].sort()).toEqual([...keep].sort());
     expect(await getProviderModelAllowLists(layout.agentDir)).toEqual({

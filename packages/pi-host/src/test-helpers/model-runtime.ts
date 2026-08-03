@@ -8,7 +8,6 @@
  */
 import { join } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { Credential } from "@earendil-works/pi-ai";
 import { FileCredentialStore } from "../credential-store.js";
 import { ExtensionProviderOwnership } from "../extension-provider-ownership.js";
 
@@ -42,13 +41,4 @@ export async function putApiKey(
   key: string,
 ): Promise<void> {
   await store.modify(providerId, async () => ({ type: "api_key", key }));
-}
-
-/** Store any credential verbatim. */
-export async function putCredential(
-  store: FileCredentialStore,
-  providerId: string,
-  credential: Credential,
-): Promise<void> {
-  await store.modify(providerId, async () => credential);
 }

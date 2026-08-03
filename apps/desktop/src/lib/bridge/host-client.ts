@@ -25,8 +25,6 @@ type Pending = {
   method: HostMethod | string;
 };
 
-export type HostEventMessage = HostEventEnvelope;
-
 const SYNTHETIC_LIFECYCLE_FATAL_HOST_IDS = new Set([
   "00000000-0000-4000-8000-000000000001",
   "00000000-0000-4000-8000-000000000002",
@@ -114,9 +112,7 @@ export class HostClient {
     if (pending.timer) clearTimeout(pending.timer);
     this.pending.delete(id);
     pending.reject(
-      new Error(
-        `Host protocol mismatch for ${String(pending.method)} response: ${diagnostic}`,
-      ),
+      new Error(`Host protocol mismatch for ${String(pending.method)} response: ${diagnostic}`),
     );
     return true;
   }
@@ -168,10 +164,7 @@ export class HostClient {
         // Rust lifecycle notifications use sentinel identities because the child
         // may already be gone. A notification can arrive after its replacement
         // has emitted host.ready; never let that stale epoch retire the new Host.
-        if (
-          this.hostInstanceId &&
-          event.timestamp < this.latestHostReadyTimestamp
-        ) {
+        if (this.hostInstanceId && event.timestamp < this.latestHostReadyTimestamp) {
           return;
         }
         if (this.hostInstanceId) this.retiredHostInstanceIds.add(this.hostInstanceId);

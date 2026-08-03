@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PIDECK_FORMAT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
 concurrency:
   group: p0-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +21,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
@@ -35,6 +40,8 @@ jobs:
       ARTIFACTS_DIR: artifacts/p0
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0

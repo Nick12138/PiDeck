@@ -13,13 +13,7 @@ import { useT } from "../../lib/i18n/use-t";
 
 type ForkPoint = { entryId: string; text: string };
 
-export function ForkModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+export function ForkModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
   const session = useAppStore((s) => s.session);
   const [items, setItems] = useState<ForkPoint[] | null>(null);
@@ -74,7 +68,7 @@ export function ForkModal({
     return () => {
       cancelled = true;
     };
-  }, [open, hostInstanceId, workspaceId, workspaceRevision, sessionId, sessionRevision]);
+  }, [open, hostInstanceId, workspaceId, workspaceRevision, sessionId, sessionRevision, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,10 +102,7 @@ export function ForkModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-1 flex items-start justify-between gap-3">
-          <h2
-            id="fork-modal-title"
-            className="flex items-center gap-2 text-base font-semibold"
-          >
+          <h2 id="fork-modal-title" className="flex items-center gap-2 text-base font-semibold">
             <GitFork size={15} className="text-muted" /> {t("forkTitle")}
           </h2>
           <button
@@ -124,9 +115,7 @@ export function ForkModal({
             <X size={15} />
           </button>
         </div>
-        <p className="mb-3 text-xs text-muted">
-{t("forkIntro")}
-        </p>
+        <p className="mb-3 text-xs text-muted">{t("forkIntro")}</p>
         {error ? (
           <p className="text-sm text-danger">{error}</p>
         ) : items === null ? (
@@ -156,11 +145,7 @@ export function ForkModal({
             ))}
           </div>
         )}
-        {busy && (
-          <p className="mt-3 text-[11px] text-muted">
-{t("forkBusy")}
-          </p>
-        )}
+        {busy && <p className="mt-3 text-[11px] text-muted">{t("forkBusy")}</p>}
       </div>
     </div>
   );

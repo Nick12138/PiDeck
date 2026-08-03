@@ -78,11 +78,7 @@ type PendingUi = {
 
 export type ExtensionUiOwner = Pick<
   HostIdentity,
-  | "hostInstanceId"
-  | "workspaceId"
-  | "workspaceRevision"
-  | "sessionId"
-  | "sessionRevision"
+  "hostInstanceId" | "workspaceId" | "workspaceRevision" | "sessionId" | "sessionRevision"
 >;
 
 type ActiveCustom = {
@@ -161,11 +157,7 @@ function replaceOwner(target: ExtensionUiOwner, identity: HostIdentity): void {
 
 export type ExtensionUiBridgeOptions = {
   emit: (event: HostEventName, payload: unknown) => void;
-  emitForIdentity?: (
-    identity: HostIdentity,
-    event: HostEventName,
-    payload: unknown,
-  ) => void;
+  emitForIdentity?: (identity: HostIdentity, event: HostEventName, payload: unknown) => void;
   getIdentity: () => HostIdentity;
   getCurrentIdentity?: () => HostIdentity;
   getExtensionDecisionPresentation?: () => ExtensionDecisionPresentation;
@@ -343,11 +335,17 @@ const APP_PANEL_KEYBINDINGS: KeybindingDefinitions = {
   "app.suspend": { defaultKeys: [], description: "Suspend to background" },
   "app.thinking.cycle": { defaultKeys: "shift+tab", description: "Cycle thinking level" },
   "app.model.cycleForward": { defaultKeys: "ctrl+p", description: "Cycle to next model" },
-  "app.model.cycleBackward": { defaultKeys: "shift+ctrl+p", description: "Cycle to previous model" },
+  "app.model.cycleBackward": {
+    defaultKeys: "shift+ctrl+p",
+    description: "Cycle to previous model",
+  },
   "app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
   "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
   "app.thinking.toggle": { defaultKeys: "ctrl+t", description: "Toggle thinking blocks" },
-  "app.session.toggleNamedFilter": { defaultKeys: "ctrl+n", description: "Toggle named session filter" },
+  "app.session.toggleNamedFilter": {
+    defaultKeys: "ctrl+n",
+    description: "Toggle named session filter",
+  },
   "app.editor.external": { defaultKeys: "ctrl+g", description: "Open external editor" },
   "app.message.copy": { defaultKeys: "ctrl+x", description: "Copy message to clipboard" },
   "app.message.followUp": { defaultKeys: "alt+enter", description: "Queue follow-up message" },
@@ -357,28 +355,58 @@ const APP_PANEL_KEYBINDINGS: KeybindingDefinitions = {
   "app.session.tree": { defaultKeys: [], description: "Open session tree" },
   "app.session.fork": { defaultKeys: [], description: "Fork current session" },
   "app.session.resume": { defaultKeys: [], description: "Resume a session" },
-  "app.tree.foldOrUp": { defaultKeys: ["alt+left", "ctrl+left"], description: "Fold tree branch or move up" },
-  "app.tree.unfoldOrDown": { defaultKeys: ["alt+right", "ctrl+right"], description: "Unfold tree branch or move down" },
+  "app.tree.foldOrUp": {
+    defaultKeys: ["alt+left", "ctrl+left"],
+    description: "Fold tree branch or move up",
+  },
+  "app.tree.unfoldOrDown": {
+    defaultKeys: ["alt+right", "ctrl+right"],
+    description: "Unfold tree branch or move down",
+  },
   "app.tree.editLabel": { defaultKeys: "shift+l", description: "Edit tree label" },
-  "app.tree.toggleLabelTimestamp": { defaultKeys: "shift+t", description: "Toggle tree label timestamps" },
+  "app.tree.toggleLabelTimestamp": {
+    defaultKeys: "shift+t",
+    description: "Toggle tree label timestamps",
+  },
   "app.session.togglePath": { defaultKeys: "ctrl+p", description: "Toggle session path display" },
   "app.session.toggleSort": { defaultKeys: "ctrl+s", description: "Toggle session sort mode" },
   "app.session.rename": { defaultKeys: "ctrl+r", description: "Rename session" },
   "app.session.delete": { defaultKeys: "ctrl+d", description: "Delete session" },
-  "app.session.deleteNoninvasive": { defaultKeys: "ctrl+backspace", description: "Delete session when query is empty" },
+  "app.session.deleteNoninvasive": {
+    defaultKeys: "ctrl+backspace",
+    description: "Delete session when query is empty",
+  },
   "app.models.save": { defaultKeys: "ctrl+s", description: "Save model selection" },
   "app.models.enableAll": { defaultKeys: "ctrl+a", description: "Enable all models" },
   "app.models.clearAll": { defaultKeys: "ctrl+x", description: "Clear all models" },
-  "app.models.toggleProvider": { defaultKeys: "ctrl+p", description: "Toggle all models for provider" },
+  "app.models.toggleProvider": {
+    defaultKeys: "ctrl+p",
+    description: "Toggle all models for provider",
+  },
   "app.models.reorderUp": { defaultKeys: "alt+up", description: "Move model up in order" },
   "app.models.reorderDown": { defaultKeys: "alt+down", description: "Move model down in order" },
   "app.tree.filter.default": { defaultKeys: "ctrl+d", description: "Tree filter: default view" },
-  "app.tree.filter.noTools": { defaultKeys: "ctrl+t", description: "Tree filter: hide tool results" },
-  "app.tree.filter.userOnly": { defaultKeys: "ctrl+u", description: "Tree filter: user messages only" },
-  "app.tree.filter.labeledOnly": { defaultKeys: "ctrl+l", description: "Tree filter: labeled entries only" },
+  "app.tree.filter.noTools": {
+    defaultKeys: "ctrl+t",
+    description: "Tree filter: hide tool results",
+  },
+  "app.tree.filter.userOnly": {
+    defaultKeys: "ctrl+u",
+    description: "Tree filter: user messages only",
+  },
+  "app.tree.filter.labeledOnly": {
+    defaultKeys: "ctrl+l",
+    description: "Tree filter: labeled entries only",
+  },
   "app.tree.filter.all": { defaultKeys: "ctrl+a", description: "Tree filter: show all entries" },
-  "app.tree.filter.cycleForward": { defaultKeys: "ctrl+o", description: "Tree filter: cycle forward" },
-  "app.tree.filter.cycleBackward": { defaultKeys: "shift+ctrl+o", description: "Tree filter: cycle backward" },
+  "app.tree.filter.cycleForward": {
+    defaultKeys: "ctrl+o",
+    description: "Tree filter: cycle forward",
+  },
+  "app.tree.filter.cycleBackward": {
+    defaultKeys: "shift+ctrl+o",
+    description: "Tree filter: cycle backward",
+  },
 };
 
 const panelKeybindings = new KeybindingsManager({
@@ -398,9 +426,7 @@ type ActiveWidgetFactory = {
  * Build ExtensionUIContext with the SDK positional signatures.
  * Returns a value that structurally satisfies ExtensionUIContext (no whole cast).
  */
-export function createExtensionUiContext(
-  opts: ExtensionUiBridgeOptions,
-): ExtensionUIContext {
+export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): ExtensionUIContext {
   const identityAt = () => opts.getIdentity();
   const activeInvocation = () => opts.getActiveInvocation?.();
   const activeCommandOrigin = (): ExtensionCommandOrigin | undefined => {
@@ -417,11 +443,7 @@ export function createExtensionUiContext(
   const activeWidgetFactories = new Map<string, ActiveWidgetFactory>();
   const publishedWidgetKeys = new Set<string>();
 
-  const publishWidget = (
-    key: string,
-    widget: unknown,
-    placement: "belowEditor" | undefined,
-  ) => {
+  const publishWidget = (key: string, widget: unknown, placement: "belowEditor" | undefined) => {
     if (widget === null || widget === undefined) publishedWidgetKeys.delete(key);
     else publishedWidgetKeys.add(key);
     opts.emit("extensionUi.widgetChanged", {
@@ -431,10 +453,7 @@ export function createExtensionUiContext(
     });
   };
 
-  const requestWidgetAttention = (
-    key: string,
-    origin: ExtensionCommandOrigin | undefined,
-  ) => {
+  const requestWidgetAttention = (key: string, origin: ExtensionCommandOrigin | undefined) => {
     if (!origin) return;
     const invocation = stripAnsi(origin.invocation);
     if (!key || !invocation || !claimExtensionCommandWidgetAttention(origin)) return;
@@ -481,19 +500,12 @@ export function createExtensionUiContext(
     const origin: ExtensionUiOrigin = invocation?.origin ?? {
       invocationKind: "unknown",
     };
-    const {
-      optionDetails,
-      presentationHint,
-      riskHint,
-      ...requestMetadata
-    } = normalizePiDeckDialogMetadata(payload.pideck);
+    const { optionDetails, presentationHint, riskHint, ...requestMetadata } =
+      normalizePiDeckDialogMetadata(payload.pideck);
     const options = Array.isArray(payload.options)
       ? payload.options.slice(0, MAX_EXTENSION_UI_OPTIONS).map((option) => {
           const item = option as { id?: unknown; label?: unknown; metadataId?: unknown };
-          const optionId = boundedSanitizedText(
-            item.id ?? "",
-            MAX_EXTENSION_UI_OPTION_ID_LENGTH,
-          );
+          const optionId = boundedSanitizedText(item.id ?? "", MAX_EXTENSION_UI_OPTION_ID_LENGTH);
           const metadataId = boundedSanitizedText(
             item.metadataId ?? item.id ?? "",
             MAX_EXTENSION_UI_OPTION_ID_LENGTH,
@@ -501,14 +513,9 @@ export function createExtensionUiContext(
           const details = optionDetails.get(metadataId);
           return {
             id: optionId,
-            label: boundedSanitizedText(
-              item.label ?? "",
-              MAX_EXTENSION_UI_OPTION_LABEL_LENGTH,
-            ),
+            label: boundedSanitizedText(item.label ?? "", MAX_EXTENSION_UI_OPTION_LABEL_LENGTH),
             ...(details?.description ? { description: details.description } : {}),
-            ...(details?.destructive !== undefined
-              ? { destructive: details.destructive }
-              : {}),
+            ...(details?.destructive !== undefined ? { destructive: details.destructive } : {}),
           };
         })
       : undefined;
@@ -525,8 +532,7 @@ export function createExtensionUiContext(
       ...classifyHostDecisionRisk(origin),
       ...(presentationHint ? { presentationHint } : {}),
       ...(riskHint ? { riskHint } : {}),
-      hasDestructiveOption:
-        options?.some((option) => option.destructive === true) ?? false,
+      hasDestructiveOption: options?.some((option) => option.destructive === true) ?? false,
       ownerSessionState,
       inlineSurfaceAvailable,
     });
@@ -600,10 +606,7 @@ export function createExtensionUiContext(
           defaultValue:
             payload.defaultValue === undefined
               ? undefined
-              : boundedSanitizedText(
-                  payload.defaultValue,
-                  MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH,
-                ),
+              : boundedSanitizedText(payload.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH),
           ...(timeoutMs === undefined ? {} : { timeoutMs }),
           origin,
           ...requestMetadata,
@@ -724,9 +727,7 @@ export function createExtensionUiContext(
               if (disposed || !widgetComponent) return [];
               try {
                 const renderOrigin =
-                  activeCommandOrigin() ??
-                  pendingRenderOrigin ??
-                  initialRenderOrigin;
+                  activeCommandOrigin() ?? pendingRenderOrigin ?? initialRenderOrigin;
                 const lines = widgetComponent.render(width);
                 const sanitizedLines = lines.map((line) => stripAnsi(line));
                 const snapshot = JSON.stringify(sanitizedLines);
@@ -791,15 +792,13 @@ export function createExtensionUiContext(
     setFooter: () => {},
     setHeader: () => {},
     setTitle: () => {},
-    custom: async <T,>(
+    custom: async <T>(
       factory: (
         tui: TUI,
         theme: Theme,
         keybindings: SdkKeybindingsManager,
         done: (result: T) => void,
-      ) =>
-        | (Component & { dispose?(): void })
-        | Promise<Component & { dispose?(): void }>,
+      ) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
       options?: {
         overlay?: boolean;
         overlayOptions?: OverlayOptions | (() => OverlayOptions);
@@ -895,8 +894,7 @@ export function createExtensionUiContext(
         // throw ourselves — inside this Promise executor it would otherwise
         // reject the outer promise and skip teardown entirely.
         let factoryResult:
-          | (Component & { dispose?(): void })
-          | Promise<Component & { dispose?(): void }>;
+          (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>;
         try {
           factoryResult = factory(tui, desktopTheme, panelKeybindings, done);
         } catch (err) {
@@ -995,10 +993,7 @@ export async function bindExtensionUi(
   let disposed = false;
   const contextCleanups = new Set<() => void>();
   const queuedEvents: Array<{ event: HostEventName; payload: unknown }> = [];
-  const replayableState = new Map<
-    string,
-    { event: HostEventName; payload: unknown }
-  >();
+  const replayableState = new Map<string, { event: HostEventName; payload: unknown }>();
   let lastMessageRenders: Record<string, ExtensionMessageRenderSnapshot> = {};
   let rendererRefreshQueued = false;
   const refreshMessageRenderers = () => {
@@ -1049,10 +1044,7 @@ export async function bindExtensionUi(
       const key = (payload as { key?: unknown }).key;
       for (let i = queuedEvents.length - 1; i >= 0; i -= 1) {
         const queued = queuedEvents[i];
-        if (
-          queued?.event === event &&
-          (queued.payload as { key?: unknown }).key === key
-        ) {
+        if (queued?.event === event && (queued.payload as { key?: unknown }).key === key) {
           queuedEvents.splice(i, 1);
           break;
         }
@@ -1105,13 +1097,11 @@ export async function bindExtensionUi(
     getIdentity: () => bindingIdentity,
     getCurrentIdentity: opts.getCurrentIdentity,
     getExtensionDecisionPresentation: opts.getExtensionDecisionPresentation,
-    isInlineSurfaceAvailable:
-      opts.isInlineSurfaceAvailable ?? (() => readyForEvents),
+    isInlineSurfaceAvailable: opts.isInlineSurfaceAvailable ?? (() => readyForEvents),
     waitUntilActive: () => activation,
     isDisposed: () => disposed,
     registerCleanup: (cleanup) => contextCleanups.add(cleanup),
-    getActiveInvocation:
-      opts.getActiveInvocation ?? (() => getActiveExtensionInvocation(session)),
+    getActiveInvocation: opts.getActiveInvocation ?? (() => getActiveExtensionInvocation(session)),
     onRendererActivity: scheduleMessageRendererRefresh,
   });
   const unsubscribeRendererEvents =
@@ -1276,7 +1266,7 @@ export function injectExtensionCustomInput(
 }
 
 /** Resize a live custom panel's virtual terminal. False if unknown/closed. */
-export function resizeExtensionCustom(
+function resizeExtensionCustom(
   requestId: string,
   cols: number,
   rows: number,
@@ -1305,8 +1295,7 @@ export function createExtensionUiHandlers(
       server.setExtensionDecisionPresentation(params.extensionDecisionPresentation);
       return {
         result: {
-          extensionDecisionPresentation:
-            server.getExtensionDecisionPresentation(),
+          extensionDecisionPresentation: server.getExtensionDecisionPresentation(),
         },
       };
     },
@@ -1352,10 +1341,7 @@ export function createExtensionUiHandlers(
         )
       ) {
         return {
-          error: createHostError(
-            "STALE_REVISION",
-            "Unknown or closed extension panel requestId",
-          ),
+          error: createHostError("STALE_REVISION", "Unknown or closed extension panel requestId"),
         };
       }
       return { result: { accepted: true } };
@@ -1376,10 +1362,7 @@ export function createExtensionUiHandlers(
         )
       ) {
         return {
-          error: createHostError(
-            "STALE_REVISION",
-            "Unknown or closed extension panel requestId",
-          ),
+          error: createHostError("STALE_REVISION", "Unknown or closed extension panel requestId"),
         };
       }
       return { result: { accepted: true } };

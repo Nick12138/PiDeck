@@ -11,6 +11,7 @@ import { useT } from "../../lib/i18n/use-t";
 import {
   captureRequestGeneration,
   isCurrentRequestGeneration,
+  workspaceContext,
 } from "../../lib/bridge/host-context";
 
 export function workspaceDisplayName(path: string): string {
@@ -35,9 +36,7 @@ export function replaceKnownWorkspace(
   requestedPath: string,
   canonicalPath: string,
 ): string[] {
-  const next = list.map((entry) =>
-    samePath(entry, requestedPath) ? canonicalPath : entry,
-  );
+  const next = list.map((entry) => (samePath(entry, requestedPath) ? canonicalPath : entry));
   if (!next.some((entry) => samePath(entry, canonicalPath))) next.push(canonicalPath);
   return next.filter((entry, index) => next.indexOf(entry) === index);
 }
@@ -49,9 +48,7 @@ export function WorkspacePicker() {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
-  const knownWorkspaces = useAppStore(
-    (s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES,
-  );
+  const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setSession = useAppStore((s) => s.setSession);
   const pushNotification = useAppStore((s) => s.pushNotification);
@@ -75,11 +72,7 @@ export function WorkspacePicker() {
   // host) always appears in the persistent list.
   useEffect(() => {
     if (!currentCwd) return;
-    const next = replaceKnownWorkspace(
-      knownWorkspaces,
-      requestedCwd ?? currentCwd,
-      currentCwd,
-    );
+    const next = replaceKnownWorkspace(knownWorkspaces, requestedCwd ?? currentCwd, currentCwd);
     if (
       next.length === knownWorkspaces.length &&
       next.every((entry, index) => entry === knownWorkspaces[index])
@@ -101,11 +94,7 @@ export function WorkspacePicker() {
     try {
       const res = await hostClient.request(
         "workspace.setCurrent",
-        {
-          expectedHostInstanceId: host.hostInstanceId,
-          expectedWorkspaceId: host.workspaceId,
-          expectedWorkspaceRevision: host.workspaceRevision,
-        },
+        workspaceContext(host, workspace),
         { cwd },
         60_000,
       );
@@ -178,9 +167,7 @@ export function WorkspacePicker() {
   }
 
   // Render the active workspace even before self-heal persists it.
-  const listed = currentCwd
-    ? addKnownWorkspace(knownWorkspaces, currentCwd)
-    : knownWorkspaces;
+  const listed = currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces;
 
   return (
     <section>
@@ -229,9 +216,7 @@ export function WorkspacePicker() {
               <li
                 key={path}
                 className={`group flex h-9 items-center rounded-md text-[13px] ${
-                  active
-                    ? "bg-surface-overlay font-medium"
-                    : "hover:bg-surface-overlay/70"
+                  active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
                 }`}
               >
                 <button
@@ -246,9 +231,7 @@ export function WorkspacePicker() {
                     size={16}
                     className={`shrink-0 ${active ? "text-accent" : "text-muted"}`}
                   />
-                  <span className="min-w-0 flex-1 truncate">
-                    {workspaceDisplayName(path)}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>
                   {active && (
                     <span
                       className={`size-1.5 shrink-0 rounded-full ${

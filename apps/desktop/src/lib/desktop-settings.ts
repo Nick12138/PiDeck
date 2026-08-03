@@ -1,4 +1,9 @@
-import type { DesktopSettings } from "@pideck/protocol";
+import {
+  DESKTOP_LANGUAGES,
+  DESKTOP_THEMES,
+  TERMINAL_PROFILE_IDS,
+  type DesktopSettings,
+} from "@pideck/protocol";
 import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
@@ -11,13 +16,107 @@ export type DesktopSettingsSnapshot = {
 
 export type DesktopSettingsUpdate = Omit<
   Partial<DesktopSettings>,
-  "defaultWorkspace" | "lastWorkspace" | "lastSessionPath" | "agentDir"
+  "defaultWorkspace" | "lastWorkspace" | "lastSessionPath" | "agentDir" | "language"
 > & {
   defaultWorkspace?: string | null;
   lastWorkspace?: string | null;
   lastSessionPath?: string | null;
   agentDir?: string | null;
+  language?: DesktopSettings["language"] | null;
 };
+
+const DESKTOP_SETTINGS_KEYS = new Set([
+  "theme",
+  "defaultWorkspace",
+  "restoreLastSession",
+  "lastWorkspace",
+  "lastSessionPath",
+  "agentDir",
+  "autoRestartHostOnce",
+  "extensionDecisionPresentation",
+  "terminalProfile",
+  "language",
+  "conversationContentWidth",
+  "knownWorkspaces",
+  "shortcutOverrides",
+]);
+const EXTENSION_DECISION_PRESENTATIONS = ["legacy-modal", "auto", "inline-first"] as const;
+const NULLABLE_PATH_KEYS = [
+  "defaultWorkspace",
+  "lastWorkspace",
+  "lastSessionPath",
+  "agentDir",
+] as const;
+
+function isOneOf(value: unknown, values: readonly string[]): value is string {
+  return typeof value === "string" && values.includes(value);
+}
+
+function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
+  const values = patch as Record<string, unknown>;
+  for (const key of Object.keys(values)) {
+    if (!DESKTOP_SETTINGS_KEYS.has(key)) {
+      throw new Error(`Unknown desktop settings field: ${key}`);
+    }
+  }
+  if (values.theme !== undefined && !isOneOf(values.theme, DESKTOP_THEMES)) {
+    throw new Error("Invalid desktop theme");
+  }
+  if (
+    values.extensionDecisionPresentation !== undefined &&
+    !isOneOf(values.extensionDecisionPresentation, EXTENSION_DECISION_PRESENTATIONS)
+  ) {
+    throw new Error("Invalid extension decision presentation");
+  }
+  if (
+    values.terminalProfile !== undefined &&
+    !isOneOf(values.terminalProfile, TERMINAL_PROFILE_IDS)
+  ) {
+    throw new Error("Invalid terminal profile");
+  }
+  if (
+    values.language !== undefined &&
+    values.language !== null &&
+    !isOneOf(values.language, DESKTOP_LANGUAGES)
+  ) {
+    throw new Error("Invalid desktop language");
+  }
+  const width = values.conversationContentWidth;
+  if (
+    width !== undefined &&
+    (typeof width !== "number" || !Number.isInteger(width) || width < 560 || width > 0xffff_ffff)
+  ) {
+    throw new Error("conversationContentWidth must be an integer between 560 and 4294967295");
+  }
+  for (const key of ["restoreLastSession", "autoRestartHostOnce"] as const) {
+    if (values[key] !== undefined && typeof values[key] !== "boolean") {
+      throw new Error(`${key} must be a boolean`);
+    }
+  }
+  for (const key of NULLABLE_PATH_KEYS) {
+    if (values[key] !== undefined && values[key] !== null && typeof values[key] !== "string") {
+      throw new Error(`${key} must be a string or null`);
+    }
+  }
+  if (
+    values.knownWorkspaces !== undefined &&
+    (!Array.isArray(values.knownWorkspaces) ||
+      !values.knownWorkspaces.every((value) => typeof value === "string"))
+  ) {
+    throw new Error("knownWorkspaces must be an array of strings");
+  }
+  if (values.shortcutOverrides !== undefined) {
+    const shortcuts = values.shortcutOverrides;
+    if (
+      typeof shortcuts !== "object" ||
+      shortcuts === null ||
+      Array.isArray(shortcuts) ||
+      !Object.values(shortcuts).every((value) => typeof value === "string" || value === null)
+    ) {
+      throw new Error("shortcutOverrides must map command ids to strings or null");
+    }
+  }
+}
 
 let settingsWriteQueue: Promise<void> = Promise.resolve();
 
@@ -31,10 +130,7 @@ export function recentDesktopLocationPatch(
   };
 }
 
-function applyLocalPatch(
-  current: DesktopSettings,
-  patch: DesktopSettingsUpdate,
-): DesktopSettings {
+function applyLocalPatch(current: DesktopSettings, patch: DesktopSettingsUpdate): DesktopSettings {
   const next = { ...current } as Record<string, unknown>;
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
@@ -46,17 +142,12 @@ function applyLocalPatch(
 export function notifyDesktopSettingsSaveFailure(error: unknown): void {
   const summary = tCurrent("notifDesktopSettingsSaveFailed");
   const detail =
-    error instanceof Error
-      ? error.message.trim()
-      : typeof error === "string"
-        ? error.trim()
-        : "";
-  useAppStore
-    .getState()
-    .pushNotification(detail ? `${summary}: ${detail}` : summary, "error");
+    error instanceof Error ? error.message.trim() : typeof error === "string" ? error.trim() : "";
+  useAppStore.getState().pushNotification(detail ? `${summary}: ${detail}` : summary, "error");
 }
 
 async function writeDesktopSettings(patch: DesktopSettingsUpdate): Promise<void> {
+  assertDesktopSettingsUpdate(patch);
   const current = useAppStore.getState().desktopSettings;
   if (!current) return;
   const nextLocal = applyLocalPatch(current, patch);

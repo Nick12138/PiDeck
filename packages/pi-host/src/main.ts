@@ -29,7 +29,6 @@ import { WorkspaceFileService } from "./workspace-files.js";
 import { createSessionHandlers } from "./session-controller.js";
 import { createAgentHandlers } from "./agent-controller.js";
 import { createPackageHandlers } from "./package-controller.js";
-import { createSettingsHandlers } from "./settings-controller.js";
 import { createProviderHandlers } from "./provider-controller.js";
 import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
@@ -86,10 +85,9 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
   // prompt: tool call -> tool result turn -> final answer -> title refinement
   // abort: a deliberately long response that remains observable while stopping
   faux.setResponses([
-    fauxAssistantMessage(
-      fauxToolCall("read", { path: "pideck-core-e2e.txt" }),
-      { stopReason: "toolUse" },
-    ),
+    fauxAssistantMessage(fauxToolCall("read", { path: "pideck-core-e2e.txt" }), {
+      stopReason: "toolUse",
+    }),
     fauxAssistantMessage(
       [
         fauxText(
@@ -102,7 +100,9 @@ function installTestFauxProvider(modelRegistry: ModelRegistry): void {
     fauxAssistantMessage(
       fauxText(
         "PIDECK_ABORT_STREAM " +
-          "This deterministic response is intentionally long enough to exercise the Stop action and abort recovery. ".repeat(24),
+          "This deterministic response is intentionally long enough to exercise the Stop action and abort recovery. ".repeat(
+            24,
+          ),
       ),
       { stopReason: "stop" },
     ),
@@ -228,17 +228,14 @@ async function main(): Promise<void> {
     },
     ...(migrationBackup
       ? {
-          recordMigrationMilestone: (milestone) =>
-            migrationBackup.recordMilestone(milestone),
+          recordMigrationMilestone: (milestone) => migrationBackup.recordMilestone(milestone),
         }
       : {}),
     packageUpdateCheck,
   });
   // Late Path-B registrations (an extension calling pi.registerProvider in
   // the middle of an agent turn) are attributed to the active workspace.
-  providerOwnership.setFallbackOwnerSource(
-    () => graphFactory.getGraph()?.providerOwner ?? null,
-  );
+  providerOwnership.setFallbackOwnerSource(() => graphFactory.getGraph()?.providerOwner ?? null);
   const workspaceFiles = new WorkspaceFileService();
   const gitService = new GitService();
 
@@ -250,7 +247,6 @@ async function main(): Promise<void> {
     ...createAgentHandlers(graphFactory),
     ...createProviderHandlers(graphFactory),
     ...createPackageHandlers(graphFactory),
-    ...createSettingsHandlers(graphFactory),
     ...createExtensionUiHandlers(graphFactory),
   };
 
@@ -280,6 +276,7 @@ async function main(): Promise<void> {
         await graphFactory.disposeGraph(g);
       }
       await graphFactory.disposeRetainedGraphs();
+      await attachmentStore.waitForIdle();
       // Last milestone: only a clean teardown proves the migrated runtime did
       // not leave the agent directory in a state that needs the backup.
       await migrationBackup?.recordMilestone("cleanShutdown");

@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentSession,
-  ExtensionCommandContextActions,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   createHostError,
   type HostError,
@@ -11,11 +8,10 @@ import {
   type SessionRuntimeState,
   type SessionSnapshot,
 } from "@pideck/protocol";
-import { bindForCandidate, activateOnce, clearSlots } from "./extension-ui-lifecycle.js";
+import { clearSlots } from "./extension-ui-lifecycle.js";
 import { normalizeAgentEvent } from "./event-normalize.js";
 import { AgentOperationLock } from "./locks.js";
 import { logger } from "./logger.js";
-import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { pruneQueuedImages } from "./queue-attachments.js";
 import {
   beginQueueTransaction,
@@ -25,21 +21,14 @@ import {
 import { buildSessionSnapshot, buildToolSnapshot } from "./session-snapshot.js";
 import type { PiHostServer } from "./server.js";
 import { toolResultNeedsToolsRefresh } from "./tools-refresh.js";
-import type {
-  BackgroundSessionRuntime,
-  WorkspaceGraph,
-} from "./workspace-graph-types.js";
+import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph-types.js";
 
 export const SESSION_DISPOSAL_STEP_TIMEOUT_MS = 15_000;
 
 type DisposalStepResult =
-  | { status: "completed" }
-  | { status: "failed"; error: unknown }
-  | { status: "timed_out" };
+  { status: "completed" } | { status: "failed"; error: unknown } | { status: "timed_out" };
 
-async function settleDisposalStep(
-  operation: () => Promise<unknown>,
-): Promise<DisposalStepResult> {
+async function settleDisposalStep(operation: () => Promise<unknown>): Promise<DisposalStepResult> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const completed: Promise<DisposalStepResult> = Promise.resolve()
     .then(operation)
@@ -48,10 +37,7 @@ async function settleDisposalStep(
       (error: unknown) => ({ status: "failed", error }),
     );
   const timedOut = new Promise<DisposalStepResult>((resolve) => {
-    timer = setTimeout(
-      () => resolve({ status: "timed_out" }),
-      SESSION_DISPOSAL_STEP_TIMEOUT_MS,
-    );
+    timer = setTimeout(() => resolve({ status: "timed_out" }), SESSION_DISPOSAL_STEP_TIMEOUT_MS);
     timer.unref?.();
   });
   try {
@@ -150,7 +136,6 @@ export type SessionRuntimeCacheContext = {
   getServer: () => PiHostServer | null;
   getCurrentRunId: () => string | null;
   sessionPathsEqual: (left: string | undefined, right: string) => boolean;
-  getCommandContextActions?: (session: AgentSession) => ExtensionCommandContextActions;
 };
 
 export class SessionRuntimeCache {
@@ -197,10 +182,7 @@ export class SessionRuntimeCache {
     const observed = observeQueueUpdate(session);
     if (!observed.suppressed && (observed.changed || force)) {
       this.publishQueueSnapshot(session, observed.queue);
-      pruneQueuedImages(session, [
-        ...observed.queue.steering,
-        ...observed.queue.followUp,
-      ]);
+      pruneQueuedImages(session, [...observed.queue.steering, ...observed.queue.followUp]);
     }
     return observed.queue;
   }
@@ -243,18 +225,10 @@ export class SessionRuntimeCache {
       : null;
   }
 
-  resolveSessionIdentity(
-    sessionId: unknown,
-    sessionRevision: unknown,
-  ): HostIdentity | null {
+  resolveSessionIdentity(sessionId: unknown, sessionRevision: unknown): HostIdentity | null {
     const server = this.context.getServer();
     const graph = this.context.getGraph();
-    if (
-      !server ||
-      !graph ||
-      typeof sessionId !== "string" ||
-      typeof sessionRevision !== "number"
-    ) {
+    if (!server || !graph || typeof sessionId !== "string" || typeof sessionRevision !== "number") {
       return null;
     }
     if (
@@ -293,7 +267,6 @@ export class SessionRuntimeCache {
     for (const runtime of [...graph.backgroundSessions.values()]) {
       await this.disposeBackgroundRuntime(graph, runtime);
     }
-    await this.disposeRetainedSessionRuntimes(graph);
   }
 
   async disposeAgentSessionOnly(session: AgentSession): Promise<void> {
@@ -360,39 +333,6 @@ export class SessionRuntimeCache {
     return runtime;
   }
 
-  retainIdleSession(
-    _graph: WorkspaceGraph,
-    _previous: ActiveSessionState,
-  ): Promise<BackgroundSessionRuntime | null> {
-    // A retained idle hit reloads and recompiles every configured Extension,
-    // which can be materially slower than opening the Session from disk.
-    return Promise.resolve(null);
-  }
-
-  async disposeRetainedSessionRuntimes(graph: WorkspaceGraph): Promise<void> {
-    const retainedSessions = this.retainedSessionRuntimes(graph);
-    const runtimes = [...retainedSessions.values()];
-    retainedSessions.clear();
-    for (const runtime of runtimes) {
-      await this.disposeRetainedSessionRuntime(graph, runtime, false);
-    }
-  }
-
-  async disposeRetainedSessionRuntimeIfPresent(
-    graph: WorkspaceGraph,
-    sessionId: string,
-    sessionPath: string,
-  ): Promise<boolean> {
-    const runtime = [...this.retainedSessionRuntimes(graph).values()].find(
-      (candidate) =>
-        candidate.sessionId === sessionId &&
-        this.context.sessionPathsEqual(candidate.sessionSnapshot.sessionPath, sessionPath),
-    );
-    if (!runtime) return false;
-    await this.disposeRetainedSessionRuntime(graph, runtime);
-    return true;
-  }
-
   async disposeBackgroundSessionRuntimeIfIdle(
     graph: WorkspaceGraph,
     sessionId: string,
@@ -414,11 +354,7 @@ export class SessionRuntimeCache {
   announceRetainedRuntime(runtime: BackgroundSessionRuntime): void {
     const graph = this.context.getGraph();
     const server = this.context.getServer();
-    if (
-      !graph ||
-      !server ||
-      graph.backgroundSessions.get(runtime.sessionId) !== runtime
-    ) {
+    if (!graph || !server || graph.backgroundSessions.get(runtime.sessionId) !== runtime) {
       return;
     }
     this.publishRuntimeState(runtime.agentSession, {
@@ -478,23 +414,18 @@ export class SessionRuntimeCache {
     });
 
     if (!retainedPrevious) {
-      const retainedIdle = previous.agentSession?.isIdle
-        ? await this.retainIdleSession(graph, previous)
-        : null;
-      if (!retainedIdle) {
-        try {
-          previous.unsubscribeAgent?.();
-        } catch {
-          /* ignore */
-        }
-        try {
-          previous.extensionUiCleanup?.();
-        } catch {
-          /* ignore */
-        }
-        if (previous.agentSession) {
-          await this.disposeAgentSessionOnly(previous.agentSession);
-        }
+      try {
+        previous.unsubscribeAgent?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        previous.extensionUiCleanup?.();
+      } catch {
+        /* ignore */
+      }
+      if (previous.agentSession) {
+        await this.disposeAgentSessionOnly(previous.agentSession);
       }
     }
 
@@ -511,161 +442,7 @@ export class SessionRuntimeCache {
     return snapshot;
   }
 
-  async promoteRetainedSessionRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-    signal?: AbortSignal,
-  ): Promise<SessionSnapshot | { error: HostError } | null> {
-    const server = this.context.getServer();
-    const retainedSessions = this.retainedSessionRuntimes(graph);
-    if (!server || retainedSessions.get(runtime.sessionId) !== runtime) return null;
-
-    const previous = captureActiveSessionState(graph, server.identity);
-    const sessionRevision = server.identity.sessionRevision + 1;
-    const candidateIdentity: HostIdentity = {
-      ...server.getIdentity(),
-      sessionId: runtime.sessionId,
-      sessionRevision,
-    };
-
-    let binding: Awaited<ReturnType<typeof bindForCandidate>> | undefined;
-    try {
-      binding = await bindForCandidate(
-        runtime.agentSession,
-        runtime.extensionsResult,
-        server,
-        candidateIdentity,
-        this.context.getCommandContextActions?.(runtime.agentSession),
-      );
-      await withoutImplicitPackageInstall(() => runtime.agentSession.reload());
-      signal?.throwIfAborted();
-    } catch (err) {
-      try {
-        binding?.cleanup();
-      } catch {
-        /* ignore candidate binding cleanup failure */
-      }
-      logger.warn("retained Session Extension rebuild failed; reopening from disk", {
-        sessionId: runtime.sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      await this.disposeRetainedSessionRuntime(graph, runtime);
-      return null;
-    }
-
-    if (signal?.aborted) {
-      try {
-        binding.cleanup();
-      } finally {
-        signal.throwIfAborted();
-      }
-    }
-
-    const unsubscribe = runtime.agentSession.subscribe((event) => {
-      this.handleAgentEvent(graph, runtime.agentSession, event);
-    });
-    const retainedPrevious = this.retainBusySession(graph, previous);
-    retainedSessions.delete(runtime.sessionId);
-    runtime.sessionRevision = sessionRevision;
-    runtime.unsubscribeAgent = unsubscribe;
-    runtime.extensionUiActivate = binding.activate;
-    runtime.extensionUiCleanup = binding.cleanup;
-    runtime.extensionUiUpdateIdentity = binding.updateIdentity;
-    runtime.extensionUiReplayState = binding.replayState;
-    binding.updateIdentity(candidateIdentity);
-    const snapshot = buildSessionSnapshot({
-      session: runtime.agentSession,
-      sessionManager: runtime.sessionManager,
-      cwd: graph.canonicalCwd,
-      sessionId: runtime.sessionId,
-      revision: sessionRevision,
-      workspaceId: graph.workspaceId,
-      toolRevision: runtime.toolRevision,
-    });
-    runtime.sessionSnapshot = snapshot;
-
-    commitActiveSessionState(graph, server.identity, {
-      sessionManager: runtime.sessionManager,
-      agentSession: runtime.agentSession,
-      extensionsResult: runtime.extensionsResult,
-      resourceLoader: runtime.resourceLoader,
-      toolRevision: runtime.toolRevision,
-      sessionSnapshot: snapshot,
-      extensionUiActivate: runtime.extensionUiActivate,
-      extensionUiCleanup: runtime.extensionUiCleanup,
-      extensionUiUpdateIdentity: runtime.extensionUiUpdateIdentity,
-      extensionUiReplayState: runtime.extensionUiReplayState,
-      unsubscribeAgent: runtime.unsubscribeAgent,
-      sessionId: runtime.sessionId,
-      sessionRevision,
-    });
-
-    let publishExtensionUi = () => {};
-    try {
-      publishExtensionUi = await activateOnce(graph);
-    } catch (err) {
-      if (retainedPrevious) graph.backgroundSessions.delete(retainedPrevious.sessionId);
-      try {
-        unsubscribe();
-      } catch {
-        /* ignore */
-      }
-      try {
-        binding.cleanup();
-      } catch {
-        /* ignore */
-      }
-      runtime.unsubscribeAgent = null;
-      runtime.extensionUiActivate = null;
-      runtime.extensionUiCleanup = null;
-      runtime.extensionUiUpdateIdentity = null;
-      runtime.extensionUiReplayState = null;
-      retainedSessions.set(runtime.sessionId, runtime);
-      commitActiveSessionState(graph, server.identity, previous);
-      return {
-        error: createHostError(
-          "SESSION_SWITCH_FAILED",
-          err instanceof Error ? err.message : "Extension bind failed",
-        ),
-      };
-    }
-
-    if (!retainedPrevious) {
-      const retainedIdle = await this.retainIdleSession(graph, previous);
-      if (!retainedIdle) {
-        try {
-          previous.unsubscribeAgent?.();
-        } catch {
-          /* ignore */
-        }
-        try {
-          previous.extensionUiCleanup?.();
-        } catch {
-          /* ignore */
-        }
-        if (previous.agentSession) {
-          await this.disposeAgentSessionOnly(previous.agentSession);
-        }
-      }
-    }
-    server.emit("session.snapshot", snapshot);
-    server.emit("agent.toolsChanged", snapshot.tools);
-    if (retainedPrevious) this.announceRetainedRuntime(retainedPrevious);
-    server.emit("session.runtimeChanged", {
-      sessionId: runtime.sessionId,
-      sessionRevision,
-      state: "idle",
-      updatedAt: Date.now(),
-    });
-    publishExtensionUi();
-    return snapshot;
-  }
-
-  handleAgentEvent(
-    graph: WorkspaceGraph,
-    sourceSession: AgentSession,
-    event: unknown,
-  ): void {
+  handleAgentEvent(graph: WorkspaceGraph, sourceSession: AgentSession, event: unknown): void {
     const server = this.context.getServer();
     if (!server || this.context.getGraph() !== graph) return;
 
@@ -703,10 +480,7 @@ export class SessionRuntimeCache {
       });
       if (!observed.suppressed && observed.changed) {
         this.publishQueueSnapshot(sourceSession, observed.queue);
-        pruneQueuedImages(sourceSession, [
-          ...observed.queue.steering,
-          ...observed.queue.followUp,
-        ]);
+        pruneQueuedImages(sourceSession, [...observed.queue.steering, ...observed.queue.followUp]);
       }
       return;
     }
@@ -730,8 +504,7 @@ export class SessionRuntimeCache {
       return;
     }
 
-    const runId =
-      this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
+    const runId = this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
     const serialized = normalizeAgentEvent(event);
     if (active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });
@@ -739,9 +512,7 @@ export class SessionRuntimeCache {
     this.publishRuntimeState(sourceSession, eventIdentity, eventType, serialized);
 
     if (toolResultNeedsToolsRefresh(event)) {
-      const toolRevision = active
-        ? (graph.toolRevision += 1)
-        : (background!.toolRevision += 1);
+      const toolRevision = active ? (graph.toolRevision += 1) : (background!.toolRevision += 1);
       const tools = buildToolSnapshot({
         session: sourceSession,
         workspaceId: graph.workspaceId,
@@ -806,9 +577,7 @@ export class SessionRuntimeCache {
     const active = graph.agentSession === session;
     const background = active
       ? undefined
-      : [...graph.backgroundSessions.values()].find(
-          (runtime) => runtime.agentSession === session,
-        );
+      : [...graph.backgroundSessions.values()].find((runtime) => runtime.agentSession === session);
     const sessionSnapshot = active ? graph.sessionSnapshot : background?.sessionSnapshot;
     if (!sessionSnapshot) return;
     sessionSnapshot.pending = queue;
@@ -822,35 +591,6 @@ export class SessionRuntimeCache {
       "agent.queueChanged",
       queue,
     );
-  }
-
-  private retainedSessionRuntimes(
-    graph: WorkspaceGraph,
-  ): Map<string, BackgroundSessionRuntime> {
-    return graph.retainedSessions ?? (graph.retainedSessions = new Map());
-  }
-
-  private async disposeRetainedSessionRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-    remove = true,
-  ): Promise<void> {
-    const retainedSessions = this.retainedSessionRuntimes(graph);
-    if (remove) {
-      if (retainedSessions.get(runtime.sessionId) !== runtime) return;
-      retainedSessions.delete(runtime.sessionId);
-    }
-    try {
-      runtime.unsubscribeAgent?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      runtime.extensionUiCleanup?.();
-    } catch {
-      /* ignore */
-    }
-    await this.disposeAgentSessionOnly(runtime.agentSession);
   }
 
   private async disposeBackgroundRuntime(
@@ -904,11 +644,7 @@ export class SessionRuntimeCache {
     this.runtimeStates.set(session, state);
     const rawError = serializedEvent.error ?? serializedEvent.message;
     const error =
-      state === "error"
-        ? typeof rawError === "string"
-          ? rawError
-          : "Agent error"
-        : undefined;
+      state === "error" ? (typeof rawError === "string" ? rawError : "Agent error") : undefined;
     server.emitForIdentity(identity, "session.runtimeChanged", {
       sessionId: identity.sessionId,
       sessionRevision: identity.sessionRevision,

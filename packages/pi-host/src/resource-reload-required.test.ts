@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createAgentHandlers } from "./agent-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { createPackageHandlers } from "./package-controller.js";
-import { createSettingsHandlers } from "./settings-controller.js";
 import { createSessionHandlers } from "./session-controller.js";
 import { logger } from "./logger.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
@@ -326,9 +325,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
 
     expect("error" in out && out.error.code).toBe("SERVICE_GRAPH_BUSY");
     expect(factory.getGraph()!.agentSession!.prompt).not.toHaveBeenCalled();
-    expect(factory.getServer()!.agentOperationLock.release).toHaveBeenCalledWith(
-      promptCtx.id,
-    );
+    expect(factory.getServer()!.agentOperationLock.release).toHaveBeenCalledWith(promptCtx.id);
   });
 
   it("graph mutations reject while the agent operation lock is held", async () => {
@@ -336,11 +333,6 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     const packageOut = await createPackageHandlers(factory)["package.reloadResources"]!(
       reloadCtx as never,
     );
-    const settingsOut = await createSettingsHandlers(factory)["piSettings.patch"]!({
-      ...reloadCtx,
-      id: "req-settings-busy",
-      params: { patch: { autoRetry: false } },
-    } as never);
     const modelOut = await createAgentHandlers(factory)["model.setCurrent"]!({
       ...promptCtx,
       id: "req-model-busy",
@@ -348,20 +340,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     } as never);
 
     expect("error" in packageOut && packageOut.error.code).toBe("AGENT_BUSY");
-    expect("error" in settingsOut && settingsOut.error.code).toBe("AGENT_BUSY");
     expect("error" in modelOut && modelOut.error.code).toBe("AGENT_BUSY");
-  });
-
-  it("invalidates retained runtimes before applying settings", async () => {
-    const factory = mockFactory({ resourceReloadRequired: false });
-    const out = await createSettingsHandlers(factory)["piSettings.patch"]!({
-      ...promptCtx,
-      id: "req-settings-patch",
-      params: { patch: {} },
-    } as never);
-
-    expect("error" in out).toBe(false);
-    expect(factory.invalidateRetainedRuntimeCaches).toHaveBeenCalledTimes(1);
   });
 
   it("agent.setActiveTools rechecks the agent operation lock after acquiring the graph lock", async () => {
@@ -408,15 +387,11 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     // Blocked while flag is set
     const agentHandlers = createAgentHandlers(factory);
     const blocked = await agentHandlers["agent.prompt"]!(promptCtx as never);
-    expect("error" in blocked && blocked.error.code === "RESOURCE_RELOAD_FAILED").toBe(
-      true,
-    );
+    expect("error" in blocked && blocked.error.code === "RESOURCE_RELOAD_FAILED").toBe(true);
 
     // Drive REAL package.reloadResources handler (not a manual flag flip)
     const packageHandlers = createPackageHandlers(factory);
-    const reloadOut = await packageHandlers["package.reloadResources"]!(
-      reloadCtx as never,
-    );
+    const reloadOut = await packageHandlers["package.reloadResources"]!(reloadCtx as never);
     expect("error" in reloadOut).toBe(false);
     if (!("error" in reloadOut)) {
       const result = reloadOut.result as {
@@ -456,8 +431,12 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     const g = factory.getGraph()!;
     const server = factory.getServer()!;
     const order: string[] = [];
-    g.settingsManager!.flush = vi.fn(async () => { order.push("flush"); });
-    g.agentSession!.reload = vi.fn(async () => { order.push("reload"); });
+    g.settingsManager!.flush = vi.fn(async () => {
+      order.push("flush");
+    });
+    g.agentSession!.reload = vi.fn(async () => {
+      order.push("reload");
+    });
     g.packageManager!.resolve = vi.fn(async () => {
       order.push("snapshot");
       return { extensions: [], skills: [], prompts: [], themes: [] };
@@ -486,9 +465,9 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
       configurableScopes: ["user"],
     });
 
-    const preferenceOut = await createPackageHandlers(preferenceFactory)[
-      "resource.setPreference"
-    ]!(preferenceCtx as never);
+    const preferenceOut = await createPackageHandlers(preferenceFactory)["resource.setPreference"]!(
+      preferenceCtx as never,
+    );
 
     expect("error" in preferenceOut).toBe(false);
     // 0.82.1 removed preserveExtensionCache: preference reconcile now takes the
@@ -575,9 +554,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     });
 
     const packageHandlers = createPackageHandlers(factory);
-    const reloadOut = await packageHandlers["package.reloadResources"]!(
-      reloadCtx as never,
-    );
+    const reloadOut = await packageHandlers["package.reloadResources"]!(reloadCtx as never);
     // Should return result with partialFailure, not throw
     expect("error" in reloadOut).toBe(false);
     if (!("error" in reloadOut)) {
@@ -599,8 +576,6 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
 
     const agentHandlers = createAgentHandlers(factory);
     const blocked = await agentHandlers["agent.prompt"]!(promptCtx as never);
-    expect("error" in blocked && blocked.error.code === "RESOURCE_RELOAD_FAILED").toBe(
-      true,
-    );
+    expect("error" in blocked && blocked.error.code === "RESOURCE_RELOAD_FAILED").toBe(true);
   });
 });

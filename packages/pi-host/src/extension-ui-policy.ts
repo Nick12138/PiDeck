@@ -7,11 +7,7 @@ import type {
   HostIdentity,
 } from "@pideck/protocol";
 
-export type ExtensionUiOwnerSessionState =
-  | "active"
-  | "background"
-  | "candidate"
-  | "stale";
+export type ExtensionUiOwnerSessionState = "active" | "background" | "candidate" | "stale";
 
 export type DecisionRouteInput = {
   mode: ExtensionDecisionPresentation;
@@ -74,15 +70,13 @@ function isSessionLifecycle(origin: ExtensionUiOrigin): boolean {
   );
 }
 
-export function resolveDecisionRisk(input: DecisionRouteInput): ExtensionUiRisk {
-  return input.hostRisk === "high" ||
-    input.hasDestructiveOption ||
-    input.riskHint === "high"
+function resolveDecisionRisk(input: DecisionRouteInput): ExtensionUiRisk {
+  return input.hostRisk === "high" || input.hasDestructiveOption || input.riskHint === "high"
     ? "high"
     : "normal";
 }
 
-export function resolveDecisionPresentation(
+function resolveDecisionPresentation(
   input: DecisionRouteInput,
   risk: ExtensionUiRisk,
 ): {
@@ -107,10 +101,7 @@ export function resolveDecisionPresentation(
   if (input.presentationHint === "modal") {
     return { presentation: "modal", reason: "explicit-modal" };
   }
-  if (
-    input.ownerSessionState === "candidate" ||
-    !input.inlineSurfaceAvailable
-  ) {
+  if (input.ownerSessionState === "candidate" || !input.inlineSurfaceAvailable) {
     return { presentation: "modal", reason: "inline-unavailable" };
   }
   if (input.presentationHint === "inline") {

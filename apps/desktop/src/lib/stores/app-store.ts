@@ -1,14 +1,13 @@
 import { create } from "zustand";
 import type {
   DesktopSettings,
-  SessionTargetContext,
-  ExtensionUiRequest,
-  ExtensionUiGroupStatus,
   ExtensionMessageRenderSnapshot,
+  ExtensionUiGroupStatus,
   HostStatusSnapshot,
   PackageMutationResult,
   PackageSnapshot,
   SessionSnapshot,
+  SessionTargetContext,
   ToolSnapshot,
   WorkspaceSnapshot,
   HostEventPayloadMap,
@@ -38,11 +37,21 @@ import {
 } from "./session-catalog";
 import { sidebarPref } from "../sidebar-prefs";
 import type { AppUpdate } from "../updater";
+import {
+  alignExtensionUiToSession,
+  extensionUiSessionId,
+  isExtensionUiRequestExpired,
+  registerDecisionGroupRequest,
+  settleDecisionGroupRequest,
+  type ExtensionDecisionGroupState,
+  type ExtensionDecisionStepOutcome,
+  type ExtensionUiRequestState,
+} from "./extension-ui-state";
 
 export type NavPage = "chat" | "packages" | "settings";
 
 /** Live view of the single in-flight builtin Provider login flow. */
-export type ProviderLoginUiState = {
+type ProviderLoginUiState = {
   loginId: string;
   providerId: string;
   authUrl?: { url: string; instructions?: string };
@@ -57,207 +66,16 @@ export type ProviderLoginUiState = {
   done?: { ok: boolean; message?: string };
 };
 
-export type PackageProgressState = HostEventPayloadMap["package.progress"] & {
+type PackageProgressState = HostEventPayloadMap["package.progress"] & {
   lastEventAt: number;
 };
 
-export type PackageRetryState = {
+type PackageRetryState = {
   method: string;
   params: JsonValue;
 };
 
-export type ExtensionUiRequestState = ExtensionUiRequest & {
-  context: SessionTargetContext;
-  expiresAt?: number;
-};
-
-export type ExtensionDecisionStepOutcome =
-  | "answered"
-  | "cancelled"
-  | "expired"
-  | "stale";
-
-export type ExtensionDecisionGroupState = {
-  groupKey: string;
-  context: SessionTargetContext;
-  origin?: ExtensionUiRequest["origin"];
-  presentation: "inline" | "modal";
-  risk: "normal" | "high";
-  activeRequestId: string | null;
-  answeredCount: number;
-  steps: Array<{
-    requestId: string;
-    kind: ExtensionUiRequest["kind"];
-    status: "active" | ExtensionDecisionStepOutcome;
-  }>;
-  status: "active" | ExtensionUiGroupStatus;
-};
-
-const MAX_EXTENSION_DECISION_GROUP_STEPS = 100;
-
-function sameDecisionGroupSession(
-  left: SessionTargetContext,
-  right: SessionTargetContext,
-): boolean {
-  return (
-    left.expectedHostInstanceId === right.expectedHostInstanceId &&
-    left.expectedWorkspaceId === right.expectedWorkspaceId &&
-    left.expectedWorkspaceRevision === right.expectedWorkspaceRevision &&
-    left.expectedSessionId === right.expectedSessionId
-  );
-}
-
-function registerDecisionGroupRequest(
-  groups: Record<string, ExtensionDecisionGroupState>,
-  request: ExtensionUiRequestState,
-): Record<string, ExtensionDecisionGroupState> {
-  if (!request.groupKey) return groups;
-  const existing = groups[request.groupKey];
-  const current =
-    existing && sameDecisionGroupSession(existing.context, request.context)
-      ? existing
-      : undefined;
-  const stepIndex = current?.steps.findIndex(
-    (step) => step.requestId === request.requestId,
-  ) ?? -1;
-  const steps = current ? [...current.steps] : [];
-  const step = {
-    requestId: request.requestId,
-    kind: request.kind,
-    status: "active" as const,
-  };
-  if (stepIndex >= 0) steps[stepIndex] = step;
-  else steps.push(step);
-  const boundedSteps = steps.slice(-MAX_EXTENSION_DECISION_GROUP_STEPS);
-  return {
-    ...groups,
-    [request.groupKey]: {
-      groupKey: request.groupKey,
-      context: request.context,
-      ...(request.origin ? { origin: request.origin } : {}),
-      presentation: request.presentation ?? "modal",
-      risk: request.risk ?? "normal",
-      activeRequestId: request.requestId,
-      answeredCount: current?.answeredCount ?? 0,
-      steps: boundedSteps,
-      status: "active",
-    },
-  };
-}
-
-function settleDecisionGroupRequest(
-  groups: Record<string, ExtensionDecisionGroupState>,
-  request: ExtensionUiRequestState,
-  outcome: ExtensionDecisionStepOutcome,
-): Record<string, ExtensionDecisionGroupState> {
-  if (!request.groupKey) return groups;
-  const group = groups[request.groupKey];
-  if (!group || !sameDecisionGroupSession(group.context, request.context)) return groups;
-  const previousStep = group.steps.find(
-    (step) => step.requestId === request.requestId,
-  );
-  const steps = group.steps.map((step) =>
-    step.requestId === request.requestId ? { ...step, status: outcome } : step,
-  );
-  const next = {
-    ...group,
-    activeRequestId:
-      group.activeRequestId === request.requestId ? null : group.activeRequestId,
-    answeredCount:
-      outcome === "answered" && previousStep?.status !== "answered"
-        ? group.answeredCount + 1
-        : group.answeredCount,
-    steps,
-  };
-  if (next.status !== "active" && next.activeRequestId === null) {
-    const remaining = { ...groups };
-    delete remaining[request.groupKey];
-    return remaining;
-  }
-  return { ...groups, [request.groupKey]: next };
-}
-
-export function isExtensionUiRequestExpired(
-  request: ExtensionUiRequestState,
-  now = Date.now(),
-): boolean {
-  return request.expiresAt !== undefined && request.expiresAt <= now;
-}
-
-function extensionUiSessionId(request: ExtensionUiRequestState): string | null {
-  return request.context.expectedSessionId;
-}
-
-export type ExtensionUiWaitingSummary = {
-  count: number;
-  hasHighRisk: boolean;
-};
-
-/** Derive sidebar visibility from the authoritative request queue. */
-export function deriveExtensionUiWaitingBySession(
-  activeRequest: ExtensionUiRequestState | null,
-  queuedRequests: readonly ExtensionUiRequestState[],
-  now = Date.now(),
-): Record<string, ExtensionUiWaitingSummary> {
-  const summaries: Record<string, ExtensionUiWaitingSummary> = {};
-  const seen = new Set<string>();
-  for (const request of activeRequest ? [activeRequest, ...queuedRequests] : queuedRequests) {
-    if (seen.has(request.requestId) || isExtensionUiRequestExpired(request, now)) continue;
-    seen.add(request.requestId);
-    const sessionId = extensionUiSessionId(request);
-    if (!sessionId) continue;
-    const current = summaries[sessionId];
-    summaries[sessionId] = {
-      count: (current?.count ?? 0) + 1,
-      hasHighRisk: (current?.hasHighRisk ?? false) || request.risk === "high",
-    };
-  }
-  return summaries;
-}
-
-export function isExtensionDecisionBlockingSession(
-  activeRequest: ExtensionUiRequestState | null,
-  groups: Readonly<Record<string, ExtensionDecisionGroupState>>,
-  sessionId: string | null,
-  now = Date.now(),
-): boolean {
-  if (!sessionId) return false;
-  if (
-    activeRequest &&
-    !isExtensionUiRequestExpired(activeRequest, now) &&
-    extensionUiSessionId(activeRequest) === sessionId
-  ) {
-    return true;
-  }
-  return Object.values(groups).some(
-    (group) =>
-      group.status === "active" &&
-      group.context.expectedSessionId === sessionId,
-  );
-}
-
-function alignExtensionUiToSession(
-  activeRequest: ExtensionUiRequestState | null,
-  queuedRequests: ExtensionUiRequestState[],
-  sessionId: string | null,
-  now = Date.now(),
-): { extensionUiRequest: ExtensionUiRequestState | null; extensionUiQueue: ExtensionUiRequestState[] } {
-  let active =
-    activeRequest && !isExtensionUiRequestExpired(activeRequest, now) ? activeRequest : null;
-  let queue = queuedRequests.filter((request) => !isExtensionUiRequestExpired(request, now));
-  if (!sessionId) return { extensionUiRequest: active, extensionUiQueue: queue };
-  if (active && extensionUiSessionId(active) === sessionId) {
-    return { extensionUiRequest: active, extensionUiQueue: queue };
-  }
-  if (active) queue = [active, ...queue];
-  const nextIndex = queue.findIndex((request) => extensionUiSessionId(request) === sessionId);
-  if (nextIndex < 0) return { extensionUiRequest: null, extensionUiQueue: queue };
-  active = queue[nextIndex]!;
-  queue = queue.filter((_, index) => index !== nextIndex);
-  return { extensionUiRequest: active, extensionUiQueue: queue };
-}
-
-export type ExtensionWidgetState = {
+type ExtensionWidgetState = {
   key: string;
   widget: JsonValue;
   placement?: "aboveEditor" | "belowEditor";
@@ -284,7 +102,7 @@ export type AppNotification = {
   createdAt: number;
 };
 
-export type AppUpdatePhase =
+type AppUpdatePhase =
   | { state: "idle" }
   | { state: "checking" }
   | { state: "upToDate" }
@@ -319,13 +137,7 @@ function resetExtensionTerminal(state: {
   };
 }
 
-export type SettingsSection =
-  | "general"
-  | "shortcuts"
-  | "providers"
-  | "packages"
-  | "usage"
-  | "host";
+export type SettingsSection = "general" | "shortcuts" | "providers" | "packages" | "usage" | "host";
 
 export type AppState = EpochState & {
   page: NavPage;
@@ -389,14 +201,8 @@ export type AppState = EpochState & {
   setExtensionUiRequest: (r: ExtensionUiRequestState | null) => void;
   enqueueExtensionUiRequest: (r: ExtensionUiRequestState) => void;
   presentCandidateExtensionUiRequest: (r: ExtensionUiRequestState) => void;
-  closeExtensionUiRequest: (
-    requestId: string,
-    outcome?: ExtensionDecisionStepOutcome,
-  ) => void;
-  closeExtensionDecisionGroup: (
-    groupKey: string,
-    status: ExtensionUiGroupStatus,
-  ) => void;
+  closeExtensionUiRequest: (requestId: string, outcome?: ExtensionDecisionStepOutcome) => void;
+  closeExtensionDecisionGroup: (groupKey: string, status: ExtensionUiGroupStatus) => void;
   openExtensionTerminal: (t: ExtensionTerminalState) => void;
   closeExtensionTerminal: (requestId: string) => void;
   setDockOpen: (open: boolean) => void;
@@ -631,8 +437,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const previousWorkspace = get().workspace;
     const clearedSession = Boolean(
       previousWorkspace &&
-        (previousWorkspace.id !== workspace.id ||
-          previousWorkspace.revision !== workspace.revision),
+      (previousWorkspace.id !== workspace.id || previousWorkspace.revision !== workspace.revision),
     );
     set({
       ...next,
@@ -693,11 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = epochApplySession(epochSlice(current), session);
     const baseCatalog =
       previousSession && previousSession.sessionId !== session?.sessionId
-        ? setCatalogRuntimeState(
-            current.sessionCatalog,
-            previousSession.sessionId,
-            "inactive",
-          )
+        ? setCatalogRuntimeState(current.sessionCatalog, previousSession.sessionId, "inactive")
         : current.sessionCatalog;
     const sessionCatalog =
       session && current.workspace
@@ -705,9 +506,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         : baseCatalog;
     const generationChanged = Boolean(
       previousSession &&
-        (!session ||
-          previousSession.sessionId !== session.sessionId ||
-          previousSession.revision !== session.revision),
+      (!session ||
+        previousSession.sessionId !== session.sessionId ||
+        previousSession.revision !== session.revision),
     );
     const extensionUi = alignExtensionUiToSession(
       current.extensionUiRequest,
@@ -752,20 +553,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     let nextEpoch = epochApplyPackages(epochSlice(previous), result.packageSnapshot);
     const generationChanged = Boolean(
       result.session &&
-        previous.session &&
-        (previous.session.sessionId !== result.session.sessionId ||
-          previous.session.revision !== result.session.revision),
+      previous.session &&
+      (previous.session.sessionId !== result.session.sessionId ||
+        previous.session.revision !== result.session.revision),
     );
     if (result.session) {
       nextEpoch = epochApplySession(nextEpoch, result.session);
     }
     const sessionCatalog =
       result.session && previous.workspace
-        ? upsertCatalogSnapshot(
-            previous.sessionCatalog,
-            previous.workspace.id,
-            result.session,
-          )
+        ? upsertCatalogSnapshot(previous.sessionCatalog, previous.workspace.id, result.session)
         : previous.sessionCatalog;
     set({
       ...nextEpoch,
@@ -807,7 +604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (request === null) {
         const targetSessionId = state.extensionUiRequest
           ? extensionUiSessionId(state.extensionUiRequest)
-          : state.session?.sessionId ?? null;
+          : (state.session?.sessionId ?? null);
         const nextIndex = targetSessionId
           ? queue.findIndex((queued) => extensionUiSessionId(queued) === targetSessionId)
           : -1;
@@ -909,9 +706,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (queuedIndex < 0) return {};
         const queuedRequest = state.extensionUiQueue[queuedIndex]!;
         return {
-          extensionUiQueue: state.extensionUiQueue.filter(
-            (_, index) => index !== queuedIndex,
-          ),
+          extensionUiQueue: state.extensionUiQueue.filter((_, index) => index !== queuedIndex),
           extensionDecisionGroups: settleDecisionGroupRequest(
             state.extensionDecisionGroups,
             queuedRequest,
@@ -949,9 +744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const activeRequestStillPresent =
         group.activeRequestId !== null &&
         (state.extensionUiRequest?.requestId === group.activeRequestId ||
-          state.extensionUiQueue.some(
-            (request) => request.requestId === group.activeRequestId,
-          ));
+          state.extensionUiQueue.some((request) => request.requestId === group.activeRequestId));
       if (!activeRequestStillPresent) {
         const extensionDecisionGroups = { ...state.extensionDecisionGroups };
         delete extensionDecisionGroups[groupKey];
@@ -1024,9 +817,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
           extensionWidgets,
           collapsedExtensionWidgetKeys,
-          ...(Object.keys(extensionWidgets).length === 0
-            ? { extensionWidgetsOpen: false }
-            : {}),
+          ...(Object.keys(extensionWidgets).length === 0 ? { extensionWidgetsOpen: false } : {}),
         };
       }
       return {
@@ -1143,9 +934,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : current.sessionCatalog,
       // Reset desync and advance sequence watermark so post-rehydrate events apply.
       lastSequence:
-        snap.lastSequence !== undefined
-          ? snap.lastSequence
-          : Math.max(current.lastSequence, 0),
+        snap.lastSequence !== undefined ? snap.lastSequence : Math.max(current.lastSequence, 0),
       desynchronized: false,
       desyncReason: undefined,
       rehydrating: false,

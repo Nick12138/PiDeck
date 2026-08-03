@@ -25,13 +25,13 @@ export type XtermSurfaceProps = {
   connect: (terminal: Terminal) => void | Cleanup | Promise<void | Cleanup>;
 };
 
-export function cssVar(name: string, fallback: string): string {
+function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
 }
 
-export async function waitForTerminalFont(
+async function waitForTerminalFont(
   fontLoader: FontLoader | undefined,
   fontFamily: string,
   fontSize: number,
@@ -80,75 +80,74 @@ export function XtermSurface({
     let themeObserver: MutationObserver | undefined;
     let terminal: Terminal | undefined;
 
-    void Promise.all([
-      import("@xterm/xterm"),
-      import("@xterm/addon-fit"),
-    ]).then(async ([{ Terminal }, { FitAddon }]) => {
-      if (cancelled) return;
+    void Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]).then(
+      async ([{ Terminal }, { FitAddon }]) => {
+        if (cancelled) return;
 
-      const fontFamily = cssVar(
-        "--font-mono",
-        '"Cascadia Code", Consolas, ui-monospace, monospace',
-      );
-      await waitForTerminalFont(document.fonts, fontFamily, TERMINAL_FONT_SIZE);
-      if (cancelled) return;
+        const fontFamily = cssVar(
+          "--font-mono",
+          '"Cascadia Code", Consolas, ui-monospace, monospace',
+        );
+        await waitForTerminalFont(document.fonts, fontFamily, TERMINAL_FONT_SIZE);
+        if (cancelled) return;
 
-      terminal = new Terminal({
-        cols: initialCols,
-        rows: initialRows,
-        fontFamily,
-        fontSize: TERMINAL_FONT_SIZE,
-        letterSpacing: 0,
-        cursorBlink,
-        scrollback: 10_000,
-        theme: xtermTheme(),
-      });
-      const fit = new FitAddon();
-      terminal.loadAddon(fit);
-      terminal.attachCustomKeyEventHandler(
-        terminalClipboardKeyHandler({
-          terminal,
-          isMac,
-        }),
-      );
-      terminal.open(container);
-      terminalRef.current = terminal;
-      fitRef.current = () => {
+        terminal = new Terminal({
+          cols: initialCols,
+          rows: initialRows,
+          fontFamily,
+          fontSize: TERMINAL_FONT_SIZE,
+          letterSpacing: 0,
+          cursorBlink,
+          scrollback: 10_000,
+          theme: xtermTheme(),
+        });
+        const fit = new FitAddon();
+        terminal.loadAddon(fit);
+        terminal.attachCustomKeyEventHandler(
+          terminalClipboardKeyHandler({
+            terminal,
+            isMac,
+          }),
+        );
+        terminal.open(container);
+        terminalRef.current = terminal;
+        fitRef.current = () => {
+          try {
+            fit.fit();
+          } catch {
+            /* container can be zero-sized while the dock is hidden */
+          }
+        };
+
+        observer = new ResizeObserver(() => fitRef.current?.());
+        observer.observe(container);
+        fitRef.current();
+
+        // The theme is read from CSS variables at creation time; follow the
+        // light/dark class toggled on <html> so open terminals recolor live.
+        themeObserver = new MutationObserver(() => {
+          if (terminal) terminal.options.theme = xtermTheme();
+        });
+        themeObserver.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+
         try {
-          fit.fit();
-        } catch {
-          /* container can be zero-sized while the dock is hidden */
+          const cleanup = await connectRef.current(terminal);
+          if (cancelled) {
+            if (typeof cleanup === "function") await cleanup();
+          } else {
+            if (typeof cleanup === "function") connectionCleanup = cleanup;
+            terminal.focus();
+          }
+        } catch (error) {
+          if (!cancelled) {
+            terminal.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
+          }
         }
-      };
-
-      observer = new ResizeObserver(() => fitRef.current?.());
-      observer.observe(container);
-      fitRef.current();
-
-      // The theme is read from CSS variables at creation time; follow the
-      // light/dark class toggled on <html> so open terminals recolor live.
-      themeObserver = new MutationObserver(() => {
-        if (terminal) terminal.options.theme = xtermTheme();
-      });
-      themeObserver.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ["class"],
-      });
-
-      try {
-        const cleanup = await connectRef.current(terminal);
-        if (cancelled) {
-          if (typeof cleanup === "function") await cleanup();
-        } else {
-          if (typeof cleanup === "function") connectionCleanup = cleanup;
-          terminal.focus();
-        }
-      } catch (error) {
-        if (!cancelled) {
-          terminal.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    });
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -159,7 +158,7 @@ export function XtermSurface({
       void connectionCleanup?.();
       terminal?.dispose();
     };
-  }, [sessionKey, initialCols, initialRows, cursorBlink]);
+  }, [sessionKey, initialCols, initialRows, cursorBlink, isMac]);
 
   useEffect(() => {
     if (!visible) return;

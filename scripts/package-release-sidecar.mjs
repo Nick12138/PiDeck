@@ -16,7 +16,6 @@ import {
   existsSync,
   writeFileSync,
   readFileSync,
-  realpathSync,
   renameSync,
   rmSync,
   readdirSync,
@@ -34,6 +33,12 @@ import {
 } from "./release-sdk-evidence.mjs";
 import { releaseRuntimeImportSpecifiers } from "./release-runtime-imports.mjs";
 import { resolveReleaseRuntimeTarget } from "./release-runtime-target.mjs";
+import {
+  assertNodeModulesGraph,
+  detachNodeModulesLinks,
+  restoreNodeModulesLinks,
+  snapshotNodeModulesGraph,
+} from "./portable-node-modules.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const hostDist = join(root, "packages/pi-host/dist");
@@ -104,7 +109,10 @@ console.log("[package-sidecar] pnpm-lock.yaml sha256 OK");
 
 // Optionally prepare controlled Node from lock
 if (process.argv.includes("--prepare-runtime") || process.argv.includes("--copy-system-node")) {
-  if (process.argv.includes("--copy-system-node") && !process.argv.includes("--allow-execpath-fallback")) {
+  if (
+    process.argv.includes("--copy-system-node") &&
+    !process.argv.includes("--allow-execpath-fallback")
+  ) {
     console.warn(
       "[package-sidecar] --copy-system-node is not allowed for release; running prepare-release-runtime.mjs",
     );
@@ -164,7 +172,9 @@ if (gitRuntimeMeta.target !== runtimeTarget.key) {
   die(`staged Git target ${gitRuntimeMeta.target ?? "missing"} vs ${runtimeTarget.key}`);
 }
 if (gitRuntimeMeta.strategy !== runtimeTarget.git.strategy) {
-  die(`staged Git strategy ${gitRuntimeMeta.strategy ?? "missing"} vs ${runtimeTarget.git.strategy}`);
+  die(
+    `staged Git strategy ${gitRuntimeMeta.strategy ?? "missing"} vs ${runtimeTarget.git.strategy}`,
+  );
 }
 if (
   runtimeTarget.git.strategy === "bundled-portable" &&
@@ -186,9 +196,7 @@ if (gitProbe.status !== 0 || !String(gitProbe.stdout).includes("git version")) {
 }
 
 function proveRuntimeImports(hostDir) {
-  const modules = releaseRuntimeImportSpecifiers(
-    sdkEvidence.hostManifest.productionDependencies,
-  );
+  const modules = releaseRuntimeImportSpecifiers(sdkEvidence.hostManifest.productionDependencies);
   const prove = spawnSync(
     stagedNode,
     [
@@ -217,11 +225,12 @@ function stageHostWithDeploy() {
     rmSync(deployedFrom, { recursive: true, force: true });
     console.log("[package-sidecar] pnpm deploy --prod ->", deployedFrom);
     const deploy = timedStage("pnpm deploy production Host", () =>
-      spawnSync(
-        "pnpm",
-        ["--filter", "@pideck/pi-host", "deploy", "--prod", deployedFrom],
-        { cwd: root, encoding: "utf8", shell: true, env: process.env },
-      ),
+      spawnSync("pnpm", ["--filter", "@pideck/pi-host", "deploy", "--prod", deployedFrom], {
+        cwd: root,
+        encoding: "utf8",
+        shell: true,
+        env: process.env,
+      }),
     );
     if (
       deploy.status !== 0 ||
@@ -243,53 +252,61 @@ function stageHostWithDeploy() {
     const deployImportError = proveRuntimeImports(deployedFrom);
     if (deployImportError) die(`deploy runtime import failed: ${deployImportError}`);
 
-    console.log("[package-sidecar] hoisting pnpm store packages to top-level (real files)...");
-    timedStage("hoist production dependencies", () =>
-      hoistPnpmPackages(join(deployedFrom, "node_modules")),
-    );
-    timedStage("remove redundant pnpm virtual store", () =>
-      rmSync(join(deployedFrom, "node_modules", ".pnpm"), {
-        recursive: true,
-        force: true,
-      }),
-    );
-    const hoistedImportError = proveRuntimeImports(deployedFrom);
-    if (hoistedImportError) die(`runtime import failed after hoist: ${hoistedImportError}`);
-    try {
-      assertPiPackageTree(deployedFrom, sdkEvidence, "hoisted Host tree");
-    } catch (error) {
-      die(error instanceof Error ? error.message : String(error));
-    }
-
     rmSync(dest, { recursive: true, force: true });
     mkdirSync(dest, { recursive: true });
     const sourceNodeModules = join(deployedFrom, "node_modules");
     const stagedNodeModules = join(dest, "node_modules");
+    const deployedGraph = timedStage("snapshot production dependency graph", () =>
+      snapshotNodeModulesGraph(sourceNodeModules, sdkEvidence.hostManifest.productionDependencies),
+    );
+    const selfLink = `.pnpm/node_modules/${sdkEvidence.hostManifest.name}`;
+    const detached = timedStage("detach pnpm links for portable transfer", () =>
+      detachNodeModulesLinks(sourceNodeModules, {
+        ignoredExternalLinks: [selfLink],
+      }),
+    );
+    console.log(
+      "[package-sidecar] portable pnpm links:",
+      detached.manifest.links.length,
+      "ignored self-links:",
+      detached.ignoredExternalLinks.length,
+    );
     let dependencyTransfer = "same-volume-rename";
     timedStage("transfer production dependencies", () => {
       try {
         renameSync(sourceNodeModules, stagedNodeModules);
       } catch (error) {
-        dependencyTransfer = "dereferenced-copy-fallback";
+        dependencyTransfer = "portable-copy-fallback";
         console.warn(
           "[package-sidecar] dependency rename unavailable; falling back to copy:",
           error instanceof Error ? error.message : String(error),
         );
         cpSync(sourceNodeModules, stagedNodeModules, {
           recursive: true,
-          dereference: true,
         });
       }
     });
+    timedStage("restore pnpm links after transfer", () =>
+      restoreNodeModulesLinks(stagedNodeModules, detached.manifest),
+    );
+    timedStage("verify transferred dependency graph", () =>
+      assertNodeModulesGraph(
+        stagedNodeModules,
+        sdkEvidence.hostManifest.productionDependencies,
+        deployedGraph,
+        "transferred production node_modules",
+      ),
+    );
 
     const stagedImportError = proveRuntimeImports(dest);
-    if (stagedImportError) die(`runtime import failed after dependency transfer: ${stagedImportError}`);
+    if (stagedImportError)
+      die(`runtime import failed after dependency transfer: ${stagedImportError}`);
     try {
       assertPiPackageTree(dest, sdkEvidence, "staged Host tree");
     } catch (error) {
       die(error instanceof Error ? error.message : String(error));
     }
-    return `pnpm-deploy-temp-node-modules-only-hoisted-${dependencyTransfer}`;
+    return `pnpm-deploy-portable-graph-${dependencyTransfer}`;
   } finally {
     try {
       timedStage("clean temporary deploy", () =>
@@ -299,85 +316,6 @@ function stageHostWithDeploy() {
       /* best-effort temp cleanup */
     }
   }
-}
-
-/**
- * Copy every package from the pnpm virtual store into top-level node_modules
- * as real directories so resolution works after zip extract.
- */
-function hoistPnpmPackages(nmDir) {
-  const pnpmDir = join(nmDir, ".pnpm");
-  if (!existsSync(pnpmDir)) {
-    console.warn("[package-sidecar] no .pnpm dir to hoist");
-    return;
-  }
-  let count = 0;
-  for (const entry of readdirSync(pnpmDir)) {
-    const storeNm = join(pnpmDir, entry, "node_modules");
-    if (!existsSync(storeNm)) continue;
-    for (const name of readdirSync(storeNm)) {
-      if (name === ".bin") continue;
-      const src = join(storeNm, name);
-      if (name.startsWith("@")) {
-        let scoped;
-        try {
-          scoped = readdirSync(src);
-        } catch {
-          continue;
-        }
-        for (const sub of scoped) {
-          const srcPkg = join(src, sub);
-          const dstPkg = join(nmDir, name, sub);
-          try {
-            // Prefer realpath content
-            let real = srcPkg;
-            try {
-              real = realpathSync(srcPkg);
-            } catch {
-              /* keep */
-            }
-            mkdirSync(join(nmDir, name), { recursive: true });
-            if (existsSync(dstPkg)) {
-              // If existing is a junction, replace with real copy
-              try {
-                spawnSync("cmd.exe", ["/c", `rmdir "${dstPkg}"`], { encoding: "utf8" });
-              } catch {
-                /* ignore */
-              }
-              if (existsSync(dstPkg)) rmSync(dstPkg, { recursive: true, force: true });
-            }
-            cpSync(real, dstPkg, { recursive: true, dereference: true });
-            count += 1;
-          } catch (e) {
-            console.warn("[package-sidecar] hoist skip", `${name}/${sub}`, e.message);
-          }
-        }
-      } else {
-        const dstPkg = join(nmDir, name);
-        try {
-          let real = src;
-          try {
-            real = realpathSync(src);
-          } catch {
-            /* keep */
-          }
-          if (existsSync(dstPkg)) {
-            try {
-              spawnSync("cmd.exe", ["/c", `rmdir "${dstPkg}"`], { encoding: "utf8" });
-            } catch {
-              /* ignore */
-            }
-            if (existsSync(dstPkg)) rmSync(dstPkg, { recursive: true, force: true });
-          }
-          cpSync(real, dstPkg, { recursive: true, dereference: true });
-          count += 1;
-        } catch (e) {
-          console.warn("[package-sidecar] hoist skip", name, e.message);
-        }
-      }
-    }
-  }
-  console.log("[package-sidecar] hoisted packages:", count);
 }
 
 // Stage: deploy first (creates dest + node_modules), then overlay Host dist
@@ -404,7 +342,13 @@ if (!existsSync(join(dest, "model-health.js"))) die("model-health.js missing —
   if (err) die(`runtime import failed after host overlay: ${err}`);
 }
 
-for (const forbidden of ["src", "apps", ".staging-host-deploy", "tsconfig.json", "vitest.config.ts"]) {
+for (const forbidden of [
+  "src",
+  "apps",
+  ".staging-host-deploy",
+  "tsconfig.json",
+  "vitest.config.ts",
+]) {
   if (existsSync(join(dest, forbidden))) {
     die(`clean Host stage contains forbidden deploy payload: ${forbidden}`);
   }
@@ -479,7 +423,7 @@ const staging = {
   sdkVersion: sdkEvidence.sdkVersion,
   sdkEvidence,
   entry: "main.js",
-  layout: "flat-dist-with-pnpm-deploy-node_modules",
+  layout: "flat-dist-with-portable-pnpm-node_modules",
   stagedAt: new Date().toISOString(),
   controlledNodePresent: true,
   usedProcessExecPath: false,

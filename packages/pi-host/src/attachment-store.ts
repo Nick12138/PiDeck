@@ -28,13 +28,9 @@ import {
   type AttachmentUnit,
 } from "@pideck/protocol";
 import { attachmentRoot } from "./pideck-data.js";
-import {
-  runAttachmentParserWorker,
-} from "./attachment-parser-runner.js";
-import type {
-  AttachmentParseArgs,
-  AttachmentParseResult,
-} from "./attachment-parser.js";
+import { runAttachmentParserWorker } from "./attachment-parser-runner.js";
+import type { AttachmentParseArgs, AttachmentParseResult } from "./attachment-parser.js";
+import { logger } from "./logger.js";
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -42,7 +38,8 @@ const METADATA_FILE = "metadata.json";
 const MAX_DOCX_ENTRIES = 10_000;
 const MAX_DOCX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const MAX_TOOL_OUTPUT_BYTES = 50 * 1024;
-const ATTACHMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const ATTACHMENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type AttachmentMetadata = {
   version: 1;
@@ -81,12 +78,7 @@ export type AttachmentParser = (args: AttachmentParseArgs) => Promise<Attachment
 export class AttachmentStoreError extends Error {
   constructor(
     readonly kind:
-      | "invalid"
-      | "not_found"
-      | "unauthorized"
-      | "not_ready"
-      | "unsupported"
-      | "too_large",
+      "invalid" | "not_found" | "unauthorized" | "not_ready" | "unsupported" | "too_large",
     message: string,
   ) {
     super(message);
@@ -108,9 +100,7 @@ function metadataSnapshot(metadata: AttachmentMetadata): AttachmentSnapshot {
     status: metadata.status,
     ...(metadata.unit ? { unit: metadata.unit } : {}),
     ...(metadata.unitCount !== undefined ? { unitCount: metadata.unitCount } : {}),
-    ...(metadata.processedUnits !== undefined
-      ? { processedUnits: metadata.processedUnits }
-      : {}),
+    ...(metadata.processedUnits !== undefined ? { processedUnits: metadata.processedUnits } : {}),
     ...(metadata.error ? { error: metadata.error } : {}),
   };
 }
@@ -239,6 +229,7 @@ export class AttachmentStore {
   readonly root: string;
   private readonly parser: AttachmentParser;
   private readonly removedIds = new Set<string>();
+  private readonly pendingParseTasks = new Set<Promise<void>>();
 
   constructor(options: AttachmentStoreOptions) {
     this.root = attachmentRoot(options.agentDir);
@@ -267,6 +258,12 @@ export class AttachmentStore {
       } catch {
         await rm(this.attachmentDir(entry.name), { recursive: true, force: true });
       }
+    }
+  }
+
+  async waitForIdle(): Promise<void> {
+    while (this.pendingParseTasks.size > 0) {
+      await Promise.all(this.pendingParseTasks);
     }
   }
 
@@ -317,7 +314,7 @@ export class AttachmentStore {
       updatedAt: now,
     };
     await this.saveMetadata(metadata);
-    args.onChange?.(metadataSnapshot(metadata));
+    this.publishChange(metadata, args.onChange);
     try {
       const copiedPath = join(directory, sourceFile);
       await copyFile(sourcePath, copiedPath);
@@ -331,8 +328,8 @@ export class AttachmentStore {
       metadata.unit = mediaType === "application/pdf" ? "page" : "chunk";
       metadata.processedUnits = 0;
       await this.saveMetadata(metadata);
-      args.onChange?.(metadataSnapshot(metadata));
-      void this.parse(metadata, args.onChange);
+      this.publishChange(metadata, args.onChange);
+      this.startParse(metadata, args.onChange);
       return metadataSnapshot(metadata);
     } catch (error) {
       await rm(directory, { recursive: true, force: true });
@@ -377,7 +374,7 @@ export class AttachmentStore {
       updatedAt: now,
     };
     await this.saveMetadata(metadata);
-    args.onChange?.(metadataSnapshot(metadata));
+    this.publishChange(metadata, args.onChange);
     try {
       const sourcePath = join(directory, sourceFile);
       await writeFile(sourcePath, args.text, { encoding: "utf8", mode: FILE_MODE });
@@ -387,8 +384,8 @@ export class AttachmentStore {
       metadata.unit = "chunk";
       metadata.processedUnits = 0;
       await this.saveMetadata(metadata);
-      args.onChange?.(metadataSnapshot(metadata));
-      void this.parse(metadata, args.onChange);
+      this.publishChange(metadata, args.onChange);
+      this.startParse(metadata, args.onChange);
       return metadataSnapshot(metadata);
     } catch (error) {
       await rm(directory, { recursive: true, force: true });
@@ -611,16 +608,54 @@ export class AttachmentStore {
     if (process.platform !== "win32") await chmod(target, FILE_MODE);
   }
 
+  private publishChange(
+    metadata: AttachmentMetadata,
+    onChange?: (snapshot: AttachmentSnapshot) => void,
+  ): void {
+    if (!onChange) return;
+    try {
+      onChange(metadataSnapshot(metadata));
+    } catch (error) {
+      logger.warn("Attachment change listener failed", {
+        attachmentId: metadata.id,
+        error: normalizeParserError(error),
+      });
+    }
+  }
+
+  private startParse(
+    metadata: AttachmentMetadata,
+    onChange?: (snapshot: AttachmentSnapshot) => void,
+  ): void {
+    const task = this.parse(metadata, onChange).then(
+      () => undefined,
+      (error: unknown) => {
+        try {
+          logger.error("Attachment background parse task failed", {
+            attachmentId: metadata.id,
+            error: normalizeParserError(error),
+          });
+        } catch {
+          // The task must remain terminal even when stderr is no longer writable.
+        }
+      },
+    );
+    this.pendingParseTasks.add(task);
+    void task.then(() => {
+      this.pendingParseTasks.delete(task);
+    });
+  }
+
   private async parse(
     metadata: AttachmentMetadata,
     onChange?: (snapshot: AttachmentSnapshot) => void,
   ): Promise<void> {
-    const outputDir = join(this.attachmentDir(metadata.id), "units");
-    await rm(outputDir, { recursive: true, force: true });
-    await mkdir(outputDir, { recursive: true, mode: DIR_MODE });
-    let lastPublishedAt = 0;
-    let lastPublishedUnits = -1;
     try {
+      const outputDir = join(this.attachmentDir(metadata.id), "units");
+      await rm(outputDir, { recursive: true, force: true });
+      await mkdir(outputDir, { recursive: true, mode: DIR_MODE });
+      let lastPublishedAt = 0;
+      let lastPublishedUnits = -1;
       const result = await this.parser({
         sourcePath: join(this.attachmentDir(metadata.id), metadata.sourceFile),
         outputDir,
@@ -637,7 +672,7 @@ export class AttachmentStore {
           ) {
             lastPublishedAt = now;
             lastPublishedUnits = progress.processedUnits;
-            onChange?.(metadataSnapshot(metadata));
+            this.publishChange(metadata, onChange);
           }
         },
       });
@@ -647,12 +682,24 @@ export class AttachmentStore {
       metadata.unitCount = result.unitCount;
       metadata.processedUnits = result.unitCount;
       delete metadata.error;
+      await this.saveMetadata(metadata);
+      this.publishChange(metadata, onChange);
     } catch (error) {
       if (this.removedIds.has(metadata.id)) return;
       metadata.status = "failed";
       metadata.error = normalizeParserError(error);
+      try {
+        await this.saveMetadata(metadata);
+      } catch (persistError) {
+        if (this.removedIds.has(metadata.id)) return;
+        logger.error("Failed to persist attachment parse failure", {
+          attachmentId: metadata.id,
+          parseError: metadata.error,
+          persistError: normalizeParserError(persistError),
+        });
+        return;
+      }
+      this.publishChange(metadata, onChange);
     }
-    await this.saveMetadata(metadata);
-    onChange?.(metadataSnapshot(metadata));
   }
 }

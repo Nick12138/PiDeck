@@ -13,8 +13,8 @@
  */
 import type { Terminal } from "@earendil-works/pi-tui";
 
-export const VIRTUAL_TERMINAL_DEFAULT_COLS = 100;
-export const VIRTUAL_TERMINAL_DEFAULT_ROWS = 32;
+const VIRTUAL_TERMINAL_DEFAULT_COLS = 100;
+const VIRTUAL_TERMINAL_DEFAULT_ROWS = 32;
 
 const MIN_COLS = 20;
 const MAX_COLS = 1000;
@@ -28,11 +28,7 @@ export class VirtualTerminal implements Terminal {
   private resizeHandler?: () => void;
   private readonly onData: (data: string) => void;
 
-  constructor(options: {
-    onData: (data: string) => void;
-    cols?: number;
-    rows?: number;
-  }) {
+  constructor(options: { onData: (data: string) => void; cols?: number; rows?: number }) {
     this.onData = options.onData;
     this.cols = clamp(options.cols ?? VIRTUAL_TERMINAL_DEFAULT_COLS, MIN_COLS, MAX_COLS);
     this.rowCount = clamp(options.rows ?? VIRTUAL_TERMINAL_DEFAULT_ROWS, MIN_ROWS, MAX_ROWS);

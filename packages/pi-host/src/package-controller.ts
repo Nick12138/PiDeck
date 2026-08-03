@@ -27,7 +27,7 @@ import {
 import { logger } from "./logger.js";
 
 export const PACKAGE_MUTATION_TIMEOUT_MS = 10 * 60 * 1000;
-export const PACKAGE_MUTATION_CANCELLATION_GRACE_MS = 5_000;
+const PACKAGE_MUTATION_CANCELLATION_GRACE_MS = 5_000;
 
 export async function waitForPackageMutation<T>(
   operation: Promise<T>,
@@ -234,7 +234,10 @@ export function createPackageHandlers(
             throw new Error("Workspace services not ready");
           }
           if (!factory.deps.packageUpdateCheck) {
-            return { supported: false, updates: [] as Array<{ packageId: string; source: string }> };
+            return {
+              supported: false,
+              updates: [] as Array<{ packageId: string; source: string }>,
+            };
           }
           const pm = g.packageManager as {
             checkForAvailableUpdates?: () => Promise<
@@ -280,21 +283,14 @@ export function createPackageHandlers(
       if (!pkg) {
         return { error: createHostError("PACKAGE_NOT_FOUND", "Package not found") };
       }
-      const resources = g.packageSnapshot.resources.filter(
-        (r) => r.packageId === params.packageId,
-      );
+      const resources = g.packageSnapshot.resources.filter((r) => r.packageId === params.packageId);
       return { result: { package: pkg, resources } };
     },
   };
 }
 
 export type MutateKind =
-  | "install"
-  | "remove"
-  | "update"
-  | "updateAll"
-  | "setPreferences"
-  | "reload";
+  "install" | "remove" | "update" | "updateAll" | "setPreferences" | "reload";
 
 export function packageMutationMayChangeDisk(kind: MutateKind): boolean {
   return kind === "install" || kind === "remove" || kind === "update" || kind === "updateAll";
@@ -710,7 +706,10 @@ function clonePackageSources(sources: PackageSource[]): PackageSource[] {
   return sources.map((source) => {
     if (typeof source === "string") return source;
     return Object.fromEntries(
-      Object.entries(source).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]),
+      Object.entries(source).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? [...value] : value,
+      ]),
     ) as PackageSourceObject;
   });
 }
@@ -837,7 +836,9 @@ export function applyResourcePreferences(
     }
     if (!metadata.configurableScopes.includes(update.targetScope)) {
       throw Object.assign(
-        new Error(`Resource ${update.resourceId} cannot be configured at ${update.targetScope} scope`),
+        new Error(
+          `Resource ${update.resourceId} cannot be configured at ${update.targetScope} scope`,
+        ),
         { code: "RESOURCE_NOT_CONFIGURABLE" },
       );
     }
@@ -845,16 +846,20 @@ export function applyResourcePreferences(
   });
 
   let userPackages = clonePackageSources(
-    ((sm.getGlobalSettings().packages ?? []) as PackageSource[]),
+    (sm.getGlobalSettings().packages ?? []) as PackageSource[],
   );
   let projectPackages = clonePackageSources(
-    ((sm.getProjectSettings().packages ?? []) as PackageSource[]),
+    (sm.getProjectSettings().packages ?? []) as PackageSource[],
   );
   let userPackagesChanged = false;
   let projectPackagesChanged = false;
   const pathChanges = new Map<
     string,
-    { scope: "user" | "project"; key: "extensions" | "skills" | "prompts" | "themes"; paths: string[] }
+    {
+      scope: "user" | "project";
+      key: "extensions" | "skills" | "prompts" | "themes";
+      paths: string[];
+    }
   >();
 
   for (const { update, metadata } of resolved) {
@@ -897,7 +902,8 @@ export function applyResourcePreferences(
     const key = resourceTypeToSettingsKey(metadata.type);
     const changeKey = `${update.targetScope}:${key}`;
     const existing = pathChanges.get(changeKey);
-    const settings = update.targetScope === "project" ? sm.getProjectSettings() : sm.getGlobalSettings();
+    const settings =
+      update.targetScope === "project" ? sm.getProjectSettings() : sm.getGlobalSettings();
     let paths = existing?.paths ?? ([...(settings[key] ?? [])] as string[]);
     if (update.targetScope === "project" && metadata.scope === "user") {
       const pattern = metadata.path.replace(/\\/g, "/");
@@ -915,9 +921,10 @@ export function applyResourcePreferences(
         paths.push(`${update.preference === "enabled" ? "+" : "-"}${pattern}`);
       }
     } else {
-      paths = update.preference === "inherit"
-        ? stripExactPreference(paths, metadata.relativePath)
-        : setTopLevelPathEnabled(paths, metadata.relativePath, update.preference === "enabled");
+      paths =
+        update.preference === "inherit"
+          ? stripExactPreference(paths, metadata.relativePath)
+          : setTopLevelPathEnabled(paths, metadata.relativePath, update.preference === "enabled");
     }
     pathChanges.set(changeKey, { scope: update.targetScope, key, paths });
   }
@@ -941,9 +948,13 @@ async function runMutation(
 ): Promise<void> {
   const server = factory.getServer()!;
   const pm = g.packageManager!;
-  const sm = g.settingsManager!;
 
-  const emitProgress = (type: "start" | "progress" | "complete" | "error", action: string, source: string, message?: string) => {
+  const emitProgress = (
+    type: "start" | "progress" | "complete" | "error",
+    action: string,
+    source: string,
+    message?: string,
+  ) => {
     server.emit("package.progress", {
       operationId,
       type,
@@ -1006,8 +1017,10 @@ async function runMutation(
       }
       case "setPreferences": {
         const updates = Array.isArray(params)
-          ? params as ResourcePreferenceUpdate[]
-          : (params as { updates?: ResourcePreferenceUpdate[] }).updates ?? [params as ResourcePreferenceUpdate];
+          ? (params as ResourcePreferenceUpdate[])
+          : ((params as { updates?: ResourcePreferenceUpdate[] }).updates ?? [
+              params as ResourcePreferenceUpdate,
+            ]);
         applyResourcePreferences(g, updates);
         break;
       }

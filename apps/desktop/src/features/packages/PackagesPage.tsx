@@ -111,10 +111,7 @@ export function reconcileProjectGateAuthorization(
     : null;
 }
 
-function scopeLabel(
-  t: Translate,
-  scope: PackageRecord["scope"] | ResourceRecord["scope"],
-): string {
+function scopeLabel(t: Translate, scope: PackageRecord["scope"] | ResourceRecord["scope"]): string {
   return scope === "temporary"
     ? t("packagesScopeRuntime")
     : scope === "project"
@@ -175,18 +172,15 @@ function TypeBadge({ type }: { type: ResourceType }) {
     prompt: "bg-warning/15 text-warning",
     theme: "bg-surface-overlay text-muted",
   };
-  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium uppercase ${colors[type]}`}>{type}</span>;
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium uppercase ${colors[type]}`}>
+      {type}
+    </span>
+  );
 }
 
-function packageMemberName(
-  t: Translate,
-  resource: ResourceRecord,
-  pkg: PackageRecord,
-): string {
-  if (
-    resource.type === "extension" &&
-    /^(?:index|main)\.[cm]?[jt]sx?$/i.test(resource.name)
-  ) {
+function packageMemberName(t: Translate, resource: ResourceRecord, pkg: PackageRecord): string {
+  if (resource.type === "extension" && /^(?:index|main)\.[cm]?[jt]sx?$/i.test(resource.name)) {
     return t("packagesExtensionSuffix", { name: pkg.displayName });
   }
   return resource.name;
@@ -203,10 +197,7 @@ function preferenceLabel(t: Translate, value: Preference): string {
       : t("packagesPrefDisabled");
 }
 
-function packagePreferenceState(
-  resources: ResourceRecord[],
-  mode: ResourceMode,
-): PreferenceState {
+function packagePreferenceState(resources: ResourceRecord[], mode: ResourceMode): PreferenceState {
   const preferences = new Set(
     resources
       .filter((resource) => canConfigureResource(resource, mode))
@@ -231,13 +222,18 @@ function PackagePreferenceControl({
   onChange: (preference: Preference) => void;
 }) {
   const t = useT();
-  const values: Preference[] = mode === "project"
-    ? ["inherit", "enabled", "disabled"]
-    : ["enabled", "disabled"];
+  const values: Preference[] =
+    mode === "project" ? ["inherit", "enabled", "disabled"] : ["enabled", "disabled"];
   return (
     <div className="flex min-w-0 items-center gap-2">
-      {state === "mixed" && <span className="text-[11px] text-warning">{t("packagesStateMixed")}</span>}
-      <div role="group" aria-label={label} className="inline-flex h-8 rounded-md border border-border p-0.5">
+      {state === "mixed" && (
+        <span className="text-[11px] text-warning">{t("packagesStateMixed")}</span>
+      )}
+      <div
+        role="group"
+        aria-label={label}
+        className="inline-flex h-8 rounded-md border border-border p-0.5"
+      >
         {values.map((value) => (
           <button
             key={value}
@@ -281,7 +277,9 @@ export function PackagesPage() {
   const [installSource, setInstallSource] = useState("");
   const [installScope, setInstallScope] = useState<"user" | "project">("user");
   const [busy, setBusy] = useState(false);
-  const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<ResourcePreferenceUpdate[]>([]);
+  const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<
+    ResourcePreferenceUpdate[]
+  >([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [loadError, setLoadError] = useState("");
   const [projectGate, setProjectGate] = useState<PendingProjectMutation | null>(null);
@@ -290,33 +288,42 @@ export function PackagesPage() {
   const [now, setNow] = useState(() => Date.now());
   const refreshRequest = useRef(0);
 
-  const allPackages = packages?.configured ?? [];
+  const allPackages = useMemo(() => packages?.configured ?? [], [packages?.configured]);
   const allResources = useMemo(
     () => applyOptimisticResourcePreferences(packages?.resources ?? [], pendingPreferenceUpdates),
     [packages?.resources, pendingPreferenceUpdates],
   );
   const selected = allPackages.find((item) => item.id === selectedId);
-  const installedFilters = { query: installedQuery, scope: installedScope, type: installedType };
+  const installedFilters = useMemo(
+    () => ({ query: installedQuery, scope: installedScope, type: installedType }),
+    [installedQuery, installedScope, installedType],
+  );
   const visiblePackages = useMemo(
     () => filterInstalledPackages(allPackages, allResources, installedFilters),
-    [allPackages, allResources, installedQuery, installedScope, installedType],
+    [allPackages, allResources, installedFilters],
   );
-  const resourceFilters = {
-    query: resourceQuery,
-    mode: resourceMode,
-    type: resourceType,
-    origin: resourceOrigin,
-    packageId: resourceOwnerId || undefined,
-  };
+  const resourceFilters = useMemo(
+    () => ({
+      query: resourceQuery,
+      mode: resourceMode,
+      type: resourceType,
+      origin: resourceOrigin,
+      packageId: resourceOwnerId || undefined,
+    }),
+    [resourceMode, resourceOrigin, resourceOwnerId, resourceQuery, resourceType],
+  );
   const visibleResourceItems = useMemo(
     () => buildResourceListItems(allResources, allPackages, resourceFilters),
-    [allResources, allPackages, resourceQuery, resourceMode, resourceType, resourceOrigin, resourceOwnerId],
+    [allResources, allPackages, resourceFilters],
   );
   const visiblePreferenceResources = useMemo(
     () => preferenceResourcesForListItems(visibleResourceItems),
     [visibleResourceItems],
   );
-  const resourcesById = useMemo(() => new Map(allResources.map((item) => [item.id, item])), [allResources]);
+  const resourcesById = useMemo(
+    () => new Map(allResources.map((item) => [item.id, item])),
+    [allResources],
+  );
   const selectedResources = selected
     ? filterResources(allResources, allPackages, {
         query: "",
@@ -332,8 +339,7 @@ export function PackagesPage() {
 
   const updateCheckSupported = host?.capabilities.packageUpdateCheck ?? false;
   const knownUpdates = allPackages.filter((item) => item.updateAvailable).length;
-  const updateCheckDone =
-    updateCheckSupported && packages?.updateCheck?.checkedAt !== undefined;
+  const updateCheckDone = updateCheckSupported && packages?.updateCheck?.checkedAt !== undefined;
   const reloadRequired = packages?.resourceReloadRequired === true;
   const reconcileRequired = packages?.mutation?.reconcileRequired === true;
   const progressActive = packageProgress?.type === "start" || packageProgress?.type === "progress";
@@ -444,8 +450,10 @@ export function PackagesPage() {
     applyPackageMutationResult(result);
     if (result.status === "partialFailure" || result.reconcileRequired) {
       pushNotification(
-        result.warnings.map((warning) => warning.message).filter(Boolean).join("; ") ||
-          t("notifPackagesPartialFailure"),
+        result.warnings
+          .map((warning) => warning.message)
+          .filter(Boolean)
+          .join("; ") || t("notifPackagesPartialFailure"),
         "warning",
       );
     } else if (result.status === "failed") {
@@ -453,8 +461,12 @@ export function PackagesPage() {
     }
   }
 
-  function isProjectMutation<M extends MutationMethod>(method: M, params: HostRequestParams[M]): boolean {
-    if (method === "package.install") return (params as HostRequestParams["package.install"]).scope === "project";
+  function isProjectMutation<M extends MutationMethod>(
+    method: M,
+    params: HostRequestParams[M],
+  ): boolean {
+    if (method === "package.install")
+      return (params as HostRequestParams["package.install"]).scope === "project";
     if (method === "package.updateAll") return allPackages.some((item) => item.scope === "project");
     if (method === "package.remove" || method === "package.update") {
       const packageId = (params as HostRequestParams["package.remove"]).packageId;
@@ -487,16 +499,22 @@ export function PackagesPage() {
         });
         return;
       }
-      if (!isCurrentWorkspaceAuthorization(
-        useAppStore.getState().host,
-        useAppStore.getState().workspace,
-        options.projectAuthorization,
-      )) {
+      if (
+        !isCurrentWorkspaceAuthorization(
+          useAppStore.getState().host,
+          useAppStore.getState().workspace,
+          options.projectAuthorization,
+        )
+      ) {
         pushNotification(t("notifPackagesProjectConfirmExpired"), "warning");
         return;
       }
     }
-    if ((reloadRequired || reconcileRequired) && method !== "package.reloadResources" && !options?.allowReconcileRetry) {
+    if (
+      (reloadRequired || reconcileRequired) &&
+      method !== "package.reloadResources" &&
+      !options?.allowReconcileRetry
+    ) {
       pushNotification(
         reconcileRequired
           ? t("notifPackagesReconcileBeforeMutation")
@@ -506,11 +524,12 @@ export function PackagesPage() {
       return;
     }
     const generation = captureRequestGeneration(host);
-    const optimisticUpdates = method === "resource.setPreference"
-      ? [params as HostRequestParams["resource.setPreference"]]
-      : method === "resource.setPreferences"
-        ? (params as HostRequestParams["resource.setPreferences"]).updates
-        : [];
+    const optimisticUpdates =
+      method === "resource.setPreference"
+        ? [params as HostRequestParams["resource.setPreference"]]
+        : method === "resource.setPreferences"
+          ? (params as HostRequestParams["resource.setPreferences"]).updates
+          : [];
     if (optimisticUpdates.length > 0) setPendingPreferenceUpdates(optimisticUpdates);
     setPackageRetry({ method, params: params as never });
     setBusy(true);
@@ -526,8 +545,10 @@ export function PackagesPage() {
         !isExpectedPackageMutationCompletion(current.host, generation, response) ||
         current.workspace?.id !== workspace.id ||
         current.workspace?.revision !== workspace.revision
-      ) return;
-      if (!response.ok) throw new Error(response.error?.message ?? t("notifPackagesOperationFailed"));
+      )
+        return;
+      if (!response.ok)
+        throw new Error(response.error?.message ?? t("notifPackagesOperationFailed"));
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -539,7 +560,10 @@ export function PackagesPage() {
       if (nextHost) useAppStore.getState().setHost(nextHost);
     } catch (error) {
       setPendingPreferenceUpdates([]);
-      pushNotification(error instanceof Error ? error.message : t("notifPackagesOperationFailed"), "error");
+      pushNotification(
+        error instanceof Error ? error.message : t("notifPackagesOperationFailed"),
+        "error",
+      );
     } finally {
       if (optimisticUpdates.length > 0) setPendingPreferenceUpdates([]);
       setBusy(false);
@@ -557,7 +581,8 @@ export function PackagesPage() {
       method: "package.install",
       params,
       packages: [],
-      authorization: installScope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
+      authorization:
+        installScope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
     });
   }
 
@@ -571,9 +596,7 @@ export function PackagesPage() {
       params: { packageId: pkg.id },
       packages: [pkg],
       authorization:
-        pkg.scope === "project"
-          ? captureWorkspaceAuthorization(host, workspace)
-          : undefined,
+        pkg.scope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
     });
   }
 
@@ -617,11 +640,13 @@ export function PackagesPage() {
   function confirmProjectMutation() {
     const pending = projectGate;
     if (!pending) return;
-    if (!isCurrentWorkspaceAuthorization(
-      useAppStore.getState().host,
-      useAppStore.getState().workspace,
-      pending.authorization,
-    )) {
+    if (
+      !isCurrentWorkspaceAuthorization(
+        useAppStore.getState().host,
+        useAppStore.getState().workspace,
+        pending.authorization,
+      )
+    ) {
       setProjectGate(null);
       pushNotification(t("notifPackagesProjectConfirmExpired"), "warning");
       return;
@@ -648,8 +673,10 @@ export function PackagesPage() {
         current.host?.hostInstanceId !== host.hostInstanceId ||
         current.workspace?.id !== workspace.id ||
         current.workspace?.revision !== workspace.revision
-      ) return;
-      if (!response.ok) throw new Error(response.error?.message ?? t("notifPackagesUpdateCheckFailed"));
+      )
+        return;
+      if (!response.ok)
+        throw new Error(response.error?.message ?? t("notifPackagesUpdateCheckFailed"));
       const updateIds = new Set(response.result.updates.map((update) => update.packageId));
       if (current.packages?.workspaceId === workspace.id) {
         setPackages({
@@ -669,13 +696,19 @@ export function PackagesPage() {
             : t("notifPackagesUpdatesAvailable", { count: response.result.updates.length }),
       );
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : t("notifPackagesUpdateCheckFailed"), "error");
+      pushNotification(
+        error instanceof Error ? error.message : t("notifPackagesUpdateCheckFailed"),
+        "error",
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  function setResourcePreference(resource: ResourceRecord, preference: "inherit" | "enabled" | "disabled") {
+  function setResourcePreference(
+    resource: ResourceRecord,
+    preference: "inherit" | "enabled" | "disabled",
+  ) {
     const update = buildResourcePreferenceUpdate(resource, resourceMode, preference);
     if (update) void runMutation("resource.setPreference", update);
   }
@@ -730,17 +763,22 @@ export function PackagesPage() {
   }
 
   function packageDiagnosticCount(item: PackageRecord): number {
-    return (packages?.diagnostics ?? []).filter((diagnostic) =>
-      diagnostic.source === item.id ||
-      diagnostic.source === item.source ||
-      diagnostic.source === item.identity,
+    return (packages?.diagnostics ?? []).filter(
+      (diagnostic) =>
+        diagnostic.source === item.id ||
+        diagnostic.source === item.source ||
+        diagnostic.source === item.identity,
     ).length;
   }
 
   function packageResourceTotal(item: PackageRecord): number | null {
     if (!item.resourceCounts) return null;
-    return item.resourceCounts.extensions + item.resourceCounts.skills +
-      item.resourceCounts.prompts + item.resourceCounts.themes;
+    return (
+      item.resourceCounts.extensions +
+      item.resourceCounts.skills +
+      item.resourceCounts.prompts +
+      item.resourceCounts.themes
+    );
   }
 
   function renderPackageResourceRow(item: PackageResourceListItem): ReactNode {
@@ -748,17 +786,21 @@ export function PackagesPage() {
     const summary = summarizeResources(item.resources);
     const preferenceState = packagePreferenceState(item.resources, resourceMode);
     const configurable = item.resources.filter((resource) =>
-      canConfigureResource(resource, resourceMode)
+      canConfigureResource(resource, resourceMode),
     ).length;
     const diagnostics = item.resources.flatMap((resource) => resource.diagnostics);
-    const activeLabel = summary.enabled === 0
-      ? t("packagesInactive")
-      : summary.enabled === summary.total
-        ? t("packagesActive")
-        : t("packagesActiveRatio", { enabled: summary.enabled, total: summary.total });
+    const activeLabel =
+      summary.enabled === 0
+        ? t("packagesInactive")
+        : summary.enabled === summary.total
+          ? t("packagesActive")
+          : t("packagesActiveRatio", { enabled: summary.enabled, total: summary.total });
 
     return (
-      <li key={`package-resources:${item.id}`} className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4">
+      <li
+        key={`package-resources:${item.id}`}
+        className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4"
+      >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Boxes size={14} className="text-accent" />
@@ -772,13 +814,21 @@ export function PackagesPage() {
                 </span>
               ) : null;
             })}
-            {diagnostics.some((diagnostic) => diagnostic.severity === "error") && <AlertTriangle size={13} className="text-danger" />}
+            {diagnostics.some((diagnostic) => diagnostic.severity === "error") && (
+              <AlertTriangle size={13} className="text-danger" />
+            )}
           </div>
           {pkg.description && <p className="mt-1 text-xs text-muted">{pkg.description}</p>}
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-            <span>{t("packagesScopePackage", { scope: scopeLabel(t, pkg.scope), kind: pkg.kind })}</span>
+            <span>
+              {t("packagesScopePackage", { scope: scopeLabel(t, pkg.scope), kind: pkg.kind })}
+            </span>
             {pkg.versionOrRef && <span>{pkg.versionOrRef}</span>}
-            <span>{t(summary.total === 1 ? "packagesResourceCount" : "packagesResourcesCount", { count: summary.total })}</span>
+            <span>
+              {t(summary.total === 1 ? "packagesResourceCount" : "packagesResourcesCount", {
+                count: summary.total,
+              })}
+            </span>
           </div>
           <details className="mt-2 text-xs">
             <summary className="w-fit cursor-pointer select-none text-[11px] text-accent hover:underline">
@@ -790,12 +840,30 @@ export function PackagesPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <TypeBadge type={resource.type} />
                     <span className="font-medium">{packageMemberName(t, resource, pkg)}</span>
-                    {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">{t("packagesManualOnly")}</span>}
-                    <span className={`ml-auto text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? t("packagesActive") : t("packagesInactive")}</span>
+                    {resource.type === "skill" && resource.manualOnly && (
+                      <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">
+                        {t("packagesManualOnly")}
+                      </span>
+                    )}
+                    <span
+                      className={`ml-auto text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}
+                    >
+                      {resource.enabled ? t("packagesActive") : t("packagesInactive")}
+                    </span>
                   </div>
-                  <p className="mt-1 truncate font-mono text-[11px] text-muted" title={resource.path}>{resource.relativePath ?? resource.path}</p>
+                  <p
+                    className="mt-1 truncate font-mono text-[11px] text-muted"
+                    title={resource.path}
+                  >
+                    {resource.relativePath ?? resource.path}
+                  </p>
                   {resource.diagnostics.map((diagnostic, index) => (
-                    <p key={`${diagnostic.message}-${index}`} className={`mt-1 text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}>{diagnostic.message}</p>
+                    <p
+                      key={`${diagnostic.message}-${index}`}
+                      className={`mt-1 text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}
+                    >
+                      {diagnostic.message}
+                    </p>
                   ))}
                 </li>
               ))}
@@ -803,17 +871,23 @@ export function PackagesPage() {
           </details>
         </div>
         <div className="flex min-w-40 self-start items-center justify-between gap-3 sm:justify-end">
-          <span className={`text-[11px] ${summary.enabled > 0 ? "text-success" : "text-muted"}`}>{activeLabel}</span>
+          <span className={`text-[11px] ${summary.enabled > 0 ? "text-success" : "text-muted"}`}>
+            {activeLabel}
+          </span>
           {configurable > 0 ? (
             <PackagePreferenceControl
               label={t("packagesPackageAria", { name: pkg.displayName })}
               mode={resourceMode}
               state={preferenceState}
               disabled={mutationBlocked}
-              onChange={(preference) => setPackagePreference(item.resources, resourceMode, preference)}
+              onChange={(preference) =>
+                setPackagePreference(item.resources, resourceMode, preference)
+              }
             />
           ) : (
-            <span className="max-w-44 text-right text-[11px] text-muted">{t("packagesReadOnly")}</span>
+            <span className="max-w-44 text-right text-[11px] text-muted">
+              {t("packagesReadOnly")}
+            </span>
           )}
         </div>
       </li>
@@ -821,59 +895,115 @@ export function PackagesPage() {
   }
 
   function renderResourceRow(resource: ResourceRecord): ReactNode {
-    const owner = resource.control.kind === "owner-extension"
-      ? resourcesById.get(resource.control.ownerResourceId)
-      : undefined;
+    const owner =
+      resource.control.kind === "owner-extension"
+        ? resourcesById.get(resource.control.ownerResourceId)
+        : undefined;
     const ownerPackage = allPackages.find(
       (item) => item.id === (resource.packageId ?? owner?.packageId),
     );
     const ownerLabel = owner
-      ? ownerPackage ? packageMemberName(t, owner, ownerPackage) : owner.name
+      ? ownerPackage
+        ? packageMemberName(t, owner, ownerPackage)
+        : owner.name
       : undefined;
     const configurable = canConfigureResource(resource, resourceMode);
     const preference = resourcePreference(resource, resourceMode);
-    const readOnlyReason = resource.control.kind === "owner-extension"
-      ? t("packagesManagedByExtension")
-      : resource.control.kind === "read-only" ? resource.control.reason : undefined;
+    const readOnlyReason =
+      resource.control.kind === "owner-extension"
+        ? t("packagesManagedByExtension")
+        : resource.control.kind === "read-only"
+          ? resource.control.reason
+          : undefined;
 
     return (
-      <li key={resource.id} className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4">
+      <li
+        key={resource.id}
+        className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4"
+      >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={resource.type} />
             <span className="truncate text-sm font-medium">{resource.name}</span>
-            {resource.type === "skill" && resource.manualOnly && <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">{t("packagesManualOnly")}</span>}
-            {resource.diagnostics.some((item) => item.severity === "error") && <AlertTriangle size={13} className="text-danger" />}
+            {resource.type === "skill" && resource.manualOnly && (
+              <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">
+                {t("packagesManualOnly")}
+              </span>
+            )}
+            {resource.diagnostics.some((item) => item.severity === "error") && (
+              <AlertTriangle size={13} className="text-danger" />
+            )}
           </div>
-          {resource.description && <p className="mt-1 text-xs text-muted">{resource.description}</p>}
+          {resource.description && (
+            <p className="mt-1 text-xs text-muted">{resource.description}</p>
+          )}
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-            <span>{t("packagesResourceScopeOrigin", { scope: scopeLabel(t, resource.scope), origin: resource.origin })}</span>
+            <span>
+              {t("packagesResourceScopeOrigin", {
+                scope: scopeLabel(t, resource.scope),
+                origin: resource.origin,
+              })}
+            </span>
             {ownerPackage && <span>{t("packagesOwner", { name: ownerPackage.displayName })}</span>}
             {owner && (
-              <button type="button" className="text-accent hover:underline" onClick={() => showResourceOwner(owner)}>
+              <button
+                type="button"
+                className="text-accent hover:underline"
+                onClick={() => showResourceOwner(owner)}
+              >
                 {t("packagesProvidedBy", { name: ownerLabel ?? "" })}
               </button>
             )}
-            <span className="max-w-full truncate font-mono" title={resource.path}>{resource.relativePath ?? resource.path}</span>
+            <span className="max-w-full truncate font-mono" title={resource.path}>
+              {resource.relativePath ?? resource.path}
+            </span>
           </div>
           {resource.diagnostics.length > 0 && (
             <ul className="mt-2 space-y-1">
               {resource.diagnostics.map((diagnostic, index) => (
-                <li key={`${diagnostic.message}-${index}`} className={`text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}>{diagnostic.message}</li>
+                <li
+                  key={`${diagnostic.message}-${index}`}
+                  className={`text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}
+                >
+                  {diagnostic.message}
+                </li>
               ))}
             </ul>
           )}
         </div>
         <div className="flex min-w-40 items-center justify-between gap-3 sm:justify-end">
-          <span className={`text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>{resource.enabled ? t("packagesActive") : t("packagesInactive")}</span>
+          <span className={`text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>
+            {resource.enabled ? t("packagesActive") : t("packagesInactive")}
+          </span>
           {configurable ? (
             <div className="inline-flex h-8 rounded-md border border-border p-0.5">
-              {(resourceMode === "project" ? ["inherit", "enabled", "disabled"] : ["enabled", "disabled"]).map((value) => (
-                <button key={value} type="button" title={t("packagesPrefScopeTitle", { value: preferenceLabel(t, value as Preference), mode: t(resourceMode === "project" ? "packagesScopeProject" : "packagesScopeUser") })} className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`} disabled={mutationBlocked} onClick={() => setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")}>{preferenceLabel(t, value as Preference)}</button>
+              {(resourceMode === "project"
+                ? ["inherit", "enabled", "disabled"]
+                : ["enabled", "disabled"]
+              ).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  title={t("packagesPrefScopeTitle", {
+                    value: preferenceLabel(t, value as Preference),
+                    mode: t(
+                      resourceMode === "project" ? "packagesScopeProject" : "packagesScopeUser",
+                    ),
+                  })}
+                  className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+                  disabled={mutationBlocked}
+                  onClick={() =>
+                    setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")
+                  }
+                >
+                  {preferenceLabel(t, value as Preference)}
+                </button>
               ))}
             </div>
           ) : (
-            <span className="max-w-44 text-right text-[11px] text-muted" title={readOnlyReason}>{readOnlyReason ?? t("packagesReadOnly")}</span>
+            <span className="max-w-44 text-right text-[11px] text-muted" title={readOnlyReason}>
+              {readOnlyReason ?? t("packagesReadOnly")}
+            </span>
           )}
         </div>
       </li>
@@ -888,7 +1018,9 @@ export function PackagesPage() {
     );
   }
 
-  const configurableVisible = visiblePreferenceResources.filter((item) => canConfigureResource(item, resourceMode));
+  const configurableVisible = visiblePreferenceResources.filter((item) =>
+    canConfigureResource(item, resourceMode),
+  );
   const resourceSections = [
     {
       key: "packages",
@@ -898,17 +1030,32 @@ export function PackagesPage() {
     {
       key: "standalone",
       label: t("packagesGroupStandalone"),
-      items: visibleResourceItems.filter((item) => item.kind === "resource" && item.resource.origin === "top-level" && item.resource.scope !== "temporary"),
+      items: visibleResourceItems.filter(
+        (item) =>
+          item.kind === "resource" &&
+          item.resource.origin === "top-level" &&
+          item.resource.scope !== "temporary",
+      ),
     },
     {
       key: "runtime",
       label: t("packagesGroupRuntime"),
-      items: visibleResourceItems.filter((item) => item.kind === "resource" && (item.resource.scope === "temporary" || item.resource.origin === "extension")),
+      items: visibleResourceItems.filter(
+        (item) =>
+          item.kind === "resource" &&
+          (item.resource.scope === "temporary" || item.resource.origin === "extension"),
+      ),
     },
     {
       key: "other",
       label: t("packagesGroupOther"),
-      items: visibleResourceItems.filter((item) => item.kind === "resource" && item.resource.origin !== "top-level" && item.resource.scope !== "temporary" && item.resource.origin !== "extension"),
+      items: visibleResourceItems.filter(
+        (item) =>
+          item.kind === "resource" &&
+          item.resource.origin !== "top-level" &&
+          item.resource.scope !== "temporary" &&
+          item.resource.origin !== "extension",
+      ),
     },
   ].filter((section) => section.items.length > 0);
 
@@ -943,29 +1090,58 @@ export function PackagesPage() {
             <>
               <p>{t("packagesInstallWarning")}</p>
               <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
-                <dt>{t("packagesSource")}</dt><dd className="break-all font-mono text-foreground">{(review.params as HostRequestParams["package.install"]).source}</dd>
-                <dt>{t("packagesScope")}</dt><dd className="capitalize text-foreground">{(review.params as HostRequestParams["package.install"]).scope}</dd>
+                <dt>{t("packagesSource")}</dt>
+                <dd className="break-all font-mono text-foreground">
+                  {(review.params as HostRequestParams["package.install"]).source}
+                </dd>
+                <dt>{t("packagesScope")}</dt>
+                <dd className="capitalize text-foreground">
+                  {(review.params as HostRequestParams["package.install"]).scope}
+                </dd>
               </dl>
-              {review.authorization && <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>}
+              {review.authorization && (
+                <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>
+              )}
             </>
           ) : review.kind === "remove" ? (
             <>
               <p>{t("packagesRemoveWarning")}</p>
               <dl className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-surface p-3 text-xs">
-                <dt>{t("packagesPackage")}</dt><dd className="truncate text-foreground">{review.packages[0]?.displayName}</dd>
-                <dt>{t("packagesSource")}</dt><dd className="break-all font-mono text-foreground">{review.packages[0]?.source}</dd>
-                <dt>{t("packagesScope")}</dt><dd className="text-foreground">{review.packages[0] ? scopeLabel(t, review.packages[0].scope) : ""}</dd>
-                <dt>{t("packagesResources")}</dt><dd className="text-foreground">{review.packages[0] ? packageResourceTotal(review.packages[0]) ?? t("packagesUnknown") : ""}</dd>
+                <dt>{t("packagesPackage")}</dt>
+                <dd className="truncate text-foreground">{review.packages[0]?.displayName}</dd>
+                <dt>{t("packagesSource")}</dt>
+                <dd className="break-all font-mono text-foreground">
+                  {review.packages[0]?.source}
+                </dd>
+                <dt>{t("packagesScope")}</dt>
+                <dd className="text-foreground">
+                  {review.packages[0] ? scopeLabel(t, review.packages[0].scope) : ""}
+                </dd>
+                <dt>{t("packagesResources")}</dt>
+                <dd className="text-foreground">
+                  {review.packages[0]
+                    ? (packageResourceTotal(review.packages[0]) ?? t("packagesUnknown"))
+                    : ""}
+                </dd>
               </dl>
-              {review.authorization && <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>}
+              {review.authorization && (
+                <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>
+              )}
             </>
           ) : (
             <>
               <p>{t("packagesUpdateWarning")}</p>
               <ul className="mt-3 max-h-40 overflow-auto rounded-md border border-border bg-surface p-2 text-xs text-foreground">
-                {review.packages.map((item) => <li key={item.id} className="flex justify-between gap-3 px-1 py-1"><span className="truncate">{item.displayName}</span><span className="shrink-0 text-muted">{item.versionOrRef ?? item.scope}</span></li>)}
+                {review.packages.map((item) => (
+                  <li key={item.id} className="flex justify-between gap-3 px-1 py-1">
+                    <span className="truncate">{item.displayName}</span>
+                    <span className="shrink-0 text-muted">{item.versionOrRef ?? item.scope}</span>
+                  </li>
+                ))}
               </ul>
-              {review.authorization && <p className="mt-3 text-warning">{t("packagesUpdateProjectWarning")}</p>}
+              {review.authorization && (
+                <p className="mt-3 text-warning">{t("packagesUpdateProjectWarning")}</p>
+              )}
             </>
           )}
         </Dialog>
@@ -985,30 +1161,32 @@ export function PackagesPage() {
       {packageProgress &&
         pendingPreferenceUpdates.length === 0 &&
         dismissedProgressOp !== packageProgress.operationId && (
-        <div className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs">
-          <RefreshCw size={13} className={progressActive ? "animate-spin" : ""} />
-          <span className="font-medium capitalize">{packageProgress.action}</span>
-          <span className="min-w-0 flex-1 truncate text-muted" title={packageProgress.source}>{packageProgress.message ?? packageProgress.source}</span>
-          <span className={packageProgress.type === "error" ? "text-danger" : "text-muted"}>
-            {progressIdle
-              ? t("packagesProgressStillWaiting")
-              : packageProgress.type === "error"
-                ? t("packagesProgressFailed")
-                : packageProgress.type === "complete"
-                  ? t("packagesProgressDone")
-                  : t("packagesProgressWorking")}
-          </span>
-          <button
-            type="button"
-            title={t("commonDismiss")}
-            aria-label={t("packagesProgressDismiss")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
-            onClick={() => setDismissedProgressOp(packageProgress.operationId)}
-          >
-            <X size={13} />
-          </button>
-        </div>
-      )}
+          <div className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs">
+            <RefreshCw size={13} className={progressActive ? "animate-spin" : ""} />
+            <span className="font-medium capitalize">{packageProgress.action}</span>
+            <span className="min-w-0 flex-1 truncate text-muted" title={packageProgress.source}>
+              {packageProgress.message ?? packageProgress.source}
+            </span>
+            <span className={packageProgress.type === "error" ? "text-danger" : "text-muted"}>
+              {progressIdle
+                ? t("packagesProgressStillWaiting")
+                : packageProgress.type === "error"
+                  ? t("packagesProgressFailed")
+                  : packageProgress.type === "complete"
+                    ? t("packagesProgressDone")
+                    : t("packagesProgressWorking")}
+            </span>
+            <button
+              type="button"
+              title={t("commonDismiss")}
+              aria-label={t("packagesProgressDismiss")}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+              onClick={() => setDismissedProgressOp(packageProgress.operationId)}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
 
       {pendingPreferenceUpdates.length > 0 && (
         <div
@@ -1028,27 +1206,52 @@ export function PackagesPage() {
         <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs">
           <AlertTriangle size={14} className="text-warning" />
           <span className="min-w-48 flex-1 text-warning">{t("packagesReconcileWarning")}</span>
-          <button type="button" className={secondaryButton} disabled={busy} onClick={() => void refresh()}>{t("packagesReloadState")}</button>
+          <button
+            type="button"
+            className={secondaryButton}
+            disabled={busy}
+            onClick={() => void refresh()}
+          >
+            {t("packagesReloadState")}
+          </button>
           <button
             type="button"
             className={primaryButton}
             disabled={busy || !packageRetry}
-            onClick={() => packageRetry && void runMutation(packageRetry.method as MutationMethod, packageRetry.params as never, { allowReconcileRetry: true })}
-          >{t("packagesRetryOperation")}</button>
+            onClick={() =>
+              packageRetry &&
+              void runMutation(
+                packageRetry.method as MutationMethod,
+                packageRetry.params as never,
+                { allowReconcileRetry: true },
+              )
+            }
+          >
+            {t("packagesRetryOperation")}
+          </button>
         </div>
       )}
 
       {reloadRequired && (
         <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs">
           <span className="min-w-48 flex-1 text-warning">{t("packagesReloadRequired")}</span>
-          <button type="button" className={primaryButton} disabled={busy} onClick={() => void runMutation("package.reloadResources", null)}>{t("packagesReloadResources")}</button>
+          <button
+            type="button"
+            className={primaryButton}
+            disabled={busy}
+            onClick={() => void runMutation("package.reloadResources", null)}
+          >
+            {t("packagesReloadResources")}
+          </button>
         </div>
       )}
 
       {loadState === "error" && packages && (
         <div className="flex flex-wrap items-center gap-2 border-b border-danger/35 bg-danger/10 px-4 py-2 text-xs">
           <AlertTriangle size={14} className="text-danger" />
-          <span className="min-w-48 flex-1 text-danger">{t("packagesRefreshFailed", { message: loadError })}</span>
+          <span className="min-w-48 flex-1 text-danger">
+            {t("packagesRefreshFailed", { message: loadError })}
+          </span>
           <button type="button" className={secondaryButton} onClick={() => void refresh()}>
             <RefreshCw size={13} /> {t("packagesTryAgain")}
           </button>
@@ -1057,29 +1260,72 @@ export function PackagesPage() {
 
       <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <h1 className="mr-2 text-sm font-semibold">{t("navPackages")}</h1>
-        <div role="group" aria-label={t("packagesViewGroup")} className="flex h-8 rounded-md border border-border bg-surface p-0.5">
-          <button aria-pressed={tab === "installed"} type="button" className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("installed")}>{t("packagesTabInstalled")}</button>
-          <button aria-pressed={tab === "resources"} type="button" className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`} onClick={() => setTab("resources")}>{t("packagesTabResources")}</button>
+        <div
+          role="group"
+          aria-label={t("packagesViewGroup")}
+          className="flex h-8 rounded-md border border-border bg-surface p-0.5"
+        >
+          <button
+            aria-pressed={tab === "installed"}
+            type="button"
+            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`}
+            onClick={() => setTab("installed")}
+          >
+            {t("packagesTabInstalled")}
+          </button>
+          <button
+            aria-pressed={tab === "resources"}
+            type="button"
+            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`}
+            onClick={() => setTab("resources")}
+          >
+            {t("packagesTabResources")}
+          </button>
         </div>
-        <button type="button" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent" onClick={() => void openCatalog()}>{t("packagesCatalogLink")} <ExternalLink size={11} /></button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+          onClick={() => void openCatalog()}
+        >
+          {t("packagesCatalogLink")} <ExternalLink size={11} />
+        </button>
         <div className="ml-auto flex items-center gap-1">
-          {updateCheckSupported && <button type="button" title={t("packagesCheckTitle")} className={secondaryButton} disabled={busy} onClick={() => void checkUpdates()}><RefreshCw size={14} /><span className="hidden sm:inline">{t("packagesCheck")}</span></button>}
-          <button type="button" title={t("packagesRefreshTitle")} className={secondaryButton} disabled={loadState === "loading" || busy || mutationRunning} onClick={() => void refresh()}><RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} /></button>
+          {updateCheckSupported && (
+            <button
+              type="button"
+              title={t("packagesCheckTitle")}
+              className={secondaryButton}
+              disabled={busy}
+              onClick={() => void checkUpdates()}
+            >
+              <RefreshCw size={14} />
+              <span className="hidden sm:inline">{t("packagesCheck")}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            title={t("packagesRefreshTitle")}
+            className={secondaryButton}
+            disabled={loadState === "loading" || busy || mutationRunning}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
+          </button>
           <button
             type="button"
             className={primaryButton}
             title={t("packagesUpdateAllTitle")}
             aria-label={t("packagesUpdateAllTitle")}
             disabled={
-              mutationBlocked ||
-              allPackages.length === 0 ||
-              (updateCheckDone && knownUpdates === 0)
+              mutationBlocked || allPackages.length === 0 || (updateCheckDone && knownUpdates === 0)
             }
             onClick={() => beginUpdateReview(allPackages, true)}
           >
             <Download size={14} />
             <span className="hidden sm:inline">
-              {updateCheckDone && knownUpdates > 0 ? t("packagesUpdateAllCount", { count: knownUpdates }) : t("packagesUpdateAll")}
+              {updateCheckDone && knownUpdates > 0
+                ? t("packagesUpdateAllCount", { count: knownUpdates })
+                : t("packagesUpdateAll")}
             </span>
           </button>
         </div>
@@ -1088,34 +1334,111 @@ export function PackagesPage() {
       {loadState === "error" && !packages ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <AlertTriangle size={24} className="text-danger" />
-          <div><p className="text-sm font-medium">{t("packagesLoadFailedTitle")}</p><p className="mt-1 max-w-lg text-xs text-muted">{loadError}</p></div>
-          <button type="button" className={secondaryButton} onClick={() => void refresh()}><RefreshCw size={13} />{t("packagesTryAgain")}</button>
+          <div>
+            <p className="text-sm font-medium">{t("packagesLoadFailedTitle")}</p>
+            <p className="mt-1 max-w-lg text-xs text-muted">{loadError}</p>
+          </div>
+          <button type="button" className={secondaryButton} onClick={() => void refresh()}>
+            <RefreshCw size={13} />
+            {t("packagesTryAgain")}
+          </button>
         </div>
       ) : tab === "installed" ? (
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[minmax(280px,34%)_minmax(0,1fr)] md:overflow-hidden">
           <aside className="flex min-h-[300px] flex-col border-b border-border md:min-h-0 md:border-b-0 md:border-r">
             <div className="border-b border-border p-3">
               <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
-                <input className={`${inputClass} flex-1`} aria-label={t("packagesSourceLabel")} placeholder={t("packagesSourcePlaceholder")} value={installSource} onChange={(event) => setInstallSource(event.target.value)} />
+                <input
+                  className={`${inputClass} flex-1`}
+                  aria-label={t("packagesSourceLabel")}
+                  placeholder={t("packagesSourcePlaceholder")}
+                  value={installSource}
+                  onChange={(event) => setInstallSource(event.target.value)}
+                />
                 <div className="flex gap-2">
-                  <select className={inputClass} aria-label={t("packagesInstallScope")} value={installScope} onChange={(event) => setInstallScope(event.target.value as "user" | "project")}><option value="user">{t("packagesScopeUser")}</option><option value="project">{t("packagesScopeProject")}</option></select>
-                  <button type="button" className={primaryButton} disabled={mutationBlocked || !installSource.trim()} onClick={beginInstallReview}>{t("packagesInstallAction")}</button>
+                  <select
+                    className={inputClass}
+                    aria-label={t("packagesInstallScope")}
+                    value={installScope}
+                    onChange={(event) => setInstallScope(event.target.value as "user" | "project")}
+                  >
+                    <option value="user">{t("packagesScopeUser")}</option>
+                    <option value="project">{t("packagesScopeProject")}</option>
+                  </select>
+                  <button
+                    type="button"
+                    className={primaryButton}
+                    disabled={mutationBlocked || !installSource.trim()}
+                    onClick={beginInstallReview}
+                  >
+                    {t("packagesInstallAction")}
+                  </button>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-b border-border p-3">
-              <label className="relative min-w-40 flex-1"><Search size={13} className="pointer-events-none absolute left-2 top-2.5 text-muted" /><input aria-label={t("packagesSearchInstalledLabel")} className={`${inputClass} w-full pl-7`} placeholder={t("packagesSearchInstalled")} value={installedQuery} onChange={(event) => setInstalledQuery(event.target.value)} /></label>
-              <select aria-label={t("packagesFilterScope")} className={inputClass} value={installedScope} onChange={(event) => setInstalledScope(event.target.value as PackageScopeFilter)}><option value="all">{t("packagesFilterAllScopes")}</option><option value="user">{t("packagesScopeUser")}</option><option value="project">{t("packagesScopeProject")}</option></select>
-              <select aria-label={t("packagesFilterType")} className={inputClass} value={installedType} onChange={(event) => setInstalledType(event.target.value as ResourceTypeFilter)}><option value="all">{t("packagesFilterContainsAny")}</option>{PACKAGE_RESOURCE_TYPES.map((type) => <option key={type} value={type}>{t("packagesFilterContains", { type: singularType(t, type) })}</option>)}</select>
+              <label className="relative min-w-40 flex-1">
+                <Search
+                  size={13}
+                  className="pointer-events-none absolute left-2 top-2.5 text-muted"
+                />
+                <input
+                  aria-label={t("packagesSearchInstalledLabel")}
+                  className={`${inputClass} w-full pl-7`}
+                  placeholder={t("packagesSearchInstalled")}
+                  value={installedQuery}
+                  onChange={(event) => setInstalledQuery(event.target.value)}
+                />
+              </label>
+              <select
+                aria-label={t("packagesFilterScope")}
+                className={inputClass}
+                value={installedScope}
+                onChange={(event) => setInstalledScope(event.target.value as PackageScopeFilter)}
+              >
+                <option value="all">{t("packagesFilterAllScopes")}</option>
+                <option value="user">{t("packagesScopeUser")}</option>
+                <option value="project">{t("packagesScopeProject")}</option>
+              </select>
+              <select
+                aria-label={t("packagesFilterType")}
+                className={inputClass}
+                value={installedType}
+                onChange={(event) => setInstalledType(event.target.value as ResourceTypeFilter)}
+              >
+                <option value="all">{t("packagesFilterContainsAny")}</option>
+                {PACKAGE_RESOURCE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {t("packagesFilterContains", { type: singularType(t, type) })}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-1.5">
-              {loadState === "loading" && !packages && <div className="flex items-center gap-2 p-3 text-xs text-muted"><RefreshCw size={13} className="animate-spin" />{t("packagesLoadingInstalled")}</div>}
+              {loadState === "loading" && !packages && (
+                <div className="flex items-center gap-2 p-3 text-xs text-muted">
+                  <RefreshCw size={13} className="animate-spin" />
+                  {t("packagesLoadingInstalled")}
+                </div>
+              )}
               {loadState !== "loading" && visiblePackages.length === 0 && (
                 <div className="p-4 text-center text-xs text-muted">
                   <PackageOpen size={24} className="mx-auto mb-2 opacity-50" />
-                  <p>{hasActiveInstalledFilters(installedFilters) ? t("packagesNoneMatchFilters") : t("packagesNoneInstalled")}</p>
+                  <p>
+                    {hasActiveInstalledFilters(installedFilters)
+                      ? t("packagesNoneMatchFilters")
+                      : t("packagesNoneInstalled")}
+                  </p>
                   {hasActiveInstalledFilters(installedFilters) && (
-                    <button type="button" className={`${secondaryButton} mt-3`} onClick={() => { setInstalledQuery(""); setInstalledScope("all"); setInstalledType("all"); }}>
+                    <button
+                      type="button"
+                      className={`${secondaryButton} mt-3`}
+                      onClick={() => {
+                        setInstalledQuery("");
+                        setInstalledScope("all");
+                        setInstalledType("all");
+                      }}
+                    >
                       <X size={13} /> {t("packagesClearFilters")}
                     </button>
                   )}
@@ -1124,12 +1447,52 @@ export function PackagesPage() {
               <ul>
                 {visiblePackages.map((item) => (
                   <li key={item.id}>
-                    <button type="button" aria-current={selectedId === item.id ? "true" : undefined} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`} onClick={() => setSelectedId(item.id)}>
-                      <Boxes size={15} className={selectedId === item.id ? "text-accent" : "text-muted"} />
+                    <button
+                      type="button"
+                      aria-current={selectedId === item.id ? "true" : undefined}
+                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`}
+                      onClick={() => setSelectedId(item.id)}
+                    >
+                      <Boxes
+                        size={15}
+                        className={selectedId === item.id ? "text-accent" : "text-muted"}
+                      />
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5"><span className="truncate text-xs font-medium">{item.displayName}</span>{item.updateAvailable && <span className="rounded bg-warning/15 px-1 text-[11px] text-warning">{t("packagesUpdateChip")}</span>}</span>
-                        <span className="mt-0.5 block truncate text-[11px] text-muted">{scopeLabel(t, item.scope)} / {item.kind}{item.versionOrRef ? ` / ${item.versionOrRef}` : ""}{!item.effective ? ` / ${t("packagesReplacedByProject")}` : item.projectOverride || item.overridesPackageId ? ` / ${t("packagesWorkspaceOverrides")}` : ""}</span>
-                        <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted"><span>{t(packageResourceTotal(item) === 1 ? "packagesResourceCount" : "packagesResourcesCount", { count: packageResourceTotal(item) ?? "?" })}</span>{packageDiagnosticCount(item) > 0 && <span className="inline-flex items-center gap-0.5 text-warning"><AlertTriangle size={10} />{packageDiagnosticCount(item) === 1 ? t("packagesDiagnostic", { count: packageDiagnosticCount(item) }) : t("packagesDiagnostics", { count: packageDiagnosticCount(item) })}</span>}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-xs font-medium">{item.displayName}</span>
+                          {item.updateAvailable && (
+                            <span className="rounded bg-warning/15 px-1 text-[11px] text-warning">
+                              {t("packagesUpdateChip")}
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">
+                          {scopeLabel(t, item.scope)} / {item.kind}
+                          {item.versionOrRef ? ` / ${item.versionOrRef}` : ""}
+                          {!item.effective
+                            ? ` / ${t("packagesReplacedByProject")}`
+                            : item.projectOverride || item.overridesPackageId
+                              ? ` / ${t("packagesWorkspaceOverrides")}`
+                              : ""}
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+                          <span>
+                            {t(
+                              packageResourceTotal(item) === 1
+                                ? "packagesResourceCount"
+                                : "packagesResourcesCount",
+                              { count: packageResourceTotal(item) ?? "?" },
+                            )}
+                          </span>
+                          {packageDiagnosticCount(item) > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-warning">
+                              <AlertTriangle size={10} />
+                              {packageDiagnosticCount(item) === 1
+                                ? t("packagesDiagnostic", { count: packageDiagnosticCount(item) })
+                                : t("packagesDiagnostics", { count: packageDiagnosticCount(item) })}
+                            </span>
+                          )}
+                        </span>
                       </span>
                       <ChevronRight size={13} className="text-muted" />
                     </button>
@@ -1141,37 +1504,152 @@ export function PackagesPage() {
 
           <main className="min-h-[360px] min-w-0 overflow-auto p-4 md:min-h-0 lg:p-5">
             {!selected ? (
-              <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-muted"><PackageOpen size={30} className="mb-3 opacity-40" /><p className="text-sm">{t("packagesSelectHintTitle")}</p><p className="mt-1 text-xs">{t("packagesSelectHintBody")}</p></div>
+              <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-muted">
+                <PackageOpen size={30} className="mb-3 opacity-40" />
+                <p className="text-sm">{t("packagesSelectHintTitle")}</p>
+                <p className="mt-1 text-xs">{t("packagesSelectHintBody")}</p>
+              </div>
             ) : (
               <div className="mx-auto max-w-4xl">
                 <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold">{selected.displayName}</h2><span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] uppercase text-muted">{scopeLabel(t, selected.scope)}</span>{!selected.effective && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning">{t("packagesReplacedByProject")}</span>}</div>{selected.description && <p className="mt-1 text-sm text-muted">{selected.description}</p>}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base font-semibold">{selected.displayName}</h2>
+                      <span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] uppercase text-muted">
+                        {scopeLabel(t, selected.scope)}
+                      </span>
+                      {!selected.effective && (
+                        <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning">
+                          {t("packagesReplacedByProject")}
+                        </span>
+                      )}
+                    </div>
+                    {selected.description && (
+                      <p className="mt-1 text-sm text-muted">{selected.description}</p>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <button type="button" className={secondaryButton} disabled={mutationBlocked} onClick={() => beginUpdateReview([selected])}><Download size={13} />{t("packagesUpdate")}</button>
-                    {selected.installedPath && <button type="button" className={secondaryButton} onClick={async () => { try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("desktop_open_path", { path: selected.installedPath }); } catch { pushNotification(t("packagesOpenFolderFailed"), "warning"); } }}><FolderOpen size={13} />{t("packagesOpenFolder")}</button>}
-                    <button type="button" className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`} disabled={mutationBlocked} onClick={() => beginRemoveReview(selected)}><Trash2 size={13} />{t("packagesRemove")}</button>
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      disabled={mutationBlocked}
+                      onClick={() => beginUpdateReview([selected])}
+                    >
+                      <Download size={13} />
+                      {t("packagesUpdate")}
+                    </button>
+                    {selected.installedPath && (
+                      <button
+                        type="button"
+                        className={secondaryButton}
+                        onClick={async () => {
+                          try {
+                            const { invoke } = await import("@tauri-apps/api/core");
+                            await invoke("desktop_open_path", { path: selected.installedPath });
+                          } catch {
+                            pushNotification(t("packagesOpenFolderFailed"), "warning");
+                          }
+                        }}
+                      >
+                        <FolderOpen size={13} />
+                        {t("packagesOpenFolder")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`}
+                      disabled={mutationBlocked}
+                      onClick={() => beginRemoveReview(selected)}
+                    >
+                      <Trash2 size={13} />
+                      {t("packagesRemove")}
+                    </button>
                   </div>
                 </div>
 
                 <section className="mt-5 border-t border-border pt-4">
-                  <h3 className="text-xs font-semibold uppercase text-muted">{t("packagesDetailsGroup")}</h3>
+                  <h3 className="text-xs font-semibold uppercase text-muted">
+                    {t("packagesDetailsGroup")}
+                  </h3>
                   <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 text-xs sm:grid-cols-2">
-                    <div><dt className="text-muted">{t("packagesSource")}</dt><dd className="mt-0.5 break-all font-mono">{selected.source}</dd></div>
-                    <div><dt className="text-muted">{t("packagesIdentity")}</dt><dd className="mt-0.5 break-all font-mono">{selected.identity}</dd></div>
-                    <div><dt className="text-muted">{t("packagesTypeVersion")}</dt><dd className="mt-0.5">{selected.kind}{selected.versionOrRef ? ` / ${selected.versionOrRef}` : ""}</dd></div>
-                    <div><dt className="text-muted">{t("packagesInstalledPath")}</dt><dd className="mt-0.5 break-all font-mono">{selected.installedPath ?? t("packagesManagedByPi")}</dd></div>
+                    <div>
+                      <dt className="text-muted">{t("packagesSource")}</dt>
+                      <dd className="mt-0.5 break-all font-mono">{selected.source}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{t("packagesIdentity")}</dt>
+                      <dd className="mt-0.5 break-all font-mono">{selected.identity}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{t("packagesTypeVersion")}</dt>
+                      <dd className="mt-0.5">
+                        {selected.kind}
+                        {selected.versionOrRef ? ` / ${selected.versionOrRef}` : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{t("packagesInstalledPath")}</dt>
+                      <dd className="mt-0.5 break-all font-mono">
+                        {selected.installedPath ?? t("packagesManagedByPi")}
+                      </dd>
+                    </div>
                   </dl>
                 </section>
 
-                {(selected.shadowedByPackageId || selected.overridesPackageId || selected.projectOverride) && (
-                  <section className="mt-5 border-t border-border pt-4"><h3 className="text-xs font-semibold uppercase text-muted">{t("packagesRelationshipsGroup")}</h3><div className="mt-2 rounded-md border border-border bg-surface-raised p-3 text-xs">{selected.shadowedByPackageId && <p><span className="text-muted">{t("packagesReplacedByProjectLabel")}</span>{allPackages.find((item) => item.id === selected.shadowedByPackageId)?.displayName ?? selected.shadowedByPackageId}</p>}{selected.overridesPackageId && <p><span className="text-muted">{t("packagesOverridesUserLabel")}</span>{allPackages.find((item) => item.id === selected.overridesPackageId)?.displayName ?? selected.overridesPackageId}</p>}{selected.projectOverride && <p><span className="text-muted">{t("packagesWorkspaceOverridesLabel")}</span>{selected.projectOverride.source} / {selected.projectOverride.overrideCount === 1 ? t("packagesOverrideChange", { count: selected.projectOverride.overrideCount }) : t("packagesOverrideChanges", { count: selected.projectOverride.overrideCount })}</p>}</div></section>
+                {(selected.shadowedByPackageId ||
+                  selected.overridesPackageId ||
+                  selected.projectOverride) && (
+                  <section className="mt-5 border-t border-border pt-4">
+                    <h3 className="text-xs font-semibold uppercase text-muted">
+                      {t("packagesRelationshipsGroup")}
+                    </h3>
+                    <div className="mt-2 rounded-md border border-border bg-surface-raised p-3 text-xs">
+                      {selected.shadowedByPackageId && (
+                        <p>
+                          <span className="text-muted">{t("packagesReplacedByProjectLabel")}</span>
+                          {allPackages.find((item) => item.id === selected.shadowedByPackageId)
+                            ?.displayName ?? selected.shadowedByPackageId}
+                        </p>
+                      )}
+                      {selected.overridesPackageId && (
+                        <p>
+                          <span className="text-muted">{t("packagesOverridesUserLabel")}</span>
+                          {allPackages.find((item) => item.id === selected.overridesPackageId)
+                            ?.displayName ?? selected.overridesPackageId}
+                        </p>
+                      )}
+                      {selected.projectOverride && (
+                        <p>
+                          <span className="text-muted">{t("packagesWorkspaceOverridesLabel")}</span>
+                          {selected.projectOverride.source} /{" "}
+                          {selected.projectOverride.overrideCount === 1
+                            ? t("packagesOverrideChange", {
+                                count: selected.projectOverride.overrideCount,
+                              })
+                            : t("packagesOverrideChanges", {
+                                count: selected.projectOverride.overrideCount,
+                              })}
+                        </p>
+                      )}
+                    </div>
+                  </section>
                 )}
 
                 <section className="mt-5 border-t border-border pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-xs font-semibold uppercase text-muted">{t("packagesResourcesGroup")}</h3>
-                      <p className="mt-1 text-xs text-muted">{selected.resourceCountsState === "unknownShadowed" && selectedPackageResources.length === 0 ? t("packagesCountsUnavailable") : t("packagesEnabledDisabled", { enabled: summarizeResources(selectedPackageResources).enabled, disabled: summarizeResources(selectedPackageResources).disabled })}</p>
+                      <h3 className="text-xs font-semibold uppercase text-muted">
+                        {t("packagesResourcesGroup")}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted">
+                        {selected.resourceCountsState === "unknownShadowed" &&
+                        selectedPackageResources.length === 0
+                          ? t("packagesCountsUnavailable")
+                          : t("packagesEnabledDisabled", {
+                              enabled: summarizeResources(selectedPackageResources).enabled,
+                              disabled: summarizeResources(selectedPackageResources).disabled,
+                            })}
+                      </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <PackagePreferenceControl
@@ -1179,25 +1657,45 @@ export function PackagesPage() {
                         mode={selected.scope}
                         state={packagePreferenceState(selectedPackageResources, selected.scope)}
                         disabled={mutationBlocked}
-                        onChange={(preference) => setPackagePreference(selectedPackageResources, selected.scope, preference)}
+                        onChange={(preference) =>
+                          setPackagePreference(selectedPackageResources, selected.scope, preference)
+                        }
                       />
-                      <button type="button" className={secondaryButton} onClick={() => managePackageResources(selected.id)}><Settings2 size={13} />{t("packagesManageResources")}</button>
+                      <button
+                        type="button"
+                        className={secondaryButton}
+                        onClick={() => managePackageResources(selected.id)}
+                      >
+                        <Settings2 size={13} />
+                        {t("packagesManageResources")}
+                      </button>
                     </div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {PACKAGE_RESOURCE_TYPES.map((type) => {
-                      const resources = selectedPackageResources.filter((resource) => resource.type === type);
+                      const resources = selectedPackageResources.filter(
+                        (resource) => resource.type === type,
+                      );
                       const enabled = resources.filter((resource) => resource.enabled).length;
-                      const state = resources.length === 0
-                        ? t("packagesStateNone")
-                        : enabled === 0 ? t("commonDisabled")
-                        : enabled === resources.length ? t("commonEnabled") : t("packagesStateMixed");
+                      const state =
+                        resources.length === 0
+                          ? t("packagesStateNone")
+                          : enabled === 0
+                            ? t("commonDisabled")
+                            : enabled === resources.length
+                              ? t("commonEnabled")
+                              : t("packagesStateMixed");
                       return (
                         <div
                           key={type}
                           className="flex min-h-14 flex-col items-stretch justify-center rounded-md border border-border px-2 py-1.5 text-left text-xs"
                         >
-                          <span className="flex items-center justify-between gap-2"><span>{pluralType(t, type)}</span><span className="font-mono text-muted">{enabled}/{resources.length}</span></span>
+                          <span className="flex items-center justify-between gap-2">
+                            <span>{pluralType(t, type)}</span>
+                            <span className="font-mono text-muted">
+                              {enabled}/{resources.length}
+                            </span>
+                          </span>
                           <span className="mt-0.5 text-[11px] text-muted">{state}</span>
                         </div>
                       );
@@ -1211,16 +1709,78 @@ export function PackagesPage() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-            <Segmented value={resourceMode} values={["user", "project"] as const} onChange={setResourceMode} />
-            <label className="relative min-w-48 flex-1 sm:max-w-sm"><Search size={13} className="pointer-events-none absolute left-2 top-2.5 text-muted" /><input aria-label={t("packagesSearchResources")} className={`${inputClass} w-full pl-7`} placeholder={t("packagesSearchResources")} value={resourceQuery} onChange={(event) => setResourceQuery(event.target.value)} /></label>
-            <select aria-label={t("packagesFilterOrigin")} className={inputClass} value={resourceOrigin} onChange={(event) => setResourceOrigin(event.target.value as ResourceOriginFilter)}><option value="all">{t("packagesFilterAll")}</option><option value="package">{t("packagesOriginPackage")}</option><option value="standalone">{t("packagesOriginStandalone")}</option><option value="runtime">{t("packagesOriginRuntime")}</option></select>
+            <Segmented
+              value={resourceMode}
+              values={["user", "project"] as const}
+              onChange={setResourceMode}
+            />
+            <label className="relative min-w-48 flex-1 sm:max-w-sm">
+              <Search
+                size={13}
+                className="pointer-events-none absolute left-2 top-2.5 text-muted"
+              />
+              <input
+                aria-label={t("packagesSearchResources")}
+                className={`${inputClass} w-full pl-7`}
+                placeholder={t("packagesSearchResources")}
+                value={resourceQuery}
+                onChange={(event) => setResourceQuery(event.target.value)}
+              />
+            </label>
+            <select
+              aria-label={t("packagesFilterOrigin")}
+              className={inputClass}
+              value={resourceOrigin}
+              onChange={(event) => setResourceOrigin(event.target.value as ResourceOriginFilter)}
+            >
+              <option value="all">{t("packagesFilterAll")}</option>
+              <option value="package">{t("packagesOriginPackage")}</option>
+              <option value="standalone">{t("packagesOriginStandalone")}</option>
+              <option value="runtime">{t("packagesOriginRuntime")}</option>
+            </select>
             <div className="flex min-w-0 items-center gap-1">
-              <select aria-label={t("packagesOwnerFilter")} className={`${inputClass} max-w-52`} value={resourceOwnerId} onChange={(event) => setResourceOwnerId(event.target.value)}><option value="">{t("packagesAllOwners")}</option>{allPackages.map((item) => <option key={item.id} value={item.id}>{item.displayName} ({scopeLabel(t, item.scope)})</option>)}</select>
-              {resourceOwnerId && <button type="button" title={t("packagesClearOwnerFilter")} aria-label={t("packagesClearOwnerFilter")} className={secondaryButton} onClick={() => setResourceOwnerId("")}><X size={13} /></button>}
+              <select
+                aria-label={t("packagesOwnerFilter")}
+                className={`${inputClass} max-w-52`}
+                value={resourceOwnerId}
+                onChange={(event) => setResourceOwnerId(event.target.value)}
+              >
+                <option value="">{t("packagesAllOwners")}</option>
+                {allPackages.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.displayName} ({scopeLabel(t, item.scope)})
+                  </option>
+                ))}
+              </select>
+              {resourceOwnerId && (
+                <button
+                  type="button"
+                  title={t("packagesClearOwnerFilter")}
+                  aria-label={t("packagesClearOwnerFilter")}
+                  className={secondaryButton}
+                  onClick={() => setResourceOwnerId("")}
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
-            {hasActiveResourceFilters(resourceFilters) && <button type="button" title={t("packagesClearResourceFilters")} aria-label={t("packagesClearResourceFilters")} className={secondaryButton} onClick={clearResourceFilters}><X size={13} /></button>}
+            {hasActiveResourceFilters(resourceFilters) && (
+              <button
+                type="button"
+                title={t("packagesClearResourceFilters")}
+                aria-label={t("packagesClearResourceFilters")}
+                className={secondaryButton}
+                onClick={clearResourceFilters}
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
-          <div role="group" aria-label={t("packagesResourceTypeGroup")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2">
+          <div
+            role="group"
+            aria-label={t("packagesResourceTypeGroup")}
+            className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2"
+          >
             {(["all", ...PACKAGE_RESOURCE_TYPES] as ResourceTypeFilter[]).map((type) => (
               <button
                 key={type}
@@ -1235,16 +1795,50 @@ export function PackagesPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-raised px-3 py-2 text-xs">
             <span className="text-muted">
-              {t("packagesConfigurableSummary", { configurable: configurableVisible.length, shown: visibleResourceItems.length })}
+              {t("packagesConfigurableSummary", {
+                configurable: configurableVisible.length,
+                shown: visibleResourceItems.length,
+              })}
             </span>
             <span className="ml-auto" />
-            {resourceMode === "project" && <button type="button" title={t("packagesBatchInheritTitle")} className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("inherit")}>{t("packagesInheritAllShown")}</button>}
-            <button type="button" title={t("packagesBatchEnableTitle")} className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("enabled")}><Check size={13} />{t("packagesEnableAllShown")}</button>
-            <button type="button" title={t("packagesBatchDisableTitle")} className={secondaryButton} disabled={mutationBlocked || !configurableVisible.length} onClick={() => batchPreference("disabled")}><X size={13} />{t("packagesDisableAllShown")}</button>
+            {resourceMode === "project" && (
+              <button
+                type="button"
+                title={t("packagesBatchInheritTitle")}
+                className={secondaryButton}
+                disabled={mutationBlocked || !configurableVisible.length}
+                onClick={() => batchPreference("inherit")}
+              >
+                {t("packagesInheritAllShown")}
+              </button>
+            )}
+            <button
+              type="button"
+              title={t("packagesBatchEnableTitle")}
+              className={secondaryButton}
+              disabled={mutationBlocked || !configurableVisible.length}
+              onClick={() => batchPreference("enabled")}
+            >
+              <Check size={13} />
+              {t("packagesEnableAllShown")}
+            </button>
+            <button
+              type="button"
+              title={t("packagesBatchDisableTitle")}
+              className={secondaryButton}
+              disabled={mutationBlocked || !configurableVisible.length}
+              onClick={() => batchPreference("disabled")}
+            >
+              <X size={13} />
+              {t("packagesDisableAllShown")}
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {loadState === "loading" && !packages ? (
-              <div className="flex h-full min-h-64 items-center justify-center gap-2 p-8 text-xs text-muted"><RefreshCw size={13} className="animate-spin" />{t("packagesLoadingResources")}</div>
+              <div className="flex h-full min-h-64 items-center justify-center gap-2 p-8 text-xs text-muted">
+                <RefreshCw size={13} className="animate-spin" />
+                {t("packagesLoadingResources")}
+              </div>
             ) : visibleResourceItems.length === 0 ? (
               <div className="flex h-full min-h-64 flex-col items-center justify-center p-8 text-center text-muted">
                 <Settings2 size={28} className="mb-3 opacity-40" />
@@ -1253,7 +1847,12 @@ export function PackagesPage() {
                     ? t("packagesNoResources")
                     : hasActiveResourceFilters(resourceFilters)
                       ? t("packagesNoResourcesMatch")
-                      : t("packagesNoResourcesInMode", { mode: resourceMode === "user" ? t("packagesScopeUser") : t("packagesScopeProject") })}
+                      : t("packagesNoResourcesInMode", {
+                          mode:
+                            resourceMode === "user"
+                              ? t("packagesScopeUser")
+                              : t("packagesScopeProject"),
+                        })}
                 </p>
                 <p className="mt-1 text-xs">
                   {allResources.length === 0
@@ -1261,7 +1860,11 @@ export function PackagesPage() {
                     : t("packagesAdjustFilters")}
                 </p>
                 {hasActiveResourceFilters(resourceFilters) && (
-                  <button type="button" className={`${secondaryButton} mt-3`} onClick={clearResourceFilters}>
+                  <button
+                    type="button"
+                    className={`${secondaryButton} mt-3`}
+                    onClick={clearResourceFilters}
+                  >
                     <X size={13} /> {t("packagesClearFilters")}
                   </button>
                 )}
@@ -1269,15 +1872,22 @@ export function PackagesPage() {
             ) : (
               <div>
                 {resourceSections.map((section) => (
-                    <section key={section.key} aria-labelledby={`resource-group-${section.key}`}>
-                      <h3 id={`resource-group-${section.key}`} className="sticky top-0 z-10 border-y border-border bg-surface-raised px-4 py-1.5 text-[11px] font-semibold uppercase text-muted">{section.label} <span className="font-normal">({section.items.length})</span></h3>
-                      <ul className="divide-y divide-border">
-                        {section.items.map((item) => item.kind === "package"
+                  <section key={section.key} aria-labelledby={`resource-group-${section.key}`}>
+                    <h3
+                      id={`resource-group-${section.key}`}
+                      className="sticky top-0 z-10 border-y border-border bg-surface-raised px-4 py-1.5 text-[11px] font-semibold uppercase text-muted"
+                    >
+                      {section.label} <span className="font-normal">({section.items.length})</span>
+                    </h3>
+                    <ul className="divide-y divide-border">
+                      {section.items.map((item) =>
+                        item.kind === "package"
                           ? renderPackageResourceRow(item)
-                          : renderResourceRow(item.resource))}
-                      </ul>
-                    </section>
-                  ))}
+                          : renderResourceRow(item.resource),
+                      )}
+                    </ul>
+                  </section>
+                ))}
               </div>
             )}
           </div>
