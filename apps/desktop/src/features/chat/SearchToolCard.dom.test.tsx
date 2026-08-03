@@ -43,6 +43,8 @@ describe("SearchToolCard link routing", () => {
 
     await user.click(screen.getByRole("button", { expanded: false }));
     const link = screen.getByRole("link", { name: /PiDeck documentation/u });
+    expect(link).toHaveAttribute("href", "https://example.com/docs");
+    expect(link).not.toHaveAttribute("target");
     expect(link).toHaveAttribute("title", expect.stringContaining("Open in Dock browser"));
 
     await user.click(link);

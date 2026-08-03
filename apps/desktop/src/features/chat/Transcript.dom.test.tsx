@@ -8,6 +8,19 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
 
+const linkMocks = vi.hoisted(() => ({
+  requestDockBrowser: vi.fn(),
+  openSystemUrl: vi.fn(),
+}));
+
+vi.mock("../../lib/dock-browser", () => ({
+  requestDockBrowser: linkMocks.requestDockBrowser,
+}));
+
+vi.mock("../../lib/open-system-url", () => ({
+  openSystemUrl: linkMocks.openSystemUrl,
+}));
+
 const SESSION_A = "33333333-3333-4333-8333-333333333333";
 const SESSION_B = "44444444-4444-4444-8444-444444444444";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -97,6 +110,8 @@ describe("Transcript Session-open scrolling", () => {
         terminalProfile: "auto",
       },
     });
+    linkMocks.requestDockBrowser.mockReset().mockReturnValue(true);
+    linkMocks.openSystemUrl.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -238,6 +253,47 @@ describe("Transcript Session-open scrolling", () => {
     });
     await user.click(await screen.findByRole("menuitem", { name: "Copy message" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First Session"));
+  });
+
+  it("adds Dock, external-browser, and copy actions when right-clicking a link", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container } = render(
+      <>
+        <Transcript />
+        <MenuHost />
+      </>,
+    );
+    const row = container.querySelector<HTMLElement>(".transcript-row")!;
+    const link = document.createElement("a");
+    link.href = "https://example.com/docs";
+    link.textContent = "Documentation";
+    row.append(link);
+
+    fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
+    expect(await screen.findByRole("menuitem", { name: "Open in Dock" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Open in external browser" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Copy message" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "Open in Dock" }));
+    expect(linkMocks.requestDockBrowser).toHaveBeenCalledWith({
+      url: "https://example.com/docs",
+    });
+
+    fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
+    await user.click(await screen.findByRole("menuitem", { name: "Open in external browser" }));
+    expect(linkMocks.openSystemUrl).toHaveBeenCalledWith("https://example.com/docs");
+
+    fireEvent.contextMenu(link, { clientX: 24, clientY: 32 });
+    await user.click(await screen.findByRole("menuitem", { name: "Copy link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://example.com/docs"));
+
+    expect(row).toBeInTheDocument();
   });
 
   it("leaves development Shift-right-click available for the native menu", () => {

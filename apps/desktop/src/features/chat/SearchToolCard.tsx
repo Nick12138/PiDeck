@@ -211,8 +211,6 @@ export function SearchToolCard(props: ToolCardProps) {
               href={result.url}
               className="group/result block min-w-0 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-overlay/55"
               title={t("markdownOpenInDockBrowser", { url: result.url })}
-              target="_blank"
-              rel="noreferrer noopener"
               onClick={(event) => {
                 event.preventDefault();
                 openChatLink(result.url, event);

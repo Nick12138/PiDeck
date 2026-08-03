@@ -222,8 +222,6 @@ function safeLink(
       {...props}
       href={safeHref}
       title={title ?? t("markdownOpenInDockBrowser", { url: safeHref })}
-      target="_blank"
-      rel="noreferrer noopener"
       onClick={(event) => {
         event.preventDefault();
         openChatLink(safeHref, event);

@@ -442,7 +442,7 @@ describe("MarkdownMessage safety and footnotes", () => {
     await waitFor(() => expect(screen.getByRole("link", { name: "external" })).toBeInTheDocument());
     const external = screen.getByRole("link", { name: "external" });
     expect(external).toHaveAttribute("href", "https://example.com/");
-    expect(external).toHaveAttribute("target", "_blank");
+    expect(external).not.toHaveAttribute("target");
     expect(external).toHaveAttribute("title", expect.stringContaining("Open in Dock browser"));
     fireEvent.click(external);
     expect(openChatLink).toHaveBeenLastCalledWith(

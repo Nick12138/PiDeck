@@ -21,19 +21,24 @@ import {
   CircleAlert,
   CircleCheck,
   Copy,
+  ExternalLink,
   FileText,
   FoldVertical,
   GitBranch,
   GitFork,
+  Link2,
   ListTree,
   LoaderCircle,
   MessageCircleQuestion,
+  PanelRightOpen,
   Puzzle,
   Terminal,
 } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
-import { sanitizeAgentText } from "./markdown-utils";
+import { requestDockBrowser } from "../../lib/dock-browser";
+import { openSystemUrl } from "../../lib/open-system-url";
+import { isSafeExternalUrl, sanitizeAgentText } from "./markdown-utils";
 import { ToolView } from "./ToolView";
 import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
@@ -312,16 +317,46 @@ export function Transcript() {
                       selection?.rangeCount &&
                       selection.getRangeAt(0).intersectsNode(event.currentTarget),
                   );
+                  const anchor =
+                    event.target instanceof Element
+                      ? event.target.closest<HTMLAnchorElement>("a[href]")
+                      : null;
+                  const linkUrl = anchor && isSafeExternalUrl(anchor.href) ? anchor.href : null;
                   openContextMenu({
                     x: event.clientX,
                     y: event.clientY,
                     trigger: contextMenuTrigger(event.target),
                     items: [
+                      ...(linkUrl
+                        ? [
+                            {
+                              id: "transcript.openLinkInDock",
+                              label: t("menuOpenLinkInDock"),
+                              icon: PanelRightOpen,
+                              onSelect: () => {
+                                requestDockBrowser({ url: linkUrl });
+                              },
+                            },
+                            {
+                              id: "transcript.openLinkExternal",
+                              label: t("menuOpenLinkExternal"),
+                              icon: ExternalLink,
+                              onSelect: () => openSystemUrl(linkUrl),
+                            },
+                            {
+                              id: "transcript.copyLink",
+                              label: t("menuCopyLink"),
+                              icon: Link2,
+                              onSelect: () => navigator.clipboard.writeText(linkUrl),
+                            },
+                          ]
+                        : []),
                       ...(selectionInside
                         ? [{
                             id: "transcript.copySelection",
                             label: t("menuCopySelection"),
                             icon: Copy,
+                            separatorBefore: Boolean(linkUrl),
                             onSelect: () => navigator.clipboard.writeText(selectedText),
                           }]
                         : []),
@@ -329,7 +364,7 @@ export function Transcript() {
                         id: "transcript.copyMessage",
                         label: t("menuCopyMessage"),
                         icon: Copy,
-                        separatorBefore: selectionInside,
+                        separatorBefore: linkUrl ? !selectionInside : selectionInside,
                         disabled: !row.copyText,
                         onSelect: () => navigator.clipboard.writeText(row.copyText),
                       },
