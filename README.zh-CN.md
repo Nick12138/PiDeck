@@ -23,6 +23,7 @@
 - **会话与工作区** —— 跨项目浏览、搜索、创建和重新打开会话,对话历史完整恢复到离开时的状态。
 - **模型与 Provider** —— 在界面里切换 Provider、模型和思考等级,每个对话的用量一目了然。
 - **内置 Git** —— 查看变更、按 hunk 暂存/撤销、浏览分支历史,不用离开应用。
+- **工作区 Dock** —— 浏览项目文件树、在提示词中引用文件、在内置浏览器标签中打开对话链接,并把终端常驻在对话旁边。
 - **Packages** —— 安装和管理 Pi 的 Extensions、Skills、Prompts 和 Themes,支持项目级 Package。
 - **Extension UI 与终端** —— 扩展可以渲染自己的交互面板,集成的工作区终端一个快捷键即达。
 - **顺手好用** —— 自定义键盘快捷键、右键菜单,界面支持简体中文和 English。
@@ -41,12 +42,13 @@
 | macOS Apple Silicon | `PiDeck_<version>_aarch64.dmg` |
 | macOS Intel | `PiDeck_<version>_x64.dmg` |
 
+这些安装包属于早期开发候选版,尚不是已验收、经平台认证的公开发行版。
 PiDeck 会自动检查并原地安装更新。
 
-> **早期测试版说明。** 当前安装包尚未使用付费证书签名。Windows 上
-> SmartScreen 可能弹出警告,选择**更多信息 → 仍要运行**即可;macOS 首次打开
-> 若被拦截,请在**系统设置 → 隐私与安全性 → 仍要打开**中放行。发布状态与
-> 签名进展见[发布说明](./docs/operations/release.md)。
+> **早期测试版说明。** Windows 候选包尚未通过已验收的 Authenticode
+> 签名;macOS 候选包可能使用 ad-hoc 签名,而不是 Developer ID 签名与公证。
+> 因此 SmartScreen 或 Gatekeeper 可能发出警告或阻止运行。发布状态、验证
+> 边界与签名进展见[发布说明](./docs/operations/release.md)。
 
 ## 与 Pi CLI 协同,但不依赖它
 

@@ -69,6 +69,13 @@ Generic inputs receive Cut, Copy, Paste, and Select all actions. Feature surface
 domain actions without reimplementing menu lifecycle: Session rows, transcript rows,
 the Composer, and xterm terminals are the first consumers.
 
+Safe HTTP(S) links in conversation content use an explicit desktop routing policy.
+Ordinary activation opens the URL in a Dock browser tab, while system-browser
+activation goes through the Tauri shell plugin. A link-specific transcript context
+menu offers **Open in Dock**, **Open in external browser**, and **Copy link** before
+the normal selection/message actions. Conversation anchors deliberately omit
+`target="_blank"` so the shell plugin cannot also auto-open a second external window.
+
 ## Extension rules
 
 - Add user-visible labels to both `en.ts` and `zh.ts` in the same change.

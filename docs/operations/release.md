@@ -87,6 +87,16 @@ and one GitHub Draft Release. The Apple credential set is all-or-nothing:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and `KEYCHAIN_PASSWORD`.
 
+## Tracked Draft-Release Workflow
+
+`.github/workflows/release.yml` runs `pnpm verify:quick` and
+`pnpm package:release` independently on each platform, stages the updater
+artifacts, and creates or updates a GitHub **Draft Release**. This automation
+produces development candidates; it does not publish a supported release and
+does not replace the installed-app smoke, signature verification, or human
+acceptance requirements below. The exact source revision must also have passed
+the broader `pnpm verify:p0` source gate.
+
 ## Public Release Requirements
 
 Before publishing any installer as a supported release:

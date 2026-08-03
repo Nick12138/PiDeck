@@ -284,6 +284,6 @@ Use the equivalent `export PI_CODING_AGENT_DIR=...` syntax on macOS.
 | Spike fails on Extension load | Node ≥22.19, SDK matches the Host manifest, fixture path exists |
 | Host fatal on start | `agentDir` writable; inspect stderr JSON logs |
 | `flush stdin: 管道正在被关闭` / pipe closed | Fixed: Windows must not pass `\\?\` paths to Node. Rebuild Tauri (`tauri:dev` again) after pulling. Also run `pnpm build` first. |
-| Reveal/open path does nothing on macOS | Known limitation: the current non-Windows native path still invokes `xdg-open` instead of Finder's `open` command |
+| Reveal/open path fails | Confirm the target still exists and the platform file manager is available. PiDeck uses Explorer on Windows, Finder (`open -R`) on macOS, and `xdg-open` on Linux. |
 | STALE_REVISION everywhere | UI must update identity from each response |
 | Tauri can't find host | Build `packages/pi-host` so `dist/main.js` exists |

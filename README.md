@@ -23,6 +23,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 - **Sessions & workspaces** — browse, search, create, and reopen sessions across projects; conversation history is restored exactly where you left off.
 - **Models & providers** — switch providers, models, and thinking levels from the UI, with usage visibility per conversation.
 - **Git built in** — review changes, stage or unstage individual hunks, and browse branch history without leaving the app.
+- **Workspace Dock** — inspect the project file tree, reference files in a prompt, open conversation links in embedded browser tabs, and keep terminals beside the chat.
 - **Packages** — install and manage Pi Extensions, Skills, Prompts, and Themes, including project-local packages.
 - **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
 - **Make it yours** — customizable keyboard shortcuts, context menus, and an interface available in English and 简体中文.
@@ -41,13 +42,16 @@ Grab the installer for your platform from the [latest release](https://github.co
 | macOS Apple Silicon | `PiDeck_<version>_aarch64.dmg` |
 | macOS Intel | `PiDeck_<version>_x64.dmg` |
 
-PiDeck checks for updates automatically and installs them in place.
+These downloads are early-access development candidates rather than accepted,
+platform-certified public releases. PiDeck checks for updates automatically and
+installs them in place.
 
-> **Early-access builds.** Current installers are not yet code-signed with a
-> paid certificate. On Windows, SmartScreen may warn — choose **More info →
-> Run anyway**. On macOS, if the app is blocked on first launch, allow it under
-> **System Settings → Privacy & Security → Open Anyway**. Release status and
-> signing progress are tracked in [release notes](./docs/operations/release.md).
+> **Early-access builds.** Windows candidates do not yet carry an accepted
+> Authenticode signature; macOS candidates may use an ad-hoc signature instead
+> of Developer ID signing and notarization. SmartScreen or Gatekeeper can
+> therefore warn or block the app. Release status, verification boundaries,
+> and signing progress are tracked in the
+> [release notes](./docs/operations/release.md).
 
 ## Works with the Pi CLI — but doesn't need it
 

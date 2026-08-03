@@ -17,10 +17,13 @@ choose a local workspace, complete a deterministic Pi Agent turn, recover the
 conversation after a Host restart, and uninstall without leaving runtime
 processes behind.
 
-That Windows release scope is not PiDeck's product-platform identity. It
-reflects the only packaging pipeline currently implemented: a bundled Windows
-x64 runtime and NSIS development candidate. macOS app/DMG packaging, signing,
-notarization, and release acceptance are outside the current P0 release claim.
+That Windows acceptance scope is not PiDeck's product-platform identity.
+Automated development-candidate packaging now covers Windows x64 plus macOS
+arm64 and x64. Windows produces an NSIS candidate with bundled Node and Portable
+Git; macOS produces an app bundle and DMG with bundled Node and the system Git.
+The first accepted-installer scope remains Windows x64. macOS Developer ID
+signing, notarization, installed acceptance, and public-release support remain
+outside the current P0 release claim.
 
 Selecting a workspace authorizes its project resources. PiDeck immediately
 loads them with `projectTrusted: true`; existing `.pi/extensions` may execute
@@ -51,24 +54,36 @@ P0 source readiness means every row has implementation evidence and
 platforms, although the tracked GitHub Actions job currently runs on Windows.
 Installer provenance and public-release acceptance remain separate.
 
-## P1
+## Capabilities shipped beyond core P0
 
-P1 capabilities may ship, but they do not block the first core release:
+The current application also ships several capabilities that do not gate the
+first accepted installer:
 
-- concurrent background Session runtimes and detailed per-Session activity history;
-- npm and Git Package source matrix, Package update previews, and operation history;
-- Extension `ui.custom()` terminal and native Windows completion notifications;
-- Shell terminal, command palette, configurable shortcuts, and rapid Session switching;
-- Provider connectivity diagnostics, model discovery refinements, and OAuth;
-- usage/cost reporting, long-list tuning, and workspace file indexing.
+- npm and Git Package sources, update workflows, and per-resource controls;
+- Extension `ui.custom()` terminals and in-app Extension notifications;
+- a workspace shell terminal, configurable shortcuts, and rapid Session switching;
+- Provider connection checks, model discovery, OAuth, and usage/cost reporting;
+- a workspace file tree, embedded Dock browser, and Git status/diff/hunk workflows.
 
-These paths remain covered by unit and integration tests where applicable.
+These shipped paths remain covered by unit and integration tests where
+applicable.
+
+## P1 backlog
+
+The remaining near-term product work does not block the first core release:
+
+- detailed per-Session activity history;
+- richer Package update previews and operation history;
+- a command palette and user-facing active-tool controls;
+- native background completion notifications;
+- transcript search, edit/resend, and regenerate workflows;
+- long-list tuning and large-workspace incremental indexing.
 
 ## P2
 
-- signed automatic update channels with rollback;
+- platform-signed public release channels, installed acceptance, and rollback;
 - stable desktop Extension contribution APIs;
-- Git status/diff/worktree workflows and large-workspace incremental indexing;
+- Git worktree and remote synchronization workflows;
 - tracked subsessions, multi-project supervision, and remote machines.
 
 ## Verification layers
