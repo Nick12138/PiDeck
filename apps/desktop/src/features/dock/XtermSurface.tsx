@@ -10,6 +10,11 @@ import { formatCommandChord } from "../../lib/commands/keymap";
 import { readClipboardText } from "../../lib/desktop-clipboard";
 
 type Cleanup = () => void | Promise<void>;
+type FontLoader = {
+  load: (font: string, text?: string) => Promise<unknown>;
+};
+
+const TERMINAL_FONT_SIZE = 12;
 
 export type XtermSurfaceProps = {
   sessionKey: string;
@@ -24,6 +29,19 @@ export function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
+}
+
+export async function waitForTerminalFont(
+  fontLoader: FontLoader | undefined,
+  fontFamily: string,
+  fontSize: number,
+): Promise<void> {
+  if (!fontLoader) return;
+  try {
+    await fontLoader.load(`${fontSize}px ${fontFamily}`, "W");
+  } catch {
+    // Keep the terminal usable when a bundled or system font cannot be loaded.
+  }
 }
 
 function xtermTheme() {
@@ -68,14 +86,18 @@ export function XtermSurface({
     ]).then(async ([{ Terminal }, { FitAddon }]) => {
       if (cancelled) return;
 
+      const fontFamily = cssVar(
+        "--font-mono",
+        '"Cascadia Code", Consolas, ui-monospace, monospace',
+      );
+      await waitForTerminalFont(document.fonts, fontFamily, TERMINAL_FONT_SIZE);
+      if (cancelled) return;
+
       terminal = new Terminal({
         cols: initialCols,
         rows: initialRows,
-        fontFamily: cssVar(
-          "--font-mono",
-          '"Cascadia Code", Consolas, ui-monospace, monospace',
-        ),
-        fontSize: 12,
+        fontFamily,
+        fontSize: TERMINAL_FONT_SIZE,
         letterSpacing: 0,
         cursorBlink,
         scrollback: 10_000,

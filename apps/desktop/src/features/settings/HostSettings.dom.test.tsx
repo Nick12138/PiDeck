@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot } from "@pideck/protocol";
+import type { AppUpdateInstallProgress } from "../../lib/updater";
 import { useAppStore } from "../../lib/stores/app-store";
 import { HostSettings } from "./HostSettings";
 
@@ -54,11 +55,13 @@ beforeEach(() => {
   useAppStore.getState().setHost(host());
   useAppStore.getState().clearNotifications();
   useAppStore.getState().setHostFatal(null);
+  useAppStore.getState().setAppUpdatePhase({ state: "idle" });
 });
 
 afterEach(() => {
   cleanup();
   useAppStore.getState().setHost(null);
+  useAppStore.getState().setAppUpdatePhase({ state: "idle" });
   vi.restoreAllMocks();
 });
 
@@ -124,6 +127,56 @@ describe("HostSettings", () => {
         .getState()
         .notifications.some((item) => item.message.includes("Update install failed")),
     ).toBe(true);
+  });
+
+  it("keeps downloading and restores progress after the settings page remounts", async () => {
+    const user = userEvent.setup();
+    let reportProgress!: (progress: AppUpdateInstallProgress) => void;
+    let rejectInstall!: (reason?: unknown) => void;
+    const install = vi.fn(
+      (onProgress?: (progress: AppUpdateInstallProgress) => void) =>
+        new Promise<void>((_resolve, reject) => {
+          reportProgress = onProgress!;
+          rejectInstall = reject;
+        }),
+    );
+    checkForAppUpdateMock.mockResolvedValue({ version: "0.2.0", install });
+
+    const firstView = render(<HostSettings />);
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    await user.click(await screen.findByRole("button", { name: "Download and restart" }));
+
+    const indeterminate = screen.getByRole("progressbar", { name: "Downloading update…" });
+    expect(indeterminate).not.toHaveAttribute("aria-valuenow");
+    expect(
+      screen.getByText("You can leave Settings; the update will continue in the background."),
+    ).toBeInTheDocument();
+
+    act(() => {
+      reportProgress({ phase: "downloading", downloadedBytes: 50, totalBytes: 100 });
+    });
+    expect(screen.getByRole("progressbar", { name: "50% downloaded" })).toHaveAttribute(
+      "aria-valuenow",
+      "50",
+    );
+
+    firstView.unmount();
+    act(() => {
+      reportProgress({ phase: "downloading", downloadedBytes: 75, totalBytes: 100 });
+    });
+
+    render(<HostSettings />);
+    expect(screen.getByRole("progressbar", { name: "75% downloaded" })).toHaveAttribute(
+      "aria-valuenow",
+      "75",
+    );
+    expect(screen.getByRole("button", { name: "Downloading update…" })).toBeDisabled();
+    expect(install).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rejectInstall(new Error("network gone"));
+    });
+    expect(await screen.findByRole("button", { name: "Download and restart" })).toBeEnabled();
   });
 
   it("surfaces a failed update check as a notification and stays retryable", async () => {

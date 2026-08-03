@@ -9,8 +9,16 @@
 export type AppUpdate = {
   version: string;
   /** Downloads, installs and relaunches the app. Resolves only on failure paths. */
-  install: () => Promise<void>;
+  install: (onProgress?: (progress: AppUpdateInstallProgress) => void) => Promise<void>;
 };
+
+export type AppUpdateInstallProgress =
+  | {
+      phase: "downloading";
+      downloadedBytes: number;
+      totalBytes: number | null;
+    }
+  | { phase: "installing" };
 
 let inFlightCheck: Promise<AppUpdate | null> | null = null;
 
@@ -24,8 +32,23 @@ async function runCheck(): Promise<AppUpdate | null> {
 
   return {
     version: update.version,
-    install: async () => {
-      await update.downloadAndInstall();
+    install: async (onProgress) => {
+      let downloadedBytes = 0;
+      let totalBytes: number | null = null;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          downloadedBytes = 0;
+          totalBytes = event.data.contentLength ?? null;
+          onProgress?.({ phase: "downloading", downloadedBytes, totalBytes });
+          return;
+        }
+        if (event.event === "Progress") {
+          downloadedBytes += event.data.chunkLength;
+          onProgress?.({ phase: "downloading", downloadedBytes, totalBytes });
+          return;
+        }
+        onProgress?.({ phase: "installing" });
+      });
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     },

@@ -37,6 +37,7 @@ import {
   type SessionRuntimeState,
 } from "./session-catalog";
 import { sidebarPref } from "../sidebar-prefs";
+import type { AppUpdate } from "../updater";
 
 export type NavPage = "chat" | "packages" | "settings";
 
@@ -283,6 +284,19 @@ export type AppNotification = {
   createdAt: number;
 };
 
+export type AppUpdatePhase =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "upToDate" }
+  | { state: "available"; update: AppUpdate }
+  | {
+      state: "downloading";
+      update: AppUpdate;
+      downloadedBytes: number;
+      totalBytes: number | null;
+    }
+  | { state: "installing"; update: AppUpdate };
+
 /**
  * Close the extension terminal panel, restoring the dock to its pre-panel
  * state unless the user toggled the dock manually while the panel was open.
@@ -344,6 +358,7 @@ export type AppState = EpochState & {
   providerConfigRevision: number;
   sessionCatalog: SessionCatalogState;
   sessionDrafts: Record<string, string>;
+  appUpdatePhase: AppUpdatePhase;
   notifications: AppNotification[];
   hostFatal: string | null;
   connecting: boolean;
@@ -408,6 +423,7 @@ export type AppState = EpochState & {
     updatedAt?: number,
   ) => void;
   setSessionDraft: (sessionId: string, text: string) => void;
+  setAppUpdatePhase: (phase: AppUpdatePhase) => void;
   pushNotification: (message: string, level?: string) => void;
   dismissNotification: (id: string) => void;
   clearNotifications: () => void;
@@ -473,6 +489,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   providerConfigRevision: 0,
   sessionCatalog: emptySessionCatalog(),
   sessionDrafts: {},
+  appUpdatePhase: { state: "idle" },
   notifications: [],
   hostFatal: null,
   connecting: true,
@@ -1069,6 +1086,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       else delete sessionDrafts[sessionId];
       return { sessionDrafts };
     }),
+  setAppUpdatePhase: (appUpdatePhase) => set({ appUpdatePhase }),
   pushNotification: (message, level = "info") =>
     set((s) => ({
       notifications: [

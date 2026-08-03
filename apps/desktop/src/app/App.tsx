@@ -934,9 +934,14 @@ export function App() {
     void checkForAppUpdate()
       .then((update) => {
         if (update && !cancelled) {
-          useAppStore
-            .getState()
-            .pushNotification(tCurrent("notifUpdateAvailable", { version: update.version }));
+          const store = useAppStore.getState();
+          if (
+            store.appUpdatePhase.state !== "downloading" &&
+            store.appUpdatePhase.state !== "installing"
+          ) {
+            store.setAppUpdatePhase({ state: "available", update });
+          }
+          store.pushNotification(tCurrent("notifUpdateAvailable", { version: update.version }));
         }
       })
       .catch(() => undefined);

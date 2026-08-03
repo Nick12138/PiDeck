@@ -15,19 +15,13 @@ const CAPABILITY_LABELS: Record<string, MessageKey> = {
   sessionExport: "hostCapSessionExport",
 };
 
-type UpdatePhase =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "upToDate" }
-  | { state: "available"; update: AppUpdate }
-  | { state: "installing"; update: AppUpdate };
-
 export function HostSettings() {
   const t = useT();
   const host = useAppStore((s) => s.host);
   const pushNotification = useAppStore((s) => s.pushNotification);
+  const updatePhase = useAppStore((s) => s.appUpdatePhase);
+  const setUpdatePhase = useAppStore((s) => s.setAppUpdatePhase);
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [updatePhase, setUpdatePhase] = useState<UpdatePhase>({ state: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +76,26 @@ export function HostSettings() {
   }
 
   async function installUpdate(update: AppUpdate) {
-    setUpdatePhase({ state: "installing", update });
+    setUpdatePhase({
+      state: "downloading",
+      update,
+      downloadedBytes: 0,
+      totalBytes: null,
+    });
     try {
       // On success the app relaunches, so this promise never settles visibly.
-      await update.install();
+      await update.install((progress) => {
+        setUpdatePhase(
+          progress.phase === "installing"
+            ? { state: "installing", update }
+            : {
+                state: "downloading",
+                update,
+                downloadedBytes: progress.downloadedBytes,
+                totalBytes: progress.totalBytes,
+              },
+        );
+      });
     } catch (err) {
       setUpdatePhase({ state: "available", update });
       pushNotification(
@@ -94,6 +104,25 @@ export function HostSettings() {
       );
     }
   }
+
+  const updatePercent =
+    updatePhase.state === "installing"
+      ? 100
+      : updatePhase.state === "downloading" &&
+          updatePhase.totalBytes !== null &&
+          updatePhase.totalBytes > 0
+        ? Math.min(100, Math.round((updatePhase.downloadedBytes / updatePhase.totalBytes) * 100))
+        : null;
+  const updateStatusText =
+    updatePhase.state === "installing"
+      ? t("hostUpdateInstalling")
+      : updatePhase.state === "downloading"
+        ? t("hostUpdateDownloading")
+        : null;
+  const updateProgressLabel =
+    updatePhase.state === "downloading" && updatePercent !== null
+      ? t("hostUpdateProgress", { percent: updatePercent })
+      : updateStatusText;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -185,16 +214,20 @@ export function HostSettings() {
                 <span className="font-mono">{appVersion ?? "—"}</span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {updatePhase.state === "available" || updatePhase.state === "installing" ? (
+                {updatePhase.state === "available" ||
+                updatePhase.state === "downloading" ||
+                updatePhase.state === "installing" ? (
                   <button
                     type="button"
                     className={secondaryButton}
-                    disabled={updatePhase.state === "installing"}
+                    disabled={updatePhase.state !== "available"}
                     onClick={() => void installUpdate(updatePhase.update)}
                   >
                     {updatePhase.state === "installing"
                       ? t("hostUpdateInstalling")
-                      : t("hostUpdateInstall")}
+                      : updatePhase.state === "downloading"
+                        ? t("hostUpdateDownloading")
+                        : t("hostUpdateInstall")}
                   </button>
                 ) : (
                   <button
@@ -211,12 +244,38 @@ export function HostSettings() {
                 {updatePhase.state === "upToDate" && (
                   <span className="text-xs text-muted">{t("hostUpdateUpToDate")}</span>
                 )}
-                {(updatePhase.state === "available" || updatePhase.state === "installing") && (
+                {(updatePhase.state === "available" ||
+                  updatePhase.state === "downloading" ||
+                  updatePhase.state === "installing") && (
                   <span className="text-xs text-muted">
                     {t("hostUpdateAvailable", { version: updatePhase.update.version })}
                   </span>
                 )}
               </div>
+              {updateStatusText && (
+                <div className="mt-3">
+                  <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-muted">
+                    <span>{updateStatusText}</span>
+                    {updatePercent !== null && <span className="font-mono">{updatePercent}%</span>}
+                  </div>
+                  <div
+                    className="h-1 overflow-hidden rounded-full bg-surface-overlay"
+                    role="progressbar"
+                    aria-label={updateProgressLabel ?? undefined}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={updatePercent ?? undefined}
+                  >
+                    <div
+                      className={`h-full bg-accent transition-[width] duration-200 ${
+                        updatePercent === null ? "w-1/3 animate-pulse" : ""
+                      }`}
+                      style={updatePercent === null ? undefined : { width: `${updatePercent}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted">{t("hostUpdateBackground")}</p>
+                </div>
+              )}
             </div>
           </section>
         </div>
