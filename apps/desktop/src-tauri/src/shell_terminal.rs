@@ -15,6 +15,8 @@ const MIN_ROWS: u16 = 4;
 const MAX_ROWS: u16 = 300;
 const MAX_INPUT_BYTES: usize = 256 * 1024;
 const READ_BUFFER_BYTES: usize = 32 * 1024;
+const TERMINAL_TERM: &str = "xterm-256color";
+const TERMINAL_COLORTERM: &str = "truecolor";
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -135,6 +137,7 @@ impl ShellTerminalSession {
             .openpty(pty_size(cols, rows))
             .map_err(|error| format!("open PTY: {error}"))?;
         let mut command = CommandBuilder::new(&shell.executable);
+        configure_terminal_environment(&mut command);
         command.cwd(cwd);
         for arg in &shell.args {
             command.arg(arg);
@@ -367,6 +370,11 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
         pixel_width: 0,
         pixel_height: 0,
     }
+}
+
+fn configure_terminal_environment(command: &mut CommandBuilder) {
+    command.env("TERM", TERMINAL_TERM);
+    command.env("COLORTERM", TERMINAL_COLORTERM);
 }
 
 pub(crate) fn validate_terminal_cwd(raw: &str) -> Result<PathBuf, String> {
@@ -800,6 +808,21 @@ mod tests {
     fn clamps_pty_dimensions() {
         assert_eq!(pty_size(1, 1).cols, MIN_COLS);
         assert_eq!(pty_size(u16::MAX, u16::MAX).rows, MAX_ROWS);
+    }
+
+    #[test]
+    fn configures_terminal_color_capabilities() {
+        let mut command = CommandBuilder::new("shell");
+        configure_terminal_environment(&mut command);
+
+        assert_eq!(
+            command.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            command.get_env("COLORTERM"),
+            Some(std::ffi::OsStr::new("truecolor"))
+        );
     }
 
     #[test]

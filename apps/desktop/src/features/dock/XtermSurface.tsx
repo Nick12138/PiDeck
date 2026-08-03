@@ -44,6 +44,21 @@ async function waitForTerminalFont(
   }
 }
 
+function applyCspNonceToXtermStyles(container: HTMLElement): void {
+  const nonce = document.querySelector<HTMLStyleElement>("style[nonce]")?.nonce;
+  if (!nonce) return;
+
+  for (const style of container.querySelectorAll<HTMLStyleElement>(".xterm-screen > style")) {
+    if (style.nonce === nonce) continue;
+    const parent = style.parentNode;
+    if (!parent) continue;
+    const nextSibling = style.nextSibling;
+    parent.removeChild(style);
+    style.nonce = nonce;
+    parent.insertBefore(style, nextSibling);
+  }
+}
+
 function xtermTheme() {
   return {
     background: cssVar("--color-sidebar", "#151716"),
@@ -110,6 +125,7 @@ export function XtermSurface({
           }),
         );
         terminal.open(container);
+        applyCspNonceToXtermStyles(container);
         terminalRef.current = terminal;
         fitRef.current = () => {
           try {

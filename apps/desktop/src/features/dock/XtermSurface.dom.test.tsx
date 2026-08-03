@@ -83,6 +83,7 @@ function renderSurface() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.terminal.open.mockReset();
   mocks.terminal.options = {};
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   document.documentElement.style.setProperty("--font-mono", '"Test Mono", monospace');
@@ -96,6 +97,40 @@ afterEach(() => {
 });
 
 describe("XtermSurface font readiness", () => {
+  it("applies the current Tauri style nonce to xterm runtime styles", async () => {
+    setFontLoader(vi.fn().mockResolvedValue([]));
+    const trustedStyle = document.createElement("style");
+    trustedStyle.nonce = "tauri-style-nonce";
+    document.head.appendChild(trustedStyle);
+
+    const dimensionsStyle = document.createElement("style");
+    dimensionsStyle.textContent = ".xterm-rows span { display: inline-block; }";
+    const themeStyle = document.createElement("style");
+    themeStyle.textContent = '.xterm-rows { font-family: "Test Mono"; }';
+    const screen = document.createElement("div");
+    screen.className = "xterm-screen";
+    screen.append(dimensionsStyle, themeStyle);
+    const insertBefore = vi.spyOn(screen, "insertBefore");
+    mocks.terminal.open.mockImplementation((container: HTMLElement) => {
+      container.appendChild(screen);
+    });
+
+    try {
+      renderSurface();
+
+      await waitFor(() => expect(mocks.terminal.open).toHaveBeenCalledTimes(1));
+      expect(dimensionsStyle.nonce).toBe("tauri-style-nonce");
+      expect(themeStyle.nonce).toBe("tauri-style-nonce");
+      expect(insertBefore).toHaveBeenCalledTimes(2);
+      expect(Array.from(screen.querySelectorAll(":scope > style"))).toEqual([
+        dimensionsStyle,
+        themeStyle,
+      ]);
+    } finally {
+      trustedStyle.remove();
+    }
+  });
+
   it("waits for the terminal font before constructing xterm", async () => {
     const fontReady = deferred<unknown>();
     const load = vi.fn(() => fontReady.promise);
