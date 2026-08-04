@@ -99,8 +99,7 @@ export const zh: Record<MessageKey, string> = {
   generalAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
   generalExtensionDecisionGroup: "Extension 请求",
   generalExtensionDecision: "Extension 请求呈现方式",
-  generalExtensionDecisionDesc:
-    "选择 Extension 决策请求出现的位置；“传统弹窗”可随时一键回滚。",
+  generalExtensionDecisionDesc: "选择 Extension 决策请求出现的位置；“传统弹窗”可随时一键回滚。",
   generalExtensionDecisionLegacy: "传统弹窗",
   generalExtensionDecisionLegacyDesc: "所有决策请求都在弹窗中打开。",
   generalExtensionDecisionAuto: "自动",
@@ -459,8 +458,7 @@ export const zh: Record<MessageKey, string> = {
   packagesRemoveWarning: "将从 Agent 中移除该包及其资源。此操作无法在 PiDeck 中撤销。",
   packagesProjectGateTitle: "确认项目资源变更",
   packagesProjectGateConfirm: "应用变更",
-  packagesProjectGateBody:
-    "这会更改当前工作区的包或资源偏好。该确认与当前会话及包生成号绑定。",
+  packagesProjectGateBody: "这会更改当前工作区的包或资源偏好。该确认与当前会话及包生成号绑定。",
   notifPackagesUpdateCheckUnsupported: "当前 Host 不支持更新检查",
   notifPackagesUpdatesAvailable: "有 {count} 个可用更新",
   notifPackagesUpdateAvailable: "有 {count} 个可用更新",

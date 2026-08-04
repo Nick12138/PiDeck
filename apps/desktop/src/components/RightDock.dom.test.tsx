@@ -42,10 +42,7 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-function settings(
-  terminalProfile: string,
-  language: "en" | "zh" = "en",
-): DesktopSettings {
+function settings(terminalProfile: string, language: "en" | "zh" = "en"): DesktopSettings {
   return { terminalProfile, language } as DesktopSettings;
 }
 
@@ -107,10 +104,7 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
 
     await user.click(screen.getByRole("menuitem", { name: "浏览器" }));
-    expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
   });
 
@@ -127,10 +121,7 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("button", { name: "Close Changes" }));
 
     await user.click(screen.getByRole("button", { name: "Open Browser" }));
-    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Browser" }));
 
     await user.click(screen.getByRole("button", { name: "Open Terminal" }));
@@ -190,9 +181,9 @@ describe("RightDock pages", () => {
     });
 
     await waitFor(() => expect(screen.getAllByTestId("browser-panel")).toHaveLength(2));
-    expect(
-      screen.getAllByTestId("browser-panel").map((panel) => panel.dataset.initialUrl),
-    ).toEqual(["https://one.example/path", "https://two.example/path"]);
+    expect(screen.getAllByTestId("browser-panel").map((panel) => panel.dataset.initialUrl)).toEqual(
+      ["https://one.example/path", "https://two.example/path"],
+    );
     const tabs = screen.getAllByRole("tab", { name: "Browser" });
     expect(tabs.at(-1)).toHaveAttribute("aria-selected", "true");
     expect(useAppStore.getState().dockOpen).toBe(true);
@@ -206,16 +197,10 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("menuitem", { name: "Files" }));
     await openAddMenu(user);
     await user.click(screen.getByRole("menuitem", { name: "Browser" }));
-    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
 
     await user.click(screen.getByRole("button", { name: "Close Browser" }));
-    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("captures the configured Shell profile when each Terminal is created", async () => {

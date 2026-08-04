@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostClient } from "../../lib/bridge/host-client";
-import {
-  useAppStore,
-  type ExtensionTerminalState,
-} from "../../lib/stores/app-store";
+import { useAppStore, type ExtensionTerminalState } from "../../lib/stores/app-store";
 import { cancelExtensionTerminal, forceCloseExtensionTerminal } from "./ExtensionTerminal";
 
 const panel: ExtensionTerminalState = {
@@ -33,11 +30,10 @@ describe("cancelExtensionTerminal", () => {
     } as never);
 
     await expect(cancelExtensionTerminal(panel)).resolves.toBeNull();
-    expect(request).toHaveBeenCalledWith(
-      "extensionUi.customInput",
-      panel.context,
-      { requestId: panel.requestId, data: "\u001b" },
-    );
+    expect(request).toHaveBeenCalledWith("extensionUi.customInput", panel.context, {
+      requestId: panel.requestId,
+      data: "\u001b",
+    });
     expect(close).not.toHaveBeenCalled();
   });
 
@@ -69,11 +65,10 @@ describe("forceCloseExtensionTerminal", () => {
     } as never);
 
     await expect(forceCloseExtensionTerminal(panel)).resolves.toBeNull();
-    expect(request).toHaveBeenCalledWith(
-      "extensionUi.respond",
-      panel.context,
-      { requestId: panel.requestId, status: "cancelled" },
-    );
+    expect(request).toHaveBeenCalledWith("extensionUi.respond", panel.context, {
+      requestId: panel.requestId,
+      status: "cancelled",
+    });
   });
 
   it("returns the host error when the request is rejected", async () => {

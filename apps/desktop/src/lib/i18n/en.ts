@@ -100,8 +100,7 @@ export const en = {
     "Maximum width for messages, the composer, and inline panels. Minimum {min}px.",
   generalConversationWidthError: "Enter a whole number of at least {min}px.",
   generalRestoreSession: "Restore last session",
-  generalRestoreSessionDesc:
-    "Reopen your last workspace and conversation when PiDeck starts.",
+  generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiDeck starts.",
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
@@ -112,8 +111,7 @@ export const en = {
   generalExtensionDecisionLegacy: "Legacy modal",
   generalExtensionDecisionLegacyDesc: "Open every decision in a dialog.",
   generalExtensionDecisionAuto: "Automatic",
-  generalExtensionDecisionAutoDesc:
-    "Keep ordinary tool and command decisions in the conversation.",
+  generalExtensionDecisionAutoDesc: "Keep ordinary tool and command decisions in the conversation.",
   generalExtensionDecisionInlineFirst: "Inline first",
   generalExtensionDecisionInlineFirstDesc:
     "Prefer the conversation except for safety and lifecycle decisions.",
@@ -308,12 +306,10 @@ export const en = {
   providersHeaderRemove: "Remove header",
   providersHeaderAdd: "Add header",
   providersDeleteTitle: "Delete Provider",
-  providersDeleteBody:
-    "This deletes {name} and its stored API key from this machine.",
+  providersDeleteBody: "This deletes {name} and its stored API key from this machine.",
   providersDeleteModels: "Models",
   providersSwitchTitle: "Discard unsaved changes?",
-  providersSwitchBody:
-    "Edits to {name} have not been saved. Switching away will discard them.",
+  providersSwitchBody: "Edits to {name} have not been saved. Switching away will discard them.",
   providersThisProvider: "this Provider",
   notifProvidersFixFields: "Fix the highlighted Provider fields before saving",
   notifProviderSaved: "Provider saved",
@@ -420,8 +416,7 @@ export const en = {
   packagesClearOwnerFilter: "Clear owner filter",
   packagesClearResourceFilters: "Clear all resource filters",
   packagesResourceTypeGroup: "Resource type",
-  packagesConfigurableSummary:
-    "{configurable} configurable resources in {shown} shown items",
+  packagesConfigurableSummary: "{configurable} configurable resources in {shown} shown items",
   packagesInheritAllShown: "Inherit all shown",
   packagesEnableAllShown: "Enable all shown",
   packagesDisableAllShown: "Disable all shown",
@@ -459,8 +454,7 @@ export const en = {
     "The previous operation partially changed package state. Reload the authoritative state or retry it.",
   packagesReloadState: "Reload state",
   packagesRetryOperation: "Retry operation",
-  packagesReloadRequired:
-    "Session resources changed and must reload before the next prompt.",
+  packagesReloadRequired: "Session resources changed and must reload before the next prompt.",
   packagesReloadResources: "Reload resources",
   packagesRefreshFailed: "Refresh failed: {message}",
   packagesTryAgain: "Try again",
@@ -471,15 +465,13 @@ export const en = {
   packagesInstallConfirm: "Install package",
   packagesInstallWarning:
     "Packages can execute local code, including dependency lifecycle scripts. Extensions run with your current-user permissions. Skills and Prompts may direct Agent actions. Continue only if you trust this source.",
-  packagesProjectSettingsWarning:
-    "This changes project settings for the current workspace.",
+  packagesProjectSettingsWarning: "This changes project settings for the current workspace.",
   packagesUpdateReviewTitle: "Review package update",
   packagesUpdateConfirm: "Update package",
   packagesUpdateAllConfirm: "Update all",
   packagesUpdateWarning:
     "Updates may change executable code and Agent instructions. Review the affected packages before continuing.",
-  packagesUpdateProjectWarning:
-    "This includes project packages in the current workspace.",
+  packagesUpdateProjectWarning: "This includes project packages in the current workspace.",
   packagesRemoveReviewTitle: "Remove package",
   packagesRemoveConfirm: "Remove package",
   packagesRemoveWarning:
@@ -495,12 +487,10 @@ export const en = {
   notifPackagesOperationFailed: "Package operation failed",
   notifPackagesPartialFailure:
     "Package operation partially failed; reconcile the package state before continuing",
-  notifPackagesReloadBeforeMutation:
-    "Reload package resources before starting another mutation",
+  notifPackagesReloadBeforeMutation: "Reload package resources before starting another mutation",
   notifPackagesReconcileBeforeMutation:
     "Reload package state or retry the failed operation before another mutation",
-  notifPackagesProjectConfirmExpired:
-    "Project confirmation expired; review and confirm again",
+  notifPackagesProjectConfirmExpired: "Project confirmation expired; review and confirm again",
   notifPackagesLoadFailed: "Could not load packages",
 
   // Resource type names
@@ -577,8 +567,7 @@ export const en = {
   sessionsNoMatch: "No matching sessions",
   sessionsDeleteConfirmTitle: "Permanently delete Session?",
   sessionsCleanupConfirmTitle: "Clear archived Sessions?",
-  sessionsDeleteConfirmBody:
-    "“{name}” will be removed from disk. This cannot be undone.",
+  sessionsDeleteConfirmBody: "“{name}” will be removed from disk. This cannot be undone.",
   sessionsCleanupConfirmBody:
     "{count} archived Sessions will be removed from disk. This cannot be undone.",
   sessionsDeletePermanently: "Delete permanently",
@@ -601,10 +590,8 @@ export const en = {
   chatSelectWorkspaceTitle: "Select a workspace to begin",
   chatSelectWorkspaceHint: "Use the folder picker in the sidebar.",
   chatWorkspaceServicesNotReady: "Workspace services are not ready.",
-  chatAuthRequired:
-    "The current model has no credentials. Sign in to a provider to send messages.",
-  chatAuthRequiredProvider:
-    "No credentials configured for “{provider}”. Sign in to send messages.",
+  chatAuthRequired: "The current model has no credentials. Sign in to a provider to send messages.",
+  chatAuthRequiredProvider: "No credentials configured for “{provider}”. Sign in to send messages.",
   chatAuthOpenProviders: "Open Providers settings",
   chatAuthDismiss: "Dismiss",
   chatPackageReconcileRequired:
@@ -946,8 +933,7 @@ export const en = {
   statsToolResults: "Tool results",
   statsTokens: "Tokens",
   statsCost: "Cost",
-  statsFootnote:
-    "Aggregated over the full session history, including compacted entries.",
+  statsFootnote: "Aggregated over the full session history, including compacted entries.",
   statsExportJsonl: "Export JSONL",
   statsExportHtml: "Export HTML",
   statsExporting: "Exporting…",
@@ -1022,7 +1008,8 @@ export const en = {
   gitNoWorkspaceDetail: "Open a workspace to review Git changes.",
   gitNotRepository: "Not a Git repository",
   gitNotRepositoryDetail: "This workspace is not inside a Git repository.",
-  gitParentRepositoryWarning: "The repository root is above this workspace. Changes from the entire repository are shown and can be staged.",
+  gitParentRepositoryWarning:
+    "The repository root is above this workspace. Changes from the entire repository are shown and can be staged.",
   gitClean: "No changes",
   gitSubmodule: "Submodule",
   gitStageFile: "Stage {path}",

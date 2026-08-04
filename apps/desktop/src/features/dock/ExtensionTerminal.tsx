@@ -1,7 +1,4 @@
-import {
-  useAppStore,
-  type ExtensionTerminalState,
-} from "../../lib/stores/app-store";
+import { useAppStore, type ExtensionTerminalState } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import {
@@ -75,13 +72,7 @@ export function ExtensionTerminal({ visible = true }: { visible?: boolean }) {
   return <TerminalView key={panel.requestId} panel={panel} visible={visible} />;
 }
 
-function TerminalView({
-  panel,
-  visible,
-}: {
-  panel: ExtensionTerminalState;
-  visible: boolean;
-}) {
+function TerminalView({ panel, visible }: { panel: ExtensionTerminalState; visible: boolean }) {
   return (
     <XtermSurface
       sessionKey={`extension:${panel.requestId}`}
