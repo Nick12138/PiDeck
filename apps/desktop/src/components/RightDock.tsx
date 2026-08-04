@@ -17,7 +17,11 @@ import type { TerminalProfileId } from "@pideck/protocol";
 import { useAppStore } from "../lib/stores/app-store";
 import { setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
-import { ExtensionTerminal, cancelExtensionTerminal } from "../features/dock/ExtensionTerminal";
+import {
+  ExtensionTerminal,
+  cancelExtensionTerminal,
+  forceCloseExtensionTerminal,
+} from "../features/dock/ExtensionTerminal";
 import {
   ShellTerminal,
   shellTerminalLabel,
@@ -393,9 +397,19 @@ export function RightDock() {
       return;
     }
     window.setTimeout(() => {
-      if (useAppStore.getState().extensionTerminal?.requestId !== requestId) return;
-      setExtensionClosing((current) => (current === requestId ? null : current));
-      pushNotification(t("dockExtensionCloseTimeout"), "warning");
+      void (async () => {
+        if (useAppStore.getState().extensionTerminal?.requestId !== requestId) return;
+        // Escape didn't land — settle the ui.custom() request host-side.
+        const forceError = await forceCloseExtensionTerminal(panel);
+        setExtensionClosing((current) => (current === requestId ? null : current));
+        if (!forceError) {
+          // customClosed will confirm; clear now so the tab close is deterministic.
+          useAppStore.getState().closeExtensionTerminal(requestId);
+          return;
+        }
+        if (useAppStore.getState().extensionTerminal?.requestId !== requestId) return;
+        pushNotification(t("dockExtensionCloseTimeout"), "warning");
+      })();
     }, 1_500);
   };
 

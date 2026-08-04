@@ -22,8 +22,10 @@ function panelContext(panel: ExtensionTerminalState) {
 }
 
 /**
- * Ask the live component to close through its virtual terminal. This runs
- * extension-owned cleanup callbacks (some extensions wrap ui.custom() in
+ * Ask the live component to close through its virtual terminal. Escape is the
+ * SDK panel convention (app.interrupt) and also matches tui.select.cancel, so
+ * the component can run its own cancel path and return a real result. This
+ * runs extension-owned cleanup callbacks (some extensions wrap ui.custom() in
  * another promise) without aborting the agent turn.
  */
 export async function cancelExtensionTerminal(
@@ -32,7 +34,26 @@ export async function cancelExtensionTerminal(
   try {
     const res = await hostClient.request("extensionUi.customInput", panelContext(panel), {
       requestId: panel.requestId,
-      data: "\u0003",
+      data: "\u001b",
+    });
+    return res.ok ? null : (res.error?.message ?? tCurrent("dockExtensionCloseFailed"));
+  } catch (error) {
+    return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
+  }
+}
+
+/**
+ * Settle the ui.custom() request host-side when the panel ignores Escape.
+ * The extension's promise resolves with undefined and the host teardown still
+ * runs the component's dispose() cleanup; the agent turn is not aborted.
+ */
+export async function forceCloseExtensionTerminal(
+  panel: ExtensionTerminalState,
+): Promise<string | null> {
+  try {
+    const res = await hostClient.request("extensionUi.respond", panelContext(panel), {
+      requestId: panel.requestId,
+      status: "cancelled",
     });
     return res.ok ? null : (res.error?.message ?? tCurrent("dockExtensionCloseFailed"));
   } catch (error) {

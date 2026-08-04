@@ -20,6 +20,7 @@ vi.mock("../features/dock/ShellTerminal", () => ({
 vi.mock("../features/dock/ExtensionTerminal", () => ({
   ExtensionTerminal: () => null,
   cancelExtensionTerminal: vi.fn(async () => null),
+  forceCloseExtensionTerminal: vi.fn(async () => null),
 }));
 
 vi.mock("../features/dock/BrowserPanel", () => ({

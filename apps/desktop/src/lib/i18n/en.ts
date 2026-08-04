@@ -839,7 +839,7 @@ export const en = {
   dockWorkspaceForChanges: "Open a workspace to review Git changes",
   dockWorkspaceForTerminal: "Open a workspace to use Terminal",
   dockExtensionCloseTimeout:
-    "Extension did not respond to close; use the panel's own exit shortcut",
+    "Extension panel could not be closed; use the panel's own exit shortcut",
 
   // Browser controls
   dockBrowserNativeOnly: "Native browser surfaces are available in the desktop app",

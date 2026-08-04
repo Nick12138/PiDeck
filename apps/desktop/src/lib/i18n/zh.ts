@@ -798,7 +798,7 @@ export const zh: Record<MessageKey, string> = {
   dockOpenNamed: "打开：{label}",
   dockWorkspaceForChanges: "打开工作区后可查看 Git 改动",
   dockWorkspaceForTerminal: "打开工作区后可使用终端",
-  dockExtensionCloseTimeout: "扩展没有响应关闭请求，请使用面板自身的退出快捷键",
+  dockExtensionCloseTimeout: "扩展面板无法关闭，请使用面板自身的退出快捷键",
 
   // Browser controls
   dockBrowserNativeOnly: "Dock 浏览器仅在桌面应用中可用",
