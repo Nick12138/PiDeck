@@ -31,6 +31,8 @@ jobs:
           pnpm --filter @pideck/pi-host add --save-dev --save-exact
           '@pideck-test/rpiv-ask-user-question-v2@npm:@juicesharp/rpiv-ask-user-question@latest'
           --lockfile=false
+      - name: Build the protocol workspace
+        run: pnpm --filter @pideck/protocol run build
       - name: Run the real published-package regression
         run: >-
           pnpm --filter @pideck/pi-host exec vitest run
