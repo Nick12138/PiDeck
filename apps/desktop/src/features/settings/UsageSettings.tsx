@@ -191,7 +191,7 @@ export function UsageSettings() {
         ) : (
           <table className="w-full table-fixed border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 bg-surface-raised text-[11px] text-muted">
-              <tr className="border-b border-border">
+              <tr className="interface-density-table-header-row border-b border-border">
                 <th scope="col" className="w-[42%] px-6 py-2.5 font-medium">
                   {t("usageColSession")}
                 </th>
@@ -208,7 +208,10 @@ export function UsageSettings() {
             </thead>
             <tbody>
               {report?.sessions.map((session) => (
-                <tr key={session.sessionPath} className="border-b border-border/70">
+                <tr
+                  key={session.sessionPath}
+                  className="interface-density-table-row border-b border-border/70"
+                >
                   <td className="px-6 py-3">
                     <div className="flex min-w-0 items-center gap-2">
                       {session.archived && (

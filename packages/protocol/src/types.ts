@@ -838,6 +838,9 @@ export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
 export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;
 export type DesktopLanguage = (typeof DESKTOP_LANGUAGES)[number];
 
+export const DESKTOP_INTERFACE_DENSITIES = ["compact", "standard", "comfortable"] as const;
+export type DesktopInterfaceDensity = (typeof DESKTOP_INTERFACE_DENSITIES)[number];
+
 export const TERMINAL_PROFILE_IDS = [
   "auto",
   "pwsh",
@@ -864,8 +867,14 @@ export type DesktopSettings = {
   terminalProfile: TerminalProfileId;
   /** UI language; "system" (or absent) follows the OS locale. */
   language?: DesktopLanguage;
+  /** Spacing density for frequently used interface controls and rows. */
+  interfaceDensity?: DesktopInterfaceDensity;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */
   conversationContentWidth?: number;
+  /** Base font size for conversation content, in CSS pixels. */
+  conversationFontSize?: number;
+  /** Font size for inline and fenced conversation code, in CSS pixels. */
+  codeFontSize?: number;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

@@ -1059,6 +1059,52 @@ export function PackagesPage() {
     },
   ].filter((section) => section.items.length > 0);
 
+  const packageUpdateActions = (
+    <div
+      className="flex items-center gap-1 border-b border-border px-3 py-2"
+      data-package-update-actions
+    >
+      {updateCheckSupported && (
+        <button
+          type="button"
+          title={t("packagesCheckTitle")}
+          className={secondaryButton}
+          disabled={busy}
+          onClick={() => void checkUpdates()}
+        >
+          <RefreshCw size={14} />
+          <span className="hidden sm:inline">{t("packagesCheck")}</span>
+        </button>
+      )}
+      <button
+        type="button"
+        title={t("packagesRefreshTitle")}
+        className={secondaryButton}
+        disabled={loadState === "loading" || busy || mutationRunning}
+        onClick={() => void refresh()}
+      >
+        <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
+      </button>
+      <button
+        type="button"
+        className={primaryButton}
+        title={t("packagesUpdateAllTitle")}
+        aria-label={t("packagesUpdateAllTitle")}
+        disabled={
+          mutationBlocked || allPackages.length === 0 || (updateCheckDone && knownUpdates === 0)
+        }
+        onClick={() => beginUpdateReview(allPackages, true)}
+      >
+        <Download size={14} />
+        <span className="hidden sm:inline">
+          {updateCheckDone && knownUpdates > 0
+            ? t("packagesUpdateAllCount", { count: knownUpdates })
+            : t("packagesUpdateAll")}
+        </span>
+      </button>
+    </div>
+  );
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col bg-surface"
@@ -1258,8 +1304,12 @@ export function PackagesPage() {
         </div>
       )}
 
-      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        <h1 className="mr-2 text-sm font-semibold">{t("navPackages")}</h1>
+      <header
+        className="flex min-h-16 shrink-0 flex-wrap items-start gap-2 px-6 pb-2 pt-3"
+        data-settings-section-header
+        data-tauri-drag-region
+      >
+        <h1 className="mr-2 text-base font-semibold">{t("navPackages")}</h1>
         <div
           role="group"
           aria-label={t("packagesViewGroup")}
@@ -1289,46 +1339,6 @@ export function PackagesPage() {
         >
           {t("packagesCatalogLink")} <ExternalLink size={11} />
         </button>
-        <div className="ml-auto flex items-center gap-1">
-          {updateCheckSupported && (
-            <button
-              type="button"
-              title={t("packagesCheckTitle")}
-              className={secondaryButton}
-              disabled={busy}
-              onClick={() => void checkUpdates()}
-            >
-              <RefreshCw size={14} />
-              <span className="hidden sm:inline">{t("packagesCheck")}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            title={t("packagesRefreshTitle")}
-            className={secondaryButton}
-            disabled={loadState === "loading" || busy || mutationRunning}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={14} className={loadState === "loading" ? "animate-spin" : ""} />
-          </button>
-          <button
-            type="button"
-            className={primaryButton}
-            title={t("packagesUpdateAllTitle")}
-            aria-label={t("packagesUpdateAllTitle")}
-            disabled={
-              mutationBlocked || allPackages.length === 0 || (updateCheckDone && knownUpdates === 0)
-            }
-            onClick={() => beginUpdateReview(allPackages, true)}
-          >
-            <Download size={14} />
-            <span className="hidden sm:inline">
-              {updateCheckDone && knownUpdates > 0
-                ? t("packagesUpdateAllCount", { count: knownUpdates })
-                : t("packagesUpdateAll")}
-            </span>
-          </button>
-        </div>
       </header>
 
       {loadState === "error" && !packages ? (
@@ -1376,6 +1386,7 @@ export function PackagesPage() {
                 </div>
               </div>
             </div>
+            {packageUpdateActions}
             <div className="flex flex-wrap gap-2 border-b border-border p-3">
               <label className="relative min-w-40 flex-1">
                 <Search
@@ -1450,7 +1461,7 @@ export function PackagesPage() {
                     <button
                       type="button"
                       aria-current={selectedId === item.id ? "true" : undefined}
-                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`}
+                      className={`interface-density-compact-list-row flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`}
                       onClick={() => setSelectedId(item.id)}
                     >
                       <Boxes
@@ -1708,6 +1719,7 @@ export function PackagesPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
+          {packageUpdateActions}
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
             <Segmented
               value={resourceMode}

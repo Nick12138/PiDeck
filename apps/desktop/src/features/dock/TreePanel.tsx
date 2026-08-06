@@ -28,12 +28,7 @@ function RowRail({ row, laneCount }: { row: TreeRow; laneCount: number }) {
   const mid = ROW_H / 2;
   const stroke = (accent: boolean) => (accent ? ACCENT : BASE);
   return (
-    <svg
-      width={laneCount * LANE_W + 2}
-      height={ROW_H}
-      className="shrink-0"
-      aria-hidden="true"
-    >
+    <svg width={laneCount * LANE_W + 2} height={ROW_H} className="shrink-0" aria-hidden="true">
       {row.passes.map((pass) => (
         <line
           key={`pass:${pass.lane}`}
@@ -46,14 +41,7 @@ function RowRail({ row, laneCount }: { row: TreeRow; laneCount: number }) {
         />
       ))}
       {row.linkUp && (
-        <line
-          x1={x}
-          y1={0}
-          x2={x}
-          y2={mid}
-          stroke={stroke(row.linkUpAccent)}
-          strokeWidth={1.5}
-        />
+        <line x1={x} y1={0} x2={x} y2={mid} stroke={stroke(row.linkUpAccent)} strokeWidth={1.5} />
       )}
       {row.linkDown && (
         <line
@@ -215,10 +203,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
       }
       setRefreshSeq((seq) => seq + 1);
     } catch (err) {
-      pushNotification(
-        err instanceof Error ? err.message : t("dockTreeSwitchFailed"),
-        "error",
-      );
+      pushNotification(err instanceof Error ? err.message : t("dockTreeSwitchFailed"), "error");
     } finally {
       setNavigating(null);
     }
@@ -238,7 +223,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div className="interface-density-nav-row flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <GitBranch size={13} className="shrink-0 text-muted" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted">
           {busy ? t("dockTreeBusy") : t("dockTreeHint")}

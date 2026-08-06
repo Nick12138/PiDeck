@@ -905,7 +905,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         <div
           role="tablist"
           aria-label={t("gitViews")}
-          className="grid h-9 shrink-0 grid-cols-2 border-b border-border bg-surface-raised/25 p-1"
+          className="interface-density-nav-row grid h-9 shrink-0 grid-cols-2 border-b border-border bg-surface-raised/25 p-1"
         >
           <button
             type="button"

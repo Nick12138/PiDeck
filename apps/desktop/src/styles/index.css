@@ -65,10 +65,52 @@
 }
 
 :root {
+  --interface-control-height: 2rem;
+  --interface-nav-row-height: 2.25rem;
+  --interface-primary-row-height: 2.5rem;
+  --interface-list-padding-y: 0.75rem;
+  --interface-compact-list-padding-y: 0.5rem;
+  --interface-menu-padding-y: 0.5rem;
+  --interface-compact-menu-padding-y: 0.375rem;
+  --interface-table-header-padding-y: 0.625rem;
+  --interface-table-padding-y: 0.75rem;
+  --interface-card-gap: 1rem;
+  --interface-section-gap: 2rem;
+  --conversation-font-size: 14px;
+  --code-font-size: 12px;
+
   color-scheme: dark;
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.45;
+}
+
+:root[data-interface-density="compact"] {
+  --interface-control-height: 1.75rem;
+  --interface-nav-row-height: 2rem;
+  --interface-primary-row-height: 2.25rem;
+  --interface-list-padding-y: 0.5rem;
+  --interface-compact-list-padding-y: 0.375rem;
+  --interface-menu-padding-y: 0.375rem;
+  --interface-compact-menu-padding-y: 0.25rem;
+  --interface-table-header-padding-y: 0.375rem;
+  --interface-table-padding-y: 0.5rem;
+  --interface-card-gap: 0.75rem;
+  --interface-section-gap: 1.5rem;
+}
+
+:root[data-interface-density="comfortable"] {
+  --interface-control-height: 2.25rem;
+  --interface-nav-row-height: 2.5rem;
+  --interface-primary-row-height: 2.75rem;
+  --interface-list-padding-y: 1rem;
+  --interface-compact-list-padding-y: 0.75rem;
+  --interface-menu-padding-y: 0.625rem;
+  --interface-compact-menu-padding-y: 0.5rem;
+  --interface-table-header-padding-y: 0.875rem;
+  --interface-table-padding-y: 1rem;
+  --interface-card-gap: 1.25rem;
+  --interface-section-gap: 2.5rem;
 }
 
 html,
@@ -84,6 +126,85 @@ body,
 
 .conversation-content-width {
   max-width: min(100%, var(--conversation-content-width, 48rem));
+}
+
+.interface-density-control {
+  height: var(--interface-control-height);
+}
+
+:root:is([data-interface-density="compact"], [data-interface-density="comfortable"])
+  :where(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(
+        [type="hidden"]
+      ),
+    select
+  ) {
+  height: var(--interface-control-height);
+}
+
+.interface-density-nav-row {
+  height: var(--interface-nav-row-height);
+}
+
+.interface-density-primary-row {
+  height: var(--interface-primary-row-height);
+}
+
+.interface-density-list-row {
+  padding-top: var(--interface-list-padding-y);
+  padding-bottom: var(--interface-list-padding-y);
+}
+
+.interface-density-compact-list-row {
+  padding-top: var(--interface-compact-list-padding-y);
+  padding-bottom: var(--interface-compact-list-padding-y);
+}
+
+.interface-density-menu [role="menuitem"] {
+  padding-top: var(--interface-menu-padding-y);
+  padding-bottom: var(--interface-menu-padding-y);
+}
+
+.interface-density-compact-menu [role="menuitem"] {
+  padding-top: var(--interface-compact-menu-padding-y);
+  padding-bottom: var(--interface-compact-menu-padding-y);
+}
+
+.interface-density-table-header-row > th {
+  padding-top: var(--interface-table-header-padding-y);
+  padding-bottom: var(--interface-table-header-padding-y);
+}
+
+.interface-density-table-row > :is(th, td) {
+  padding-top: var(--interface-table-padding-y);
+  padding-bottom: var(--interface-table-padding-y);
+}
+
+.interface-density-card {
+  gap: var(--interface-card-gap);
+}
+
+.interface-density-stack {
+  gap: var(--interface-section-gap);
+}
+
+.appearance-preview-copy {
+  font-size: var(--conversation-font-size);
+  line-height: 1.65;
+}
+
+.appearance-preview-copy code {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+  padding: 0.12rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size);
+}
+
+.appearance-typography-preview pre {
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size);
+  line-height: 1.5;
 }
 
 button {
@@ -150,6 +271,11 @@ button {
 
 [data-window-platform="macos"] [data-dock-header] {
   padding-right: 8px;
+}
+
+/* Reserve the Windows frameless controls horizontally without making headers taller. */
+[data-window-platform="windows"] [data-settings-section-header][data-settings-has-actions] {
+  padding-right: 148px;
 }
 
 /* Multi-select checkboxes follow the app accent instead of the OS default. */
@@ -408,7 +534,7 @@ textarea:focus-visible {
   max-width: 100%;
   overflow-wrap: anywhere;
   color: var(--color-foreground);
-  font-size: 14px;
+  font-size: var(--conversation-font-size);
   line-height: 1.71;
 }
 
@@ -425,7 +551,7 @@ textarea:focus-visible {
 .chat-markdown h1,
 .chat-markdown [data-streamdown="heading-1"] {
   margin: 1.5rem 0 0.5rem;
-  font-size: 1.25rem;
+  font-size: 1.25em;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -433,7 +559,7 @@ textarea:focus-visible {
 .chat-markdown h2,
 .chat-markdown [data-streamdown="heading-2"] {
   margin: 1.25rem 0 0.5rem;
-  font-size: 1.1rem;
+  font-size: 1.1em;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -441,7 +567,7 @@ textarea:focus-visible {
 .chat-markdown h3,
 .chat-markdown [data-streamdown="heading-3"] {
   margin: 1rem 0 0.375rem;
-  font-size: 1rem;
+  font-size: 1em;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -453,7 +579,7 @@ textarea:focus-visible {
 .chat-markdown [data-streamdown="heading-5"],
 .chat-markdown [data-streamdown="heading-6"] {
   margin: 1rem 0 0.25rem;
-  font-size: 0.875rem;
+  font-size: 0.875em;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -478,7 +604,7 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
   padding: 0.15rem 0.4rem;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--code-font-size);
   overflow-wrap: anywhere;
 }
 
@@ -546,7 +672,7 @@ textarea:focus-visible {
   padding: 0 0.5rem 0.35rem;
   color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: max(10px, calc(var(--code-font-size) - 1px));
   letter-spacing: 0;
 }
 
@@ -597,7 +723,7 @@ textarea:focus-visible {
   max-width: 100%;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--code-font-size);
   line-height: 1.485;
   white-space: pre;
 }
@@ -805,7 +931,7 @@ svg[data-pideck-mermaid-theme="neutral"] {
 .chat-markdown th,
 .chat-markdown [data-streamdown="table-header-cell"] {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: max(11px, calc(var(--conversation-font-size) - 2px));
   font-weight: 600;
 }
 
@@ -856,6 +982,6 @@ svg[data-pideck-mermaid-theme="neutral"] {
 .thinking-markdown .chat-markdown,
 .thinking-markdown .chat-markdown p {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: max(11px, calc(var(--conversation-font-size) - 2px));
   line-height: 1.7;
 }

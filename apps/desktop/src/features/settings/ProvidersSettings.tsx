@@ -665,7 +665,7 @@ export function ProvidersSettings() {
                   <div className="fixed inset-0 z-20" onClick={() => setAddMenuOpen(false)} />
                   <div
                     role="menu"
-                    className="absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                    className="interface-density-menu absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
                   >
                     <button
                       role="menuitem"
@@ -734,7 +734,7 @@ export function ProvidersSettings() {
                 >
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left"
+                    className="interface-density-compact-list-row flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left"
                     aria-current={selectedId === provider.id ? "true" : undefined}
                     onClick={() =>
                       dirty
@@ -1223,7 +1223,7 @@ export function ProvidersSettings() {
                   ) : (
                     filteredModels.map((model) => (
                       <div key={model.id} className="border-b border-border last:border-b-0">
-                        <div className="flex h-10 items-center gap-3 px-3">
+                        <div className="interface-density-primary-row flex h-10 items-center gap-3 px-3">
                           <input
                             type="checkbox"
                             checked={model.enabled}

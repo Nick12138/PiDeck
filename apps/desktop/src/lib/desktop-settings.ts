@@ -1,9 +1,16 @@
 import {
+  DESKTOP_INTERFACE_DENSITIES,
   DESKTOP_LANGUAGES,
   DESKTOP_THEMES,
   TERMINAL_PROFILE_IDS,
   type DesktopSettings,
 } from "@pideck/protocol";
+import {
+  MAX_CODE_FONT_SIZE,
+  MAX_CONVERSATION_FONT_SIZE,
+  MIN_CODE_FONT_SIZE,
+  MIN_CONVERSATION_FONT_SIZE,
+} from "./appearance-preferences";
 import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
@@ -36,7 +43,10 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "extensionDecisionPresentation",
   "terminalProfile",
   "language",
+  "interfaceDensity",
   "conversationContentWidth",
+  "conversationFontSize",
+  "codeFontSize",
   "knownWorkspaces",
   "shortcutOverrides",
 ]);
@@ -81,12 +91,30 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   ) {
     throw new Error("Invalid desktop language");
   }
+  if (
+    values.interfaceDensity !== undefined &&
+    !isOneOf(values.interfaceDensity, DESKTOP_INTERFACE_DENSITIES)
+  ) {
+    throw new Error("Invalid interface density");
+  }
   const width = values.conversationContentWidth;
   if (
     width !== undefined &&
     (typeof width !== "number" || !Number.isInteger(width) || width < 560 || width > 0xffff_ffff)
   ) {
     throw new Error("conversationContentWidth must be an integer between 560 and 4294967295");
+  }
+  for (const [key, min, max] of [
+    ["conversationFontSize", MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE],
+    ["codeFontSize", MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE],
+  ] as const) {
+    const value = values[key];
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)
+    ) {
+      throw new Error(`${key} must be an integer between ${min} and ${max}`);
+    }
   }
   for (const key of ["restoreLastSession", "autoRestartHostOnce"] as const) {
     if (values[key] !== undefined && typeof values[key] !== "boolean") {

@@ -3,7 +3,7 @@ import { AlertTriangle, PackageOpen, type LucideIcon } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
-  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
+  "interface-density-control inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
 export const secondaryButton = `${buttonBase} border border-border hover:bg-surface-overlay`;
 export const primaryButton = `${buttonBase} bg-accent text-white hover:bg-accent-hover`;
 
@@ -97,13 +97,17 @@ export function Dialog({
             {tone === "default" ? <Icon size={18} /> : <AlertTriangle size={18} />}
           </div>
           <div className="min-w-0 flex-1">
-            <h2 id="app-dialog-title" className="text-base font-semibold">{title}</h2>
+            <h2 id="app-dialog-title" className="text-base font-semibold">
+              {title}
+            </h2>
             <div className="mt-2 text-sm text-muted">{children}</div>
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           {showCancel && (
-            <button type="button" className={secondaryButton} onClick={onCancel}>{t("commonCancel")}</button>
+            <button type="button" className={secondaryButton} onClick={onCancel}>
+              {t("commonCancel")}
+            </button>
           )}
           <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
             {confirmLabel}

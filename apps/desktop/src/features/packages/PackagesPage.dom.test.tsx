@@ -103,34 +103,38 @@ function snapshot(overrides: Partial<PackageSnapshot> = {}): PackageSnapshot {
     revision: 1,
     workspaceId: "w1",
     scope: "all",
-    configured: [packageRecord(), packageRecord({
-      id: "package:project:theme",
-      identity: "local:theme",
-      source: "./theme",
-      kind: "local",
-      scope: "project",
-      displayName: "Workspace theme",
-      projectOverride: { source: ".pi/settings.json", overrideCount: 2 },
-      resourceCounts: {
-        extensions: 0,
-        skills: 0,
-        prompts: 0,
-        themes: 1,
-        enabled: 1,
-        disabled: 0,
-      },
-    }), packageRecord({
-      id: "package:user:legacy-theme",
-      identity: "local:legacy-theme",
-      source: "./legacy-theme",
-      kind: "local",
-      scope: "user",
-      displayName: "Legacy theme",
-      effective: false,
-      shadowedByPackageId: "package:project:theme",
-      resourceCounts: null,
-      resourceCountsState: "unknownShadowed",
-    })],
+    configured: [
+      packageRecord(),
+      packageRecord({
+        id: "package:project:theme",
+        identity: "local:theme",
+        source: "./theme",
+        kind: "local",
+        scope: "project",
+        displayName: "Workspace theme",
+        projectOverride: { source: ".pi/settings.json", overrideCount: 2 },
+        resourceCounts: {
+          extensions: 0,
+          skills: 0,
+          prompts: 0,
+          themes: 1,
+          enabled: 1,
+          disabled: 0,
+        },
+      }),
+      packageRecord({
+        id: "package:user:legacy-theme",
+        identity: "local:legacy-theme",
+        source: "./legacy-theme",
+        kind: "local",
+        scope: "user",
+        displayName: "Legacy theme",
+        effective: false,
+        shadowedByPackageId: "package:project:theme",
+        resourceCounts: null,
+        resourceCountsState: "unknownShadowed",
+      }),
+    ],
     resources: [
       owner,
       resource({
@@ -162,7 +166,9 @@ function snapshot(overrides: Partial<PackageSnapshot> = {}): PackageSnapshot {
       }),
     ],
     updateCheck: { supported: true },
-    diagnostics: [{ severity: "warning", source: "package:user:tools", message: "Optional dependency missing" }],
+    diagnostics: [
+      { severity: "warning", source: "package:user:tools", message: "Optional dependency missing" },
+    ],
     ...overrides,
   };
 }
@@ -229,10 +235,17 @@ describe("PackagesPage DOM workflows", () => {
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
       if (method === "package.list") return envelope(method, currentSnapshot);
-      if (method === "package.install" || method === "package.update" || method === "package.updateAll" || method === "resource.setPreference" || method === "resource.setPreferences") {
+      if (
+        method === "package.install" ||
+        method === "package.update" ||
+        method === "package.updateAll" ||
+        method === "resource.setPreference" ||
+        method === "resource.setPreferences"
+      ) {
         return envelope(method, mutationResult(currentSnapshot));
       }
-      if (method === "package.checkUpdates") return envelope(method, { supported: true, updates: [] });
+      if (method === "package.checkUpdates")
+        return envelope(method, { supported: true, updates: [] });
       throw new Error(`Unexpected method ${method}`);
     });
   });
@@ -260,14 +273,18 @@ describe("PackagesPage DOM workflows", () => {
     expect(toolsRow).toHaveTextContent("1.0.0");
     expect(toolsRow).toHaveTextContent("2 resources");
     expect(toolsRow).toHaveTextContent("1 diagnostic");
-    expect(screen.getByRole("button", { name: /Legacy theme.*Replaced by project/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Legacy theme.*Replaced by project/ }),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Search installed packages"), "workspace");
     await user.selectOptions(screen.getByLabelText("Package scope"), "project");
     await user.selectOptions(screen.getByLabelText("Contained resource type"), "theme");
 
     expect(screen.getByRole("button", { name: /Workspace theme.*Project/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Workspace theme.*Workspace overrides/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Workspace theme.*Workspace overrides/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tools" })).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText("Search installed packages"));
@@ -293,27 +310,47 @@ describe("PackagesPage DOM workflows", () => {
     expect(screen.getByRole("heading", { name: /Runtime \(1\)/ })).toBeInTheDocument();
 
     const toolsControls = screen.getByRole("group", { name: "Tools package" });
-    expect(within(toolsControls).getByRole("button", { name: "inherit all resources in Tools package" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" })).toBeInTheDocument();
-    expect(within(toolsControls).getByRole("button", { name: "disabled all resources in Tools package" })).toBeInTheDocument();
+    expect(
+      within(toolsControls).getByRole("button", { name: "inherit all resources in Tools package" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" }),
+    ).toBeInTheDocument();
+    expect(
+      within(toolsControls).getByRole("button", {
+        name: "disabled all resources in Tools package",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Managed by extension")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Provided by Tools extension" })).toBeInTheDocument();
     const runtimeRow = screen.getByText("Dynamic review").closest("li");
     expect(runtimeRow).not.toBeNull();
     expect(within(runtimeRow!).queryByTitle("enabled in project scope")).not.toBeInTheDocument();
 
-    await user.click(within(toolsControls).getByRole("button", { name: "disabled all resources in Tools package" }));
-    expect(screen.getByRole("dialog", { name: "Confirm project resource change" })).toBeInTheDocument();
+    await user.click(
+      within(toolsControls).getByRole("button", {
+        name: "disabled all resources in Tools package",
+      }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Confirm project resource change" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Apply change" }));
     await waitFor(() => {
-      const mutations = request.mock.calls.filter(([method]) => method === "resource.setPreferences");
+      const mutations = request.mock.calls.filter(
+        ([method]) => method === "resource.setPreferences",
+      );
       expect(mutations).toHaveLength(1);
       expect(mutations[0]).toEqual([
         "resource.setPreferences",
         expect.anything(),
         {
           updates: [
-            { resourceId: "resource:extension:tools", targetScope: "project", preference: "disabled" },
+            {
+              resourceId: "resource:extension:tools",
+              targetScope: "project",
+              preference: "disabled",
+            },
             { resourceId: "resource:skill:review", targetScope: "project", preference: "disabled" },
           ],
         },
@@ -322,7 +359,10 @@ describe("PackagesPage DOM workflows", () => {
     });
     await user.click(screen.getByRole("button", { name: "Provided by Tools extension" }));
     expect(screen.getByLabelText("Search resources")).toHaveValue("Tools");
-    expect(screen.getByRole("button", { name: "Extensions" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Extensions" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("controls all direct resources from the installed package detail", async () => {
@@ -331,8 +371,14 @@ describe("PackagesPage DOM workflows", () => {
     await user.click(await screen.findByRole("button", { name: /Tools.*User/ }));
 
     const toolsControls = screen.getByRole("group", { name: "Tools package" });
-    expect(within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" })).toHaveAttribute("aria-pressed", "true");
-    await user.click(within(toolsControls).getByRole("button", { name: "disabled all resources in Tools package" }));
+    expect(
+      within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(
+      within(toolsControls).getByRole("button", {
+        name: "disabled all resources in Tools package",
+      }),
+    );
 
     await waitFor(() => {
       expect(request).toHaveBeenCalledWith(
@@ -361,16 +407,18 @@ describe("PackagesPage DOM workflows", () => {
       preferences: { user: "disabled", project: "inherit" },
     });
     currentSnapshot = snapshot({
-      configured: [packageRecord({
-        resourceCounts: {
-          extensions: 1,
-          skills: 0,
-          prompts: 1,
-          themes: 0,
-          enabled: 1,
-          disabled: 1,
-        },
-      })],
+      configured: [
+        packageRecord({
+          resourceCounts: {
+            extensions: 1,
+            skills: 0,
+            prompts: 1,
+            themes: 0,
+            enabled: 1,
+            disabled: 1,
+          },
+        }),
+      ],
       resources: [extension, prompt],
       diagnostics: [],
     });
@@ -416,9 +464,11 @@ describe("PackagesPage DOM workflows", () => {
     await user.click(enable);
     expect(enable).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("status")).toHaveTextContent("Applying resource preferences");
-    expect(screen.getByRole("button", {
-      name: "enabled all resources in Tools package",
-    })).toBeDisabled();
+    expect(
+      screen.getByRole("button", {
+        name: "enabled all resources in Tools package",
+      }),
+    ).toBeDisabled();
     expect(screen.getByTitle("Refresh packages")).toBeDisabled();
     releaseMutation();
     await waitFor(() => {
@@ -426,23 +476,29 @@ describe("PackagesPage DOM workflows", () => {
         "resource.setPreferences",
         expect.anything(),
         {
-          updates: [{
-            resourceId: prompt.id,
-            targetScope: "user",
-            preference: "enabled",
-          }],
+          updates: [
+            {
+              resourceId: prompt.id,
+              targetScope: "user",
+              preference: "enabled",
+            },
+          ],
         },
         615_000,
       );
-      expect(screen.getByRole("button", {
-        name: "enabled all resources in Tools package",
-      })).not.toBeDisabled();
+      expect(
+        screen.getByRole("button", {
+          name: "enabled all resources in Tools package",
+        }),
+      ).not.toBeDisabled();
     });
 
     expect(listRequests).toBe(1);
-    expect(screen.getByRole("button", {
-      name: "enabled all resources in Tools package",
-    })).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", {
+        name: "enabled all resources in Tools package",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/Refresh failed: Service graph is busy/)).not.toBeInTheDocument();
   });
 
@@ -458,16 +514,18 @@ describe("PackagesPage DOM workflows", () => {
       preferences: { user: "disabled", project: "inherit" },
     });
     const staleSnapshot = snapshot({
-      configured: [packageRecord({
-        resourceCounts: {
-          extensions: 1,
-          skills: 0,
-          prompts: 1,
-          themes: 0,
-          enabled: 1,
-          disabled: 1,
-        },
-      })],
+      configured: [
+        packageRecord({
+          resourceCounts: {
+            extensions: 1,
+            skills: 0,
+            prompts: 1,
+            themes: 0,
+            enabled: 1,
+            disabled: 1,
+          },
+        }),
+      ],
       resources: [extension, prompt],
       diagnostics: [],
     });
@@ -501,20 +559,26 @@ describe("PackagesPage DOM workflows", () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
     await user.click(screen.getByRole("button", { name: "Resources" }));
-    await user.click(screen.getByRole("button", {
-      name: "enabled all resources in Tools package",
-    }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "enabled all resources in Tools package",
+      }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", {
-        name: "enabled all resources in Tools package",
-      })).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("button", {
+          name: "enabled all resources in Tools package",
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
     });
     releaseRefresh();
     await waitFor(() => {
-      expect(screen.getByRole("button", {
-        name: "enabled all resources in Tools package",
-      })).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("button", {
+          name: "enabled all resources in Tools package",
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
     });
     expect(useAppStore.getState().packages?.revision).toBe(committedSnapshot.revision);
   });
@@ -535,12 +599,17 @@ describe("PackagesPage DOM workflows", () => {
   it("opens a replaced user package's resources in User mode", async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await user.click(await screen.findByRole("button", { name: /Legacy theme.*Replaced by project/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Legacy theme.*Replaced by project/ }),
+    );
     await user.click(screen.getByRole("button", { name: "Manage resources" }));
 
     expect(screen.getByLabelText("Resource owner")).toHaveValue("package:user:legacy-theme");
     expect(screen.getByRole("button", { name: "user" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "project" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "project" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("requires an install review and shows executable-code security context", async () => {
@@ -582,7 +651,13 @@ describe("PackagesPage DOM workflows", () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
     await screen.findByRole("button", { name: /Tools.*User/ });
-    expect(screen.getByRole("button", { name: "Update all packages" })).toBeEnabled();
+    const updateAll = screen.getByRole("button", { name: "Update all packages" });
+    const updateActions = updateAll.closest("[data-package-update-actions]");
+    expect(updateAll).toBeEnabled();
+    expect(updateActions?.previousElementSibling).toContainElement(
+      screen.getByLabelText("Package source"),
+    );
+    expect(updateActions).not.toHaveClass("justify-end");
 
     await user.click(screen.getByRole("button", { name: "Check" }));
     await waitFor(() =>
@@ -606,9 +681,7 @@ describe("PackagesPage DOM workflows", () => {
       expect(await screen.findByText("Working…")).toBeInTheDocument();
       expect(screen.queryByText("progress")).not.toBeInTheDocument();
 
-      await user.click(
-        screen.getByRole("button", { name: "Dismiss package progress" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Dismiss package progress" }));
       expect(screen.queryByText("Working…")).not.toBeInTheDocument();
     } finally {
       useAppStore.getState().setPackageProgress(null);
@@ -701,8 +774,14 @@ describe("PackagesPage DOM workflows", () => {
     expect(await screen.findByRole("button", { name: "Update all packages" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Resources" }));
     const toolsControls = screen.getByRole("group", { name: "Tools package" });
-    expect(within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" })).toBeDisabled();
-    expect(within(toolsControls).getByRole("button", { name: "disabled all resources in Tools package" })).toBeDisabled();
+    expect(
+      within(toolsControls).getByRole("button", { name: "enabled all resources in Tools package" }),
+    ).toBeDisabled();
+    expect(
+      within(toolsControls).getByRole("button", {
+        name: "disabled all resources in Tools package",
+      }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Enable all shown" })).toBeDisabled();
   });
 
@@ -722,7 +801,9 @@ describe("PackagesPage DOM workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Disable all shown" }));
     await waitFor(() => {
-      const mutations = request.mock.calls.filter(([method]) => method === "resource.setPreferences");
+      const mutations = request.mock.calls.filter(
+        ([method]) => method === "resource.setPreferences",
+      );
       expect(mutations).toHaveLength(1);
       expect(mutations[0]).toEqual([
         "resource.setPreferences",

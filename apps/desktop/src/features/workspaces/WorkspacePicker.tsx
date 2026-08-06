@@ -203,7 +203,7 @@ export function WorkspacePicker() {
           type="button"
           onClick={() => void pickAndAdd()}
           disabled={!host || pending}
-          className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+          className="interface-density-nav-row flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
         >
           <FolderPlus size={16} />
           <span>{pending ? t("workspacesOpening") : t("workspacesAdd")}</span>
@@ -215,7 +215,7 @@ export function WorkspacePicker() {
             return (
               <li
                 key={path}
-                className={`group flex h-9 items-center rounded-md text-[13px] ${
+                className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
                   active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
                 }`}
               >

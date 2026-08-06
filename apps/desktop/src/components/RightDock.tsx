@@ -629,7 +629,7 @@ export function RightDock() {
               >
                 <ChevronDown size={14} />
               </summary>
-              <div className="absolute right-0 top-8 z-50 w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg">
+              <div className="interface-density-compact-menu absolute right-0 top-8 z-50 w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg">
                 {overflowTabIds.map((tabId) => {
                   const { label, Icon } = tabInfo(tabId);
                   return (
@@ -684,7 +684,7 @@ export function RightDock() {
             {addMenuOpen && (
               <div
                 role="menu"
-                className={`absolute top-8 z-[70] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg ${
+                className={`interface-density-menu absolute top-8 z-[70] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg ${
                   tabOrder.length === 0 ? "left-0" : "right-0"
                 }`}
                 onKeyDown={(event) => {

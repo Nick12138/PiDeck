@@ -1,10 +1,4 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  LoaderCircle,
-  MessageCirclePlus,
-  Settings,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -31,7 +25,7 @@ function NewSessionButton() {
       type="button"
       onClick={() => void createNewSession()}
       disabled={!workspace?.servicesReady || pending}
-      className="flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+      className="interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
       <MessageCirclePlus size={18} className="shrink-0" />
       <span>{pending ? t("sidebarCreating") : t("sidebarNewConversation")}</span>
@@ -60,8 +54,7 @@ export function SidebarLayout({
   const rehydrating = useAppStore((s) => s.rehydrating);
   const desynchronized = useAppStore((s) => s.desynchronized);
   const hostReady = host?.phase === "ready" || host?.phase === "waitingForWorkspace";
-  const connectionPending =
-    !hostFatal && (connecting || rehydrating || desynchronized);
+  const connectionPending = !hostFatal && (connecting || rehydrating || desynchronized);
   const connectionTitle = hostFatal
     ? t("sidebarHostOffline")
     : connecting
@@ -70,7 +63,7 @@ export function SidebarLayout({
         ? t("sidebarResync")
         : rehydrating
           ? t("sidebarLoadingSnapshots")
-          : host?.phase ?? t("sidebarHostOffline");
+          : (host?.phase ?? t("sidebarHostOffline"));
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.sessionsCollapsed"),
   );
@@ -115,73 +108,73 @@ export function SidebarLayout({
 
       {sidebarCollapsed ? null : (
         <>
-      <div
-        className="flex h-16 shrink-0 items-center gap-3 px-4"
-        data-sidebar-header
-        data-tauri-drag-region
-      >
-        <PiMark className="mac-sidebar-brand-mark size-8" />
-        <span className="text-[15px] font-semibold">Pi Agent</span>
-        <div className="ml-auto">
-          <NotificationCenter />
-        </div>
-      </div>
+          <div
+            className="flex h-16 shrink-0 items-center gap-3 px-4"
+            data-sidebar-header
+            data-tauri-drag-region
+          >
+            <PiMark className="mac-sidebar-brand-mark size-8" />
+            <span className="text-[15px] font-semibold">Pi Agent</span>
+            <div className="ml-auto">
+              <NotificationCenter />
+            </div>
+          </div>
 
-      <div className="px-2 pb-3">
-        <NewSessionButton />
-      </div>
+          <div className="px-2 pb-3">
+            <NewSessionButton />
+          </div>
 
-      <div className="border-t border-border px-2 py-3">
-        <WorkspacePicker />
-      </div>
+          <div className="border-t border-border px-2 py-3">
+            <WorkspacePicker />
+          </div>
 
-      {/* Collapsed: the header row docks at the bottom, right above Settings. */}
-      <div
-        className={
-          sessionsCollapsed
-            ? "mt-auto shrink-0 border-t border-border px-2 py-1"
-            : "min-h-0 flex-1 overflow-y-auto px-2 pb-3"
-        }
-      >
-        <SessionList
-          showCreateAction={false}
-          collapsed={sessionsCollapsed}
-          onToggleCollapsed={toggleSessionsCollapsed}
-        />
-      </div>
-
-      <div className="shrink-0 border-t border-border p-2">
-        <button
-          type="button"
-          onClick={() => setPage(page === "chat" ? "settings" : "chat")}
-          className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm transition-colors ${
-            page !== "chat"
-              ? "bg-surface-overlay text-foreground"
-              : "text-foreground hover:bg-surface-overlay"
-          }`}
-        >
-          <Settings size={17} />
-          <span className="flex-1">{t("settingsTitle")}</span>
-          {connectionPending ? (
-            <span className="flex shrink-0" title={connectionTitle}>
-              <LoaderCircle size={14} className="animate-spin text-muted" />
-            </span>
-          ) : (
-            <span
-              className={`size-1.5 rounded-full ${
-                hostFatal
-                  ? "bg-danger"
-                  : hostReady
-                    ? "bg-success"
-                    : host
-                      ? "bg-warning"
-                      : "bg-muted"
-              }`}
-              title={connectionTitle}
+          {/* Collapsed: the header row docks at the bottom, right above Settings. */}
+          <div
+            className={
+              sessionsCollapsed
+                ? "mt-auto shrink-0 border-t border-border px-2 py-1"
+                : "min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+            }
+          >
+            <SessionList
+              showCreateAction={false}
+              collapsed={sessionsCollapsed}
+              onToggleCollapsed={toggleSessionsCollapsed}
             />
-          )}
-        </button>
-      </div>
+          </div>
+
+          <div className="shrink-0 border-t border-border p-2">
+            <button
+              type="button"
+              onClick={() => setPage(page === "chat" ? "settings" : "chat")}
+              className={`interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm transition-colors ${
+                page !== "chat"
+                  ? "bg-surface-overlay text-foreground"
+                  : "text-foreground hover:bg-surface-overlay"
+              }`}
+            >
+              <Settings size={17} />
+              <span className="flex-1">{t("settingsTitle")}</span>
+              {connectionPending ? (
+                <span className="flex shrink-0" title={connectionTitle}>
+                  <LoaderCircle size={14} className="animate-spin text-muted" />
+                </span>
+              ) : (
+                <span
+                  className={`size-1.5 rounded-full ${
+                    hostFatal
+                      ? "bg-danger"
+                      : hostReady
+                        ? "bg-success"
+                        : host
+                          ? "bg-warning"
+                          : "bg-muted"
+                  }`}
+                  title={connectionTitle}
+                />
+              )}
+            </button>
+          </div>
         </>
       )}
     </aside>

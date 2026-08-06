@@ -30,9 +30,7 @@ const shortcutCommands = appCommands.filter((command) => command.chord);
 
 export function ShortcutsSettings() {
   const t = useT();
-  const shortcutOverrides = useAppStore(
-    (state) => state.desktopSettings?.shortcutOverrides,
-  );
+  const shortcutOverrides = useAppStore((state) => state.desktopSettings?.shortcutOverrides);
   const isMac = resolveWindowControlsPlatform() === "macos";
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -40,10 +38,7 @@ export function ShortcutsSettings() {
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const hasAnyOverrides = Object.keys(shortcutOverrides ?? {}).length > 0;
 
-  async function saveOverrides(
-    next: ShortcutOverrides,
-    savingTarget: string,
-  ): Promise<void> {
+  async function saveOverrides(next: ShortcutOverrides, savingTarget: string): Promise<void> {
     setSavingId(savingTarget);
     try {
       await persistDesktopSettings({ shortcutOverrides: next });
@@ -81,10 +76,7 @@ export function ShortcutsSettings() {
       return;
     }
     if (capture.kind === "clear") {
-      void saveOverrides(
-        updateShortcutOverride(shortcutOverrides, command, null),
-        command.id,
-      );
+      void saveOverrides(updateShortcutOverride(shortcutOverrides, command, null), command.id);
       return;
     }
     if (capture.kind === "invalid") {
@@ -148,16 +140,12 @@ export function ShortcutsSettings() {
             return (
               <li
                 key={command.id}
-                className="flex min-h-14 flex-col gap-2 border-b border-border/60 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                className="interface-density-list-row flex min-h-14 flex-col gap-2 border-b border-border/60 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
               >
                 <div className="min-w-0">
                   <span className="text-sm text-foreground">{title}</span>
                   {rowError && (
-                    <p
-                      id={errorId}
-                      role="alert"
-                      className="mt-1 text-[11px] leading-4 text-danger"
-                    >
+                    <p id={errorId} role="alert" className="mt-1 text-[11px] leading-4 text-danger">
                       {rowError}
                     </p>
                   )}
@@ -175,7 +163,7 @@ export function ShortcutsSettings() {
                         : t("shortcutsRecord", { command: title })
                     }
                     disabled={savingId !== null}
-                    className={`inline-flex h-8 min-w-28 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`interface-density-control inline-flex h-8 min-w-28 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
                       recording
                         ? "border-accent bg-accent/10 text-accent"
                         : "border-border bg-surface-overlay text-muted hover:text-foreground"
@@ -221,8 +209,7 @@ export function ShortcutsSettings() {
                     title={t("shortcutsReset", { command: title })}
                     aria-label={t("shortcutsReset", { command: title })}
                     disabled={
-                      !hasShortcutOverride(shortcutOverrides, command.id) ||
-                      savingId !== null
+                      !hasShortcutOverride(shortcutOverrides, command.id) || savingId !== null
                     }
                     className="flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
                     onClick={() =>

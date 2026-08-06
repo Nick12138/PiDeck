@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Shared fixed header bar for top-level settings sections. */
+/** Shared unframed heading for top-level settings sections. */
 export function SectionHeader({
   title,
   subtitle,
@@ -11,13 +11,20 @@ export function SectionHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+    <header
+      className="flex min-h-16 shrink-0 items-start gap-3 px-6 pb-2 pt-3"
+      data-settings-has-actions={children ? "" : undefined}
+      data-settings-section-header
+      data-tauri-drag-region
+    >
       <div className="min-w-0">
-        <h1 className="text-sm font-semibold">{title}</h1>
-        {subtitle && <p className="truncate text-[11px] text-muted">{subtitle}</p>}
+        <h1 className="text-base font-semibold">{title}</h1>
+        {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
       </div>
       {children && (
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">{children}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5" data-settings-header-actions>
+          {children}
+        </div>
       )}
     </header>
   );

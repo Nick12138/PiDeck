@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
-import { applyTheme } from "../../lib/theme";
 import {
   ArrowLeft,
   ChartColumn,
   Keyboard,
   KeyRound,
   Package,
+  Palette,
   RefreshCw,
   ServerCog,
   Settings2,
@@ -30,13 +30,9 @@ import { ProvidersSettings } from "./ProvidersSettings";
 import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
+import { AppearanceSettings } from "./AppearanceSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
-import {
-  DEFAULT_CONVERSATION_CONTENT_WIDTH,
-  MIN_CONVERSATION_CONTENT_WIDTH,
-  resolveConversationContentWidth,
-} from "../chat/conversation-layout";
 
 type ShellProfileSummary = {
   id: TerminalProfileId;
@@ -58,13 +54,6 @@ function GeneralSettings() {
   const [shellCatalogLoading, setShellCatalogLoading] = useState(false);
   const [shellCatalogError, setShellCatalogError] = useState<string | null>(null);
   const [decisionPresentationSaving, setDecisionPresentationSaving] = useState(false);
-  const configuredConversationWidth = resolveConversationContentWidth(
-    desktopSettings?.conversationContentWidth,
-  );
-  const [conversationWidthDraft, setConversationWidthDraft] = useState(
-    String(configuredConversationWidth),
-  );
-  const [conversationWidthInvalid, setConversationWidthInvalid] = useState(false);
 
   async function openSettingsFile() {
     if (!host?.agentDir) return;
@@ -96,44 +85,13 @@ function GeneralSettings() {
     void loadShellProfiles();
   }, []);
 
-  useEffect(() => {
-    setConversationWidthDraft(String(configuredConversationWidth));
-    setConversationWidthInvalid(false);
-  }, [configuredConversationWidth]);
-
   async function patchDesktop(patch: DesktopSettingsUpdate) {
     try {
       await persistDesktopSettings(patch);
-      if (patch.theme) {
-        const next = useAppStore.getState().desktopSettings;
-        if (next) applyTheme(next.theme);
-      }
       return true;
     } catch (error) {
       notifyDesktopSettingsSaveFailure(error);
       return false;
-    }
-  }
-
-  async function commitConversationWidth() {
-    const parsed = Number(conversationWidthDraft.trim());
-    if (!Number.isInteger(parsed) || parsed < MIN_CONVERSATION_CONTENT_WIDTH) {
-      setConversationWidthInvalid(true);
-      return;
-    }
-
-    setConversationWidthInvalid(false);
-    setConversationWidthDraft(String(parsed));
-    const saved = await patchDesktop({ conversationContentWidth: parsed });
-    if (!saved) {
-      setConversationWidthDraft(
-        String(
-          resolveConversationContentWidth(
-            useAppStore.getState().desktopSettings?.conversationContentWidth ??
-              DEFAULT_CONVERSATION_CONTENT_WIDTH,
-          ),
-        ),
-      );
     }
   }
 
@@ -214,104 +172,8 @@ function GeneralSettings() {
       <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
         <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAppearanceGroup")}</h2>
+          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalStartupGroup")}</h2>
           <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-            <label className="flex items-center justify-between gap-4">
-              <span className="min-w-0">
-                <span className="block text-sm">{t("generalTheme")}</span>
-                <span className="block text-xs text-muted">{t("generalThemeDesc")}</span>
-              </span>
-              <select
-                className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
-                value={desktopSettings?.theme ?? "system"}
-                onChange={(e) =>
-                  void patchDesktop({
-                    theme: e.target.value as "light" | "dark" | "system",
-                  })
-                }
-              >
-                <option value="system">{t("commonSystem")}</option>
-                <option value="light">{t("generalThemeLight")}</option>
-                <option value="dark">{t("generalThemeDark")}</option>
-              </select>
-            </label>
-            <label className="flex items-center justify-between gap-4">
-              <span className="min-w-0">
-                <span className="block text-sm">{t("generalLanguage")}</span>
-                <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
-              </span>
-              <select
-                className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
-                value={desktopSettings?.language ?? "system"}
-                onChange={(e) =>
-                  void patchDesktop({
-                    language: e.target.value as "system" | "en" | "zh",
-                  })
-                }
-              >
-                <option value="system">{t("commonSystem")}</option>
-                <option value="en">English</option>
-                <option value="zh">中文</option>
-              </select>
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-              <span className="min-w-0">
-                <label htmlFor="conversation-content-width" className="block text-sm">
-                  {t("generalConversationWidth")}
-                </label>
-                <span
-                  id="conversation-content-width-description"
-                  className="block text-xs text-muted"
-                >
-                  {t("generalConversationWidthDesc", {
-                    min: MIN_CONVERSATION_CONTENT_WIDTH,
-                  })}
-                </span>
-              </span>
-              <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
-                <span
-                  className={`flex h-8 w-24 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-accent ${
-                    conversationWidthInvalid ? "border-danger" : "border-border"
-                  }`}
-                >
-                  <input
-                    id="conversation-content-width"
-                    type="number"
-                    min={MIN_CONVERSATION_CONTENT_WIDTH}
-                    step={1}
-                    inputMode="numeric"
-                    className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
-                    value={conversationWidthDraft}
-                    aria-invalid={conversationWidthInvalid || undefined}
-                    aria-describedby={`conversation-content-width-description${
-                      conversationWidthInvalid ? " conversation-content-width-error" : ""
-                    }`}
-                    onChange={(event) => {
-                      setConversationWidthDraft(event.target.value);
-                      if (conversationWidthInvalid) setConversationWidthInvalid(false);
-                    }}
-                    onBlur={() => void commitConversationWidth()}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter") return;
-                      event.preventDefault();
-                      void commitConversationWidth();
-                    }}
-                  />
-                  <span className="ml-1 text-[11px] text-muted">px</span>
-                </span>
-                {conversationWidthInvalid && (
-                  <span
-                    id="conversation-content-width-error"
-                    role="alert"
-                    className="max-w-64 text-[11px] leading-4 text-danger sm:text-right"
-                  >
-                    {t("generalConversationWidthError", {
-                      min: MIN_CONVERSATION_CONTENT_WIDTH,
-                    })}
-                  </span>
-                )}
-              </span>
-            </div>
             <div className="flex items-center justify-between gap-4">
               <span className="min-w-0">
                 <span className="block text-sm">{t("generalRestoreSession")}</span>
@@ -499,6 +361,7 @@ const SETTINGS_NAV: Array<{
   icon: typeof Settings2;
 }> = [
   { id: "general", label: "navGeneral", icon: Settings2 },
+  { id: "appearance", label: "navAppearance", icon: Palette },
   { id: "providers", label: "navProviders", icon: KeyRound },
   { id: "packages", label: "navPackages", icon: Package },
   { id: "usage", label: "navUsage", icon: ChartColumn },
@@ -532,35 +395,41 @@ export function SettingsPage({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
-      <header
-        className="flex h-14 shrink-0 items-center border-b border-border px-4"
-        data-settings-header
-        data-tauri-drag-region
+    <div className="flex h-full min-h-0 overflow-hidden bg-surface" data-settings-shell>
+      <aside
+        className="flex w-52 shrink-0 flex-col border-r border-border bg-sidebar"
+        data-settings-sidebar
       >
-        <button
-          type="button"
-          onClick={onClose}
-          className="mr-3 flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
-          title={t("settingsBack")}
-          aria-label={t("settingsBack")}
+        <header
+          className="shrink-0 px-4 py-3"
+          data-settings-header
+          data-settings-sidebar-header
+          data-tauri-drag-region
         >
-          <ArrowLeft size={18} />
-        </button>
-        <div className="pointer-events-none">
-          <h1 className="text-sm font-semibold">{t("settingsTitle")}</h1>
-          <p className="text-[11px] text-muted">{t("settingsSubtitle")}</p>
-        </div>
-      </header>
+          <button
+            type="button"
+            onClick={onClose}
+            className="interface-density-control flex h-8 items-center gap-2 rounded-md text-xs text-muted transition-colors hover:text-foreground"
+            title={t("settingsBack")}
+            aria-label={t("settingsBack")}
+          >
+            <ArrowLeft size={14} />
+            <span>{t("settingsBack")}</span>
+          </button>
+          <div className="pointer-events-none mt-2 flex h-8 min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
+              <Settings2 size={15} />
+            </span>
+            <h1 className="truncate text-sm font-semibold">{t("settingsTitle")}</h1>
+          </div>
+        </header>
 
-      <div className="flex min-h-0 flex-1">
-        <nav className="w-52 shrink-0 border-r border-border bg-sidebar px-3 py-4">
-          <p className="mb-2 px-2 text-[11px] font-medium text-muted">PiDeck</p>
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
-              className={`mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+              className={`interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
                 section === id
                   ? "bg-surface-overlay font-medium text-foreground"
                   : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
@@ -573,22 +442,25 @@ export function SettingsPage({
             </button>
           ))}
         </nav>
-        <div className="flex min-h-0 min-w-0 flex-1">
-          {section === "general" ? (
-            <GeneralSettings />
-          ) : section === "shortcuts" ? (
-            <ShortcutsSettings />
-          ) : section === "providers" ? (
-            <ProvidersSettings />
-          ) : section === "packages" ? (
-            <PackagesPage />
-          ) : section === "host" ? (
-            <HostSettings />
-          ) : (
-            <UsageSettings />
-          )}
-        </div>
-      </div>
+      </aside>
+
+      <main className="flex min-h-0 min-w-0 flex-1" data-settings-content>
+        {section === "general" ? (
+          <GeneralSettings />
+        ) : section === "appearance" ? (
+          <AppearanceSettings />
+        ) : section === "shortcuts" ? (
+          <ShortcutsSettings />
+        ) : section === "providers" ? (
+          <ProvidersSettings />
+        ) : section === "packages" ? (
+          <PackagesPage />
+        ) : section === "host" ? (
+          <HostSettings />
+        ) : (
+          <UsageSettings />
+        )}
+      </main>
       {pendingSection && (
         <Dialog
           title={t("settingsDiscardTitle")}

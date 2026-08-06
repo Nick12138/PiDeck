@@ -860,7 +860,7 @@ export function SessionList({
               return (
                 <li
                   key={item.sessionId}
-                  className={`group flex h-9 items-center rounded-md text-[13px] ${
+                  className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
                     active ? "bg-surface-overlay text-foreground" : "hover:bg-surface-overlay/70"
                   }`}
                   onContextMenu={(event) => {

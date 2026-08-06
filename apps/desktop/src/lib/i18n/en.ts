@@ -74,6 +74,7 @@ export const en = {
   settingsSubtitle: "Configure PiDeck and its runtime",
   settingsBack: "Back to conversation",
   navGeneral: "General",
+  navAppearance: "Appearance",
   navShortcuts: "Shortcuts",
   navProviders: "Providers",
   navPackages: "Packages",
@@ -86,9 +87,23 @@ export const en = {
   settingsDiscardCloseBody:
     "The Provider form has edits that were not saved. Closing Settings will discard them.",
 
-  // General
-  generalSubtitle: "Desktop behavior and Pi Host configuration",
-  generalAppearanceGroup: "Appearance & startup",
+  // Appearance
+  appearanceSubtitle: "Theme, density, language, and conversation typography",
+  appearanceInterfaceGroup: "Interface",
+  appearanceDensity: "Interface density",
+  appearanceDensityDesc: "Adjust row, control, and list spacing across PiDeck.",
+  appearanceDensityCompact: "Compact",
+  appearanceDensityStandard: "Standard",
+  appearanceDensityComfortable: "Comfortable",
+  appearanceConversationGroup: "Conversation",
+  appearanceConversationFontSize: "Conversation font size",
+  appearanceConversationFontSizeDesc: "Text size for messages and rendered Markdown.",
+  appearanceCodeFontSize: "Code font size",
+  appearanceCodeFontSizeDesc: "Text size for inline and fenced conversation code.",
+  appearanceDecrease: "Decrease {setting}",
+  appearanceIncrease: "Increase {setting}",
+  appearancePreview: "Preview",
+  appearancePreviewText: "Readable conversation text with inline code.",
   generalTheme: "Theme",
   generalThemeDesc: "Follow the system appearance or force light / dark.",
   generalThemeLight: "Light",
@@ -99,6 +114,10 @@ export const en = {
   generalConversationWidthDesc:
     "Maximum width for messages, the composer, and inline panels. Minimum {min}px.",
   generalConversationWidthError: "Enter a whole number of at least {min}px.",
+
+  // General
+  generalSubtitle: "Startup behavior and Pi Host configuration",
+  generalStartupGroup: "Startup",
   generalRestoreSession: "Restore last session",
   generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiDeck starts.",
   generalAutoRestart: "Auto-restart Pi Host",

@@ -63,10 +63,38 @@ afterEach(() => {
   cleanup();
   useAppStore.getState().setProvidersDirty(false);
   useAppStore.getState().setDesktopSettings(null);
+  document.documentElement.removeAttribute("data-interface-density");
+  document.documentElement.style.removeProperty("--conversation-font-size");
+  document.documentElement.style.removeProperty("--code-font-size");
   vi.restoreAllMocks();
 });
 
 describe("SettingsPage navigation guard", () => {
+  it("places the Settings identity and active section title in separate columns", () => {
+    const { container } = render(<SettingsPage initialSection="general" />);
+
+    const shell = container.querySelector("[data-settings-shell]");
+    const sidebar = container.querySelector("[data-settings-sidebar]");
+    const sidebarHeader = container.querySelector("[data-settings-sidebar-header]");
+    const content = container.querySelector("[data-settings-content]");
+
+    expect(shell?.firstElementChild).toBe(sidebar);
+    expect(sidebarHeader?.parentElement).toBe(sidebar);
+    expect(content?.parentElement).toBe(shell);
+    expect(
+      within(sidebarHeader as HTMLElement).getByLabelText("Back to conversation"),
+    ).toBeInTheDocument();
+    expect(sidebarHeader).toHaveTextContent("Back to conversation");
+    expect(
+      within(sidebarHeader as HTMLElement).getByRole("heading", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(
+      within(content as HTMLElement).getByRole("heading", { name: "General" }),
+    ).toBeInTheDocument();
+    expect(sidebarHeader).not.toHaveClass("border-b");
+    expect(content?.querySelector("header")).not.toHaveClass("border-b");
+  });
+
   it("places Shortcuts last in the settings sidebar", () => {
     render(<SettingsPage initialSection="general" />);
 
@@ -75,7 +103,59 @@ describe("SettingsPage navigation guard", () => {
       within(navigation)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["General", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
+    ).toEqual(["General", "Appearance", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
+  });
+
+  it("keeps startup controls in General and moves interface controls to Appearance", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    expect(screen.getByText("Startup")).toBeInTheDocument();
+    expect(screen.getByText("Restore last session")).toBeInTheDocument();
+    expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Theme/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Language/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("spinbutton", { name: "Conversation width" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Appearance" }));
+
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Theme/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Language/)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Conversation width" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Conversation font size" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Code font size" })).toBeInTheDocument();
+    expect(screen.queryByText("Restore last session")).not.toBeInTheDocument();
+  });
+
+  it("persists density and typography controls and applies them immediately", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="appearance" />);
+
+    const density = screen.getByRole("group", { name: "Interface density" });
+    await user.click(within(density).getByRole("button", { name: "Compact" }));
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.interfaceDensity).toBe("compact"),
+    );
+    expect(document.documentElement.dataset.interfaceDensity).toBe("compact");
+
+    await user.click(screen.getByRole("button", { name: "Increase Conversation font size" }));
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.conversationFontSize).toBe(15),
+    );
+    expect(document.documentElement.style.getPropertyValue("--conversation-font-size")).toBe(
+      "15px",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Increase Code font size" }));
+    await waitFor(() => expect(useAppStore.getState().desktopSettings?.codeFontSize).toBe(13));
+    expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("13px");
+    expect(screen.getByText("Readable conversation text with inline code.")).toBeInTheDocument();
+    expect(screen.getByText("15px")).toBeInTheDocument();
+    expect(screen.getByText("13px")).toBeInTheDocument();
   });
 
   it("switches sections directly when the Providers form is clean", async () => {
@@ -107,13 +187,15 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "Shortcuts" }));
 
-    expect(
-      screen.getByRole("heading", { name: "Keyboard shortcuts" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
     expect(screen.getByText("New session")).toBeInTheDocument();
     expect(screen.getByText("Ctrl+N")).toBeInTheDocument();
     expect(screen.getByText("Show keyboard shortcuts")).toBeInTheDocument();
     expect(screen.getByText("Ctrl+/")).toBeInTheDocument();
+
+    const resetAll = screen.getByRole("button", { name: "Restore defaults" });
+    expect(resetAll.parentElement).toHaveAttribute("data-settings-header-actions");
+    expect(resetAll.closest("header")).toHaveAttribute("data-settings-section-header");
   });
 
   it("asks before leaving Providers with unsaved changes and keeps the section on cancel", async () => {
@@ -134,23 +216,24 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
   });
 
-  it("switches the interface to Chinese from the General language select", async () => {
+  it("switches the interface to Chinese from the Appearance language select", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage initialSection="general" />);
+    render(<SettingsPage initialSection="appearance" />);
 
-    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText(/Language/), "zh");
 
     expect(screen.getByRole("button", { name: "通用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "外观" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "主机" })).toBeInTheDocument();
-    expect(screen.getByText("外观与启动")).toBeInTheDocument();
+    expect(screen.getByText("界面")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "General" })).not.toBeInTheDocument();
   });
 
   it("validates and persists the conversation width from Appearance settings", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage initialSection="general" />);
+    render(<SettingsPage initialSection="appearance" />);
 
     const input = screen.getByRole("spinbutton", { name: "Conversation width" });
     expect(input).toHaveValue(668);
@@ -159,9 +242,7 @@ describe("SettingsPage navigation guard", () => {
     await user.type(input, "559");
     await user.tab();
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Enter a whole number of at least 560px.",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a whole number of at least 560px.");
     expect(useAppStore.getState().desktopSettings?.conversationContentWidth).toBeUndefined();
 
     await user.click(input);
@@ -193,9 +274,7 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(automatic);
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.extensionDecisionPresentation,
-      ).toBe("auto"),
+      expect(useAppStore.getState().desktopSettings?.extensionDecisionPresentation).toBe("auto"),
     );
     expect(request).toHaveBeenNthCalledWith(
       1,
@@ -207,9 +286,9 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(legacy);
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.extensionDecisionPresentation,
-      ).toBe("legacy-modal"),
+      expect(useAppStore.getState().desktopSettings?.extensionDecisionPresentation).toBe(
+        "legacy-modal",
+      ),
     );
     expect(request).toHaveBeenNthCalledWith(
       2,
@@ -232,7 +311,7 @@ describe("SettingsPage navigation guard", () => {
       }
       throw new Error("disk full");
     });
-    render(<SettingsPage initialSection="general" />);
+    render(<SettingsPage initialSection="appearance" />);
 
     await user.selectOptions(screen.getByLabelText(/Theme/), "light");
 

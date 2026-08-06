@@ -15,6 +15,7 @@ import { SettingsPage } from "../features/settings/SettingsPage";
 import { Dialog } from "../components/Dialog";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { applyTheme } from "../lib/theme";
+import { applyAppearancePreferences } from "../lib/appearance-preferences";
 import {
   applyAgentEvent,
   applyAgentEventBatch,
@@ -556,6 +557,7 @@ export function App() {
           if (!cancelled && snapshot.settings) {
             store.setDesktopSettings(snapshot.settings);
             applyTheme(snapshot.settings.theme);
+            applyAppearancePreferences(snapshot.settings);
             if (snapshot.warning) {
               store.pushNotification(
                 snapshot.recoveredFrom
@@ -574,6 +576,13 @@ export function App() {
             terminalProfile: "auto",
           });
           applyTheme("dark");
+          applyAppearancePreferences({
+            theme: "dark",
+            restoreLastSession: true,
+            autoRestartHostOnce: true,
+            extensionDecisionPresentation: "legacy-modal",
+            terminalProfile: "auto",
+          });
           store.pushNotification(
             `Desktop settings could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
             "error",
@@ -923,6 +932,10 @@ export function App() {
   useEffect(() => {
     applyLanguage(desktopSettings?.language);
   }, [desktopSettings?.language]);
+
+  useEffect(() => {
+    applyAppearancePreferences(desktopSettings);
+  }, [desktopSettings]);
 
   useEffect(() => {
     let cancelled = false;

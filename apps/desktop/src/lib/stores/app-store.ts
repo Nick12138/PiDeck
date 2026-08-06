@@ -137,7 +137,8 @@ function resetExtensionTerminal(state: {
   };
 }
 
-export type SettingsSection = "general" | "shortcuts" | "providers" | "packages" | "usage" | "host";
+export type SettingsSection =
+  "general" | "appearance" | "shortcuts" | "providers" | "packages" | "usage" | "host";
 
 export type AppState = EpochState & {
   page: NavPage;

@@ -68,6 +68,23 @@ describe("persistDesktopSettings", () => {
     });
   });
 
+  it("persists validated appearance preferences outside Tauri", async () => {
+    mocks.isTauri.mockReturnValue(false);
+
+    await persistDesktopSettings({
+      interfaceDensity: "compact",
+      conversationFontSize: 17,
+      codeFontSize: 15,
+    });
+
+    expect(useAppStore.getState().desktopSettings).toEqual({
+      ...initialSettings,
+      interfaceDensity: "compact",
+      conversationFontSize: 17,
+      codeFontSize: 15,
+    });
+  });
+
   it("applies shortcut override maps through the browser settings path", async () => {
     mocks.isTauri.mockReturnValue(false);
 
@@ -92,6 +109,15 @@ describe("persistDesktopSettings", () => {
     );
     await expect(persistDesktopSettings({ futureSetting: true } as never)).rejects.toThrow(
       "Unknown desktop settings field",
+    );
+    await expect(persistDesktopSettings({ interfaceDensity: "dense" } as never)).rejects.toThrow(
+      "Invalid interface density",
+    );
+    await expect(persistDesktopSettings({ conversationFontSize: 11 })).rejects.toThrow(
+      "conversationFontSize must be an integer between 12 and 18",
+    );
+    await expect(persistDesktopSettings({ codeFontSize: 19 })).rejects.toThrow(
+      "codeFontSize must be an integer between 10 and 18",
     );
 
     expect(useAppStore.getState().desktopSettings).toEqual(initialSettings);

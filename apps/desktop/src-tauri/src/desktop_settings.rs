@@ -13,6 +13,12 @@ const PIDECK_DATA_DIR_NAME: &str = "pideck";
 const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
 const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
 const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
+const DEFAULT_CONVERSATION_FONT_SIZE: u32 = 14;
+const MIN_CONVERSATION_FONT_SIZE: u32 = 12;
+const MAX_CONVERSATION_FONT_SIZE: u32 = 18;
+const DEFAULT_CODE_FONT_SIZE: u32 = 12;
+const MIN_CODE_FONT_SIZE: u32 = 10;
+const MAX_CODE_FONT_SIZE: u32 = 18;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,6 +35,15 @@ pub enum DesktopLanguage {
     System,
     En,
     Zh,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopInterfaceDensity {
+    Compact,
+    #[default]
+    Standard,
+    Comfortable,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +94,10 @@ pub struct DesktopSettings {
     pub terminal_profile: TerminalProfileId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<DesktopLanguage>,
+    pub interface_density: DesktopInterfaceDensity,
     pub conversation_content_width: u32,
+    pub conversation_font_size: u32,
+    pub code_font_size: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -99,7 +117,10 @@ impl Default for DesktopSettings {
             extension_decision_presentation: ExtensionDecisionPresentation::Auto,
             terminal_profile: TerminalProfileId::Auto,
             language: None,
+            interface_density: DesktopInterfaceDensity::Standard,
             conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
+            conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
+            code_font_size: DEFAULT_CODE_FONT_SIZE,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
         }
@@ -217,6 +238,12 @@ impl DesktopSettingsStore {
         settings.conversation_content_width = settings
             .conversation_content_width
             .max(MIN_CONVERSATION_CONTENT_WIDTH);
+        settings.conversation_font_size = settings
+            .conversation_font_size
+            .clamp(MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE);
+        settings.code_font_size = settings
+            .code_font_size
+            .clamp(MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE);
         Ok((settings, legacy))
     }
 
@@ -224,6 +251,18 @@ impl DesktopSettingsStore {
         if settings.conversation_content_width < MIN_CONVERSATION_CONTENT_WIDTH {
             return Err(format!(
                 "conversationContentWidth must be at least {MIN_CONVERSATION_CONTENT_WIDTH}"
+            ));
+        }
+        if !(MIN_CONVERSATION_FONT_SIZE..=MAX_CONVERSATION_FONT_SIZE)
+            .contains(&settings.conversation_font_size)
+        {
+            return Err(format!(
+                "conversationFontSize must be between {MIN_CONVERSATION_FONT_SIZE} and {MAX_CONVERSATION_FONT_SIZE}"
+            ));
+        }
+        if !(MIN_CODE_FONT_SIZE..=MAX_CODE_FONT_SIZE).contains(&settings.code_font_size) {
+            return Err(format!(
+                "codeFontSize must be between {MIN_CODE_FONT_SIZE} and {MAX_CODE_FONT_SIZE}"
             ));
         }
         Ok(())
@@ -343,7 +382,10 @@ impl DesktopSettingsStore {
                     | "extensionDecisionPresentation"
                     | "terminalProfile"
                     | "language"
+                    | "interfaceDensity"
                     | "conversationContentWidth"
+                    | "conversationFontSize"
+                    | "codeFontSize"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
             ) {
@@ -458,6 +500,9 @@ mod tests {
         for patch in [
             serde_json::json!({ "theme": "neon" }),
             serde_json::json!({ "language": "fr" }),
+            serde_json::json!({ "interfaceDensity": "dense" }),
+            serde_json::json!({ "conversationFontSize": 11 }),
+            serde_json::json!({ "codeFontSize": 19 }),
             serde_json::json!({ "terminalProfile": "nu" }),
             serde_json::json!({ "futureSetting": true }),
             serde_json::json!(["theme", "dark"]),
@@ -505,6 +550,49 @@ mod tests {
             MIN_CONVERSATION_CONTENT_WIDTH
         );
         fs::remove_dir_all(stale_dir).unwrap();
+    }
+
+    #[test]
+    fn defaults_validates_and_persists_appearance_preferences() {
+        let dir = test_dir("appearance-preferences");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            store.settings.interface_density,
+            DesktopInterfaceDensity::Standard
+        );
+        assert_eq!(
+            store.settings.conversation_font_size,
+            DEFAULT_CONVERSATION_FONT_SIZE
+        );
+        assert_eq!(store.settings.code_font_size, DEFAULT_CODE_FONT_SIZE);
+
+        store
+            .patch(serde_json::json!({
+                "interfaceDensity": "compact",
+                "conversationFontSize": 17,
+                "codeFontSize": 15
+            }))
+            .unwrap();
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            reloaded.settings.interface_density,
+            DesktopInterfaceDensity::Compact
+        );
+        assert_eq!(reloaded.settings.conversation_font_size, 17);
+        assert_eq!(reloaded.settings.code_font_size, 15);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "conversationFontSize": 19 }))
+            .unwrap_err()
+            .contains("between 12 and 18"));
+        assert_eq!(invalid.settings.conversation_font_size, 17);
+        assert!(invalid
+            .patch(serde_json::json!({ "codeFontSize": 9 }))
+            .unwrap_err()
+            .contains("between 10 and 18"));
+        assert_eq!(invalid.settings.code_font_size, 15);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
