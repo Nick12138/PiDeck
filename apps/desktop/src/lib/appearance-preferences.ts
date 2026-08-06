@@ -4,11 +4,11 @@ import {
   type DesktopSettings,
 } from "@pideck/protocol";
 
-export const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
-export const DEFAULT_CONVERSATION_FONT_SIZE = 14;
+const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
+const DEFAULT_CONVERSATION_FONT_SIZE = 14;
 export const MIN_CONVERSATION_FONT_SIZE = 12;
 export const MAX_CONVERSATION_FONT_SIZE = 18;
-export const DEFAULT_CODE_FONT_SIZE = 12;
+const DEFAULT_CODE_FONT_SIZE = 12;
 export const MIN_CODE_FONT_SIZE = 10;
 export const MAX_CODE_FONT_SIZE = 18;
 

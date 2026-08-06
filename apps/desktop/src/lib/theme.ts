@@ -6,7 +6,7 @@ export type EffectiveTheme = Exclude<AppTheme, "system">;
 
 export const STARTUP_THEME_STORAGE_KEY = "pideck.theme";
 export const STARTUP_THEME_FAMILY_STORAGE_KEY = "pideck.theme-family";
-export const DEFAULT_THEME_FAMILY: AppThemeFamily = "pideck";
+const DEFAULT_THEME_FAMILY: AppThemeFamily = "pideck";
 
 export function resolveEffectiveTheme(
   theme: AppTheme,
