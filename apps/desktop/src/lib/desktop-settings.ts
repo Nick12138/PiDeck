@@ -1,6 +1,7 @@
 import {
   DESKTOP_INTERFACE_DENSITIES,
   DESKTOP_LANGUAGES,
+  DESKTOP_THEME_FAMILIES,
   DESKTOP_THEMES,
   TERMINAL_PROFILE_IDS,
   type DesktopSettings,
@@ -34,6 +35,7 @@ export type DesktopSettingsUpdate = Omit<
 
 const DESKTOP_SETTINGS_KEYS = new Set([
   "theme",
+  "themeFamily",
   "defaultWorkspace",
   "restoreLastSession",
   "lastWorkspace",
@@ -71,6 +73,9 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   }
   if (values.theme !== undefined && !isOneOf(values.theme, DESKTOP_THEMES)) {
     throw new Error("Invalid desktop theme");
+  }
+  if (values.themeFamily !== undefined && !isOneOf(values.themeFamily, DESKTOP_THEME_FAMILIES)) {
+    throw new Error("Invalid desktop theme family");
   }
   if (
     values.extensionDecisionPresentation !== undefined &&

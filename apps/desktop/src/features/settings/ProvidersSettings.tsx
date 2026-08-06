@@ -643,7 +643,7 @@ export function ProvidersSettings() {
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-2 text-muted" size={14} />
               <input
-                className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
+                className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-focus"
                 placeholder={t("providersSearch")}
                 value={providerSearch}
                 onChange={(event) => setProviderSearch(event.target.value)}
@@ -652,7 +652,7 @@ export function ProvidersSettings() {
             <div className="relative">
               <button
                 type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
+                className="theme-secondary-control flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
                 title={t("providersAdd")}
                 aria-haspopup="menu"
                 aria-expanded={addMenuOpen}
@@ -665,12 +665,12 @@ export function ProvidersSettings() {
                   <div className="fixed inset-0 z-20" onClick={() => setAddMenuOpen(false)} />
                   <div
                     role="menu"
-                    className="interface-density-menu absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                    className="theme-floating-surface interface-density-menu absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
                   >
                     <button
                       role="menuitem"
                       type="button"
-                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-surface-overlay"
+                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-control-hover"
                       onClick={() => {
                         setAddMenuOpen(false);
                         if (dirty) setPendingSwitch({ kind: "oauth" });
@@ -690,7 +690,7 @@ export function ProvidersSettings() {
                     <button
                       role="menuitem"
                       type="button"
-                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-surface-overlay"
+                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-control-hover"
                       onClick={() => {
                         setAddMenuOpen(false);
                         if (dirty) setPendingSwitch({ kind: "new" });
@@ -726,10 +726,12 @@ export function ProvidersSettings() {
               filteredProviders.map((provider) => (
                 <div
                   key={provider.id}
+                  data-ui="nav-item"
+                  data-state={selectedId === provider.id ? "active" : "inactive"}
                   className={`mb-1 flex w-full items-center rounded-md ${
                     selectedId === provider.id
-                      ? "bg-surface-overlay text-foreground"
-                      : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                      : "text-muted hover:bg-control-hover hover:text-foreground"
                   }`}
                 >
                   <button
@@ -775,10 +777,12 @@ export function ProvidersSettings() {
           <div className="border-t border-border p-2">
             <button
               type="button"
+              data-ui="nav-item"
+              data-state={oauthOpen ? "active" : "inactive"}
               className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium ${
                 oauthOpen
-                  ? "bg-surface-overlay text-foreground"
-                  : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                  ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                  : "text-muted hover:bg-control-hover hover:text-foreground"
               }`}
               aria-current={oauthOpen ? "true" : undefined}
               onClick={() => {
@@ -873,7 +877,7 @@ export function ProvidersSettings() {
                   )}
                   <button
                     type="button"
-                    className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
+                    className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
                     disabled={saving || fetching || testing}
                     onClick={() => void persistDraft()}
                   >
@@ -952,7 +956,7 @@ export function ProvidersSettings() {
                     {t("providersDisplayName")} <span className="text-danger">*</span>
                   </span>
                   <input
-                    className={`h-8 rounded-md border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent ${
+                    className={`h-8 rounded-md border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus ${
                       fieldErrors.name ? "border-danger" : "border-border"
                     }`}
                     value={draft.name}
@@ -969,7 +973,7 @@ export function ProvidersSettings() {
                     {t("providersId")} <span className="text-danger">*</span>
                   </span>
                   <input
-                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-focus ${
                       fieldErrors.id ? "border-danger" : "border-border"
                     }`}
                     value={draft.id}
@@ -986,7 +990,7 @@ export function ProvidersSettings() {
                     {t("providersBaseUrl")} <span className="text-danger">*</span>
                   </span>
                   <input
-                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-focus ${
                       fieldErrors.baseUrl ? "border-danger" : "border-border"
                     }`}
                     placeholder={
@@ -1007,7 +1011,7 @@ export function ProvidersSettings() {
                 <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                   {t("providersApiProtocol")}
                   <select
-                    className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
+                    className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
                     value={draft.api}
                     onChange={(event) =>
                       updateDraft({ api: event.target.value as ProviderDraft["api"] })
@@ -1035,7 +1039,7 @@ export function ProvidersSettings() {
                       <span className="font-normal text-muted">{t("providersOptional")}</span>
                     </span>
                     <input
-                      className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-accent ${
+                      className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-focus ${
                         fieldErrors.modelsUrl ? "border-danger" : "border-border"
                       }`}
                       placeholder={t("providersModelsUrlPlaceholder")}
@@ -1056,7 +1060,7 @@ export function ProvidersSettings() {
                     <label className="flex flex-col gap-1.5 text-xs text-muted">
                       {t("providersCompatSystemRole")}
                       <select
-                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
+                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
                         value={compatibilityChoice(draft.compat?.supportsDeveloperRole ?? false)}
                         onChange={(event) =>
                           updateCompatibility(
@@ -1072,7 +1076,7 @@ export function ProvidersSettings() {
                     <label className="flex flex-col gap-1.5 text-xs text-muted">
                       {t("providersCompatReasoningEffort")}
                       <select
-                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-accent"
+                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
                         value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
                         onChange={(event) =>
                           updateCompatibility(
@@ -1118,7 +1122,7 @@ export function ProvidersSettings() {
                 <div className="relative">
                   <input
                     type={showApiKey ? "text" : "password"}
-                    className="h-8 w-full rounded-md border border-border bg-surface px-3 pr-10 font-mono text-xs outline-none focus:border-accent"
+                    className="h-8 w-full rounded-md border border-border bg-surface px-3 pr-10 font-mono text-xs outline-none focus:border-focus"
                     placeholder={
                       selectedProvider?.auth.configured
                         ? t("providersKeyPlaceholderKeep")
@@ -1186,7 +1190,7 @@ export function ProvidersSettings() {
                 <div className="relative mb-2">
                   <Search className="absolute left-2.5 top-2.5 text-muted" size={14} />
                   <input
-                    className="h-8 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent"
+                    className="h-8 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-xs outline-none focus:border-focus"
                     placeholder={t("providersSearchModels")}
                     value={modelSearch}
                     onChange={(event) => setModelSearch(event.target.value)}
@@ -1195,7 +1199,7 @@ export function ProvidersSettings() {
                 {manualOpen && (
                   <div className="mb-2 flex gap-2">
                     <input
-                      className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-xs outline-none focus:border-accent"
+                      className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 font-mono text-xs outline-none focus:border-focus"
                       placeholder={t("providersModelId")}
                       value={manualId}
                       onChange={(event) => setManualId(event.target.value)}
@@ -1207,7 +1211,7 @@ export function ProvidersSettings() {
                     />
                     <button
                       type="button"
-                      className="flex size-8 items-center justify-center rounded-md bg-accent text-white"
+                      className="flex size-8 items-center justify-center rounded-md bg-accent text-accent-foreground"
                       title={t("providersAddModelConfirm")}
                       onClick={addManualModel}
                     >

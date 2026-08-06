@@ -85,6 +85,12 @@ export const zh: Record<MessageKey, string> = {
   // Appearance
   appearanceSubtitle: "主题、密度、语言与对话排版",
   appearanceInterfaceGroup: "界面",
+  appearanceThemeFamily: "主题风格",
+  appearanceThemeFamilyDesc: "选择 PiDeck 使用的视觉语言。",
+  appearanceThemePideck: "PiDeck",
+  appearanceThemeVercel: "Vercel",
+  appearanceColorMode: "颜色模式",
+  appearanceColorModeDesc: "跟随系统外观，或使用固定模式。",
   appearanceDensity: "界面密度",
   appearanceDensityDesc: "调整 PiDeck 中列表、控件和行的间距。",
   appearanceDensityCompact: "紧凑",

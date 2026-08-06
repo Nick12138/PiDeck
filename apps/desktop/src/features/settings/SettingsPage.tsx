@@ -11,10 +11,7 @@ import {
   ServerCog,
   Settings2,
 } from "lucide-react";
-import type {
-  ExtensionDecisionPresentation,
-  TerminalProfileId,
-} from "@pideck/protocol";
+import type { ExtensionDecisionPresentation, TerminalProfileId } from "@pideck/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Switch } from "../../components/Switch";
@@ -95,12 +92,9 @@ function GeneralSettings() {
     }
   }
 
-  async function patchExtensionDecisionPresentation(
-    next: ExtensionDecisionPresentation,
-  ) {
+  async function patchExtensionDecisionPresentation(next: ExtensionDecisionPresentation) {
     const previous =
-      useAppStore.getState().desktopSettings?.extensionDecisionPresentation ??
-      "legacy-modal";
+      useAppStore.getState().desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
     if (next === previous || decisionPresentationSaving) return;
 
     const hostAtStart = useAppStore.getState().host;
@@ -120,11 +114,7 @@ function GeneralSettings() {
     } catch (error) {
       const currentHost = useAppStore.getState().host;
       const currentHostId = currentHost?.hostInstanceId;
-      if (
-        configuredHost &&
-        currentHostId &&
-        currentHostId === hostAtStart?.hostInstanceId
-      ) {
+      if (configuredHost && currentHostId && currentHostId === hostAtStart?.hostInstanceId) {
         try {
           await hostClient.request(
             "extensionUi.configure",
@@ -141,8 +131,7 @@ function GeneralSettings() {
     }
   }
 
-  const decisionPresentation =
-    desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
+  const decisionPresentation = desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
   const decisionPresentationOptions: Array<{
     value: ExtensionDecisionPresentation;
     label: MessageKey;
@@ -165,189 +154,185 @@ function GeneralSettings() {
     },
   ];
 
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SectionHeader title={t("navGeneral")} subtitle={t("generalSubtitle")} />
       <div className="min-h-0 flex-1 overflow-auto p-6">
-      <div className="mx-auto flex max-w-2xl flex-col gap-8">
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalStartupGroup")}</h2>
-          <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-            <div className="flex items-center justify-between gap-4">
-              <span className="min-w-0">
-                <span className="block text-sm">{t("generalRestoreSession")}</span>
-                <span className="block text-xs text-muted">{t("generalRestoreSessionDesc")}</span>
-              </span>
-              <Switch
-                checked={desktopSettings?.restoreLastSession ?? true}
-                label={t("generalRestoreSession")}
-                onChange={(next) => void patchDesktop({ restoreLastSession: next })}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="min-w-0">
-                <span className="block text-sm">{t("generalAutoRestart")}</span>
-                <span className="block text-xs text-muted">{t("generalAutoRestartDesc")}</span>
-              </span>
-              <Switch
-                checked={desktopSettings?.autoRestartHostOnce ?? true}
-                label={t("generalAutoRestart")}
-                onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">
-            {t("generalExtensionDecisionGroup")}
-          </h2>
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <div>
-              <p className="text-sm">{t("generalExtensionDecision")}</p>
-              <p id="extension-decision-presentation-help" className="text-xs text-muted">
-                {t("generalExtensionDecisionDesc")}
-              </p>
-            </div>
-            <fieldset
-              className="grid overflow-hidden rounded-md border border-border sm:grid-cols-3"
-              aria-describedby="extension-decision-presentation-help"
-              disabled={decisionPresentationSaving}
-            >
-              <legend className="sr-only">{t("generalExtensionDecision")}</legend>
-              {decisionPresentationOptions.map((option, index) => {
-                const selected = decisionPresentation === option.value;
-                return (
-                  <label
-                    key={option.value}
-                    className={`relative flex min-h-20 flex-col gap-1 px-3 py-2.5 transition-colors ${
-                      index > 0 ? "border-t border-border sm:border-l sm:border-t-0" : ""
-                    } ${decisionPresentationSaving ? "cursor-wait opacity-60" : "cursor-pointer"} ${
-                      selected
-                        ? "bg-surface-overlay text-foreground"
-                        : "text-muted hover:bg-surface-overlay/60 hover:text-foreground"
-                    }`}
-                  >
-                    <input
-                      className="peer sr-only"
-                      type="radio"
-                      name="extension-decision-presentation"
-                      value={option.value}
-                      checked={selected}
-                      onChange={() =>
-                        void patchExtensionDecisionPresentation(option.value)
-                      }
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-accent opacity-0 peer-focus-visible:opacity-100"
-                    />
-                    <span className="text-xs font-medium">{t(option.label)}</span>
-                    <span className="text-[11px] leading-4 text-muted">
-                      {t(option.description)}
-                    </span>
-                  </label>
-                );
-              })}
-            </fieldset>
-            <span className="sr-only" role="status" aria-live="polite">
-              {decisionPresentationSaving
-                ? t("generalExtensionDecisionSaving")
-                : ""}
-            </span>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalTerminalGroup")}</h2>
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <div className="flex items-center justify-between gap-4">
-              <label htmlFor="default-shell" className="min-w-0 text-sm">
-                <span className="block">{t("generalDefaultShell")}</span>
-                <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
-              </label>
-              <div className="flex min-w-0 items-center gap-1.5">
-                <select
-                  id="default-shell"
-                  className="h-8 min-w-44 max-w-72 rounded-md border border-border bg-surface px-2 text-xs"
-                  value={desktopSettings?.terminalProfile ?? "auto"}
-                  disabled={shellCatalogLoading && !shellCatalog}
-                  onChange={(event) =>
-                    void patchDesktop({
-                      terminalProfile: event.target.value as TerminalProfileId,
-                    })
-                  }
-                >
-                  <option value="auto">
-                    {t("generalShellAutomatic")}
-                    {shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""}
-                  </option>
-                  {shellCatalog?.profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.label}
-                    </option>
-                  ))}
-                  {desktopSettings?.terminalProfile &&
-                    desktopSettings.terminalProfile !== "auto" &&
-                    !shellCatalog?.profiles.some(
-                      (profile) => profile.id === desktopSettings.terminalProfile,
-                    ) && (
-                      <option value={desktopSettings.terminalProfile} disabled>
-                        {t("generalShellUnavailable", { id: desktopSettings.terminalProfile })}
-                      </option>
-                    )}
-                </select>
-                <button
-                  type="button"
-                  title={t("generalDetectShells")}
-                  aria-label={t("generalDetectShells")}
-                  disabled={shellCatalogLoading}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
-                  onClick={() => void loadShellProfiles()}
-                >
-                  <RefreshCw size={14} className={shellCatalogLoading ? "animate-spin" : ""} />
-                </button>
+        <div className="mx-auto flex max-w-2xl flex-col gap-8">
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalStartupGroup")}</h2>
+            <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("generalRestoreSession")}</span>
+                  <span className="block text-xs text-muted">{t("generalRestoreSessionDesc")}</span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.restoreLastSession ?? true}
+                  label={t("generalRestoreSession")}
+                  onChange={(next) => void patchDesktop({ restoreLastSession: next })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("generalAutoRestart")}</span>
+                  <span className="block text-xs text-muted">{t("generalAutoRestartDesc")}</span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.autoRestartHostOnce ?? true}
+                  label={t("generalAutoRestart")}
+                  onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
+                />
               </div>
             </div>
-            {shellCatalogError && (
-              <p role="status" className="text-xs text-warning">
-                {shellCatalogError}
-              </p>
-            )}
-            {shellCatalog && (
-              <p className="truncate text-right font-mono text-[11px] text-muted">
-                {desktopSettings?.terminalProfile === "auto" ||
-                !desktopSettings?.terminalProfile
-                  ? shellCatalog.automaticProfile.path
-                  : shellCatalog.profiles.find(
-                      (profile) => profile.id === desktopSettings.terminalProfile,
-                    )?.path}
-              </p>
-            )}
-          </div>
-        </section>
+          </section>
 
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAdvancedGroup")}</h2>
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={secondaryButton}
-                disabled={!host?.agentDir}
-                onClick={() => void openSettingsFile()}
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">
+              {t("generalExtensionDecisionGroup")}
+            </h2>
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+              <div>
+                <p className="text-sm">{t("generalExtensionDecision")}</p>
+                <p id="extension-decision-presentation-help" className="text-xs text-muted">
+                  {t("generalExtensionDecisionDesc")}
+                </p>
+              </div>
+              <fieldset
+                data-ui="segmented"
+                className="grid overflow-hidden rounded-md border border-border sm:grid-cols-3"
+                aria-describedby="extension-decision-presentation-help"
+                disabled={decisionPresentationSaving}
               >
-                {t("generalAdvancedOpenFile")}
-              </button>
-              <RestartHostButton />
+                <legend className="sr-only">{t("generalExtensionDecision")}</legend>
+                {decisionPresentationOptions.map((option, index) => {
+                  const selected = decisionPresentation === option.value;
+                  return (
+                    <label
+                      key={option.value}
+                      data-ui="segmented-item"
+                      data-state={selected ? "active" : "inactive"}
+                      className={`relative flex min-h-20 flex-col gap-1 px-3 py-2.5 transition-colors ${
+                        index > 0 ? "border-t border-border sm:border-l sm:border-t-0" : ""
+                      } ${decisionPresentationSaving ? "cursor-wait opacity-60" : "cursor-pointer"} ${
+                        selected
+                          ? "bg-selection text-selection-foreground"
+                          : "text-muted hover:bg-surface-overlay/60 hover:text-foreground"
+                      }`}
+                    >
+                      <input
+                        className="peer sr-only"
+                        type="radio"
+                        name="extension-decision-presentation"
+                        value={option.value}
+                        checked={selected}
+                        onChange={() => void patchExtensionDecisionPresentation(option.value)}
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-focus opacity-0 peer-focus-visible:opacity-100"
+                      />
+                      <span className="text-xs font-medium">{t(option.label)}</span>
+                      <span className="text-[11px] leading-4 text-muted">
+                        {t(option.description)}
+                      </span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+              <span className="sr-only" role="status" aria-live="polite">
+                {decisionPresentationSaving ? t("generalExtensionDecisionSaving") : ""}
+              </span>
             </div>
-            <p className="text-xs text-muted">{t("generalAdvancedRestartHint")}</p>
-          </div>
-        </section>
+          </section>
 
-      </div>
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalTerminalGroup")}</h2>
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-4">
+                <label htmlFor="default-shell" className="min-w-0 text-sm">
+                  <span className="block">{t("generalDefaultShell")}</span>
+                  <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
+                </label>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <select
+                    id="default-shell"
+                    className="h-8 min-w-44 max-w-72 rounded-md border border-border bg-surface px-2 text-xs"
+                    value={desktopSettings?.terminalProfile ?? "auto"}
+                    disabled={shellCatalogLoading && !shellCatalog}
+                    onChange={(event) =>
+                      void patchDesktop({
+                        terminalProfile: event.target.value as TerminalProfileId,
+                      })
+                    }
+                  >
+                    <option value="auto">
+                      {t("generalShellAutomatic")}
+                      {shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""}
+                    </option>
+                    {shellCatalog?.profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.label}
+                      </option>
+                    ))}
+                    {desktopSettings?.terminalProfile &&
+                      desktopSettings.terminalProfile !== "auto" &&
+                      !shellCatalog?.profiles.some(
+                        (profile) => profile.id === desktopSettings.terminalProfile,
+                      ) && (
+                        <option value={desktopSettings.terminalProfile} disabled>
+                          {t("generalShellUnavailable", { id: desktopSettings.terminalProfile })}
+                        </option>
+                      )}
+                  </select>
+                  <button
+                    type="button"
+                    title={t("generalDetectShells")}
+                    aria-label={t("generalDetectShells")}
+                    disabled={shellCatalogLoading}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                    onClick={() => void loadShellProfiles()}
+                  >
+                    <RefreshCw size={14} className={shellCatalogLoading ? "animate-spin" : ""} />
+                  </button>
+                </div>
+              </div>
+              {shellCatalogError && (
+                <p role="status" className="text-xs text-warning">
+                  {shellCatalogError}
+                </p>
+              )}
+              {shellCatalog && (
+                <p className="truncate text-right font-mono text-[11px] text-muted">
+                  {desktopSettings?.terminalProfile === "auto" || !desktopSettings?.terminalProfile
+                    ? shellCatalog.automaticProfile.path
+                    : shellCatalog.profiles.find(
+                        (profile) => profile.id === desktopSettings.terminalProfile,
+                      )?.path}
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAdvancedGroup")}</h2>
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+              <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  disabled={!host?.agentDir}
+                  onClick={() => void openSettingsFile()}
+                >
+                  {t("generalAdvancedOpenFile")}
+                </button>
+                <RestartHostButton />
+              </div>
+              <p className="text-xs text-muted">{t("generalAdvancedRestartHint")}</p>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
@@ -417,7 +402,7 @@ export function SettingsPage({
             <span>{t("settingsBack")}</span>
           </button>
           <div className="pointer-events-none mt-2 flex h-8 min-w-0 items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
+            <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
               <Settings2 size={15} />
             </span>
             <h1 className="truncate text-sm font-semibold">{t("settingsTitle")}</h1>
@@ -429,9 +414,11 @@ export function SettingsPage({
             <button
               key={id}
               type="button"
-              className={`interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+              data-ui="nav-item"
+              data-state={section === id ? "active" : "inactive"}
+              className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
                 section === id
-                  ? "bg-surface-overlay font-medium text-foreground"
+                  ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
                   : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
               }`}
               aria-current={section === id ? "page" : undefined}

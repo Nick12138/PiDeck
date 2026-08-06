@@ -61,11 +61,11 @@ function applyCspNonceToXtermStyles(container: HTMLElement): void {
 
 function xtermTheme() {
   return {
-    background: cssVar("--color-sidebar", "#151716"),
+    background: cssVar("--color-surface-inset", "#151716"),
     foreground: cssVar("--color-foreground", "#eef0ee"),
     cursor: cssVar("--color-accent", "#df6b35"),
-    cursorAccent: cssVar("--color-sidebar", "#151716"),
-    selectionBackground: cssVar("--color-surface-overlay", "#252826"),
+    cursorAccent: cssVar("--color-surface-inset", "#151716"),
+    selectionBackground: cssVar("--color-control-hover", "#252826"),
   };
 }
 
@@ -139,14 +139,14 @@ export function XtermSurface({
         observer.observe(container);
         fitRef.current();
 
-        // The theme is read from CSS variables at creation time; follow the
-        // light/dark class toggled on <html> so open terminals recolor live.
+        // The theme is read from CSS variables at creation time; follow both
+        // the effective color mode and theme family so open terminals recolor live.
         themeObserver = new MutationObserver(() => {
           if (terminal) terminal.options.theme = xtermTheme();
         });
         themeObserver.observe(document.documentElement, {
           attributes: true,
-          attributeFilter: ["class"],
+          attributeFilter: ["class", "data-theme-family"],
         });
 
         try {

@@ -1,12 +1,16 @@
-export type AppTheme = "light" | "dark" | "system";
+import type { DesktopTheme, DesktopThemeFamily } from "@pideck/protocol";
+
+export type AppTheme = DesktopTheme;
+export type AppThemeFamily = DesktopThemeFamily;
 export type EffectiveTheme = Exclude<AppTheme, "system">;
 
 export const STARTUP_THEME_STORAGE_KEY = "pideck.theme";
+export const STARTUP_THEME_FAMILY_STORAGE_KEY = "pideck.theme-family";
+export const DEFAULT_THEME_FAMILY: AppThemeFamily = "pideck";
 
 export function resolveEffectiveTheme(
   theme: AppTheme,
-  systemPrefersLight =
-    typeof window !== "undefined" &&
+  systemPrefersLight = typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-color-scheme: light)").matches,
 ): EffectiveTheme {
@@ -22,16 +26,26 @@ export function readStoredTheme(): AppTheme | null {
   }
 }
 
+export function readStoredThemeFamily(): AppThemeFamily | null {
+  try {
+    const value = window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY);
+    return value === "pideck" || value === "vercel" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function applyTheme(
   theme: AppTheme,
-  options: { persist?: boolean } = {},
+  options: { family?: AppThemeFamily; persist?: boolean } = {},
 ): void {
-  const { persist = true } = options;
+  const { family = DEFAULT_THEME_FAMILY, persist = true } = options;
   const root = document.documentElement;
   const effective = resolveEffectiveTheme(theme);
   if (persist) {
     try {
       window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, theme);
+      window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, family);
     } catch {
       // Hardened WebViews may disable local storage; native settings remain authoritative.
     }
@@ -39,11 +53,21 @@ export function applyTheme(
   root.classList.toggle("light", effective === "light");
   root.classList.toggle("dark", effective === "dark");
   root.dataset.theme = effective;
-  document
-    .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", effective === "light" ? "#ffffff" : "#17171b");
+  root.dataset.themeFamily = family;
+  const themeColor =
+    family === "vercel"
+      ? effective === "light"
+        ? "#ffffff"
+        : "#000000"
+      : effective === "light"
+        ? "#ffffff"
+        : "#17171b";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
 }
 
 export function applyStoredTheme(): void {
-  applyTheme(readStoredTheme() ?? "system", { persist: false });
+  applyTheme(readStoredTheme() ?? "system", {
+    family: readStoredThemeFamily() ?? DEFAULT_THEME_FAMILY,
+    persist: false,
+  });
 }

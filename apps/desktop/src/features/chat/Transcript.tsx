@@ -1084,7 +1084,7 @@ function ExtensionRenderedMessageRow({ row }: { row: TranscriptRow }) {
     <div className="min-w-0 text-xs text-foreground/80">
       <button
         type="button"
-        className="flex min-h-8 w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-surface-overlay/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="flex min-h-8 w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-surface-overlay/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
         aria-expanded={expanded}
         title={toggleLabel}
         onClick={() => setExpanded((current) => !current)}

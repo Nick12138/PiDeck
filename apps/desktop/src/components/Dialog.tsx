@@ -4,8 +4,8 @@ import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
   "interface-density-control inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
-export const secondaryButton = `${buttonBase} border border-border hover:bg-surface-overlay`;
-export const primaryButton = `${buttonBase} bg-accent text-white hover:bg-accent-hover`;
+export const secondaryButton = `${buttonBase} theme-secondary-control border border-border hover:bg-surface-overlay`;
+export const primaryButton = `${buttonBase} theme-primary-control bg-accent text-accent-foreground hover:bg-accent-hover`;
 
 export type DialogTone = "default" | "warning" | "danger";
 
@@ -90,7 +90,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className="max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
+        className="theme-floating-surface max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
       >
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>

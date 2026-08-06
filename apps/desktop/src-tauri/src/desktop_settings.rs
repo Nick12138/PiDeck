@@ -39,6 +39,14 @@ pub enum DesktopLanguage {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum DesktopThemeFamily {
+    #[default]
+    Pideck,
+    Vercel,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DesktopInterfaceDensity {
     Compact,
     #[default]
@@ -79,6 +87,7 @@ fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
 #[serde(default, rename_all = "camelCase")]
 pub struct DesktopSettings {
     pub theme: DesktopTheme,
+    pub theme_family: DesktopThemeFamily,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_workspace: Option<String>,
     pub restore_last_session: bool,
@@ -108,6 +117,7 @@ impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
             theme: DesktopTheme::System,
+            theme_family: DesktopThemeFamily::Pideck,
             default_workspace: None,
             restore_last_session: true,
             last_workspace: None,
@@ -373,6 +383,7 @@ impl DesktopSettingsStore {
             if !matches!(
                 key.as_str(),
                 "theme"
+                    | "themeFamily"
                     | "defaultWorkspace"
                     | "restoreLastSession"
                     | "lastWorkspace"
@@ -499,6 +510,7 @@ mod tests {
 
         for patch in [
             serde_json::json!({ "theme": "neon" }),
+            serde_json::json!({ "themeFamily": "neon" }),
             serde_json::json!({ "language": "fr" }),
             serde_json::json!({ "interfaceDensity": "dense" }),
             serde_json::json!({ "conversationFontSize": 11 }),
@@ -560,6 +572,7 @@ mod tests {
             store.settings.interface_density,
             DesktopInterfaceDensity::Standard
         );
+        assert_eq!(store.settings.theme_family, DesktopThemeFamily::Pideck);
         assert_eq!(
             store.settings.conversation_font_size,
             DEFAULT_CONVERSATION_FONT_SIZE
@@ -568,6 +581,7 @@ mod tests {
 
         store
             .patch(serde_json::json!({
+                "themeFamily": "vercel",
                 "interfaceDensity": "compact",
                 "conversationFontSize": 17,
                 "codeFontSize": 15
@@ -578,6 +592,7 @@ mod tests {
             reloaded.settings.interface_density,
             DesktopInterfaceDensity::Compact
         );
+        assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Vercel);
         assert_eq!(reloaded.settings.conversation_font_size, 17);
         assert_eq!(reloaded.settings.code_font_size, 15);
 
@@ -710,6 +725,7 @@ mod tests {
 
         let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
         assert_eq!(loaded.settings.theme, DesktopTheme::Light);
+        assert_eq!(loaded.settings.theme_family, DesktopThemeFamily::Pideck);
         assert!(!loaded.settings.restore_last_session);
         assert_eq!(
             loaded.settings.extension_decision_presentation,

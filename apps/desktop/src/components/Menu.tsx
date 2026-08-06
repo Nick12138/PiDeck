@@ -88,7 +88,7 @@ function Menu({ request }: { request: ContextMenuRequest }) {
       ref={menuRef}
       role="menu"
       data-context-menu
-      className="fixed z-50 max-h-[calc(100vh-16px)] min-w-48 max-w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-xl"
+      className="theme-floating-surface fixed z-50 max-h-[calc(100vh-16px)] min-w-48 max-w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-xl"
       style={position}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -116,7 +116,7 @@ function Menu({ request }: { request: ContextMenuRequest }) {
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              className={`flex min-h-8 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs outline-none transition-colors hover:bg-surface-overlay focus-visible:bg-surface-overlay focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`flex min-h-8 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs outline-none transition-colors hover:bg-control-hover focus-visible:bg-control-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-40 ${
                 item.danger ? "text-danger" : "text-foreground"
               }`}
               onClick={() => {

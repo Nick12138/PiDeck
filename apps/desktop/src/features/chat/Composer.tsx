@@ -1510,7 +1510,7 @@ export function Composer({
             {completion && (
               <div
                 data-composer-completion
-                className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                className="theme-floating-surface absolute bottom-full left-2 z-30 mb-1 max-h-64 w-[420px] max-w-[90%] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
               >
                 {completion.items.map((item, index) => (
                   <button

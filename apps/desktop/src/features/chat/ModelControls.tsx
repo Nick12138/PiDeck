@@ -174,7 +174,7 @@ export function ContextUsageRing() {
         </span>
       </button>
       {open && (
-        <div className="absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg">
+        <div className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg">
           <span className="font-medium">{t("contextUsageTitle")}</span>
           <span className="mt-0.5 tabular-nums text-muted">{title}</span>
           {breakdown && (
@@ -539,7 +539,7 @@ export function ModelControls() {
           >
             <div
               ref={modelMenuPanelRef}
-              className="max-h-80 w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
+              className="theme-floating-surface max-h-80 w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
               role="menu"
               aria-label={t("modelMenuLabel")}
             >
@@ -658,7 +658,7 @@ export function ModelControls() {
             </div>
             {thinkingModel && (
               <div
-                className="absolute left-full ml-2 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                className="theme-floating-surface absolute left-full ml-2 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
                 style={{ top: thinkingMenuTop }}
                 role="menu"
                 aria-label={t("modelThinkingFor", { model: modelOptionLabel(thinkingModel) })}

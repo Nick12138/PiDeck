@@ -847,7 +847,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                   title={t("gitChooseBranch")}
                   aria-label={t("gitChooseBranch")}
                   disabled={branchLoading || Boolean(operation)}
-                  className="flex min-w-0 items-center gap-1 truncate rounded px-1 py-0.5 font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
+                  className="flex min-w-0 items-center gap-1 truncate rounded px-1 py-0.5 font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-50"
                   onClick={(event) => {
                     const trigger = contextMenuTrigger(event.currentTarget);
                     if (trigger) void openBranchChooser(trigger);
@@ -891,7 +891,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
               title={t("gitRefresh")}
               aria-label={t("gitRefresh")}
               disabled={loading || historyLoading || Boolean(operation)}
-              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
               onClick={() => {
                 if (view === "history") void loadHistory(false);
                 else void refresh();
@@ -911,7 +911,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             type="button"
             role="tab"
             aria-selected={view === "changes"}
-            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "changes" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+            data-ui="tab"
+            data-state={view === "changes" ? "active" : "inactive"}
+            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus ${view === "changes" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
             onClick={() => setView("changes")}
           >
             <GitCompareArrows size={13} />
@@ -921,7 +923,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             type="button"
             role="tab"
             aria-selected={view === "history"}
-            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${view === "history" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
+            data-ui="tab"
+            data-state={view === "history" ? "active" : "inactive"}
+            className={`flex items-center justify-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus ${view === "history" ? "bg-surface-raised text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}
             onClick={() => {
               setView("history");
               if (!historyLoaded) void loadHistory(false);
@@ -999,7 +1003,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                                   (file) => file[row.area] !== null && !file.pathSupported,
                                 )
                               }
-                              className="ml-1 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30"
+                              className="ml-1 flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-30"
                               onClick={() => void mutateAll(row.area)}
                             >
                               {operation ===
@@ -1063,7 +1067,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                 placeholder={
                   stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")
                 }
-                className="w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-accent disabled:opacity-50"
+                className="w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-focus disabled:opacity-50"
                 onChange={(event) => setCommitMessage(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -1075,7 +1079,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
               <button
                 type="button"
                 disabled={!canCommit}
-                className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-white hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-accent-foreground hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => void commit()}
               >
                 {operation === "commit" ? (
@@ -1145,7 +1149,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
             value={branchName}
             maxLength={255}
             placeholder={t("gitBranchNamePlaceholder")}
-            className="h-9 w-full rounded border border-border bg-surface px-2.5 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
+            className="h-9 w-full rounded border border-border bg-surface px-2.5 text-sm text-foreground outline-none placeholder:text-muted focus:border-focus"
             onChange={(event) => setBranchName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
@@ -1198,7 +1202,7 @@ function FileRow({
         type="button"
         aria-label={diffLabel}
         disabled={!row.file.pathSupported}
-        className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-55"
+        className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-55"
         title={row.file.path}
         onClick={onOpen}
       >
@@ -1239,7 +1243,7 @@ function FileRow({
         title={actionLabel}
         aria-label={actionLabel}
         disabled={busy || !row.file.pathSupported}
-        className="ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface-raised hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 group-hover:opacity-100"
+        className="ml-1 flex size-7 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface-raised hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-30 group-hover:opacity-100"
         onClick={onMutate}
       >
         {active ? <LoaderCircle size={13} className="animate-spin" /> : <ActionIcon size={13} />}
@@ -1322,7 +1326,7 @@ function HistoryView({
           <div key={commit.sha} role="listitem" className="border-b border-border/60">
             <button
               type="button"
-              className="group flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+              className="group flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus"
               aria-label={t("gitOpenCommit", { subject: commit.subject || commit.shortSha })}
               onClick={() => onOpen(commit)}
             >
@@ -1355,7 +1359,7 @@ function HistoryView({
           <button
             type="button"
             disabled={loading}
-            className="flex h-8 w-full items-center justify-center gap-2 rounded border border-border text-xs text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+            className="flex h-8 w-full items-center justify-center gap-2 rounded border border-border text-xs text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
             onClick={onLoadMore}
           >
             {loading && <LoaderCircle size={13} className="animate-spin" />}
@@ -1403,7 +1407,7 @@ function DiffView({
           type="button"
           title={backLabel}
           aria-label={backLabel}
-          className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
           onClick={onBack}
         >
           <ArrowLeft size={14} />
@@ -1491,7 +1495,7 @@ function DiffView({
                             hunkOperation === "stage" ? t("gitStageHunk") : t("gitUnstageHunk")
                           }
                           disabled={busy}
-                          className="sticky right-0 flex size-7 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                          className="sticky right-0 flex size-7 shrink-0 items-center justify-center bg-surface-raised text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
                           onClick={() => onMutateHunk(hunk, hunkOperation)}
                         >
                           {operation === `hunk:${hunkOperation}:${hunk.id}` ? (

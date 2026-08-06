@@ -259,8 +259,10 @@ export function ExtensionUiRequestContent({
           <button
             type="button"
             disabled={submitting}
-            className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md px-3 text-xs text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-              highRisk ? "bg-danger hover:bg-danger/85" : "bg-accent hover:bg-accent-hover"
+            className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md px-3 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+              highRisk
+                ? "bg-danger text-white hover:bg-danger/85"
+                : "bg-accent text-accent-foreground hover:bg-accent-hover"
             }`}
             onClick={() => void respond("resolved", true)}
           >
@@ -292,7 +294,7 @@ export function ExtensionUiRequestContent({
                       type="search"
                       value={optionQuery}
                       placeholder={t("extUiSearchOptions")}
-                      className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-8 text-xs outline-none focus:border-accent"
+                      className="h-8 w-full rounded-md border border-border bg-surface pl-7 pr-8 text-xs outline-none focus:border-focus"
                       onChange={(event) => setOptionQuery(event.target.value)}
                     />
                     {optionQuery ? (
@@ -383,7 +385,7 @@ export function ExtensionUiRequestContent({
                       : t("extUiSendResponse")
                   }
                   disabled={submitting || !input.trim()}
-                  className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={() => void respondToSelect({ kind: "freeform" }, input)}
                 >
                   {submitting && selectSubmitSource?.kind === "freeform" ? (
@@ -423,7 +425,7 @@ export function ExtensionUiRequestContent({
             <button
               type="button"
               disabled={submitting}
-              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
               onClick={() => void respond("resolved", input)}
             >
               <SubmitLabel label={t("extUiOk")} submitting={submitting} />

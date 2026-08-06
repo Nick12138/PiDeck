@@ -2,9 +2,11 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  STARTUP_THEME_FAMILY_STORAGE_KEY,
   STARTUP_THEME_STORAGE_KEY,
   applyStoredTheme,
   applyTheme,
+  readStoredThemeFamily,
   readStoredTheme,
   resolveEffectiveTheme,
 } from "./theme";
@@ -20,6 +22,7 @@ beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.className = "";
   document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("data-theme-family");
   document.head.innerHTML = '<meta name="theme-color" content="#17171b">';
   mockSystemTheme(false);
 });
@@ -42,6 +45,7 @@ describe("theme bootstrap", () => {
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement).not.toHaveClass("dark");
     expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("pideck");
     expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
       "content",
       "#ffffff",
@@ -57,16 +61,41 @@ describe("theme bootstrap", () => {
     );
   });
 
+  it("applies and persists both Vercel color modes", () => {
+    applyTheme("light", { family: "vercel" });
+    expect(window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY)).toBe("vercel");
+    expect(document.documentElement).toHaveClass("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#ffffff",
+    );
+
+    applyTheme("dark", { family: "vercel" });
+    expect(document.documentElement).toHaveClass("dark");
+    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#000000",
+    );
+  });
+
   it("restores the mirrored preference before native settings are available", () => {
     window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, "light");
+    window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "vercel");
     applyStoredTheme();
     expect(readStoredTheme()).toBe("light");
+    expect(readStoredThemeFamily()).toBe("vercel");
     expect(document.documentElement).toHaveClass("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
 
     window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, "invalid");
+    window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "invalid");
     mockSystemTheme(false);
     applyStoredTheme();
     expect(readStoredTheme()).toBeNull();
+    expect(readStoredThemeFamily()).toBeNull();
     expect(document.documentElement).toHaveClass("dark");
+    expect(document.documentElement.dataset.themeFamily).toBe("pideck");
   });
 });

@@ -558,6 +558,8 @@ export function RightDock() {
               return (
                 <div
                   key={tabId}
+                  data-ui="tab"
+                  data-state={activeTab === tabId ? "active" : "inactive"}
                   className={`flex h-full w-44 min-w-[96px] shrink items-center border-b-2 text-xs ${
                     activeTab === tabId
                       ? "border-accent text-foreground"
@@ -629,7 +631,7 @@ export function RightDock() {
               >
                 <ChevronDown size={14} />
               </summary>
-              <div className="interface-density-compact-menu absolute right-0 top-8 z-50 w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg">
+              <div className="theme-floating-surface interface-density-compact-menu absolute right-0 top-8 z-50 w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg">
                 {overflowTabIds.map((tabId) => {
                   const { label, Icon } = tabInfo(tabId);
                   return (
@@ -684,7 +686,7 @@ export function RightDock() {
             {addMenuOpen && (
               <div
                 role="menu"
-                className={`interface-density-menu absolute top-8 z-[70] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg ${
+                className={`theme-floating-surface interface-density-menu absolute top-8 z-[70] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg ${
                   tabOrder.length === 0 ? "left-0" : "right-0"
                 }`}
                 onKeyDown={(event) => {
@@ -846,7 +848,7 @@ export function RightDock() {
                 <button
                   type="button"
                   aria-label={t("dockOpenNamed", { label: t("dockFiles") })}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
                   onClick={createFiles}
                 >
                   <FolderTree size={17} className="shrink-0" />
@@ -855,7 +857,7 @@ export function RightDock() {
                 <button
                   type="button"
                   aria-label={t("dockOpenNamed", { label: t("dockSessionTree") })}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
                   onClick={createTree}
                 >
                   <GitBranch size={17} className="shrink-0" />
@@ -866,7 +868,7 @@ export function RightDock() {
                   aria-label={t("dockOpenNamed", { label: t("gitChanges") })}
                   title={workspaceCwd ? undefined : t("dockWorkspaceForChanges")}
                   disabled={!workspaceCwd}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
                   onClick={createChanges}
                 >
                   <GitCompareArrows size={17} className="shrink-0" />
@@ -876,7 +878,7 @@ export function RightDock() {
                   type="button"
                   aria-label={t("dockOpenNamed", { label: t("dockBrowser") })}
                   disabled={browserTabs.length >= MAX_BROWSER_TABS}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
                   onClick={createBrowser}
                 >
                   <Globe2 size={17} className="shrink-0" />
@@ -891,7 +893,7 @@ export function RightDock() {
                       : t("dockWorkspaceForTerminal")
                   }
                   disabled={!workspaceCwd}
-                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
                   onClick={createShell}
                 >
                   <SquareTerminal size={17} className="shrink-0" />

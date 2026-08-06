@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     hasSelection: vi.fn(() => false),
     loadAddon: vi.fn(),
     open: vi.fn(),
-    options: {} as { theme?: unknown },
+    options: {} as { theme?: Record<string, string> },
     paste: vi.fn(),
     selectAll: vi.fn(),
     clear: vi.fn(),
@@ -87,12 +87,22 @@ beforeEach(() => {
   mocks.terminal.options = {};
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   document.documentElement.style.setProperty("--font-mono", '"Test Mono", monospace');
+  document.documentElement.removeAttribute("data-theme-family");
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   document.documentElement.style.removeProperty("--font-mono");
+  for (const property of [
+    "--color-surface-inset",
+    "--color-foreground",
+    "--color-accent",
+    "--color-control-hover",
+  ]) {
+    document.documentElement.style.removeProperty(property);
+  }
+  document.documentElement.removeAttribute("data-theme-family");
   Reflect.deleteProperty(document, "fonts");
 });
 
@@ -160,6 +170,34 @@ describe("XtermSurface font readiness", () => {
 
     await waitFor(() => expect(mocks.constructTerminal).toHaveBeenCalledTimes(1));
     expect(mocks.terminal.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("recolors an open terminal when only the theme family changes", async () => {
+    setFontLoader(vi.fn().mockResolvedValue([]));
+    const root = document.documentElement;
+    root.style.setProperty("--color-surface-inset", "#17171b");
+    root.style.setProperty("--color-foreground", "#edeef0");
+    root.style.setProperty("--color-accent", "#df6b35");
+    root.style.setProperty("--color-control-hover", "#27272d");
+
+    renderSurface();
+    await waitFor(() => expect(mocks.constructTerminal).toHaveBeenCalledTimes(1));
+
+    root.style.setProperty("--color-surface-inset", "#111111");
+    root.style.setProperty("--color-foreground", "#f0f0f0");
+    root.style.setProperty("--color-accent", "#ffffff");
+    root.style.setProperty("--color-control-hover", "#1f1f1f");
+    root.dataset.themeFamily = "vercel";
+
+    await waitFor(() =>
+      expect(mocks.terminal.options.theme).toEqual({
+        background: "#111111",
+        foreground: "#f0f0f0",
+        cursor: "#ffffff",
+        cursorAccent: "#111111",
+        selectionBackground: "#1f1f1f",
+      }),
+    );
   });
 
   it("does not construct xterm after unmounting while the font is loading", async () => {

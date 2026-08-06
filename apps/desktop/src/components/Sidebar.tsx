@@ -25,7 +25,7 @@ function NewSessionButton() {
       type="button"
       onClick={() => void createNewSession()}
       disabled={!workspace?.servicesReady || pending}
-      className="interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+      className="theme-sidebar-primary interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
       <MessageCirclePlus size={18} className="shrink-0" />
       <span>{pending ? t("sidebarCreating") : t("sidebarNewConversation")}</span>
@@ -147,9 +147,11 @@ export function SidebarLayout({
             <button
               type="button"
               onClick={() => setPage(page === "chat" ? "settings" : "chat")}
+              data-ui="nav-item"
+              data-state={page !== "chat" ? "active" : "inactive"}
               className={`interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm transition-colors ${
                 page !== "chat"
-                  ? "bg-surface-overlay text-foreground"
+                  ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                   : "text-foreground hover:bg-surface-overlay"
               }`}
             >

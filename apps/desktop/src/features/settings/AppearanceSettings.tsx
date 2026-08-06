@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
-import type { DesktopInterfaceDensity } from "@pideck/protocol";
+import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@pideck/protocol";
 import { Minus, Plus } from "lucide-react";
 import { SectionHeader } from "../../components/SectionHeader";
 import {
@@ -83,6 +83,7 @@ export function AppearanceSettings() {
   const configuredConversationWidth = resolveConversationContentWidth(
     desktopSettings?.conversationContentWidth,
   );
+  const themeFamily = desktopSettings?.themeFamily ?? "pideck";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
   const conversationFontSize = resolveConversationFontSize(desktopSettings?.conversationFontSize);
   const codeFontSize = resolveCodeFontSize(desktopSettings?.codeFontSize);
@@ -101,7 +102,9 @@ export function AppearanceSettings() {
       await persistDesktopSettings(patch);
       const next = useAppStore.getState().desktopSettings;
       if (next) {
-        if (patch.theme) applyTheme(next.theme);
+        if (patch.theme || patch.themeFamily) {
+          applyTheme(next.theme, { family: next.themeFamily });
+        }
         applyAppearancePreferences(next);
       }
       return true;
@@ -141,6 +144,13 @@ export function AppearanceSettings() {
     { value: "standard", label: t("appearanceDensityStandard") },
     { value: "comfortable", label: t("appearanceDensityComfortable") },
   ];
+  const themeFamilyOptions: Array<{
+    value: DesktopThemeFamily;
+    label: string;
+  }> = [
+    { value: "pideck", label: t("appearanceThemePideck") },
+    { value: "vercel", label: t("appearanceThemeVercel") },
+  ];
 
   const previewStyle = {
     "--conversation-font-size": `${conversationFontSize}px`,
@@ -155,13 +165,63 @@ export function AppearanceSettings() {
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">{t("appearanceInterfaceGroup")}</h2>
             <div className="interface-density-card flex flex-col gap-4 rounded-lg border border-border p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("appearanceThemeFamily")}</span>
+                  <span className="block text-xs text-muted">{t("appearanceThemeFamilyDesc")}</span>
+                </span>
+                <div
+                  data-ui="segmented"
+                  className="interface-density-control grid shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface"
+                  role="group"
+                  aria-label={t("appearanceThemeFamily")}
+                >
+                  {themeFamilyOptions.map((option, index) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={themeFamily === option.value}
+                      data-ui="segmented-item"
+                      data-state={themeFamily === option.value ? "active" : "inactive"}
+                      className={`flex h-full min-w-24 items-center justify-center gap-2 px-3 text-xs transition-colors ${
+                        index > 0 ? "border-l border-border" : ""
+                      } ${
+                        themeFamily === option.value
+                          ? "bg-selection font-medium text-selection-foreground"
+                          : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
+                      }`}
+                      onClick={() => void patchDesktop({ themeFamily: option.value })}
+                    >
+                      <span
+                        className="flex size-3 overflow-hidden rounded-sm border border-border-strong"
+                        aria-hidden="true"
+                      >
+                        {option.value === "pideck" ? (
+                          <>
+                            <span className="h-full w-1/2 bg-[#df6b35]" />
+                            <span className="h-full w-1/2 bg-[#17171b]" />
+                          </>
+                        ) : (
+                          <>
+                            <span className="h-full w-1/2 bg-black" />
+                            <span className="h-full w-1/2 bg-white" />
+                          </>
+                        )}
+                      </span>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <label className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
-                  <span className="block text-sm">{t("generalTheme")}</span>
-                  <span className="block text-xs text-muted">{t("generalThemeDesc")}</span>
+                  <span className="block text-sm">{t("appearanceColorMode")}</span>
+                  <span className="block text-xs text-muted">{t("appearanceColorModeDesc")}</span>
                 </span>
                 <select
                   className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
+                  aria-label={t("appearanceColorMode")}
                   value={desktopSettings?.theme ?? "system"}
                   onChange={(event) =>
                     void patchDesktop({
@@ -201,6 +261,7 @@ export function AppearanceSettings() {
                   <span className="block text-xs text-muted">{t("appearanceDensityDesc")}</span>
                 </span>
                 <div
+                  data-ui="segmented"
                   className="interface-density-control grid shrink-0 grid-cols-3 overflow-hidden rounded-md border border-border bg-surface"
                   role="group"
                   aria-label={t("appearanceDensity")}
@@ -210,11 +271,13 @@ export function AppearanceSettings() {
                       key={option.value}
                       type="button"
                       aria-pressed={interfaceDensity === option.value}
+                      data-ui="segmented-item"
+                      data-state={interfaceDensity === option.value ? "active" : "inactive"}
                       className={`h-full min-w-16 px-2 text-xs transition-colors ${
                         index > 0 ? "border-l border-border" : ""
                       } ${
                         interfaceDensity === option.value
-                          ? "bg-surface-overlay font-medium text-foreground"
+                          ? "bg-selection font-medium text-selection-foreground"
                           : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
                       }`}
                       onClick={() => void patchDesktop({ interfaceDensity: option.value })}
@@ -248,7 +311,7 @@ export function AppearanceSettings() {
                 </span>
                 <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
                   <span
-                    className={`interface-density-control flex h-8 w-24 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-accent ${
+                    className={`interface-density-control flex h-8 w-24 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus ${
                       conversationWidthInvalid ? "border-danger" : "border-border"
                     }`}
                   >
@@ -343,7 +406,7 @@ export function AppearanceSettings() {
                 <p className="appearance-preview-copy text-foreground">
                   {t("appearancePreviewText")} <code>const ready = true</code>
                 </p>
-                <pre className="mt-3 overflow-x-auto rounded-md bg-surface-overlay/70 p-3 text-foreground">
+                <pre className="theme-inset-surface mt-3 overflow-x-auto rounded-md bg-surface-overlay/70 p-3 text-foreground">
                   <code>{'const status = "ready";\nreturn status;'}</code>
                 </pre>
               </div>

@@ -413,7 +413,7 @@ function ModelChecklist({
         <div className="relative">
           <Search className="absolute left-2 top-2 text-muted" size={13} />
           <input
-            className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
+            className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-focus"
             placeholder={t("providersSearchModels")}
             value={search}
             onChange={(event) => onSearch(event.target.value)}
@@ -655,7 +655,7 @@ function LoginFlowCard({
                     event.preventDefault();
                   }
                 }}
-                className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs outline-none focus:border-accent"
+                className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-mono text-xs outline-none focus:border-focus"
               />
               <button
                 type="submit"

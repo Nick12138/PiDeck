@@ -328,7 +328,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
             aria-label={t("dockFilesSearch")}
             value={query}
             placeholder={t("dockFilesSearchPlaceholder")}
-            className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-7 text-xs outline-none focus:border-accent"
+            className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-7 text-xs outline-none focus:border-focus"
             onChange={(event) => setQuery(event.target.value)}
           />
           {query && (
@@ -392,7 +392,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           aria-activedescendant={
             selectedPath ? `file-tree-${encodeURIComponent(selectedPath)}` : undefined
           }
-          className="min-h-0 flex-1 overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          className="min-h-0 flex-1 overflow-auto py-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus"
           onKeyDown={onTreeKeyDown}
         >
           {rows.length === 0 ? (

@@ -254,7 +254,7 @@ export function WidgetPanel({
 
   return (
     <div
-      className={`fixed z-40 overflow-auto rounded-lg border border-border bg-surface-raised px-4 py-2 shadow-xl ${
+      className={`theme-floating-surface fixed z-40 overflow-auto rounded-lg border border-border bg-surface-raised px-4 py-2 shadow-xl ${
         position ? "" : "invisible pointer-events-none"
       }`}
       style={style}
@@ -304,7 +304,7 @@ function WidgetSection({
     <section className="py-1 pr-8" aria-label={t("extWidgetLabel", { key: entry.key })}>
       <button
         type="button"
-        className="group flex min-h-7 w-full items-center gap-1.5 rounded px-1 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="group flex min-h-7 w-full items-center gap-1.5 rounded px-1 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
         aria-expanded={!collapsed}
         aria-controls={contentId}
         aria-label={toggleLabel}

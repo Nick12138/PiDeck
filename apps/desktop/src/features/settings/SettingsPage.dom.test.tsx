@@ -64,6 +64,9 @@ afterEach(() => {
   useAppStore.getState().setProvidersDirty(false);
   useAppStore.getState().setDesktopSettings(null);
   document.documentElement.removeAttribute("data-interface-density");
+  document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("data-theme-family");
+  document.documentElement.classList.remove("light", "dark");
   document.documentElement.style.removeProperty("--conversation-font-size");
   document.documentElement.style.removeProperty("--code-font-size");
   vi.restoreAllMocks();
@@ -122,7 +125,20 @@ describe("SettingsPage navigation guard", () => {
     await user.click(screen.getByRole("button", { name: "Appearance" }));
 
     expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Theme/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(screen.getByRole("button", { name: "General" })).toHaveAttribute(
+      "data-state",
+      "inactive",
+    );
+    expect(screen.getByRole("group", { name: "Theme style" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Color mode")).toBeInTheDocument();
     expect(screen.getByLabelText(/Language/)).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Conversation width" })).toBeInTheDocument();
@@ -156,6 +172,32 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("Readable conversation text with inline code.")).toBeInTheDocument();
     expect(screen.getByText("15px")).toBeInTheDocument();
     expect(screen.getByText("13px")).toBeInTheDocument();
+  });
+
+  it("persists the theme family separately from the color mode", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="appearance" />);
+    const themeStyle = screen.getByRole("group", { name: "Theme style" });
+    const pideck = within(themeStyle).getByRole("button", { name: "PiDeck" });
+    const vercel = within(themeStyle).getByRole("button", { name: "Vercel" });
+
+    expect(pideck).toHaveAttribute("aria-pressed", "true");
+    expect(pideck).toHaveAttribute("data-state", "active");
+    expect(vercel).toHaveAttribute("aria-pressed", "false");
+    expect(vercel).toHaveAttribute("data-state", "inactive");
+
+    await user.click(vercel);
+    await waitFor(() => expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("vercel"));
+    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
+    expect(vercel).toHaveAttribute("aria-pressed", "true");
+    expect(vercel).toHaveAttribute("data-state", "active");
+    expect(pideck).toHaveAttribute("data-state", "inactive");
+
+    await user.selectOptions(screen.getByLabelText("Color mode"), "light");
+    await waitFor(() => expect(useAppStore.getState().desktopSettings?.theme).toBe("light"));
+    expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("vercel");
+    expect(document.documentElement).toHaveClass("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
   });
 
   it("switches sections directly when the Providers form is clean", async () => {
@@ -313,7 +355,7 @@ describe("SettingsPage navigation guard", () => {
     });
     render(<SettingsPage initialSection="appearance" />);
 
-    await user.selectOptions(screen.getByLabelText(/Theme/), "light");
+    await user.selectOptions(screen.getByLabelText("Color mode"), "light");
 
     await waitFor(() =>
       expect(tauriMocks.invoke).toHaveBeenCalledWith("desktop_settings_patch", {

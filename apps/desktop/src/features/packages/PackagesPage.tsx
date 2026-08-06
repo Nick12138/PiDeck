@@ -99,7 +99,7 @@ const PACKAGE_LIST_BUSY_RETRY_INITIAL_MS = 250;
 const PACKAGE_LIST_BUSY_RETRY_MAX_MS = 2_000;
 
 const inputClass =
-  "h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-accent";
+  "h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-focus";
 
 export function reconcileProjectGateAuthorization(
   host: HostStatusSnapshot | null,
@@ -149,13 +149,18 @@ function Segmented<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex h-8 rounded-md border border-border bg-surface p-0.5">
+    <div
+      data-ui="segmented"
+      className="inline-flex h-8 rounded-md border border-border bg-surface p-0.5"
+    >
       {values.map((item) => (
         <button
           key={item}
           type="button"
           aria-pressed={value === item}
-          className={`rounded px-2 text-xs capitalize ${value === item ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+          data-ui="segmented-item"
+          data-state={value === item ? "active" : "inactive"}
+          className={`rounded px-2 text-xs capitalize ${value === item ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
           onClick={() => onChange(item)}
         >
           {item}
@@ -232,6 +237,7 @@ function PackagePreferenceControl({
       <div
         role="group"
         aria-label={label}
+        data-ui="segmented"
         className="inline-flex h-8 rounded-md border border-border p-0.5"
       >
         {values.map((value) => (
@@ -240,7 +246,9 @@ function PackagePreferenceControl({
             type="button"
             aria-label={t("packagesPrefAria", { value: preferenceLabel(t, value), label })}
             aria-pressed={state === value}
-            className={`rounded px-2 text-xs capitalize ${state === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+            data-ui="segmented-item"
+            data-state={state === value ? "active" : "inactive"}
+            className={`rounded px-2 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
             disabled={disabled || state === null}
             onClick={() => onChange(value)}
           >
@@ -976,7 +984,10 @@ export function PackagesPage() {
             {resource.enabled ? t("packagesActive") : t("packagesInactive")}
           </span>
           {configurable ? (
-            <div className="inline-flex h-8 rounded-md border border-border p-0.5">
+            <div
+              data-ui="segmented"
+              className="inline-flex h-8 rounded-md border border-border p-0.5"
+            >
               {(resourceMode === "project"
                 ? ["inherit", "enabled", "disabled"]
                 : ["enabled", "disabled"]
@@ -990,7 +1001,9 @@ export function PackagesPage() {
                       resourceMode === "project" ? "packagesScopeProject" : "packagesScopeUser",
                     ),
                   })}
-                  className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+                  data-ui="segmented-item"
+                  data-state={preference === value ? "active" : "inactive"}
+                  className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                   disabled={mutationBlocked}
                   onClick={() =>
                     setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")
@@ -1313,12 +1326,15 @@ export function PackagesPage() {
         <div
           role="group"
           aria-label={t("packagesViewGroup")}
+          data-ui="segmented"
           className="flex h-8 rounded-md border border-border bg-surface p-0.5"
         >
           <button
             aria-pressed={tab === "installed"}
             type="button"
-            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-surface-overlay" : "text-muted"}`}
+            data-ui="segmented-item"
+            data-state={tab === "installed" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
             onClick={() => setTab("installed")}
           >
             {t("packagesTabInstalled")}
@@ -1326,7 +1342,9 @@ export function PackagesPage() {
           <button
             aria-pressed={tab === "resources"}
             type="button"
-            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-surface-overlay" : "text-muted"}`}
+            data-ui="segmented-item"
+            data-state={tab === "resources" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
             onClick={() => setTab("resources")}
           >
             {t("packagesTabResources")}
@@ -1461,7 +1479,9 @@ export function PackagesPage() {
                     <button
                       type="button"
                       aria-current={selectedId === item.id ? "true" : undefined}
-                      className={`interface-density-compact-list-row flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "bg-surface-overlay" : ""}`}
+                      data-ui="nav-item"
+                      data-state={selectedId === item.id ? "active" : "inactive"}
+                      className={`interface-density-compact-list-row flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-surface-overlay ${selectedId === item.id ? "theme-nav-active bg-nav-active text-nav-active-foreground" : ""}`}
                       onClick={() => setSelectedId(item.id)}
                     >
                       <Boxes
@@ -1798,7 +1818,9 @@ export function PackagesPage() {
                 key={type}
                 aria-pressed={resourceType === type}
                 type="button"
-                className={`h-7 shrink-0 rounded px-2.5 text-xs ${resourceType === type ? "bg-surface-overlay text-foreground" : "text-muted hover:text-foreground"}`}
+                data-ui="segmented-item"
+                data-state={resourceType === type ? "active" : "inactive"}
+                className={`h-7 shrink-0 rounded px-2.5 text-xs ${resourceType === type ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                 onClick={() => setResourceType(type)}
               >
                 {type === "all" ? t("packagesFilterAll") : pluralType(t, type)}

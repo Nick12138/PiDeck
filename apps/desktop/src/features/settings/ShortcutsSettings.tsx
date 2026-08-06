@@ -163,7 +163,7 @@ export function ShortcutsSettings() {
                         : t("shortcutsRecord", { command: title })
                     }
                     disabled={savingId !== null}
-                    className={`interface-density-control inline-flex h-8 min-w-28 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`interface-density-control inline-flex h-8 min-w-28 items-center justify-center rounded-md border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${
                       recording
                         ? "border-accent bg-accent/10 text-accent"
                         : "border-border bg-surface-overlay text-muted hover:text-foreground"

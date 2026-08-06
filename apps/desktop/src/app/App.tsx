@@ -556,7 +556,7 @@ export function App() {
           const snapshot = await invoke<DesktopSettingsSnapshot>("desktop_settings_get");
           if (!cancelled && snapshot.settings) {
             store.setDesktopSettings(snapshot.settings);
-            applyTheme(snapshot.settings.theme);
+            applyTheme(snapshot.settings.theme, { family: snapshot.settings.themeFamily });
             applyAppearancePreferences(snapshot.settings);
             if (snapshot.warning) {
               store.pushNotification(
@@ -926,8 +926,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (desktopSettings?.theme) applyTheme(desktopSettings.theme);
-  }, [desktopSettings?.theme]);
+    if (desktopSettings?.theme) {
+      applyTheme(desktopSettings.theme, { family: desktopSettings.themeFamily });
+    }
+  }, [desktopSettings?.theme, desktopSettings?.themeFamily]);
 
   useEffect(() => {
     applyLanguage(desktopSettings?.language);

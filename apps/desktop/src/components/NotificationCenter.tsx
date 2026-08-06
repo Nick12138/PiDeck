@@ -12,7 +12,7 @@ function levelStyle(level: string) {
     case "success":
       return { icon: CheckCircle2, color: "text-success", label: "Success" };
     default:
-      return { icon: Info, color: "text-accent", label: "Information" };
+      return { icon: Info, color: "text-info", label: "Information" };
   }
 }
 
@@ -38,7 +38,7 @@ export function NotificationPanel({
     <section
       role="dialog"
       aria-label={t("notifCenterTitle")}
-      className="fixed left-3 top-14 z-[70] flex max-h-[min(32rem,calc(100vh-4.25rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+      className="theme-floating-surface fixed left-3 top-14 z-[70] flex max-h-[min(32rem,calc(100vh-4.25rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("notifCenterTitle")}</h2>
@@ -188,7 +188,7 @@ export function NotificationCenter() {
             setOpen(true);
             setToastId(null);
           }}
-          className="fixed left-3 top-14 z-[70] flex w-[min(25rem,calc(100vw-1.5rem))] items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl"
+          className="theme-floating-surface fixed left-3 top-14 z-[70] flex w-[min(25rem,calc(100vw-1.5rem))] items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl"
         >
           {(() => {
             const style = levelStyle(toast.level);

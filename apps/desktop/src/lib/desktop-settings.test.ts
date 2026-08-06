@@ -72,6 +72,7 @@ describe("persistDesktopSettings", () => {
     mocks.isTauri.mockReturnValue(false);
 
     await persistDesktopSettings({
+      themeFamily: "vercel",
       interfaceDensity: "compact",
       conversationFontSize: 17,
       codeFontSize: 15,
@@ -79,6 +80,7 @@ describe("persistDesktopSettings", () => {
 
     expect(useAppStore.getState().desktopSettings).toEqual({
       ...initialSettings,
+      themeFamily: "vercel",
       interfaceDensity: "compact",
       conversationFontSize: 17,
       codeFontSize: 15,
@@ -106,6 +108,9 @@ describe("persistDesktopSettings", () => {
 
     await expect(persistDesktopSettings({ theme: "neon" } as never)).rejects.toThrow(
       "Invalid desktop theme",
+    );
+    await expect(persistDesktopSettings({ themeFamily: "neon" } as never)).rejects.toThrow(
+      "Invalid desktop theme family",
     );
     await expect(persistDesktopSettings({ futureSetting: true } as never)).rejects.toThrow(
       "Unknown desktop settings field",

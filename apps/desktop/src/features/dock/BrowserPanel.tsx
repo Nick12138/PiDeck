@@ -33,9 +33,7 @@ export function normalizeBrowserInput(input: string): string {
     value === "localhost" ||
     value.startsWith("localhost:") ||
     /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/|$)/.test(value);
-  const looksLikeHost =
-    !/\s/.test(value) &&
-    (localHost || value.includes("."));
+  const looksLikeHost = !/\s/.test(value) && (localHost || value.includes("."));
   if (looksLikeHost) return `${localHost ? "http" : "https"}://${value}`;
   if (/^[a-z][a-z\d+.-]*:/i.test(value)) return value;
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
@@ -231,10 +229,7 @@ export function BrowserPanel({
   };
 
   return (
-    <section
-      className="flex min-h-0 flex-1 flex-col bg-surface"
-      aria-label={t("dockBrowser")}
-    >
+    <section className="flex min-h-0 flex-1 flex-col bg-surface" aria-label={t("dockBrowser")}>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
         <button
           type="button"
@@ -297,7 +292,7 @@ export function BrowserPanel({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-2 text-xs outline-none focus:border-accent"
+            className="h-7 w-full rounded border border-border bg-surface-raised pl-7 pr-2 text-xs outline-none focus:border-focus"
             onFocus={(event) => event.currentTarget.select()}
             onChange={(event) => setAddress(event.target.value)}
           />

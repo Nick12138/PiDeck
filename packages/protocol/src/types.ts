@@ -835,6 +835,9 @@ export type SerializableAgentSessionEvent = {
 export const DESKTOP_THEMES = ["light", "dark", "system"] as const;
 export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
 
+export const DESKTOP_THEME_FAMILIES = ["pideck", "vercel"] as const;
+export type DesktopThemeFamily = (typeof DESKTOP_THEME_FAMILIES)[number];
+
 export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;
 export type DesktopLanguage = (typeof DESKTOP_LANGUAGES)[number];
 
@@ -857,6 +860,8 @@ export type TerminalProfileId = (typeof TERMINAL_PROFILE_IDS)[number];
 
 export type DesktopSettings = {
   theme: DesktopTheme;
+  /** Visual theme family; absent values use the original PiDeck palette. */
+  themeFamily?: DesktopThemeFamily;
   defaultWorkspace?: string;
   restoreLastSession: boolean;
   lastWorkspace?: string;

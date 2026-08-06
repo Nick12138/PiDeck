@@ -798,21 +798,24 @@ export function SessionList({
                   placeholder={t("sessionsSearchPlaceholder")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-accent"
+                  className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-focus"
                 />
               </label>
               <div
                 role="group"
                 aria-label={t("sessionsFilterAria")}
+                data-ui="segmented"
                 className="flex h-7 shrink-0 overflow-hidden rounded-md border border-border text-xs"
               >
                 <button
                   type="button"
                   onClick={() => setFilter("active")}
                   aria-pressed={filter === "active"}
+                  data-ui="segmented-item"
+                  data-state={filter === "active" ? "active" : "inactive"}
                   className={`px-2 transition-colors ${
                     filter === "active"
-                      ? "bg-surface-overlay text-foreground"
+                      ? "bg-selection text-selection-foreground"
                       : "bg-surface text-muted hover:text-foreground"
                   }`}
                 >
@@ -822,9 +825,11 @@ export function SessionList({
                   type="button"
                   onClick={() => setFilter("archived")}
                   aria-pressed={filter === "archived"}
+                  data-ui="segmented-item"
+                  data-state={filter === "archived" ? "active" : "inactive"}
                   className={`border-l border-border px-2 transition-colors ${
                     filter === "archived"
-                      ? "bg-surface-overlay text-foreground"
+                      ? "bg-selection text-selection-foreground"
                       : "bg-surface text-muted hover:text-foreground"
                   }`}
                 >
@@ -860,8 +865,12 @@ export function SessionList({
               return (
                 <li
                   key={item.sessionId}
+                  data-ui="nav-item"
+                  data-state={active ? "active" : "inactive"}
                   className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
-                    active ? "bg-surface-overlay text-foreground" : "hover:bg-surface-overlay/70"
+                    active
+                      ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                      : "hover:bg-surface-overlay/70"
                   }`}
                   onContextMenu={(event) => {
                     if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
@@ -1019,6 +1028,7 @@ export function SessionList({
                     <>
                       <button
                         type="button"
+                        aria-current={active ? "page" : undefined}
                         onClick={() => openSession(item.sessionPath)}
                         disabled={
                           sessionMutationPending ||
@@ -1125,7 +1135,7 @@ export function SessionList({
                         </button>
                         {menuOpen && menuPosition && (
                           <div
-                            className="fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                            className="theme-floating-surface fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
                             style={menuPosition}
                             data-session-menu
                           >
@@ -1216,7 +1226,7 @@ export function SessionList({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="session-delete-title"
-                className="w-full max-w-sm rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
+                className="theme-floating-surface w-full max-w-sm rounded-lg border border-border bg-surface-raised p-5 shadow-xl"
               >
                 <h2 id="session-delete-title" className="text-base font-semibold">
                   {confirmAction.kind === "delete"

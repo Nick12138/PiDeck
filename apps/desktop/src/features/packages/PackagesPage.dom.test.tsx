@@ -297,8 +297,17 @@ describe("PackagesPage DOM workflows", () => {
   it("groups package resources with project tri-state controls and keeps runtime rows read-only", async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
-    await screen.findByRole("button", { name: "Resources" });
-    await user.click(screen.getByRole("button", { name: "Resources" }));
+    const installedTab = await screen.findByRole("button", { name: "Installed" });
+    const resourcesTab = screen.getByRole("button", { name: "Resources" });
+    expect(installedTab).toHaveAttribute("aria-pressed", "true");
+    expect(installedTab).toHaveAttribute("data-state", "active");
+    expect(resourcesTab).toHaveAttribute("aria-pressed", "false");
+    expect(resourcesTab).toHaveAttribute("data-state", "inactive");
+
+    await user.click(resourcesTab);
+    expect(installedTab).toHaveAttribute("data-state", "inactive");
+    expect(resourcesTab).toHaveAttribute("aria-pressed", "true");
+    expect(resourcesTab).toHaveAttribute("data-state", "active");
     await user.click(screen.getByRole("button", { name: "project" }));
 
     for (const name of ["All", "Extensions", "Skills", "Prompts", "Themes"]) {

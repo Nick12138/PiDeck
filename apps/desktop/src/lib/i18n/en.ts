@@ -90,6 +90,12 @@ export const en = {
   // Appearance
   appearanceSubtitle: "Theme, density, language, and conversation typography",
   appearanceInterfaceGroup: "Interface",
+  appearanceThemeFamily: "Theme style",
+  appearanceThemeFamilyDesc: "Choose the visual language used across PiDeck.",
+  appearanceThemePideck: "PiDeck",
+  appearanceThemeVercel: "Vercel",
+  appearanceColorMode: "Color mode",
+  appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
   appearanceDensity: "Interface density",
   appearanceDensityDesc: "Adjust row, control, and list spacing across PiDeck.",
   appearanceDensityCompact: "Compact",

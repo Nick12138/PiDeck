@@ -101,7 +101,7 @@ export function SessionStatsModal({ open, onClose }: { open: boolean; onClose: (
         role="dialog"
         aria-modal="true"
         aria-labelledby="session-stats-title"
-        className="w-full max-w-md rounded-xl border border-border bg-surface-raised p-5 shadow-xl"
+        className="theme-floating-surface w-full max-w-md rounded-xl border border-border bg-surface-raised p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -196,7 +196,7 @@ export function SessionStatsModal({ open, onClose }: { open: boolean; onClose: (
           </button>
           <button
             type="button"
-            className="rounded-md bg-accent px-3 py-1.5 text-xs text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={exporting !== null || !session?.isIdle}
             onClick={() => {
               setExporting("html");
