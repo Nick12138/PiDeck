@@ -17,25 +17,23 @@ export function ChatHeader() {
 
   return (
     <div
-      className="flex h-11 shrink-0 items-center gap-4 border-b border-border pl-5 pr-[180px]"
+      className="flex h-11 shrink-0 items-center gap-4 pl-5 pr-[180px]"
       data-chat-header
       data-tauri-drag-region
     >
       <div className="pointer-events-none min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h1 className="truncate text-sm font-semibold" title={sessionName}>
+        <div className="flex items-end gap-2">
+          <h1 className="truncate text-base font-semibold" title={sessionName}>
             {sessionName}
           </h1>
-          <span
-            className={`size-1.5 shrink-0 rounded-full ${
-              session?.isStreaming || (session && !session.isIdle)
-                ? "bg-success"
-                : "bg-muted"
-            }`}
-            title={session ? runtimeLabel : t("chatNoActiveSession")}
-          />
-          <span className="text-[11px] text-muted">
-            {session ? runtimeLabel : t("chatNoActiveSession")}
+          <span className="mb-0.5 flex shrink-0 items-center gap-1.5 text-[11px] text-muted">
+            <span
+              className={`size-1.5 shrink-0 rounded-full ${
+                session?.isStreaming || (session && !session.isIdle) ? "bg-success" : "bg-muted"
+              }`}
+              title={session ? runtimeLabel : t("chatNoActiveSession")}
+            />
+            <span>{session ? runtimeLabel : t("chatNoActiveSession")}</span>
           </span>
         </div>
       </div>

@@ -250,7 +250,7 @@ export function Transcript() {
       <div
         ref={scrollRef}
         data-transcript-scroll
-        className="h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+        className="scrollbar-auto-hide h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
         onWheel={(event) => {
           if (event.deltaY < 0) stopFollowing();
         }}

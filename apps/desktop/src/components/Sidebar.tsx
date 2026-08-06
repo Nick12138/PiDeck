@@ -133,7 +133,7 @@ export function SidebarLayout({
             className={
               sessionsCollapsed
                 ? "mt-auto shrink-0 border-t border-border px-2 py-1"
-                : "min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+                : "scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3"
             }
           >
             <SessionList
