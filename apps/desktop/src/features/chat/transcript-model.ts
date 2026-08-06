@@ -248,14 +248,24 @@ function mergeUsage(
   };
 }
 
-function contentParts(message: SerializableAgentMessage): SerializableAgentContent[] {
-  return Array.isArray(message.content) ? message.content : [];
+function contentParts(
+  message: Pick<SerializableAgentMessage, "content">,
+): SerializableAgentContent[] {
+  if (!Array.isArray(message.content)) return [];
+  return message.content.filter((part): part is SerializableAgentContent =>
+    Boolean(
+      part &&
+      typeof part === "object" &&
+      !Array.isArray(part) &&
+      typeof (part as { type?: unknown }).type === "string",
+    ),
+  );
 }
 
 export function messageText(message: Pick<SerializableAgentMessage, "content">): string {
   if (typeof message.content === "string") return message.content;
   if (!Array.isArray(message.content)) return "";
-  return message.content
+  return contentParts(message)
     .map((part) => (typeof part.text === "string" ? part.text : ""))
     .filter(Boolean)
     .join("\n");

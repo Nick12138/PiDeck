@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildAttachmentReferenceBlock,
-  type SerializableAgentMessage,
-} from "@pideck/protocol";
+import { buildAttachmentReferenceBlock, type SerializableAgentMessage } from "@pideck/protocol";
 import {
   buildAttachedFileBlock,
   buildTranscriptRows,
@@ -157,10 +154,7 @@ describe("reuseStableRows", () => {
     const messages: SerializableAgentMessage[] = [
       { role: "assistant", content: [{ type: "text", text: "Done" }] },
     ];
-    const live = reuseStableRows(
-      null,
-      buildTranscriptRows(messages, { entries: [] }),
-    );
+    const live = reuseStableRows(null, buildTranscriptRows(messages, { entries: [] }));
     const persisted = reuseStableRows(
       live,
       buildTranscriptRows(messages, {
@@ -368,9 +362,7 @@ describe("findStreamingAssistantKey", () => {
       { role: "assistant", content: [{ type: "text", text: "Calling a tool" }] },
       {
         role: "tool",
-        content: [
-          { type: "toolCall", id: "tool-1", name: "read", status: "running" },
-        ],
+        content: [{ type: "toolCall", id: "tool-1", name: "read", status: "running" }],
       },
     ];
     const rows = buildTranscriptRows(messages);
@@ -456,8 +448,12 @@ describe("buildTranscriptRows", () => {
     expect(rows[0]?.sections?.initialThinking.map((block) => block.text)).toEqual([
       "Inspect files",
     ]);
-    expect(rows[0]?.sections?.intro.filter((block) => block.kind === "text").map((block) => block.text)).toEqual(["I will check."]);
-    expect(rows[0]?.sections?.final.filter((block) => block.kind === "text").map((block) => block.text)).toEqual(["Done."]);
+    expect(
+      rows[0]?.sections?.intro.filter((block) => block.kind === "text").map((block) => block.text),
+    ).toEqual(["I will check."]);
+    expect(
+      rows[0]?.sections?.final.filter((block) => block.kind === "text").map((block) => block.text),
+    ).toEqual(["Done."]);
     expect(rows[0]?.sections?.stepCount).toBe(1);
     const tool = rows[0]?.sections?.activity[0];
     expect(tool?.kind).toBe("tool");
@@ -473,9 +469,7 @@ describe("buildTranscriptRows", () => {
       { role: "user", content: "Read the first file" },
       {
         role: "assistant",
-        content: [
-          { type: "toolCall", id: "call_0", name: "read", arguments: { path: "a.ts" } },
-        ],
+        content: [{ type: "toolCall", id: "call_0", name: "read", arguments: { path: "a.ts" } }],
       },
       {
         role: "toolResult",
@@ -488,9 +482,7 @@ describe("buildTranscriptRows", () => {
       { role: "user", content: "Read the second file" },
       {
         role: "assistant",
-        content: [
-          { type: "toolCall", id: "call_0", name: "read", arguments: { path: "b.ts" } },
-        ],
+        content: [{ type: "toolCall", id: "call_0", name: "read", arguments: { path: "b.ts" } }],
       },
       {
         role: "toolResult",
@@ -502,9 +494,7 @@ describe("buildTranscriptRows", () => {
       { role: "assistant", content: "Second done" },
     ]);
     const assistantRows = rows.filter((row) => row.role === "assistant");
-    const tools = assistantRows.map((row) =>
-      row.blocks.find((block) => block.kind === "tool"),
-    );
+    const tools = assistantRows.map((row) => row.blocks.find((block) => block.kind === "tool"));
 
     expect(assistantRows).toHaveLength(2);
     expect(tools[0]?.kind === "tool" ? tools[0].tool.result : undefined).toBe(
@@ -595,14 +585,16 @@ describe("buildTranscriptRows", () => {
             id: "live-1",
             name: "bash",
             status: "running",
-            arguments: "{\"command\":\"pwd\"}",
+            arguments: '{"command":"pwd"}',
           },
         ],
       },
     ]);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.sections?.intro.filter((block) => block.kind === "text").map((block) => block.text)).toEqual(["Checking"]);
+    expect(
+      rows[0]?.sections?.intro.filter((block) => block.kind === "text").map((block) => block.text),
+    ).toEqual(["Checking"]);
     expect(rows[0]?.sections?.activity.map((block) => block.kind)).toEqual(["tool"]);
   });
 
@@ -611,9 +603,7 @@ describe("buildTranscriptRows", () => {
       {
         role: "assistant",
         startedAt: 100,
-        content: [
-          { type: "toolCall", id: "live-1", name: "bash", arguments: { command: "pwd" } },
-        ],
+        content: [{ type: "toolCall", id: "live-1", name: "bash", arguments: { command: "pwd" } }],
       },
       {
         role: "tool",
@@ -623,7 +613,7 @@ describe("buildTranscriptRows", () => {
             id: "live-1",
             name: "bash",
             status: "done",
-            arguments: "{\"command\":\"pwd\"}",
+            arguments: '{"command":"pwd"}',
             result: "ok",
             startedAt: 120,
             endedAt: 180,
@@ -643,9 +633,7 @@ describe("buildTranscriptRows", () => {
     const rows = buildTranscriptRows([
       {
         role: "assistant",
-        content: [
-          { type: "toolCall", id: "live-persisted", name: "read", arguments: {} },
-        ],
+        content: [{ type: "toolCall", id: "live-persisted", name: "read", arguments: {} }],
       },
       {
         role: "tool",
@@ -790,7 +778,9 @@ describe("buildTranscriptRows", () => {
       "thinking",
     ]);
     expect(rows[1]?.sections?.stepCount).toBe(2);
-    expect(rows[1]?.sections?.final.filter((block) => block.kind === "text").map((block) => block.text)).toEqual(["# Final answer"]);
+    expect(
+      rows[1]?.sections?.final.filter((block) => block.kind === "text").map((block) => block.text),
+    ).toEqual(["# Final answer"]);
   });
 });
 
@@ -899,7 +889,9 @@ describe("Pi extension and session entry messages", () => {
     expect(extensions[0]?.kind === "extension" && extensions[0].row.extensionPresentation).toEqual(
       basePresentation,
     );
-    expect(extensions[1]?.kind === "extension" && extensions[1].row.extensionPresentation).toMatchObject({
+    expect(
+      extensions[1]?.kind === "extension" && extensions[1].row.extensionPresentation,
+    ).toMatchObject({
       correlationId: "review-2",
       kind: "activity",
     });
@@ -998,11 +990,7 @@ describe("Pi extension and session entry messages", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.role).toBe("assistant");
-    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual([
-      "text",
-      "extension",
-      "text",
-    ]);
+    expect(rows[0]?.blocks.map((block) => block.kind)).toEqual(["text", "extension", "text"]);
     expect(rows[0]?.copyText).toBe("First assistant phase\n\nSecond assistant phase");
     expect(rows[0]?.sections?.stepCount).toBe(1);
   });
@@ -1022,6 +1010,24 @@ describe("Pi extension and session entry messages", () => {
     const unknown = rows[0]?.blocks[1];
     expect(unknown?.kind).toBe("unknown");
     if (unknown?.kind === "unknown") expect(unknown.type).toBe("artifact");
+  });
+
+  it("ignores sparse and malformed runtime content instead of failing the transcript", () => {
+    const content = new Array(5) as unknown[];
+    content[1] = undefined;
+    content[2] = null;
+    content[3] = { payload: "missing type" };
+    content[4] = { type: "text", text: "Recovered content" };
+
+    const rows = buildTranscriptRows([
+      {
+        role: "assistant",
+        content,
+      } as unknown as SerializableAgentMessage,
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.blocks).toEqual([{ kind: "text", text: "Recovered content" }]);
   });
 
   it("renders bash and summaries while deferring trailing setting changes", () => {
@@ -1088,25 +1094,26 @@ describe("Pi extension and session entry messages", () => {
     ] as SerializableAgentMessage[];
     const rows = buildTranscriptRows(messages, { entries });
     expect(rows.map((row) => row.role)).toEqual(["bash", "summary", "summary"]);
-    expect(rows[1]?.summary).toMatchObject({ kind: "compaction", text: "Earlier context", tokensBefore: 12000 });
+    expect(rows[1]?.summary).toMatchObject({
+      kind: "compaction",
+      text: "Earlier context",
+      tokensBefore: 12000,
+    });
     expect(rows[2]?.summary).toMatchObject({ kind: "branch", fromId: "old-leaf" });
   });
 
   it("keeps the live tail visible after an empty branch summary", () => {
-    const rows = buildTranscriptRows(
-      [{ role: "user", content: "Live prompt after branching" }],
-      {
-        entries: [
-          {
-            id: "empty-branch",
-            type: "branch_summary",
-            parentId: null,
-            fromId: "root",
-            summary: "",
-          },
-        ],
-      },
-    );
+    const rows = buildTranscriptRows([{ role: "user", content: "Live prompt after branching" }], {
+      entries: [
+        {
+          id: "empty-branch",
+          type: "branch_summary",
+          parentId: null,
+          fromId: "root",
+          summary: "",
+        },
+      ],
+    });
 
     expect(rows.map((row) => row.role)).toEqual(["summary", "user"]);
     expect(rows[0]?.summary).toMatchObject({ kind: "branch", text: "" });
@@ -1336,7 +1343,12 @@ describe("Pi extension and session entry messages", () => {
       {
         role: "assistant",
         content: [
-          { type: "toolCall", id: "cancelled-read", name: "read", arguments: { path: "large.txt" } },
+          {
+            type: "toolCall",
+            id: "cancelled-read",
+            name: "read",
+            arguments: { path: "large.txt" },
+          },
         ],
         stopReason: "aborted",
       },

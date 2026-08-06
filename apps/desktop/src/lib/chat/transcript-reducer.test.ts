@@ -110,6 +110,46 @@ describe("applyAgentEvent", () => {
     expect(s.isStreaming).toBe(false);
   });
 
+  it("keeps assistant content dense when streaming events arrive at a later index first", () => {
+    let s = applyAgentEvent(baseSession(), {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      },
+    })!;
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta: "Answer" },
+      },
+    })!;
+    expect(s.messages[0]?.content).toEqual([
+      { type: "text", text: "" },
+      { type: "text", text: "" },
+      { type: "text", text: "Answer" },
+    ]);
+
+    for (const assistantMessageEvent of [
+      { type: "thinking_delta", contentIndex: 0, delta: "Plan" },
+      { type: "text_delta", contentIndex: 1, delta: "Bridge" },
+    ] satisfies SerializableAssistantMessageEvent[]) {
+      s = applyAgentEvent(s, {
+        runId: "r1",
+        event: { type: "message_update", assistantMessageEvent },
+      })!;
+    }
+
+    expect(s.messages[0]?.content).toEqual([
+      { type: "thinking", thinking: "Plan", startedAt: expect.any(Number) },
+      { type: "text", text: "Bridge" },
+      { type: "text", text: "Answer" },
+    ]);
+    expect(Array.isArray(s.messages[0]?.content) && 0 in s.messages[0].content).toBe(true);
+  });
+
   it("applies a frame of deltas in order with their original receive times", () => {
     let s = applyAgentEvent(
       baseSession(),
@@ -288,17 +328,21 @@ describe("applyAgentEvent", () => {
   });
 
   it("reconstructs streaming tool arguments and replaces transient state at tool end", () => {
-    let s = applyAgentEvent(baseSession(), {
-      runId: "r1",
-      event: {
-        type: "message_start",
-        message: { role: "assistant", content: [] },
+    let s = applyAgentEvent(
+      baseSession(),
+      {
+        runId: "r1",
+        event: {
+          type: "message_start",
+          message: { role: "assistant", content: [] },
+        },
       },
-    }, 90)!;
+      90,
+    )!;
     for (const assistantMessageEvent of [
       { type: "toolcall_start", contentIndex: 0, id: "call-1", name: "read" },
-      { type: "toolcall_delta", contentIndex: 0, delta: "{\"path\":\"" },
-      { type: "toolcall_delta", contentIndex: 0, delta: "a.ts\"}" },
+      { type: "toolcall_delta", contentIndex: 0, delta: '{"path":"' },
+      { type: "toolcall_delta", contentIndex: 0, delta: 'a.ts"}' },
       {
         type: "toolcall_end",
         contentIndex: 0,
@@ -311,10 +355,14 @@ describe("applyAgentEvent", () => {
         },
       },
     ] satisfies SerializableAssistantMessageEvent[]) {
-      s = applyAgentEvent(s, {
-        runId: "r1",
-        event: { type: "message_update", assistantMessageEvent },
-      }, 100)!;
+      s = applyAgentEvent(
+        s,
+        {
+          runId: "r1",
+          event: { type: "message_update", assistantMessageEvent },
+        },
+        100,
+      )!;
     }
 
     const content = s.messages[0]?.content;
@@ -382,9 +430,7 @@ describe("applyAgentEvent", () => {
       { type: "thinking", thinking: "Inspect files" },
       { type: "text", text: "Done." },
     ]);
-    const thinking = Array.isArray(s.messages[0]?.content)
-      ? s.messages[0].content[0]
-      : undefined;
+    const thinking = Array.isArray(s.messages[0]?.content) ? s.messages[0].content[0] : undefined;
     expect(typeof thinking?.startedAt).toBe("number");
     expect(typeof thinking?.endedAt).toBe("number");
   });
@@ -515,15 +561,19 @@ describe("applyAgentEvent", () => {
       },
     ];
 
-    const next = applyAgentEvent(session, {
-      runId: "r1",
-      event: {
-        type: "tool_execution_update",
-        toolCallId: "call-read",
-        toolName: "read",
-        partialResult: { lines: 10 },
+    const next = applyAgentEvent(
+      session,
+      {
+        runId: "r1",
+        event: {
+          type: "tool_execution_update",
+          toolCallId: "call-read",
+          toolName: "read",
+          partialResult: { lines: 10 },
+        },
       },
-    }, 30)!;
+      30,
+    )!;
 
     const content = next.messages[0]?.content;
     expect(Array.isArray(content)).toBe(true);
@@ -689,9 +739,7 @@ describe("applyAgentEvent", () => {
     )!;
 
     const afterAgentEnd = s.messages.find((message) => message.role === "tool");
-    const firstPart = Array.isArray(afterAgentEnd?.content)
-      ? afterAgentEnd.content[0]
-      : undefined;
+    const firstPart = Array.isArray(afterAgentEnd?.content) ? afterAgentEnd.content[0] : undefined;
     expect(firstPart).toMatchObject({
       id: "call-before-continuation",
       status: "running",
@@ -732,7 +780,11 @@ describe("applyAgentEvent", () => {
     );
     expect(settledTools).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "call-before-continuation", status: "aborted", endedAt: 300 }),
+        expect.objectContaining({
+          id: "call-before-continuation",
+          status: "aborted",
+          endedAt: 300,
+        }),
         expect.objectContaining({ id: "call-in-continuation", status: "aborted", endedAt: 300 }),
       ]),
     );
@@ -793,7 +845,10 @@ describe("applyAgentEvent", () => {
 
   it("keeps compaction primacy while its summarization call retries", () => {
     let s = baseSession();
-    s = applyAgentEvent(s, { runId: "r1", event: { type: "compaction_start", reason: "threshold" } })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "compaction_start", reason: "threshold" },
+    })!;
     s = applyAgentEvent(s, {
       runId: "r1",
       event: {

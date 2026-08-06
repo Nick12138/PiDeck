@@ -199,11 +199,7 @@ function applyAgentEventToDraft(
 
     case "message_update": {
       if (ev.assistantMessageEvent) {
-        appendAssistantContentEventInPlace(
-          next.messages,
-          ev.assistantMessageEvent,
-          eventTime,
-        );
+        appendAssistantContentEventInPlace(next.messages, ev.assistantMessageEvent, eventTime);
       } else {
         const deltaText = extractGenericDelta(ev);
         if (deltaText) appendTextDeltaInPlace(next.messages, deltaText, eventTime);
@@ -234,19 +230,15 @@ function applyAgentEventToDraft(
         ev.toolName ?? (ev.toolCall as { name?: string } | undefined)?.name ?? "tool",
       );
       const toolCallId = String(
-        ev.toolCallId ?? (ev.toolCall as { id?: string } | undefined)?.id ?? `${payload.runId ?? "run"}:${toolName}`,
+        ev.toolCallId ??
+          (ev.toolCall as { id?: string } | undefined)?.id ??
+          `${payload.runId ?? "run"}:${toolName}`,
       );
       const existing = findToolExecution(next.messages, toolCallId);
       const ended = type === "tool_execution_end";
       const resultValue = ev.result ?? ev.error;
       const aborted = ended && isAbortedToolResult(resultValue, ev.isError === true);
-      const status = ended
-        ? aborted
-          ? "aborted"
-          : ev.isError
-            ? "error"
-            : "done"
-        : "running";
+      const status = ended ? (aborted ? "aborted" : ev.isError ? "error" : "done") : "running";
       const resultProjection = ended
         ? projectToolResult(resultValue)
         : ev.partialResult !== undefined
@@ -399,9 +391,7 @@ function findToolExecution(
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "tool" || !Array.isArray(message.content)) continue;
-    const part = message.content.find(
-      (item) => item.type === "toolCall" && item.id === toolCallId,
-    );
+    const part = message.content.find((item) => item.type === "toolCall" && item.id === toolCallId);
     if (part) return part as ToolExecutionPart;
   }
   return null;
@@ -428,9 +418,7 @@ function upsertToolExecutionInPlace(
   messages.push({ role: "tool", content: [part] });
 }
 
-function normalizeMessage(
-  message: unknown,
-): SerializableAgentMessage | null {
+function normalizeMessage(message: unknown): SerializableAgentMessage | null {
   if (!message || typeof message !== "object") return null;
   const m = message as SerializableAgentMessage;
   if (typeof m.role !== "string") return null;
@@ -478,10 +466,13 @@ function projectToolResult(value: unknown): {
     if (Array.isArray(candidate)) content = candidate;
   }
   if (content) {
-    const blocks = content.filter(
-      (part): part is Record<string, unknown> =>
-        Boolean(part && typeof part === "object" && typeof (part as { type?: unknown }).type === "string"),
-    ).map((part) => toJsonValue(part));
+    const blocks = content
+      .filter((part): part is Record<string, unknown> =>
+        Boolean(
+          part && typeof part === "object" && typeof (part as { type?: unknown }).type === "string",
+        ),
+      )
+      .map((part) => toJsonValue(part));
     const text = blocks
       .map((part) =>
         part && typeof part === "object" && !Array.isArray(part) && typeof part.text === "string"
@@ -490,9 +481,10 @@ function projectToolResult(value: unknown): {
       )
       .filter(Boolean)
       .join("\n");
-    const record = value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
     return {
       ...(text ? { result: text } : {}),
       ...(blocks.length > 0 ? { resultBlocks: blocks } : {}),
@@ -532,20 +524,17 @@ function mergeLastAssistantInPlace(
 ): void {
   const last = messages[messages.length - 1];
   if (last?.role !== "assistant") {
-    messages.push(
-      {
-        ...message,
-        startedAt: numericField(message, "startedAt") ?? eventTime,
-        ...(complete ? { endedAt: eventTime } : {}),
-      },
-    );
+    messages.push({
+      ...message,
+      startedAt: numericField(message, "startedAt") ?? eventTime,
+      ...(complete ? { endedAt: eventTime } : {}),
+    });
     return;
   }
   messages[messages.length - 1] = {
     ...message,
     content: mergeContentTiming(last.content, message.content),
-    startedAt:
-      numericField(message, "startedAt") ?? numericField(last, "startedAt") ?? eventTime,
+    startedAt: numericField(message, "startedAt") ?? numericField(last, "startedAt") ?? eventTime,
     ...(complete ? { endedAt: eventTime } : {}),
   };
 }
@@ -563,12 +552,7 @@ function appendAssistantContentEventInPlace(
       ? "text"
       : "toolCall";
 
-  const delta =
-    "delta" in event
-      ? event.delta
-      : "content" in event
-        ? event.content
-        : "";
+  const delta = "delta" in event ? event.delta : "content" in event ? event.content : "";
   const contentIndex = event.contentIndex;
 
   const last = messages[messages.length - 1];
@@ -577,11 +561,7 @@ function appendAssistantContentEventInPlace(
   }
 
   const assistant = messages[messages.length - 1]!;
-  if (
-    contentKind === "text" &&
-    typeof assistant.content === "string" &&
-    contentIndex === 0
-  ) {
+  if (contentKind === "text" && typeof assistant.content === "string" && contentIndex === 0) {
     if (delta && eventType === "text_delta") {
       messages[messages.length - 1] = { ...assistant, content: assistant.content + delta };
     } else if (eventType === "text_end") {
@@ -591,10 +571,21 @@ function appendAssistantContentEventInPlace(
   }
 
   const parts = Array.isArray(assistant.content)
-    ? [...assistant.content]
+    ? Array.from(
+        { length: Math.max(assistant.content.length, contentIndex + 1) },
+        (_, index): SerializableAgentContent => {
+          const part = assistant.content[index] as SerializableAgentContent | undefined;
+          return part && typeof part === "object" && typeof part.type === "string"
+            ? part
+            : { type: "text", text: "" };
+        },
+      )
     : assistant.content
       ? [{ type: "text", text: assistant.content }]
-      : [];
+      : Array.from({ length: contentIndex + 1 }, (): SerializableAgentContent => ({
+          type: "text",
+          text: "",
+        }));
   const current = parts[contentIndex];
   if (contentKind === "toolCall") {
     if (event.type === "toolcall_start") {
@@ -652,9 +643,7 @@ function appendAssistantContentEventInPlace(
         : { ...current, text: currentValue + delta };
   } else if (eventType.endsWith("_end")) {
     parts[contentIndex] =
-      contentKind === "thinking"
-        ? { ...current, thinking: delta }
-        : { ...current, text: delta };
+      contentKind === "thinking" ? { ...current, thinking: delta } : { ...current, text: delta };
   }
 
   const updated = parts[contentIndex];
@@ -731,13 +720,9 @@ function settleOpenRuntime(
   });
 }
 
-function normalizeAgentContent(
-  value: JsonValue,
-): SerializableAgentContent | null {
+function normalizeAgentContent(value: JsonValue): SerializableAgentContent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return typeof value.type === "string"
-    ? (value as SerializableAgentContent)
-    : null;
+  return typeof value.type === "string" ? (value as SerializableAgentContent) : null;
 }
 
 function parseToolArguments(value: string): JsonValue {
