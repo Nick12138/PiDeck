@@ -8,9 +8,10 @@ type WidgetPlacement = "aboveEditor" | "belowEditor";
 
 type PlaceableWidget<T> = T & { placement?: WidgetPlacement };
 
-export function partitionExtensionWidgets<T>(
-  entries: readonly PlaceableWidget<T>[],
-): { aboveEditor: PlaceableWidget<T>[]; belowEditor: PlaceableWidget<T>[] } {
+export function partitionExtensionWidgets<T>(entries: readonly PlaceableWidget<T>[]): {
+  aboveEditor: PlaceableWidget<T>[];
+  belowEditor: PlaceableWidget<T>[];
+} {
   const aboveEditor: PlaceableWidget<T>[] = [];
   const belowEditor: PlaceableWidget<T>[] = [];
 
@@ -188,9 +189,17 @@ function useWidgetPopoverLayout(
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
-    if (anchorRef.current) observer?.observe(anchorRef.current);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    if (anchorRef.current) {
+      observer?.observe(anchorRef.current);
+      // The dock/sidebar transitions resize the composer's container while the
+      // max-width anchor itself can keep exactly the same dimensions. Observe
+      // that container too so the portaled drawer follows the anchor's new
+      // viewport position throughout those layout transitions.
+      if (anchorRef.current.parentElement) {
+        observer?.observe(anchorRef.current.parentElement);
+      }
+    }
 
     return () => {
       window.removeEventListener("resize", update);
@@ -220,16 +229,18 @@ export function WidgetPanel({
   const t = useT();
   if (entries.length === 0) return null;
 
-  const panelLabel = placementLabel === "above"
-    ? t("extWidgetsAboveEditor")
-    : placementLabel === "below"
-      ? t("extWidgetsBelowEditor")
-      : t("extWidgetsAroundEditor");
-  const closeLabel = placementLabel === "above"
-    ? t("extWidgetsCloseAboveEditor")
-    : placementLabel === "below"
-      ? t("extWidgetsCloseBelowEditor")
-      : t("extWidgetsCloseAroundEditor");
+  const panelLabel =
+    placementLabel === "above"
+      ? t("extWidgetsAboveEditor")
+      : placementLabel === "below"
+        ? t("extWidgetsBelowEditor")
+        : t("extWidgetsAroundEditor");
+  const closeLabel =
+    placementLabel === "above"
+      ? t("extWidgetsCloseAboveEditor")
+      : placementLabel === "below"
+        ? t("extWidgetsCloseBelowEditor")
+        : t("extWidgetsCloseAroundEditor");
 
   const style: CSSProperties = position
     ? {
