@@ -394,12 +394,12 @@ export function SettingsPage({
           <button
             type="button"
             onClick={onClose}
-            className="interface-density-control flex h-8 items-center gap-2 rounded-md text-xs text-muted transition-colors hover:text-foreground"
+            className="interface-density-control flex h-8 items-center gap-2 rounded-md text-[11px] text-muted transition-colors hover:text-foreground"
             title={t("settingsBack")}
             aria-label={t("settingsBack")}
           >
             <ArrowLeft size={14} />
-            <span>{t("settingsBack")}</span>
+            <span className="whitespace-nowrap">{t("settingsBack")}</span>
           </button>
           <div className="pointer-events-none mt-2 flex h-8 min-w-0 items-center gap-2.5">
             <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">

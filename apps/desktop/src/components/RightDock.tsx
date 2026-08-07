@@ -522,18 +522,20 @@ export function RightDock() {
         />
       )}
 
-      <button
-        type="button"
-        title={dockOpen ? t("dockCollapsePanel") : t("dockOpenPanel")}
-        aria-label={dockOpen ? t("dockCollapseRightPanel") : t("dockOpenRightPanel")}
-        aria-expanded={dockOpen}
-        className={`absolute -left-4 top-1/2 z-40 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-border bg-surface-raised hover:text-foreground ${
-          !dockOpen && panel ? "text-accent" : "text-muted"
-        }`}
-        onClick={toggle}
-      >
-        {dockOpen ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-      </button>
+      <div className="group/dock-edge absolute -left-4 top-0 z-20 h-full w-4">
+        <button
+          type="button"
+          title={dockOpen ? t("dockCollapsePanel") : t("dockOpenPanel")}
+          aria-label={dockOpen ? t("dockCollapseRightPanel") : t("dockOpenRightPanel")}
+          aria-expanded={dockOpen}
+          className={`absolute top-1/2 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-border bg-surface-raised opacity-0 shadow-sm transition-opacity group-hover/dock-edge:opacity-100 hover:text-foreground focus-visible:opacity-100 ${
+            !dockOpen && panel ? "text-accent" : "text-muted"
+          }`}
+          onClick={toggle}
+        >
+          {dockOpen ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        </button>
+      </div>
 
       <div
         data-tauri-drag-region

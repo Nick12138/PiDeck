@@ -89,7 +89,11 @@ describe("RightDock pages", () => {
     useAppStore.setState({ desktopSettings: settings("auto", "zh") });
     render(<RightDock />);
 
-    expect(screen.getByRole("button", { name: "收起右侧面板" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "收起右侧面板" })).toHaveClass(
+      "opacity-0",
+      "group-hover/dock-edge:opacity-100",
+      "focus-visible:opacity-100",
+    );
     expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：会话树" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
