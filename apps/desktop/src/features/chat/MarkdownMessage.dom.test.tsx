@@ -93,7 +93,9 @@ Inline \(x+y\).
 
     const { container } = render(<MarkdownMessage content={content} mode="static" />);
 
-    await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4));
+    await waitFor(() =>
+      expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4),
+    );
     expect(container.querySelector(".katex-display")).toBeInTheDocument();
     expect(container.textContent).toContain("(a+b)");
   });
@@ -107,23 +109,20 @@ Inline \(x+y\).
     };
 
     const { container } = render(
-      <AssistantOrderedContent
-        blocks={[block]}
-        mode="streaming"
-        showCaret={false}
-        turnActive
-      />,
+      <AssistantOrderedContent blocks={[block]} mode="streaming" showCaret={false} turnActive />,
     );
 
-    await waitFor(() => expect(container.querySelector(".thinking-markdown .katex")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(container.querySelector(".thinking-markdown .katex")).toBeInTheDocument(),
+    );
   });
 });
 
 describe("MarkdownMessage code block expansion", () => {
-  it("overlays the copy control without changing the code content layout", async () => {
+  it("keeps the header, body, and copy control in one code block", async () => {
     const source = "const answer = 42;\nreturn answer;";
     const { container } = render(
-      <MarkdownMessage content={`\`\`\`\n${source}\n\`\`\``} mode="static" />,
+      <MarkdownMessage content={`\`\`\`javascript\n${source}\n\`\`\``} mode="static" />,
     );
 
     const copy = await screen.findByRole("button", { name: "Copy code" });
@@ -132,20 +131,20 @@ describe("MarkdownMessage code block expansion", () => {
     const codeHeader = container.querySelector<HTMLElement>(
       '[data-streamdown="code-block-header"]',
     );
+    const codeBody = container.querySelector<HTMLElement>('[data-streamdown="code-block-body"]');
     const code = container.querySelector('[data-streamdown="code-block-body"] code');
 
     expect(shell).toContainElement(codeBlock);
     expect(copy).toHaveClass("markdown-code-copy-button", "absolute", "right-4");
-    expect(codeBlock).toHaveAttribute("data-language", "");
-    expect(codeHeader).toHaveAttribute("data-language", "");
+    expect(codeBlock).toHaveAttribute("data-language", "javascript");
+    expect(codeHeader).toHaveAttribute("data-language", "javascript");
+    expect(codeHeader).toHaveTextContent("javascript");
+    expect(codeBlock).toContainElement(codeHeader);
+    expect(codeBlock).toContainElement(codeBody);
     expect(codeBlock).toContainElement(copy);
+    expect(codeBody).not.toContainElement(copy);
     expect(
-      container.querySelector<HTMLElement>('[data-streamdown="code-block-body"]'),
-    ).not.toContainElement(copy);
-    expect(
-      Array.from(code?.querySelectorAll(":scope > span") ?? []).map(
-        (line) => line.textContent,
-      ),
+      Array.from(code?.querySelectorAll(":scope > span") ?? []).map((line) => line.textContent),
     ).toEqual(source.split("\n"));
   });
 
@@ -153,10 +152,7 @@ describe("MarkdownMessage code block expansion", () => {
     "expands every line in a long %s fence and can collapse it again",
     async (language) => {
       const user = userEvent.setup();
-      const lines = Array.from(
-        { length: 22 },
-        (_, index) => `${language} line ${index + 1}`,
-      );
+      const lines = Array.from({ length: 22 }, (_, index) => `${language} line ${index + 1}`);
       const { container } = render(
         <MarkdownMessage
           content={`\`\`\`${language}\n${lines.join("\n")}\n\`\`\``}
@@ -208,9 +204,7 @@ describe("MarkdownMessage tables", () => {
     );
 
     const table = await screen.findByRole("table");
-    const wrapper = container.querySelector<HTMLElement>(
-      '[data-streamdown="table-wrapper"]',
-    );
+    const wrapper = container.querySelector<HTMLElement>('[data-streamdown="table-wrapper"]');
 
     expect(wrapper).toContainElement(table);
     expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
@@ -237,8 +231,7 @@ describe("MarkdownMessage Mermaid rendering", () => {
     // Same parallel-load allowance as the render-call wait below: the element
     // itself appears through the streaming-mode debounce.
     await waitFor(
-      () =>
-        expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument(),
+      () => expect(view.container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument(),
       { timeout: 5_000 },
     );
     // The streaming-mode debounce can delay the render call past the element
@@ -263,7 +256,9 @@ describe("MarkdownMessage Mermaid rendering", () => {
       svg: '<svg viewBox="0 0 100 40"><text>diagram</text></svg>',
     });
     await user.click(screen.getByRole("button", { name: "Retry diagram" }));
-    await waitFor(() => expect(document.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(document.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument(),
+    );
   });
 
   it("shows an error when a rendered chart later becomes invalid", async () => {
@@ -276,9 +271,9 @@ describe("MarkdownMessage Mermaid rendering", () => {
     const view = render(<MarkdownMessage content={closed} mode="streaming" />);
     await waitFor(
       () =>
-        expect(
-          view.container.querySelector('[aria-label="Mermaid chart"]'),
-        ).toHaveTextContent("diagram"),
+        expect(view.container.querySelector('[aria-label="Mermaid chart"]')).toHaveTextContent(
+          "diagram",
+        ),
       { timeout: 5_000 },
     );
 
@@ -300,8 +295,12 @@ describe("MarkdownMessage Mermaid rendering", () => {
   it("exposes Mermaid controls without a download action", async () => {
     const { container } = render(<MarkdownMessage content={closed} mode="static" />);
 
-    await waitFor(() => expect(container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument());
-    expect(container.querySelector('[data-streamdown="mermaid-block-actions"]')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(container.querySelector('[data-streamdown="mermaid"]')).toBeInTheDocument(),
+    );
+    expect(
+      container.querySelector('[data-streamdown="mermaid-block-actions"]'),
+    ).toBeInTheDocument();
     expect(screen.getByTitle("Copy Code")).toBeInTheDocument();
     expect(screen.getByTitle("View fullscreen")).toBeInTheDocument();
     expect(screen.getByTitle("Zoom in")).toBeInTheDocument();
@@ -314,8 +313,8 @@ describe("MarkdownMessage Mermaid rendering", () => {
     mermaidRender.mockResolvedValueOnce({
       svg: [
         '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" onload="window.__mermaidRan = true" href="file:///root">',
-        '<script>window.__mermaidRan = true</script>',
-        '<style>.node { fill: url(#gradient); }</style>',
+        "<script>window.__mermaidRan = true</script>",
+        "<style>.node { fill: url(#gradient); }</style>",
         '<style>@import url("https://evil.example/style.css")</style>',
         '<defs><path id="shape" d="M0 0h1v1z" /><linearGradient id="gradient" /></defs>',
         '<use href="#shape" xlink:href="https://evil.example/shape.svg#shape" />',
@@ -332,19 +331,27 @@ describe("MarkdownMessage Mermaid rendering", () => {
     });
     const { container } = render(<MarkdownMessage content={closed} mode="static" />);
 
-    await waitFor(() => expect(container.querySelector('[aria-label="Mermaid chart"] svg')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(container.querySelector('[aria-label="Mermaid chart"] svg')).toBeInTheDocument(),
+    );
     expect(container.querySelector("script")).not.toBeInTheDocument();
     expect(container.querySelector("style")).toHaveTextContent("url(#gradient)");
     expect(container.querySelectorAll("style")).toHaveLength(1);
     expect(container.querySelector('use[href="#shape"]')).toBeInTheDocument();
     expect(container.querySelector("use")).not.toHaveAttribute("xlink:href");
-    expect(container.querySelector('[data-pideck-mermaid-href="https://evil.example/forged"]')).not.toBeInTheDocument();
+    expect(
+      container.querySelector('[data-pideck-mermaid-href="https://evil.example/forged"]'),
+    ).not.toBeInTheDocument();
     expect(container.querySelector("rect")).not.toHaveAttribute("fill");
     expect(container.querySelector("animate, set, discard")).not.toBeInTheDocument();
     expect(container.querySelector("image")).not.toBeInTheDocument();
-    expect(container.querySelector('a[href], a[xlink\\:href]')).not.toBeInTheDocument();
-    expect(container.querySelector('[data-pideck-mermaid-href="https://example.com/path"]')).toBeInTheDocument();
-    expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute("onload");
+    expect(container.querySelector("a[href], a[xlink\\:href]")).not.toBeInTheDocument();
+    expect(
+      container.querySelector('[data-pideck-mermaid-href="https://example.com/path"]'),
+    ).toBeInTheDocument();
+    expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute(
+      "onload",
+    );
     expect(container.querySelector('[aria-label="Mermaid chart"] svg')).not.toHaveAttribute("href");
     expect((window as Window & { __mermaidRan?: boolean }).__mermaidRan).not.toBe(true);
 
@@ -421,7 +428,7 @@ describe("MarkdownMessage safety and footnotes", () => {
 
   it("renders raw HTML as text and does not execute scripts", async () => {
     const { container } = render(
-      <MarkdownMessage content={'<b>bold</b><script>window.__ran = true</script>'} mode="static" />,
+      <MarkdownMessage content={"<b>bold</b><script>window.__ran = true</script>"} mode="static" />,
     );
 
     await waitFor(() => expect(container.textContent).toContain("<b>bold</b>"));
@@ -435,7 +442,7 @@ describe("MarkdownMessage safety and footnotes", () => {
       "[external](https://example.com)",
       "[script](javascript:alert(1))",
       "[fragment](#section)",
-      "![diagram](https://example.com/diagram.png \"Diagram title\")",
+      '![diagram](https://example.com/diagram.png "Diagram title")',
     ].join(" ");
     const { container } = render(<MarkdownMessage content={content} mode="static" />);
 

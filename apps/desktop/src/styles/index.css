@@ -875,14 +875,18 @@ textarea:focus-visible {
 }
 
 .chat-markdown [data-streamdown="code-block"] {
-  --markdown-code-header-height: 2rem;
+  --markdown-code-header-height: 2.25rem;
 
   position: relative;
   margin: 1rem 0;
   width: 100%;
   min-width: 0;
-  border: 0;
-  background: transparent;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-surface-overlay) 55%, transparent);
+  padding: 0;
   box-shadow: none;
 }
 
@@ -890,7 +894,7 @@ textarea:focus-visible {
   min-height: var(--markdown-code-header-height);
   border: 0;
   background: transparent;
-  padding: 0 0.5rem 0.35rem;
+  padding: 0.5rem 3rem 0.25rem 1rem;
   color: var(--color-muted);
   font-family: var(--font-mono);
   font-size: max(10px, calc(var(--code-font-size) - 1px));
@@ -902,7 +906,7 @@ textarea:focus-visible {
 }
 
 .markdown-code-copy-button {
-  top: calc(var(--markdown-code-header-height) + 1.5rem);
+  top: 0.25rem;
   pointer-events: none;
   opacity: 0;
   transition:
@@ -932,10 +936,10 @@ textarea:focus-visible {
 .chat-markdown [data-streamdown="code-block-body"] {
   min-width: 0;
   overflow-x: auto;
-  border: 1px solid var(--color-border);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--color-surface-overlay) 55%, transparent);
-  padding: 0.875rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.625rem 1rem 1rem;
 }
 
 .chat-markdown pre {
