@@ -31,9 +31,7 @@ const CONTEXT_BREAKDOWN_KEYS = [
   "other",
 ] as const satisfies readonly (keyof SessionContextBreakdown)[];
 
-export function estimatedContextTokens(
-  breakdown: SessionContextBreakdown | undefined,
-): number | null {
+function estimatedContextTokens(breakdown: SessionContextBreakdown | undefined): number | null {
   if (!breakdown) return null;
   return CONTEXT_BREAKDOWN_KEYS.reduce((sum, key) => sum + breakdown[key], 0);
 }
