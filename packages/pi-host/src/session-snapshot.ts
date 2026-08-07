@@ -16,6 +16,22 @@ import { logger } from "./logger.js";
 const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
 const OMITTED_IMAGE_TEXT = "[Image omitted from desktop snapshot: size limit]";
 
+function serializeAgentMessage(message: unknown): SerializableAgentMessage {
+  const serialized = toJsonValue(message);
+  if (
+    typeof serialized !== "object" ||
+    serialized === null ||
+    Array.isArray(serialized) ||
+    Object.hasOwn(serialized, "content")
+  ) {
+    return serialized as unknown as SerializableAgentMessage;
+  }
+
+  // SDK summaries and bash executions omit content, while the desktop wire
+  // contract keeps one uniform message shape.
+  return { ...serialized, content: "" } as SerializableAgentMessage;
+}
+
 function jsonByteLength(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
@@ -167,9 +183,7 @@ export function buildSessionSnapshot(args: {
       }
     : undefined;
 
-  const messages: SerializableAgentMessage[] = session.messages.map(
-    (m) => toJsonValue(m) as SerializableAgentMessage,
-  );
+  const messages = session.messages.map(serializeAgentMessage);
   const contextUsage = session.getContextUsage?.();
   const contextBreakdown = contextUsage
     ? buildContextUsageBreakdown({

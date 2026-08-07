@@ -1,6 +1,6 @@
 import { Brain, Check, ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ModelSummary } from "@pideck/protocol";
+import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
@@ -21,6 +21,22 @@ const MODEL_MENU_ROW_CONTROLS_WIDTH = 48;
 const MODEL_MENU_RESIZE_STEP = 20;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
 const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
+const CONTEXT_BREAKDOWN_KEYS = [
+  "systemPrompt",
+  "toolDefinitions",
+  "userPrompts",
+  "assistantMessages",
+  "toolResults",
+  "summaries",
+  "other",
+] as const satisfies readonly (keyof SessionContextBreakdown)[];
+
+export function estimatedContextTokens(
+  breakdown: SessionContextBreakdown | undefined,
+): number | null {
+  if (!breakdown) return null;
+  return CONTEXT_BREAKDOWN_KEYS.reduce((sum, key) => sum + breakdown[key], 0);
+}
 
 export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): number {
   const viewportLimit =
@@ -109,19 +125,22 @@ export function ContextUsageRing() {
   const session = useAppStore((s) => s.session);
   const contextUsage = session?.contextUsage;
   const breakdown = contextUsage?.breakdown;
+  const estimatedTokens = contextUsage?.tokens === null ? estimatedContextTokens(breakdown) : null;
+  const displayTokens = contextUsage?.tokens ?? estimatedTokens;
+  const isEstimated = contextUsage?.tokens === null && estimatedTokens !== null;
   const [open, setOpen] = useState(false);
   const [compactPending, setCompactPending] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
   const percent =
-    contextUsage?.tokens === null || !contextUsage
+    displayTokens === null || !contextUsage
       ? null
-      : Math.min(100, Math.max(0, (contextUsage.tokens / contextUsage.contextWindow) * 100));
+      : Math.min(100, Math.max(0, (displayTokens / contextUsage.contextWindow) * 100));
   const roundedPercent = percent === null ? null : Math.round(percent);
   const title = contextUsage
-    ? contextUsage.tokens === null
+    ? displayTokens === null
       ? t("contextUsageUnknown", { window: formatTokenCount(contextUsage.contextWindow) })
-      : t("contextUsageValue", {
-          used: formatTokenCount(contextUsage.tokens),
+      : t(isEstimated ? "contextUsageEstimated" : "contextUsageValue", {
+          used: formatTokenCount(displayTokens),
           window: formatTokenCount(contextUsage.contextWindow),
         })
     : t("contextUnavailable");
@@ -170,7 +189,7 @@ export function ContextUsageRing() {
       >
         <span className="absolute inset-[2px] rounded-full bg-surface-raised" />
         <span className="relative text-[7px] tabular-nums text-muted">
-          {roundedPercent === null ? "--" : `${roundedPercent}%`}
+          {roundedPercent === null ? "--" : `${isEstimated ? "~" : ""}${roundedPercent}%`}
         </span>
       </button>
       {open && (
@@ -201,7 +220,9 @@ export function ContextUsageRing() {
                 <span className="text-muted">{t("contextOtherFraming")}</span>
                 <span className="tabular-nums">~{formatTokenCount(breakdown.other)}</span>
               </span>
-              <span className="mt-2 text-[10px] text-muted">{t("contextEstimateNote")}</span>
+              <span className="mt-2 text-[10px] text-muted">
+                {t(isEstimated ? "contextEstimatePendingNote" : "contextEstimateNote")}
+              </span>
             </>
           )}
           <span className="my-2 h-px bg-border" />

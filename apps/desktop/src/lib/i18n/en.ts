@@ -783,6 +783,7 @@ export const en = {
   // Context and model controls
   contextUsageUnknown: "Context usage unknown / {window} tokens",
   contextUsageValue: "{used} / {window} context tokens",
+  contextUsageEstimated: "Approximately {used} / {window} context tokens",
   contextUnavailable: "No model context available",
   contextUsageTitle: "Context usage",
   contextEstimatedComposition: "Estimated composition",
@@ -794,6 +795,8 @@ export const en = {
   contextSummaries: "Summaries",
   contextOtherFraming: "Other / framing",
   contextEstimateNote: "Estimated; total from provider.",
+  contextEstimatePendingNote:
+    "Total and composition are estimated locally until the next model response.",
   contextAutoCompaction: "Auto-compaction",
   contextToggleAutoCompaction: "Toggle auto-compaction",
   contextCompacting: "Compacting...",

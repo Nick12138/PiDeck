@@ -86,6 +86,16 @@ const EXPECTED_CONTEXT = {
   expectedSessionRevision: 3,
 };
 
+const ESTIMATED_BREAKDOWN = {
+  systemPrompt: 1_000,
+  toolDefinitions: 500,
+  userPrompts: 500,
+  assistantMessages: 1_000,
+  toolResults: 500,
+  summaries: 1_000,
+  other: 500,
+};
+
 function envelope(method: string, result: unknown): HostResponseEnvelope {
   return {
     protocolVersion: 1,
@@ -138,9 +148,7 @@ describe("ContextUsageRing panel", () => {
     render(<ContextUsageRing />);
 
     expect(screen.queryByRole("button", { name: "Compact now" })).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "50k / 100k context tokens" }),
-    );
+    await user.click(screen.getByRole("button", { name: "50k / 100k context tokens" }));
     await user.click(screen.getByRole("button", { name: "Compact now" }));
 
     await waitFor(() => expect(request).toHaveBeenCalledOnce());
@@ -151,45 +159,73 @@ describe("ContextUsageRing panel", () => {
   });
 
   it("disables Compact now while the agent is busy", async () => {
-    useAppStore
-      .getState()
-      .applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
+    useAppStore.getState().applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
     const user = userEvent.setup();
     render(<ContextUsageRing />);
 
-    await user.click(
-      screen.getByRole("button", { name: "50k / 100k context tokens" }),
-    );
+    await user.click(screen.getByRole("button", { name: "50k / 100k context tokens" }));
 
     expect(screen.getByRole("button", { name: "Compact now" })).toBeDisabled();
   });
 
-  it("toggles auto-compaction through the switch", async () => {
-    const request = vi.spyOn(hostClient, "request").mockResolvedValue(
-      envelope(
-        "agent.setAutoCompaction",
-        session({ autoCompactionEnabled: false }),
-      ) as never,
+  it("shows a local usage estimate immediately after compaction", async () => {
+    useAppStore.getState().applySessionSnapshot(
+      session({
+        contextUsage: {
+          tokens: null,
+          contextWindow: 100_000,
+          breakdown: ESTIMATED_BREAKDOWN,
+        },
+      }),
     );
     const user = userEvent.setup();
     render(<ContextUsageRing />);
 
-    await user.click(
-      screen.getByRole("button", { name: "50k / 100k context tokens" }),
-    );
+    const usageButton = screen.getByRole("button", {
+      name: "Approximately 5k / 100k context tokens",
+    });
+    expect(usageButton).toHaveTextContent("~5%");
+
+    await user.click(usageButton);
+    expect(screen.getByText("Approximately 5k / 100k context tokens")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Total and composition are estimated locally until the next model response.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("keeps usage unknown when no exact or estimated total is available", () => {
+    useAppStore
+      .getState()
+      .applySessionSnapshot(session({ contextUsage: { tokens: null, contextWindow: 100_000 } }));
+    render(<ContextUsageRing />);
+
+    const usageButton = screen.getByRole("button", {
+      name: "Context usage unknown / 100k tokens",
+    });
+    expect(usageButton).toHaveTextContent("--");
+  });
+
+  it("toggles auto-compaction through the switch", async () => {
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(
+        envelope("agent.setAutoCompaction", session({ autoCompactionEnabled: false })) as never,
+      );
+    const user = userEvent.setup();
+    render(<ContextUsageRing />);
+
+    await user.click(screen.getByRole("button", { name: "50k / 100k context tokens" }));
     const toggle = screen.getByRole("switch", { name: "Toggle auto-compaction" });
     expect(toggle).toBeChecked();
     await user.click(toggle);
 
     await waitFor(() => expect(request).toHaveBeenCalledOnce());
-    expect(request).toHaveBeenCalledWith(
-      "agent.setAutoCompaction",
-      EXPECTED_CONTEXT,
-      { enabled: false },
-    );
-    await waitFor(() =>
-      expect(useAppStore.getState().session?.autoCompactionEnabled).toBe(false),
-    );
+    expect(request).toHaveBeenCalledWith("agent.setAutoCompaction", EXPECTED_CONTEXT, {
+      enabled: false,
+    });
+    await waitFor(() => expect(useAppStore.getState().session?.autoCompactionEnabled).toBe(false));
     expect(screen.getByRole("switch", { name: "Toggle auto-compaction" })).not.toBeChecked();
   });
 });

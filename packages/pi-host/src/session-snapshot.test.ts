@@ -33,6 +33,78 @@ function sessionFixture(
   } as unknown as AgentSession;
 }
 
+function snapshotFixture(messages: unknown[]) {
+  return buildSessionSnapshot({
+    session: sessionFixture(messages),
+    sessionManager: {} as SessionManager,
+    cwd: "C:/workspace",
+    sessionId: SESSION_ID,
+    revision: 1,
+    workspaceId: WORKSPACE_ID,
+    toolRevision: 1,
+  });
+}
+
+describe("buildSessionSnapshot message projection", () => {
+  it.each([
+    [
+      "compactionSummary",
+      {
+        role: "compactionSummary",
+        summary: "Earlier context",
+        tokensBefore: 12_000,
+        timestamp: 1_759_276_800_000,
+      },
+    ],
+    [
+      "branchSummary",
+      {
+        role: "branchSummary",
+        summary: "Returned branch",
+        fromId: "entry-1",
+        timestamp: 1_759_276_800_001,
+      },
+    ],
+    [
+      "bashExecution",
+      {
+        role: "bashExecution",
+        command: "pwd",
+        output: "C:/workspace",
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+        timestamp: 1_759_276_800_002,
+      },
+    ],
+  ])("adds wire content to SDK %s messages", (_role, message) => {
+    const snapshot = snapshotFixture([message]);
+
+    expect(snapshot.messages).toEqual([{ ...message, content: "" }]);
+    expect(Object.hasOwn(message, "content")).toBe(false);
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
+  it("preserves existing string and array content", () => {
+    const messages = [
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: [{ type: "text", text: "Hi" }] },
+    ];
+
+    const snapshot = snapshotFixture(messages);
+
+    expect(snapshot.messages).toEqual(messages);
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: true });
+  });
+
+  it.each([null, 42])("does not mask an existing invalid content value %#", (content) => {
+    const snapshot = snapshotFixture([{ role: "compactionSummary", summary: "Earlier", content }]);
+
+    expect(snapshot.messages[0]).toHaveProperty("content", content);
+    expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: false });
+  });
+});
+
 describe("buildSessionSnapshot entry projection", () => {
   it("projects registered Extension message renderer output by entry id", () => {
     const entries = [

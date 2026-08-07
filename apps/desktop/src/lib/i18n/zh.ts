@@ -754,6 +754,7 @@ export const zh: Record<MessageKey, string> = {
   // Context and model controls
   contextUsageUnknown: "上下文用量未知 / 上限 {window} tokens",
   contextUsageValue: "{used} / {window} 上下文 tokens",
+  contextUsageEstimated: "约 {used} / 上限 {window} 上下文 tokens",
   contextUnavailable: "没有可用的模型上下文信息",
   contextUsageTitle: "上下文用量",
   contextEstimatedComposition: "估算构成",
@@ -765,6 +766,7 @@ export const zh: Record<MessageKey, string> = {
   contextSummaries: "摘要",
   contextOtherFraming: "其他 / 协议开销",
   contextEstimateNote: "各项为估算值，总量由模型服务提供。",
+  contextEstimatePendingNote: "总量和各项均为本地估算，将在下一次模型回复后更新。",
   contextAutoCompaction: "自动压缩",
   contextToggleAutoCompaction: "切换自动压缩",
   contextCompacting: "压缩中...",
