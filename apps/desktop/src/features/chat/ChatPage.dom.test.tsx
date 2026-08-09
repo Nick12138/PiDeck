@@ -40,6 +40,7 @@ describe("ChatPage conversation width", () => {
     const { container } = render(<ChatPage />);
     const page = container.querySelector<HTMLElement>("[data-chat-page]")!;
     expect(page.style.getPropertyValue("--conversation-content-width")).toBe("920px");
+    expect(page.querySelector("[data-chat-header-fade]")).toHaveAttribute("aria-hidden", "true");
 
     act(() => {
       useAppStore.getState().setDesktopSettings({

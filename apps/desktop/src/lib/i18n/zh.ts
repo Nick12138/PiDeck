@@ -89,6 +89,7 @@ export const zh: Record<MessageKey, string> = {
   appearanceThemeFamilyDesc: "选择 PiDeck 使用的视觉语言。",
   appearanceThemePideck: "PiDeck",
   appearanceThemeVercel: "Vercel",
+  appearanceThemeApple: "Apple",
   appearanceColorMode: "颜色模式",
   appearanceColorModeDesc: "跟随系统外观，或使用固定模式。",
   appearanceDensity: "界面密度",

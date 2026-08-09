@@ -63,7 +63,7 @@ function MacOSWindowControls() {
       role="group"
       aria-label="Window controls"
       data-window-controls-platform="macos"
-      className="mac-window-controls absolute left-1 top-1 z-50 flex shrink-0 items-center"
+      className="mac-window-controls absolute left-1.5 top-1.5 z-50 flex shrink-0 items-center"
     >
       {MACOS_CONTROLS.map(({ action, label, title, tone, Icon }) => (
         <button

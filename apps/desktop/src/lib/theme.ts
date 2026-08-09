@@ -7,6 +7,20 @@ export type EffectiveTheme = Exclude<AppTheme, "system">;
 export const STARTUP_THEME_STORAGE_KEY = "pideck.theme";
 export const STARTUP_THEME_FAMILY_STORAGE_KEY = "pideck.theme-family";
 const DEFAULT_THEME_FAMILY: AppThemeFamily = "pideck";
+const THEME_COLORS: Record<AppThemeFamily, Record<EffectiveTheme, string>> = {
+  pideck: { light: "#ffffff", dark: "#17171b" },
+  vercel: { light: "#ffffff", dark: "#000000" },
+  apple: { light: "#f5f5f7", dark: "#1c1c1e" },
+};
+
+function syncNativeTheme(theme: AppTheme, effective: EffectiveTheme): void {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) =>
+      getCurrentWindow().setTheme(theme === "system" ? null : effective),
+    )
+    .catch(() => undefined);
+}
 
 export function resolveEffectiveTheme(
   theme: AppTheme,
@@ -29,7 +43,7 @@ export function readStoredTheme(): AppTheme | null {
 export function readStoredThemeFamily(): AppThemeFamily | null {
   try {
     const value = window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY);
-    return value === "pideck" || value === "vercel" ? value : null;
+    return value === "pideck" || value === "vercel" || value === "apple" ? value : null;
   } catch {
     return null;
   }
@@ -54,15 +68,10 @@ export function applyTheme(
   root.classList.toggle("dark", effective === "dark");
   root.dataset.theme = effective;
   root.dataset.themeFamily = family;
-  const themeColor =
-    family === "vercel"
-      ? effective === "light"
-        ? "#ffffff"
-        : "#000000"
-      : effective === "light"
-        ? "#ffffff"
-        : "#17171b";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
+  syncNativeTheme(theme, effective);
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", THEME_COLORS[family][effective]);
 }
 
 export function applyStoredTheme(): void {

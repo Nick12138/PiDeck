@@ -43,6 +43,7 @@ pub enum DesktopThemeFamily {
     #[default]
     Pideck,
     Vercel,
+    Apple,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -595,6 +596,13 @@ mod tests {
         assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Vercel);
         assert_eq!(reloaded.settings.conversation_font_size, 17);
         assert_eq!(reloaded.settings.code_font_size, 15);
+
+        let mut apple = reloaded;
+        apple
+            .patch(serde_json::json!({ "themeFamily": "apple" }))
+            .unwrap();
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.theme_family, DesktopThemeFamily::Apple);
 
         let mut invalid = reloaded;
         assert!(invalid

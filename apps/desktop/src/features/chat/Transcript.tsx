@@ -503,7 +503,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
           </div>
         )}
         {parsed.text && (
-          <div className="whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
+          <div className="theme-user-message whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
             {parsed.text}
           </div>
         )}

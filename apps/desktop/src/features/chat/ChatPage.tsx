@@ -19,9 +19,7 @@ export function ChatPage() {
   const providerConfigRevision = useAppStore((s) => s.providerConfigRevision);
   const openSettingsSection = useAppStore((s) => s.openSettingsSection);
   const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
-  const conversationContentWidth = useAppStore(
-    (s) => s.desktopSettings?.conversationContentWidth,
-  );
+  const conversationContentWidth = useAppStore((s) => s.desktopSettings?.conversationContentWidth);
 
   // A login/logout/config save bumps the revision: the blockage the banner
   // describes may be resolved, so re-check by sending again.
@@ -32,9 +30,7 @@ export function ChatPage() {
   const resourceReloadBlocked = packages?.resourceReloadRequired === true;
   const reconcileBlocked = packages?.mutation?.reconcileRequired === true;
   const packageBlocked = resourceReloadBlocked || reconcileBlocked;
-  const isNewConversation = Boolean(
-    session && session.messages.length === 0 && session.isIdle,
-  );
+  const isNewConversation = Boolean(session && session.messages.length === 0 && session.isIdle);
 
   if (!workspace) {
     return (
@@ -92,11 +88,10 @@ export function ChatPage() {
       )}
       {packageBlocked && (
         <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning">
-          {reconcileBlocked
-            ? t("chatPackageReconcileRequired")
-            : t("chatPackageReloadRequired")}
+          {reconcileBlocked ? t("chatPackageReconcileRequired") : t("chatPackageReloadRequired")}
         </div>
       )}
+      <div aria-hidden="true" data-chat-header-fade />
       {session ? (
         isNewConversation ? (
           <>

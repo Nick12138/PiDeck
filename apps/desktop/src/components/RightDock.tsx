@@ -466,6 +466,8 @@ export function RightDock() {
   return (
     <aside
       style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth }}
+      data-right-dock
+      data-dock-open={dockOpen ? "true" : "false"}
       className={`relative flex shrink-0 flex-col border-l border-border bg-surface ${
         resizing ? "transition-none" : "transition-[margin-right] duration-200 ease-out"
       }`}
@@ -546,6 +548,7 @@ export function RightDock() {
           <div
             role="tablist"
             aria-label={t("dockPages")}
+            data-dock-tab-list
             className="flex min-w-0 items-end gap-1 self-stretch overflow-hidden pt-1.5"
           >
             {visibleTabIds.map((tabId) => {

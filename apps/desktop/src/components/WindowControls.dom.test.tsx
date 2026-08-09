@@ -51,15 +51,15 @@ describe("WindowControls", () => {
 
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "macos");
-    expect(controls).toHaveClass("left-1", "top-1");
-    expect(within(controls).getAllByRole("button").map((button) => button.ariaLabel)).toEqual([
-      "Close window",
-      "Minimize window",
-      "Maximize or restore window",
-    ]);
-    expect(within(controls).getByRole("button", { name: "Close window" }).firstElementChild).toHaveClass(
-      "mac-window-control-dot--close",
-    );
+    expect(controls).toHaveClass("left-1.5", "top-1.5");
+    expect(
+      within(controls)
+        .getAllByRole("button")
+        .map((button) => button.ariaLabel),
+    ).toEqual(["Close window", "Minimize window", "Maximize or restore window"]);
+    expect(
+      within(controls).getByRole("button", { name: "Close window" }).firstElementChild,
+    ).toHaveClass("mac-window-control-dot--close");
     expect(
       within(controls).getByRole("button", { name: "Minimize window" }).firstElementChild,
     ).toHaveClass("mac-window-control-dot--minimize");
@@ -75,11 +75,11 @@ describe("WindowControls", () => {
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "windows");
     expect(controls).toHaveClass("right-0", "top-0");
-    expect(within(controls).getAllByRole("button").map((button) => button.ariaLabel)).toEqual([
-      "Minimize window",
-      "Maximize or restore window",
-      "Close window",
-    ]);
+    expect(
+      within(controls)
+        .getAllByRole("button")
+        .map((button) => button.ariaLabel),
+    ).toEqual(["Minimize window", "Maximize or restore window", "Close window"]);
   });
 
   it("routes macOS traffic-light clicks through the shared Tauri window actions", async () => {

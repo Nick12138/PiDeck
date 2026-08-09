@@ -132,7 +132,7 @@ export function extractSearchResults(value: unknown): SearchResultItem[] {
 
 export function searchQuery(args: unknown): string {
   const record = asRecord(args);
-  if (!record) return typeof args === "string" ? args.split("\n")[0]?.slice(0, 120) ?? "" : "";
+  if (!record) return typeof args === "string" ? (args.split("\n")[0]?.slice(0, 120) ?? "") : "";
   const query = trimmedString(record, ["query", "q", "search", "term"]);
   if (query) return query;
   const queries = record.queries;
@@ -143,7 +143,10 @@ export function searchQuery(args: unknown): string {
 }
 
 export function isWebSearchTool(name: string): boolean {
-  const normalized = name.trim().toLocaleLowerCase().replace(/[\s-]+/g, "_");
+  const normalized = name
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s-]+/g, "_");
   if (NON_WEB_SEARCH_NAMES.has(normalized)) return false;
   return (
     SEARCH_NAMES.has(normalized) ||
@@ -162,8 +165,7 @@ export function SearchToolCard(props: ToolCardProps) {
     return <ToolCard {...props} />;
   }
 
-  const canExpand =
-    results.length > 0 || (props.details !== undefined && props.details !== null);
+  const canExpand = results.length > 0 || (props.details !== undefined && props.details !== null);
   const statusClass =
     props.status === "running"
       ? "text-warning"
@@ -172,7 +174,7 @@ export function SearchToolCard(props: ToolCardProps) {
         : "text-muted";
 
   return (
-    <div className="min-w-0 max-w-full">
+    <div className="min-w-0 max-w-full" data-ui="tool-card">
       <button
         type="button"
         className={`flex min-h-8 w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors ${
@@ -184,9 +186,7 @@ export function SearchToolCard(props: ToolCardProps) {
         aria-expanded={canExpand ? open : undefined}
       >
         <Search size={14} className="shrink-0 text-muted" />
-        <span className="shrink-0 text-xs font-medium text-foreground/80">
-          {t("toolSearch")}
-        </span>
+        <span className="shrink-0 text-xs font-medium text-foreground/80">{t("toolSearch")}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-foreground/75" title={query}>
           {query || props.name}
         </span>

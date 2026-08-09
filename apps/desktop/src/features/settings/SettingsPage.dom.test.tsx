@@ -180,11 +180,14 @@ describe("SettingsPage navigation guard", () => {
     const themeStyle = screen.getByRole("group", { name: "Theme style" });
     const pideck = within(themeStyle).getByRole("button", { name: "PiDeck" });
     const vercel = within(themeStyle).getByRole("button", { name: "Vercel" });
+    const apple = within(themeStyle).getByRole("button", { name: "Apple" });
 
     expect(pideck).toHaveAttribute("aria-pressed", "true");
     expect(pideck).toHaveAttribute("data-state", "active");
     expect(vercel).toHaveAttribute("aria-pressed", "false");
     expect(vercel).toHaveAttribute("data-state", "inactive");
+    expect(apple).toHaveAttribute("aria-pressed", "false");
+    expect(apple).toHaveAttribute("data-state", "inactive");
 
     await user.click(vercel);
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("vercel"));
@@ -193,11 +196,18 @@ describe("SettingsPage navigation guard", () => {
     expect(vercel).toHaveAttribute("data-state", "active");
     expect(pideck).toHaveAttribute("data-state", "inactive");
 
+    await user.click(apple);
+    await waitFor(() => expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple"));
+    expect(document.documentElement.dataset.themeFamily).toBe("apple");
+    expect(apple).toHaveAttribute("aria-pressed", "true");
+    expect(apple).toHaveAttribute("data-state", "active");
+    expect(vercel).toHaveAttribute("data-state", "inactive");
+
     await user.selectOptions(screen.getByLabelText("Color mode"), "light");
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.theme).toBe("light"));
-    expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("vercel");
+    expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
     expect(document.documentElement).toHaveClass("light");
-    expect(document.documentElement.dataset.themeFamily).toBe("vercel");
+    expect(document.documentElement.dataset.themeFamily).toBe("apple");
   });
 
   it("switches sections directly when the Providers form is clean", async () => {

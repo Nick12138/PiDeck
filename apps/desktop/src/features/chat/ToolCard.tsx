@@ -1,26 +1,14 @@
 import { useState, type ReactNode } from "react";
-import {
-  Braces,
-  ChevronRight,
-  FileCode2,
-  Search,
-  Terminal,
-  Wrench,
-} from "lucide-react";
+import { Braces, ChevronRight, FileCode2, Search, Terminal, Wrench } from "lucide-react";
 import type { ToolTraceStatus } from "./transcript-model";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 
 function limitToolText(value: string, truncatedLabel = "[tool data truncated]"): string {
   const limit = 100_000;
-  return value.length <= limit
-    ? value
-    : `${value.slice(0, limit)}\n... ${truncatedLabel}`;
+  return value.length <= limit ? value : `${value.slice(0, limit)}\n... ${truncatedLabel}`;
 }
 
-export function toolValueText(
-  value: unknown,
-  truncatedLabel = "[tool data truncated]",
-): string {
+export function toolValueText(value: unknown, truncatedLabel = "[tool data truncated]"): string {
   if (value === undefined) return "";
   if (typeof value === "string") {
     try {
@@ -137,7 +125,7 @@ export function ToolCard(props: ToolCardProps) {
           : "text-muted";
 
   return (
-    <div className="group/tool min-w-0 max-w-full">
+    <div className="group/tool min-w-0 max-w-full" data-ui="tool-card">
       <button
         type="button"
         className={`flex h-8 min-w-0 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors ${
@@ -156,7 +144,10 @@ export function ToolCard(props: ToolCardProps) {
           {props.name}
         </span>
         {summary && (
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted" title={summary}>
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+            title={summary}
+          >
             {summary}
           </span>
         )}

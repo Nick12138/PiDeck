@@ -85,6 +85,9 @@ describe("persistDesktopSettings", () => {
       conversationFontSize: 17,
       codeFontSize: 15,
     });
+
+    await persistDesktopSettings({ themeFamily: "apple" });
+    expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
   });
 
   it("applies shortcut override maps through the browser settings path", async () => {

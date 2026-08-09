@@ -94,6 +94,7 @@ export const en = {
   appearanceThemeFamilyDesc: "Choose the visual language used across PiDeck.",
   appearanceThemePideck: "PiDeck",
   appearanceThemeVercel: "Vercel",
+  appearanceThemeApple: "Apple",
   appearanceColorMode: "Color mode",
   appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
   appearanceDensity: "Interface density",

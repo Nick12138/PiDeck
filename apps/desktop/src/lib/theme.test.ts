@@ -80,6 +80,25 @@ describe("theme bootstrap", () => {
     );
   });
 
+  it("applies and persists both Apple color modes", () => {
+    applyTheme("light", { family: "apple" });
+    expect(window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY)).toBe("apple");
+    expect(document.documentElement).toHaveClass("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("apple");
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#f5f5f7",
+    );
+
+    applyTheme("dark", { family: "apple" });
+    expect(document.documentElement).toHaveClass("dark");
+    expect(document.documentElement.dataset.themeFamily).toBe("apple");
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#1c1c1e",
+    );
+  });
+
   it("restores the mirrored preference before native settings are available", () => {
     window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, "light");
     window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "vercel");
@@ -88,6 +107,11 @@ describe("theme bootstrap", () => {
     expect(readStoredThemeFamily()).toBe("vercel");
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement.dataset.themeFamily).toBe("vercel");
+
+    window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "apple");
+    applyStoredTheme();
+    expect(readStoredThemeFamily()).toBe("apple");
+    expect(document.documentElement.dataset.themeFamily).toBe("apple");
 
     window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, "invalid");
     window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "invalid");

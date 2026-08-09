@@ -45,6 +45,11 @@ import {
 } from "../lib/chat/extension-terminal-bus";
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
 import { CommandLayer } from "../lib/commands/CommandLayer";
+import {
+  resolveWindowFrameAttribute,
+  resolveWindowFrameMode,
+  type WindowFrameMode,
+} from "../lib/window-frame";
 
 function SettingsOverlay({ section }: { section: SettingsSection }) {
   const t = useT();
@@ -515,6 +520,8 @@ export function handleHostEvent(
 
 export function App() {
   const windowControlsPlatform = resolveWindowControlsPlatform();
+  const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
   const page = useAppStore((s) => s.page);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const settingsOverlayOpen = page !== "chat";
@@ -940,6 +947,49 @@ export function App() {
   }, [desktopSettings]);
 
   useEffect(() => {
+    if (!nativeWindowAvailable) return;
+
+    let disposed = false;
+    let pendingFrame: number | null = null;
+    let stopListening = () => {};
+
+    void (async () => {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+
+      const syncFrameMode = async () => {
+        const [maximized, fullscreen] = await Promise.all([
+          appWindow.isMaximized(),
+          appWindow.isFullscreen(),
+        ]);
+        if (!disposed) setWindowFrameMode(resolveWindowFrameMode(maximized, fullscreen));
+      };
+
+      const scheduleFrameSync = () => {
+        if (pendingFrame !== null) return;
+        pendingFrame = window.requestAnimationFrame(() => {
+          pendingFrame = null;
+          void syncFrameMode().catch(() => undefined);
+        });
+      };
+
+      const unlisten = await appWindow.onResized(scheduleFrameSync);
+      if (disposed) {
+        unlisten();
+        return;
+      }
+      stopListening = unlisten;
+      await syncFrameMode();
+    })().catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      stopListening();
+      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
+    };
+  }, [nativeWindowAvailable]);
+
+  useEffect(() => {
     let cancelled = false;
     // Startup check is best-effort: offline or a bad feed stays silent, and
     // the manual check in Settings → Host surfaces errors instead.
@@ -976,6 +1026,7 @@ export function App() {
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
       data-pideck-app
       data-window-platform={windowControlsPlatform}
+      data-window-frame={resolveWindowFrameAttribute(nativeWindowAvailable, windowFrameMode)}
       data-host-instance-id={hostInstanceId}
       data-session-id={sessionId}
       data-session-revision={sessionRevision}
@@ -990,7 +1041,7 @@ export function App() {
         aria-hidden={startupVisible ? true : undefined}
       >
         <Sidebar />
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-w-0 flex-1 flex-col bg-surface">
           {hostFatal ? (
             <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
               <h2 className="mb-2 font-semibold text-danger">Host unavailable</h2>

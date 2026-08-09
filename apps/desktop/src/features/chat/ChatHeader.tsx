@@ -26,7 +26,10 @@ export function ChatHeader() {
           <h1 className="truncate text-base font-semibold" title={sessionName}>
             {sessionName}
           </h1>
-          <span className="mb-0.5 flex shrink-0 items-center gap-1.5 text-[11px] text-muted">
+          <span
+            className="mb-0.5 flex shrink-0 items-center gap-1.5 text-[11px] text-muted"
+            data-chat-status
+          >
             <span
               className={`size-1.5 shrink-0 rounded-full ${
                 session?.isStreaming || (session && !session.isIdle) ? "bg-success" : "bg-muted"

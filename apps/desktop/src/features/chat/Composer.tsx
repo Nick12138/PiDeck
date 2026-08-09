@@ -1660,7 +1660,7 @@ export function Composer({
                     type="button"
                     title={t("composerQueueMessageShortcut")}
                     aria-label={t("composerQueueMessage")}
-                    className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
+                    className="theme-send-control flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
                     onClick={() => void send()}
                   >
                     <Send size={15} />
@@ -1683,7 +1683,7 @@ export function Composer({
                   type="button"
                   title={t("composerSend")}
                   aria-label={t("composerSend")}
-                  className="flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="theme-send-control flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
                   disabled={!canSend}
                   onClick={() => void send()}
                 >
@@ -1716,7 +1716,7 @@ export function Composer({
                 key={labelKey}
                 type="button"
                 disabled={disabled}
-                className="flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                className="theme-starter-prompt flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => selectStarterPrompt(prompt)}
               >
                 <Icon size={14} className="shrink-0" />

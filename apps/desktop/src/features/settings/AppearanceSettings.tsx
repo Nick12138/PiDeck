@@ -150,6 +150,7 @@ export function AppearanceSettings() {
   }> = [
     { value: "pideck", label: t("appearanceThemePideck") },
     { value: "vercel", label: t("appearanceThemeVercel") },
+    { value: "apple", label: t("appearanceThemeApple") },
   ];
 
   const previewStyle = {
@@ -165,50 +166,47 @@ export function AppearanceSettings() {
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">{t("appearanceInterfaceGroup")}</h2>
             <div className="interface-density-card flex flex-col gap-4 rounded-lg border border-border p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="flex flex-col gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm">{t("appearanceThemeFamily")}</span>
                   <span className="block text-xs text-muted">{t("appearanceThemeFamilyDesc")}</span>
                 </span>
                 <div
-                  data-ui="segmented"
-                  className="interface-density-control grid shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface"
+                  data-ui="theme-family-selector"
+                  className="grid grid-cols-3 gap-2"
                   role="group"
                   aria-label={t("appearanceThemeFamily")}
                 >
-                  {themeFamilyOptions.map((option, index) => (
+                  {themeFamilyOptions.map((option) => (
                     <button
                       key={option.value}
                       type="button"
                       aria-pressed={themeFamily === option.value}
-                      data-ui="segmented-item"
+                      data-ui="theme-family-option"
                       data-state={themeFamily === option.value ? "active" : "inactive"}
-                      className={`flex h-full min-w-24 items-center justify-center gap-2 px-3 text-xs transition-colors ${
-                        index > 0 ? "border-l border-border" : ""
-                      } ${
+                      className={`min-w-0 rounded-lg border p-1.5 text-xs transition-[border-color,background-color,box-shadow] ${
                         themeFamily === option.value
-                          ? "bg-selection font-medium text-selection-foreground"
-                          : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
+                          ? "border-focus bg-focus/10 font-medium text-foreground shadow-sm"
+                          : "border-border bg-surface-raised text-muted hover:border-border-strong hover:bg-surface-overlay/45 hover:text-foreground"
                       }`}
                       onClick={() => void patchDesktop({ themeFamily: option.value })}
                     >
                       <span
-                        className="flex size-3 overflow-hidden rounded-sm border border-border-strong"
+                        className="theme-family-preview"
+                        data-theme-preview={option.value}
                         aria-hidden="true"
                       >
-                        {option.value === "pideck" ? (
-                          <>
-                            <span className="h-full w-1/2 bg-[#df6b35]" />
-                            <span className="h-full w-1/2 bg-[#17171b]" />
-                          </>
-                        ) : (
-                          <>
-                            <span className="h-full w-1/2 bg-black" />
-                            <span className="h-full w-1/2 bg-white" />
-                          </>
-                        )}
+                        <span className="theme-family-preview__sidebar">
+                          <span className="theme-family-preview__nav" />
+                        </span>
+                        <span className="theme-family-preview__content">
+                          <span className="theme-family-preview__toolbar" />
+                          <span className="theme-family-preview__line theme-family-preview__line--wide" />
+                          <span className="theme-family-preview__line" />
+                          <span className="theme-family-preview__composer" />
+                        </span>
                       </span>
-                      {option.label}
+                      <span className="mt-1.5 block truncate text-center">{option.label}</span>
                     </button>
                   ))}
                 </div>

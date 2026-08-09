@@ -93,7 +93,7 @@ function ToolRow({
   const canExpand = children !== undefined;
 
   return (
-    <div className="min-w-0 max-w-full">
+    <div className="min-w-0 max-w-full" data-ui="tool-card">
       <button
         type="button"
         className={`flex min-h-8 w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors ${
