@@ -27,6 +27,10 @@ const macosWindow = macosConfig.app.windows[0] as WindowConfig;
 const windowsWindow = windowsConfig.app.windows[0] as WindowConfig;
 
 describe("native window platform configuration", () => {
+  it("keeps the Cargo-managed macOS private API feature allowlisted in shared config", () => {
+    expect(baseConfig.app.macOSPrivateApi).toBe(true);
+  });
+
   it.each([
     ["macOS", macosWindow],
     ["Windows", windowsWindow],
