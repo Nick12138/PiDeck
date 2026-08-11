@@ -9,6 +9,8 @@ import {
 import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
 import { requestWithRetry } from "./bridge/request-retry";
 import { tCurrent } from "./i18n/use-t";
+import { editDraft } from "./draft-persistence";
+import { draftTargetFor } from "./draft-target";
 
 /**
  * Fork the active session and switch to the forked session. The default
@@ -21,14 +23,8 @@ export async function requestFork(
   entryId: string,
   options: { position?: "before" | "at" } = {},
 ): Promise<boolean> {
-  const {
-    host,
-    workspace,
-    session,
-    pushNotification,
-    applySessionSnapshot,
-    setSessionDraft,
-  } = useAppStore.getState();
+  const { host, workspace, session, pushNotification, applySessionSnapshot } =
+    useAppStore.getState();
   if (!host || !workspace || !session) return false;
   if (!session.isIdle) {
     pushNotification(tCurrent("notifForkWait"), "info");
@@ -64,7 +60,8 @@ export async function requestFork(
       if (nextHost) useAppStore.getState().setHost(nextHost);
     }
     if (res.result.selectedText !== undefined) {
-      setSessionDraft(res.result.session.sessionId, res.result.selectedText);
+      const target = draftTargetFor(workspace, res.result.session);
+      if (target) editDraft(target, res.result.selectedText);
     }
     pushNotification(tCurrent("notifForked"), "info");
     return true;

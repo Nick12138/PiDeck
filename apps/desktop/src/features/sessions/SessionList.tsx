@@ -49,12 +49,14 @@ import { subscribeSessionSearchFocus } from "../../lib/commands/events";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { requestExport } from "../../lib/export-actions";
+import { deleteSessionDrafts } from "../../lib/draft-persistence";
 import {
   canArchiveSession,
   canDeleteSession,
   canReloadSession,
   canRenameSession,
   filterSessionItems,
+  removedArchivedSessionIds,
   requestSessionRpcWithRetry,
   sessionDisplayName,
   sessionRuntimeLabel,
@@ -593,6 +595,7 @@ export function SessionList({
       }
       if (!deleted.ok) {
         if (deleted.error?.code === "SESSION_NOT_FOUND") {
+          deleteSessionDrafts(latestWorkspace.canonicalCwd, [item.sessionId]);
           await refresh();
           removePinnedSessions([item.sessionId]);
           setConfirmAction(null);
@@ -602,6 +605,8 @@ export function SessionList({
         pushNotification(deleted.error?.message ?? t("notifSessionDeleteFailed"), "error");
         return;
       }
+
+      deleteSessionDrafts(latestWorkspace.canonicalCwd, [item.sessionId]);
 
       const lastSessionPath = useAppStore.getState().desktopSettings?.lastSessionPath;
       if (lastSessionPath && shouldClearLastSessionPath(lastSessionPath, item.sessionPath)) {
@@ -623,6 +628,13 @@ export function SessionList({
 
   async function cleanupArchivedSessions() {
     if (!host || !workspace || sessionMutationBlocked) return;
+    const sessionsBeforeCleanup = sessionCatalogItems(useAppStore.getState().sessionCatalog);
+    const cleanupWorkspace = {
+      hostInstanceId: host.hostInstanceId,
+      workspaceId: workspace.id,
+      workspaceRevision: workspace.revision,
+      canonicalCwd: workspace.canonicalCwd,
+    };
     const request = ++mutationRequest.current;
     const generation = captureRequestGeneration(host);
     setSessionMutationPending(true);
@@ -645,14 +657,21 @@ export function SessionList({
         return;
       }
       await refresh();
-      const remainingSessionIds = new Set(
-        sessionCatalogItems(useAppStore.getState().sessionCatalog).map((item) => item.sessionId),
+      const current = useAppStore.getState();
+      if (
+        request !== mutationRequest.current ||
+        current.host?.hostInstanceId !== cleanupWorkspace.hostInstanceId ||
+        current.workspace?.id !== cleanupWorkspace.workspaceId ||
+        current.workspace?.revision !== cleanupWorkspace.workspaceRevision
+      ) {
+        return;
+      }
+      const removedSessionIds = removedArchivedSessionIds(
+        sessionsBeforeCleanup,
+        sessionCatalogItems(current.sessionCatalog),
       );
-      removePinnedSessions(
-        sessionCatalogItems(sessionCatalog)
-          .filter((item) => item.archived && !remainingSessionIds.has(item.sessionId))
-          .map((item) => item.sessionId),
-      );
+      deleteSessionDrafts(cleanupWorkspace.canonicalCwd, removedSessionIds);
+      removePinnedSessions(removedSessionIds);
       setConfirmAction(null);
       pushNotification(
         res.result.failedCount > 0

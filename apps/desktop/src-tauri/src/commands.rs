@@ -1,5 +1,6 @@
 use crate::browser_surface::{BrowserSurfaceBounds, BrowserSurfaceSnapshot};
 use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
+use crate::draft_store::{DraftApplyResult, DraftMutation, DraftWorkspaceSnapshot};
 use crate::shell_terminal::{
     shell_profile_catalog, ShellProfileCatalog, ShellTerminalCreateResult, ShellTerminalEvent,
 };
@@ -31,6 +32,24 @@ pub async fn desktop_settings_patch(
     host.set_auto_restart_once(store.settings.auto_restart_host_once);
     host.set_initial_workspace(&store);
     Ok(next)
+}
+
+#[tauri::command]
+pub async fn desktop_drafts_get(
+    state: State<'_, AppState>,
+    canonical_cwd: String,
+) -> Result<DraftWorkspaceSnapshot, String> {
+    let mut store = state.drafts.lock().await;
+    store.workspace_snapshot(&canonical_cwd)
+}
+
+#[tauri::command]
+pub async fn desktop_drafts_apply(
+    state: State<'_, AppState>,
+    mutations: Vec<DraftMutation>,
+) -> Result<DraftApplyResult, String> {
+    let mut store = state.drafts.lock().await;
+    store.apply(mutations)
 }
 
 #[tauri::command]

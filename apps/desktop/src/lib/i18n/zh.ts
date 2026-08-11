@@ -1076,6 +1076,7 @@ export const zh: Record<MessageKey, string> = {
   notifExportFailed: "导出失败",
   notifSaveDialogUnavailable: "无法打开保存对话框",
   notifDesktopSettingsSaveFailed: "无法保存桌面设置",
+  notifDraftPersistenceFailed: "无法保存草稿",
 
   // Notification center
   notifCenterLabel: "通知（{count}）",

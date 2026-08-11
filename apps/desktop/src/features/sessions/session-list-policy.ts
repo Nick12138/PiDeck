@@ -110,6 +110,16 @@ export function shouldClearLastSessionPath(
   return lastSessionPath === removedSessionPath;
 }
 
+export function removedArchivedSessionIds(
+  before: readonly Pick<SessionCatalogEntry, "sessionId" | "archived">[],
+  after: readonly Pick<SessionCatalogEntry, "sessionId" | "archived">[],
+): string[] {
+  const remaining = new Set(after.map((item) => item.sessionId));
+  return before
+    .filter((item) => item.archived && !remaining.has(item.sessionId))
+    .map((item) => item.sessionId);
+}
+
 export function shouldRetrySessionRpc(error: { code?: string; retryable?: boolean }): boolean {
   return error.code === "SERVICE_GRAPH_BUSY" && error.retryable === true;
 }

@@ -1,6 +1,7 @@
 mod browser_surface;
 mod commands;
 mod desktop_settings;
+mod draft_store;
 mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
@@ -8,6 +9,7 @@ mod shell_terminal;
 mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
+use draft_store::DraftStore;
 use pi_host::PiHostManager;
 use shell_terminal::ShellTerminalManager;
 use tauri::{Emitter, Listener, Manager};
@@ -15,6 +17,7 @@ use tokio::sync::Mutex;
 
 pub struct AppState {
     pub settings: Mutex<DesktopSettingsStore>,
+    pub drafts: Mutex<DraftStore>,
     pub host: Mutex<PiHostManager>,
     pub terminals: Mutex<ShellTerminalManager>,
     pub browsers: Mutex<BrowserSurfaceManager>,
@@ -33,9 +36,11 @@ pub fn run() {
 
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
+            let drafts = DraftStore::load(app.handle());
             let host = PiHostManager::new(app.handle().clone(), &settings);
             app.manage(AppState {
                 settings: Mutex::new(settings),
+                drafts: Mutex::new(drafts),
                 host: Mutex::new(host),
                 terminals: Mutex::new(ShellTerminalManager::new()),
                 browsers: Mutex::new(BrowserSurfaceManager::new()),
@@ -123,6 +128,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::desktop_settings_get,
             commands::desktop_settings_patch,
+            commands::desktop_drafts_get,
+            commands::desktop_drafts_apply,
             commands::desktop_open_path,
             commands::desktop_read_small_file,
             commands::pi_host_send,

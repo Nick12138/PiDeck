@@ -91,7 +91,10 @@ describe("app-store epoch wiring", () => {
       thinkingLevels: [],
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
-      sessionDrafts: {},
+      draftTexts: {},
+      draftTargets: {},
+      draftEditVersions: {},
+      draftHydratedWorkspace: null,
       notifications: [],
       desynchronized: false,
       lastSequence: 0,
@@ -751,7 +754,7 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().packageRetry).toBeNull();
   });
 
-  it("keeps the Session Catalog and per-Session drafts across page navigation", () => {
+  it("keeps the Session Catalog and live drafts across page navigation", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
     useAppStore.getState().replaceSessionCatalog("w1", [
@@ -764,7 +767,8 @@ describe("app-store epoch wiring", () => {
         messageCount: 2,
       },
     ]);
-    useAppStore.getState().setSessionDraft("s1", "unfinished prompt");
+    const target = { kind: "session" as const, canonicalCwd: "/p/w1", sessionId: "s1" };
+    useAppStore.getState().setDraftTextLocal(target, "unfinished prompt");
 
     useAppStore.getState().setPage("packages");
     useAppStore.getState().setPage("settings");
@@ -772,7 +776,64 @@ describe("app-store epoch wiring", () => {
 
     const state = useAppStore.getState();
     expect(state.sessionCatalog.entries.s1?.name).toBe("Catalog session");
-    expect(state.sessionDrafts.s1).toBe("unfinished prompt");
+    expect(state.draftTexts["session:s1"]).toBe("unfinished prompt");
+  });
+
+  it("keeps live draft edits across Host restart and merges hydration only when untouched", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    const target = { kind: "session" as const, canonicalCwd: "/p/w1", sessionId: "s1" };
+    useAppStore.getState().setDraftTextLocal(target, "live");
+
+    useAppStore.getState().beginHostEpoch(host("h2"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore
+      .getState()
+      .mergeHydratedDrafts("/p/w1", [{ ...target, text: "stale disk", updatedAt: 1 }], {
+        "session:s1": 0,
+      });
+
+    expect(useAppStore.getState().draftTexts["session:s1"]).toBe("live");
+  });
+
+  it("hydrates an untouched new-conversation draft by canonical workspace", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().mergeHydratedDrafts(
+      "/p/w1",
+      [
+        {
+          kind: "new-conversation",
+          canonicalCwd: "/p/w1",
+          text: "restored",
+          updatedAt: 1,
+        },
+      ],
+      {},
+    );
+
+    expect(useAppStore.getState().draftTexts["new:/p/w1"]).toBe("restored");
+    expect(useAppStore.getState().draftHydratedWorkspace).toBe("/p/w1");
+  });
+
+  it("ignores a workspace hydration result after switching elsewhere", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w2", 2));
+    useAppStore.getState().mergeHydratedDrafts(
+      "/p/w1",
+      [
+        {
+          kind: "new-conversation",
+          canonicalCwd: "/p/w1",
+          text: "wrong workspace",
+          updatedAt: 1,
+        },
+      ],
+      {},
+    );
+
+    expect(useAppStore.getState().draftTexts).toEqual({});
   });
 
   it("projects the active Pi snapshot into the Session Catalog runtime state", () => {

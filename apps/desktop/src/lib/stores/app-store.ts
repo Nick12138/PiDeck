@@ -38,6 +38,13 @@ import {
 import { sidebarPref } from "../sidebar-prefs";
 import type { AppUpdate } from "../updater";
 import {
+  draftKeyForTarget,
+  draftTargetFromRecord,
+  type DraftKey,
+  type DraftRecord,
+  type DraftTarget,
+} from "../draft-target";
+import {
   alignExtensionUiToSession,
   extensionUiSessionId,
   isExtensionUiRequestExpired,
@@ -170,7 +177,10 @@ export type AppState = EpochState & {
   thinkingLevels: string[];
   providerConfigRevision: number;
   sessionCatalog: SessionCatalogState;
-  sessionDrafts: Record<string, string>;
+  draftTexts: Record<DraftKey, string>;
+  draftTargets: Record<DraftKey, DraftTarget>;
+  draftEditVersions: Record<DraftKey, number>;
+  draftHydratedWorkspace: string | null;
   appUpdatePhase: AppUpdatePhase;
   notifications: AppNotification[];
   hostFatal: string | null;
@@ -229,7 +239,13 @@ export type AppState = EpochState & {
     error?: string,
     updatedAt?: number,
   ) => void;
-  setSessionDraft: (sessionId: string, text: string) => void;
+  setDraftTextLocal: (target: DraftTarget, text: string) => number;
+  mergeHydratedDrafts: (
+    canonicalCwd: string,
+    drafts: readonly DraftRecord[],
+    baselineVersions: Readonly<Record<DraftKey, number>>,
+  ) => void;
+  clearDraftWorkspace: (canonicalCwd: string) => void;
   setAppUpdatePhase: (phase: AppUpdatePhase) => void;
   pushNotification: (message: string, level?: string) => void;
   dismissNotification: (id: string) => void;
@@ -295,7 +311,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   thinkingLevels: [],
   providerConfigRevision: 0,
   sessionCatalog: emptySessionCatalog(),
-  sessionDrafts: {},
+  draftTexts: {},
+  draftTargets: {},
+  draftEditVersions: {},
+  draftHydratedWorkspace: null,
   appUpdatePhase: { state: "idle" },
   notifications: [],
   hostFatal: null,
@@ -871,12 +890,58 @@ export const useAppStore = create<AppState>((set, get) => ({
         updatedAt,
       ),
     })),
-  setSessionDraft: (sessionId, text) =>
+  setDraftTextLocal: (target, text) => {
+    const key = draftKeyForTarget(target);
+    let version = 0;
     set((state) => {
-      const sessionDrafts = { ...state.sessionDrafts };
-      if (text) sessionDrafts[sessionId] = text;
-      else delete sessionDrafts[sessionId];
-      return { sessionDrafts };
+      version = (state.draftEditVersions[key] ?? 0) + 1;
+      const draftTexts = { ...state.draftTexts };
+      if (text) draftTexts[key] = text;
+      else delete draftTexts[key];
+      return {
+        draftTexts,
+        draftTargets: { ...state.draftTargets, [key]: target },
+        draftEditVersions: { ...state.draftEditVersions, [key]: version },
+      };
+    });
+    return version;
+  },
+  mergeHydratedDrafts: (canonicalCwd, drafts, baselineVersions) =>
+    set((state) => {
+      if (state.workspace?.canonicalCwd !== canonicalCwd) return {};
+      const draftTexts = { ...state.draftTexts };
+      const draftTargets = { ...state.draftTargets };
+      for (const record of drafts) {
+        const target = draftTargetFromRecord(record);
+        const key = draftKeyForTarget(target);
+        if ((state.draftEditVersions[key] ?? 0) !== (baselineVersions[key] ?? 0)) continue;
+        draftTexts[key] = record.text;
+        draftTargets[key] = target;
+      }
+      return {
+        draftTexts,
+        draftTargets,
+        draftHydratedWorkspace: canonicalCwd,
+      };
+    }),
+  clearDraftWorkspace: (canonicalCwd) =>
+    set((state) => {
+      const draftTexts = { ...state.draftTexts };
+      const draftTargets = { ...state.draftTargets };
+      const draftEditVersions = { ...state.draftEditVersions };
+      for (const [key, target] of Object.entries(state.draftTargets)) {
+        if (target.canonicalCwd !== canonicalCwd) continue;
+        delete draftTexts[key];
+        delete draftTargets[key];
+        delete draftEditVersions[key];
+      }
+      return {
+        draftTexts,
+        draftTargets,
+        draftEditVersions,
+        draftHydratedWorkspace:
+          state.draftHydratedWorkspace === canonicalCwd ? null : state.draftHydratedWorkspace,
+      };
     }),
   setAppUpdatePhase: (appUpdatePhase) => set({ appUpdatePhase }),
   pushNotification: (message, level = "info") =>

@@ -33,6 +33,7 @@ import { checkForAppUpdate } from "../lib/updater";
 import { applyLanguage } from "../lib/i18n";
 import { tCurrent, useT } from "../lib/i18n/use-t";
 import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
+import { DraftPersistenceController } from "./DraftPersistenceController";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -1033,6 +1034,7 @@ export function App() {
       data-rehydrating={rehydrating ? "true" : "false"}
       data-desynchronized={desynchronized ? "true" : "false"}
     >
+      <DraftPersistenceController />
       {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
         <WindowControls platform={windowControlsPlatform} />
       )}

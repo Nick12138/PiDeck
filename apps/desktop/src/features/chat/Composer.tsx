@@ -64,6 +64,14 @@ import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTextContextMenuItems } from "../../lib/text-context-menu";
 import { readClipboardText } from "../../lib/desktop-clipboard";
+import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
+import {
+  commitDraftSend,
+  deleteDraft,
+  editDraft,
+  restoreDraftSend,
+  stageDraftSend,
+} from "../../lib/draft-persistence";
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
@@ -304,11 +312,12 @@ export function Composer({
   const session = useAppStore((s) => s.session);
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
-  const text = useAppStore((s) => (session ? (s.sessionDrafts[session.sessionId] ?? "") : ""));
+  const draftTarget = draftTargetFor(workspace, session);
+  const draftKey = draftTarget ? draftKeyForTarget(draftTarget) : null;
+  const text = useAppStore((s) => (draftKey ? (s.draftTexts[draftKey] ?? "") : ""));
   const extensionWidgetsOpen = useAppStore((s) => s.extensionWidgetsOpen);
   const setExtensionWidgetsOpen = useAppStore((s) => s.setExtensionWidgetsOpen);
   const setSession = useAppStore((s) => s.applySessionSnapshot);
-  const setSessionDraft = useAppStore((s) => s.setSessionDraft);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const openSettingsSection = useAppStore((s) => s.openSettingsSection);
   const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
@@ -366,7 +375,10 @@ export function Composer({
   function insertRecoveredText(recovery: PasteRecovery) {
     const state = useAppStore.getState();
     if (state.session?.sessionId !== recovery.sessionId) return;
-    const currentDraft = state.sessionDrafts[recovery.sessionId] ?? "";
+    const target = draftTargetFor(state.workspace, state.session);
+    if (!target) return;
+    const key = draftKeyForTarget(target);
+    const currentDraft = state.draftTexts[key] ?? "";
     const textarea = textareaRef.current;
     const draftIsUnchanged = currentDraft === recovery.draft;
     const start = draftIsUnchanged
@@ -374,7 +386,7 @@ export function Composer({
       : (textarea?.selectionStart ?? currentDraft.length);
     const end = draftIsUnchanged ? recovery.selectionEnd : start;
     const next = currentDraft.slice(0, start) + recovery.text + currentDraft.slice(end);
-    state.setSessionDraft(recovery.sessionId, next);
+    editDraft(target, next);
     dismissCompletion();
     const caret = start + recovery.text.length;
     requestAnimationFrame(() => {
@@ -402,9 +414,9 @@ export function Composer({
     () =>
       subscribeComposerInsert((insert) => {
         const current = useAppStore.getState();
-        const target = current.session;
+        const target = draftTargetFor(current.workspace, current.session);
         if (!target) return false;
-        const draft = current.sessionDrafts[target.sessionId] ?? "";
+        const draft = current.draftTexts[draftKeyForTarget(target)] ?? "";
         const textarea = textareaRef.current;
         const start = textarea?.selectionStart ?? draft.length;
         const end = textarea?.selectionEnd ?? start;
@@ -414,7 +426,7 @@ export function Composer({
         const suffix = after && !/^\s/.test(after) ? " " : "";
         const inserted = `${prefix}${insert}${suffix}`;
         const next = before + inserted + after;
-        current.setSessionDraft(target.sessionId, next);
+        editDraft(target, next);
         const caret = before.length + inserted.length;
         requestAnimationFrame(() => {
           textareaRef.current?.focus();
@@ -646,10 +658,10 @@ export function Composer({
 
   function acceptCompletion(state: CompletionState, index: number) {
     const item = state.items[index];
-    if (!item || !session) return;
+    if (!item || !draftTarget) return;
     const caret = textareaRef.current?.selectionStart ?? text.length;
     const nextText = text.slice(0, state.tokenStart) + item.insert + text.slice(caret);
-    setSessionDraft(session.sessionId, nextText);
+    editDraft(draftTarget, nextText);
     dismissCompletion();
     const nextCaret = state.tokenStart + item.insert.length;
     requestAnimationFrame(() => {
@@ -1111,7 +1123,7 @@ export function Composer({
   }
 
   async function send() {
-    if (!host || !workspace || !session || disabled || decisionBlocked) return;
+    if (!host || !workspace || !session || !draftTarget || disabled || decisionBlocked) return;
     if (
       documents.some((document) => document.status !== "ready") ||
       (!text.trim() && images.length === 0 && files.length === 0 && documents.length === 0)
@@ -1121,19 +1133,19 @@ export function Composer({
 
     const builtin = matchBuiltinCommand(text);
     if (builtin?.name === "session") {
-      setSessionDraft(session.sessionId, "");
+      deleteDraft(draftTarget);
       dismissCompletion();
       setStatsOpen(true);
       return;
     }
     if (builtin?.name === "tree") {
-      setSessionDraft(session.sessionId, "");
+      deleteDraft(draftTarget);
       dismissCompletion();
       requestTreePanel();
       return;
     }
     if (builtin?.name === "fork") {
-      setSessionDraft(session.sessionId, "");
+      deleteDraft(draftTarget);
       dismissCompletion();
       setForkOpen(true);
       return;
@@ -1144,7 +1156,7 @@ export function Composer({
         pushNotification(t("composerExportUsage"), "error");
         return;
       }
-      setSessionDraft(session.sessionId, "");
+      deleteDraft(draftTarget);
       dismissCompletion();
       void requestExport(arg === "jsonl" ? "jsonl" : "html");
       return;
@@ -1155,12 +1167,12 @@ export function Composer({
         void requestCompact(builtin.args);
         return;
       }
-      const targetSessionId = session.sessionId;
-      const draftText = text;
-      setSessionDraft(targetSessionId, "");
+      const receipt = stageDraftSend(draftTarget);
       dismissCompletion();
       if (!(await requestCompact(builtin.args))) {
-        setSessionDraft(targetSessionId, draftText);
+        restoreDraftSend(receipt);
+      } else {
+        commitDraftSend(receipt);
       }
       return;
     }
@@ -1168,7 +1180,7 @@ export function Composer({
       // The Pi CLI's /login has no meaning here — without this interception it
       // would go to the model as plain text and, in the no-credentials case,
       // echo back the same "run /login" guidance forever.
-      setSessionDraft(session.sessionId, "");
+      deleteDraft(draftTarget);
       dismissCompletion();
       openSettingsSection("providers");
       pushNotification(t("composerLoginGuidance"), "info");
@@ -1179,8 +1191,7 @@ export function Composer({
     const sentImages = images;
     const sentFiles = files;
     const sentDocuments = documents;
-    const targetSessionId = session.sessionId;
-    setSessionDraft(targetSessionId, "");
+    const sendReceipt = stageDraftSend(draftTarget);
     dismissCompletion();
     setImages([]);
     setFiles([]);
@@ -1202,7 +1213,7 @@ export function Composer({
         ? { attachmentIds: sentDocuments.map((document) => document.id) }
         : {};
     const restoreDraft = () => {
-      setSessionDraft(targetSessionId, value);
+      restoreDraftSend(sendReceipt);
       setImages(sentImages);
       setFiles(sentFiles);
       documentsRef.current = sentDocuments;
@@ -1240,6 +1251,8 @@ export function Composer({
         });
         if (!res.ok) {
           handleSendFailure(res.error, t("composerSendFailed"));
+        } else {
+          commitDraftSend(sendReceipt);
         }
         return;
       }
@@ -1253,6 +1266,7 @@ export function Composer({
       if (!res.ok) {
         handleSendFailure(res.error, t("composerPromptFailed"));
       } else {
+        commitDraftSend(sendReceipt);
         // An accepted prompt means credentials resolved; drop any stale banner.
         setAuthBlocked(null);
       }
@@ -1293,8 +1307,8 @@ export function Composer({
   const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
   function selectStarterPrompt(prompt: string) {
-    if (!session || disabled) return;
-    setSessionDraft(session.sessionId, prompt);
+    if (!draftTarget || disabled) return;
+    editDraft(draftTarget, prompt);
     dismissCompletion();
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
@@ -1548,8 +1562,8 @@ export function Composer({
               disabled={disabled}
               aria-describedby={decisionBlocked ? decisionHintId : undefined}
               onChange={(event) => {
-                if (!session) return;
-                setSessionDraft(session.sessionId, event.target.value);
+                if (!draftTarget) return;
+                editDraft(draftTarget, event.target.value);
                 updateCompletion(
                   event.target.value,
                   event.target.selectionStart ?? event.target.value.length,

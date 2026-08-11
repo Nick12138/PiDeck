@@ -8,6 +8,8 @@ import {
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { editDraft } from "../../lib/draft-persistence";
+import { draftTargetFor } from "../../lib/draft-target";
 import { requestFork } from "../../lib/fork-actions";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { useT } from "../../lib/i18n/use-t";
@@ -82,7 +84,6 @@ export function TreePanel({ visible }: { visible: boolean }) {
   const t = useT();
   const session = useAppStore((state) => state.session);
   const applySessionSnapshot = useAppStore((state) => state.applySessionSnapshot);
-  const setSessionDraft = useAppStore((state) => state.setSessionDraft);
   const pushNotification = useAppStore((state) => state.pushNotification);
   const [nodes, setNodes] = useState<SerializableSessionTreeNode[] | null>(null);
   const [leafId, setLeafId] = useState<string | null>(null);
@@ -199,7 +200,8 @@ export function TreePanel({ visible }: { visible: boolean }) {
       }
       applySessionSnapshot(res.result.session);
       if (res.result.editorText !== undefined) {
-        setSessionDraft(res.result.session.sessionId, res.result.editorText);
+        const target = draftTargetFor(current.workspace, res.result.session);
+        if (target) editDraft(target, res.result.editorText);
       }
       setRefreshSeq((seq) => seq + 1);
     } catch (err) {

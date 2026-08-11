@@ -11,6 +11,8 @@ import type {
   WorkspaceSnapshot,
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";
+import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
 import { useAppStore } from "../../lib/stores/app-store";
 import { TreePanel } from "./TreePanel";
 
@@ -163,9 +165,16 @@ describe("TreePanel", () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
+    useAppStore.setState({
+      draftTexts: {},
+      draftTargets: {},
+      draftEditVersions: {},
+      draftHydratedWorkspace: null,
+    });
   });
 
   afterEach(() => {
+    __resetDraftPersistenceForTests();
     vi.restoreAllMocks();
     cleanup();
   });
@@ -179,18 +188,16 @@ describe("TreePanel", () => {
   });
 
   it("loads the tree and navigates to an abandoned branch", async () => {
-    const request = vi
-      .spyOn(hostClient, "request")
-      .mockImplementation(async (method) => {
-        if (method === "session.getTree") {
-          return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
-        }
-        return envelope("agent.navigateTree", {
-          session: session({ thinkingLevel: "high" }),
-          cancelled: false,
-          editorText: "abandoned attempt",
-        }) as never;
-      });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "session.getTree") {
+        return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
+      }
+      return envelope("agent.navigateTree", {
+        session: session({ thinkingLevel: "high" }),
+        cancelled: false,
+        editorText: "abandoned attempt",
+      }) as never;
+    });
     const user = userEvent.setup();
     render(<TreePanel visible />);
 
@@ -210,22 +217,18 @@ describe("TreePanel", () => {
     await user.click(screen.getByText("abandoned attempt").closest("button")!);
 
     await waitFor(() =>
-      expect(request).toHaveBeenCalledWith(
-        "agent.navigateTree",
-        EXPECTED_CONTEXT,
-        { targetId: "u3" },
-      ),
+      expect(request).toHaveBeenCalledWith("agent.navigateTree", EXPECTED_CONTEXT, {
+        targetId: "u3",
+      }),
     );
-    await waitFor(() =>
-      expect(useAppStore.getState().session?.thinkingLevel).toBe("high"),
-    );
-    expect(useAppStore.getState().sessionDrafts[SESSION_ID]).toBe("abandoned attempt");
+    await waitFor(() => expect(useAppStore.getState().session?.thinkingLevel).toBe("high"));
+    const target = draftTargetFor(workspace(), session({ thinkingLevel: "high" }));
+    expect(target).not.toBeNull();
+    expect(useAppStore.getState().draftTexts[draftKeyForTarget(target!)]).toBe("abandoned attempt");
   });
 
   it("disables navigation while the agent is busy", async () => {
-    useAppStore
-      .getState()
-      .applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
+    useAppStore.getState().applySessionSnapshot(session({ isIdle: false, isStreaming: true }));
     vi.spyOn(hostClient, "request").mockResolvedValue(
       envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
     );
@@ -237,24 +240,20 @@ describe("TreePanel", () => {
   });
 
   it("forks from a user row via the inline fork button", async () => {
-    const request = vi
-      .spyOn(hostClient, "request")
-      .mockImplementation(async (method) => {
-        if (method === "session.getTree") {
-          return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
-        }
-        return envelope("session.fork", {
-          session: session(),
-          selectedText: "abandoned attempt",
-        }) as never;
-      });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "session.getTree") {
+        return envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never;
+      }
+      return envelope("session.fork", {
+        session: session(),
+        selectedText: "abandoned attempt",
+      }) as never;
+    });
     const user = userEvent.setup();
     render(<TreePanel visible />);
 
     await screen.findByText("abandoned attempt");
-    await user.click(
-      screen.getByRole("button", { name: "Fork from: abandoned attempt" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Fork from: abandoned attempt" }));
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(

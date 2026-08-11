@@ -8,6 +8,7 @@ import {
   canRenameSession,
   filterSessionItems,
   requestSessionRpcWithRetry,
+  removedArchivedSessionIds,
   sessionDisplayName,
   sessionRuntimeLabel,
   sessionStatusDotClass,
@@ -123,6 +124,24 @@ describe("last Session path cleanup", () => {
     expect(shouldClearLastSessionPath("/sessions/Alpha.jsonl", "/sessions/alpha.jsonl")).toBe(
       false,
     );
+  });
+});
+
+describe("removedArchivedSessionIds", () => {
+  it("returns only archived Sessions that actually disappeared", () => {
+    expect(
+      removedArchivedSessionIds(
+        [
+          { sessionId: "active", archived: false },
+          { sessionId: "deleted", archived: true },
+          { sessionId: "failed", archived: true },
+        ],
+        [
+          { sessionId: "active", archived: false },
+          { sessionId: "failed", archived: true },
+        ],
+      ),
+    ).toEqual(["deleted"]);
   });
 });
 

@@ -11,6 +11,8 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { SESSION_OPEN_TIMEOUT_MS } from "../../lib/bridge/session-open-request";
+import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";
+import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ForkModal } from "./ForkModal";
 
@@ -116,31 +118,36 @@ describe("ForkModal", () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
+    useAppStore.setState({
+      draftTexts: {},
+      draftTargets: {},
+      draftEditVersions: {},
+      draftHydratedWorkspace: null,
+    });
   });
 
   afterEach(() => {
+    __resetDraftPersistenceForTests();
     vi.restoreAllMocks();
     cleanup();
   });
 
   it("lists fork points and forks into the new session", async () => {
-    const request = vi
-      .spyOn(hostClient, "request")
-      .mockImplementation(async (method) => {
-        if (method === "session.getForkPoints") {
-          return envelope("session.getForkPoints", {
-            items: [
-              { entryId: "u1", text: "first ask" },
-              { entryId: "u2", text: "second ask" },
-            ],
-          }) as never;
-        }
-        return envelope(
-          "session.fork",
-          { session: session(FORKED_SESSION_ID), selectedText: "second ask" },
-          { sessionId: FORKED_SESSION_ID, sessionRevision: 4 },
-        ) as never;
-      });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "session.getForkPoints") {
+        return envelope("session.getForkPoints", {
+          items: [
+            { entryId: "u1", text: "first ask" },
+            { entryId: "u2", text: "second ask" },
+          ],
+        }) as never;
+      }
+      return envelope(
+        "session.fork",
+        { session: session(FORKED_SESSION_ID), selectedText: "second ask" },
+        { sessionId: FORKED_SESSION_ID, sessionRevision: 4 },
+      ) as never;
+    });
     const onClose = vi.fn();
     const user = userEvent.setup();
     render(<ForkModal open onClose={onClose} />);
@@ -155,10 +162,10 @@ describe("ForkModal", () => {
         SESSION_OPEN_TIMEOUT_MS,
       ),
     );
-    await waitFor(() =>
-      expect(useAppStore.getState().session?.sessionId).toBe(FORKED_SESSION_ID),
-    );
-    expect(useAppStore.getState().sessionDrafts[FORKED_SESSION_ID]).toBe("second ask");
+    await waitFor(() => expect(useAppStore.getState().session?.sessionId).toBe(FORKED_SESSION_ID));
+    const target = draftTargetFor(workspace(), session(FORKED_SESSION_ID));
+    expect(target).not.toBeNull();
+    expect(useAppStore.getState().draftTexts[draftKeyForTarget(target!)]).toBe("second ask");
     expect(useAppStore.getState().host?.sessionId).toBe(FORKED_SESSION_ID);
     expect(onClose).toHaveBeenCalled();
   });

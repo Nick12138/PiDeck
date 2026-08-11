@@ -10,6 +10,7 @@ import type {
   WorkspaceSnapshot,
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { draftTargetFor } from "../../lib/draft-target";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Composer } from "./Composer";
 import { MenuHost } from "../../components/Menu";
@@ -145,7 +146,12 @@ describe("Composer managed documents", () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
-    useAppStore.getState().setSessionDraft(SESSION_ID, "");
+    useAppStore.setState({
+      draftTexts: {},
+      draftTargets: {},
+      draftEditVersions: {},
+      draftHydratedWorkspace: null,
+    });
   });
 
   afterEach(() => {
@@ -449,7 +455,11 @@ describe("Composer managed documents", () => {
         sessionId: NEXT_SESSION_ID,
         revision: 4,
       });
-      useAppStore.getState().setSessionDraft(NEXT_SESSION_ID, "New session draft");
+      const target = draftTargetFor(workspace(), {
+        ...session(),
+        sessionId: NEXT_SESSION_ID,
+      });
+      if (target) useAppStore.getState().setDraftTextLocal(target, "New session draft");
     });
     await act(async () => {
       resolveCreate?.({ ok: true, result: textAttachment("parsing") });
