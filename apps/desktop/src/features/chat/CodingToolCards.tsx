@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 import { ChevronRight, FileCode2, FilePenLine, Terminal, type LucideIcon } from "lucide-react";
 import { sanitizeAgentText } from "./markdown-utils";
 import {
@@ -10,6 +10,7 @@ import {
   type ToolCardProps,
 } from "./ToolCard";
 import { useT } from "../../lib/i18n/use-t";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 
 function parseJsonish(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -89,6 +90,7 @@ function ToolRow({
   children?: ReactNode;
 }) {
   const t = useT();
+  const contentId = useId();
   const [open, setOpen] = useToolDisclosure(props);
   const canExpand = children !== undefined;
 
@@ -103,6 +105,7 @@ function ToolRow({
           if (canExpand) setOpen(!open);
         }}
         aria-expanded={canExpand ? open : undefined}
+        aria-controls={canExpand ? contentId : undefined}
       >
         <Icon size={14} className="shrink-0 text-muted" />
         <span className="shrink-0 text-xs font-medium text-foreground/80">{label}</span>
@@ -118,15 +121,19 @@ function ToolRow({
         {canExpand && (
           <ChevronRight
             size={13}
-            className={`shrink-0 text-muted transition-transform ${open ? "rotate-90" : ""}`}
+            className={`shrink-0 text-muted transition-transform duration-[160ms] motion-reduce:transition-none ${
+              open ? "rotate-90" : ""
+            }`}
           />
         )}
       </button>
-      {open && canExpand && (
-        <div className="mb-2 ml-[22px] mt-1">
-          {children}
-          <ToolDetailsDisclosure details={props.details} />
-        </div>
+      {canExpand && (
+        <CollapsibleRegion open={open} id={contentId}>
+          <div className="mb-2 ml-[22px] mt-1">
+            {children}
+            <ToolDetailsDisclosure details={props.details} />
+          </div>
+        </CollapsibleRegion>
       )}
     </div>
   );

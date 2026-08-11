@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -44,6 +45,7 @@ import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { PiMark } from "../../components/PiMark";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import {
   buildTranscriptRows,
@@ -656,6 +658,7 @@ export function AssistantOrderedContent({
               content={block.text}
               label={t("transcriptThoughtProcess")}
               defaultOpen={mode === "streaming"}
+              streaming={mode === "streaming"}
             />,
           );
         } else {
@@ -712,6 +715,7 @@ export function ExecutionTrace({
   turnActive: boolean;
 }) {
   const t = useT();
+  const contentId = useId();
   const tools = blocks.filter(
     (block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool",
   );
@@ -769,6 +773,7 @@ export function ExecutionTrace({
         onClick={() => setOpen((current) => !current)}
         className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         aria-expanded={open}
+        aria-controls={contentId}
       >
         {active ? (
           <span className="execution-trace-spinner text-muted" aria-hidden="true">
@@ -782,10 +787,12 @@ export function ExecutionTrace({
         </span>
         <ChevronRight
           size={13}
-          className={`ml-auto transition-transform ${open ? "rotate-90" : ""}`}
+          className={`ml-auto transition-transform duration-[160ms] motion-reduce:transition-none ${
+            open ? "rotate-90" : ""
+          }`}
         />
       </button>
-      {open && (
+      <CollapsibleRegion open={open} id={contentId}>
         <div className="ml-2 mt-1 space-y-1 border-l border-border py-1 pl-4">
           {blocks.map((block, index) =>
             block.kind === "thinking" ? (
@@ -793,6 +800,7 @@ export function ExecutionTrace({
                 key={`activity:${block.kind}:${index}`}
                 content={block.text}
                 defaultOpen={active}
+                streaming={active}
               />
             ) : block.kind === "text" ? (
               <div key={`activity:${block.kind}:${index}`} className="py-1 text-foreground/85">
@@ -812,7 +820,7 @@ export function ExecutionTrace({
             ),
           )}
         </div>
-      )}
+      </CollapsibleRegion>
     </div>
   );
 }
@@ -831,7 +839,7 @@ function AssistantBlock({
     return <LazyMarkdownMessage content={block.text} mode={mode} showCaret={showCaret} />;
   }
   if (block.kind === "thinking") {
-    return <ThinkingBlock content={block.text} />;
+    return <ThinkingBlock content={block.text} streaming={mode === "streaming"} />;
   }
   if (block.kind === "image") {
     return (
@@ -1425,23 +1433,93 @@ function formatJson(value: unknown, truncatedLabel = "[details truncated]"): str
   return `${formatted.slice(0, limit)}\n... ${truncatedLabel}`;
 }
 
-function ThinkingBlock({
+const THINKING_FOLLOW_THRESHOLD_PX = 24;
+
+export function ThinkingBlock({
   content,
   label,
   defaultOpen = false,
+  streaming = false,
 }: {
   content: string;
   label?: string;
   defaultOpen?: boolean;
+  streaming?: boolean;
 }) {
   const t = useT();
+  const contentId = useId();
   const [open, setOpen] = useState(defaultOpen);
+  const [following, setFollowing] = useState(true);
+  const [overflowing, setOverflowing] = useState(false);
   const userToggled = useRef(false);
+  const followingRef = useRef(true);
+  const returningToLatestRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const text = sanitizeAgentText(content);
+
+  const updateFollowing = useCallback((next: boolean) => {
+    followingRef.current = next;
+    setFollowing((current) => (current === next ? current : next));
+  }, []);
+
+  const syncScrollLayout = useCallback(
+    (followTail: boolean) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const nextOverflowing = element.scrollHeight - element.clientHeight > 1;
+      setOverflowing((current) => (current === nextOverflowing ? current : nextOverflowing));
+      if (!nextOverflowing) {
+        returningToLatestRef.current = false;
+        updateFollowing(true);
+        return;
+      }
+      if (followTail) element.scrollTop = element.scrollHeight;
+    },
+    [updateFollowing],
+  );
+
   useEffect(() => {
-    if (!userToggled.current) setOpen(defaultOpen);
-  }, [defaultOpen]);
+    if (userToggled.current) return;
+    setOpen(defaultOpen);
+    if (defaultOpen) updateFollowing(true);
+  }, [defaultOpen, updateFollowing]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    syncScrollLayout(streaming && followingRef.current);
+  }, [open, streaming, syncScrollLayout, text]);
+
+  useLayoutEffect(() => {
+    if (!open || typeof ResizeObserver === "undefined") return;
+    const observed = contentRef.current;
+    if (!observed) return;
+    const observer = new ResizeObserver(() => {
+      syncScrollLayout(streaming && followingRef.current);
+    });
+    observer.observe(observed);
+    return () => observer.disconnect();
+  }, [open, streaming, syncScrollLayout]);
+
   if (!text.trim()) return null;
+
+  function scrollToLatest() {
+    const element = scrollRef.current;
+    if (!element) return;
+    returningToLatestRef.current = true;
+    updateFollowing(true);
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (typeof element.scrollTo === "function") {
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    } else {
+      element.scrollTop = element.scrollHeight;
+    }
+  }
 
   return (
     <div>
@@ -1453,19 +1531,69 @@ function ThinkingBlock({
         }}
         className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs text-muted transition-colors hover:text-foreground"
         aria-expanded={open}
+        aria-controls={contentId}
       >
         <Brain size={14} />
         <span>{label ?? t("transcriptThinking")}</span>
         <ChevronRight
           size={13}
-          className={`ml-auto transition-transform ${open ? "rotate-90" : ""}`}
+          className={`ml-auto transition-transform duration-[160ms] motion-reduce:transition-none ${
+            open ? "rotate-90" : ""
+          }`}
         />
       </button>
-      {open && (
-        <div className="ml-[22px] border-l border-border pl-3">
-          <LazyMarkdownMessage content={text} className="thinking-markdown" />
+      <CollapsibleRegion open={open} id={contentId}>
+        <div className="relative ml-[22px] border-l border-border">
+          <div
+            ref={scrollRef}
+            data-thinking-scroll
+            data-following={following ? "true" : "false"}
+            role={overflowing ? "region" : undefined}
+            aria-label={overflowing ? (label ?? t("transcriptThinking")) : undefined}
+            tabIndex={overflowing ? 0 : undefined}
+            className="thinking-scroll-region overflow-y-auto pl-3 pr-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus"
+            onWheel={(event) => {
+              const element = event.currentTarget;
+              if (
+                event.deltaY >= 0 ||
+                element.scrollHeight <= element.clientHeight ||
+                element.scrollTop <= 0
+              ) {
+                return;
+              }
+              returningToLatestRef.current = false;
+              userToggled.current = true;
+              updateFollowing(false);
+            }}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+              const nextFollowing = distance < THINKING_FOLLOW_THRESHOLD_PX;
+              if (returningToLatestRef.current) {
+                if (nextFollowing) returningToLatestRef.current = false;
+                return;
+              }
+              if (!nextFollowing) userToggled.current = true;
+              updateFollowing(nextFollowing);
+            }}
+          >
+            <div ref={contentRef} data-thinking-content>
+              <LazyMarkdownMessage content={text} className="thinking-markdown" />
+            </div>
+          </div>
+          {overflowing && !following && (
+            <button
+              type="button"
+              onClick={scrollToLatest}
+              className="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
+              title={t("transcriptThinkingJumpLatest")}
+              aria-label={t("transcriptThinkingJumpLatest")}
+            >
+              <ArrowDown size={14} />
+            </button>
+          )}
         </div>
-      )}
+      </CollapsibleRegion>
     </div>
   );
 }

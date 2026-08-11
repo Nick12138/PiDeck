@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Braces, ChevronRight, FileCode2, Search, Terminal, Wrench } from "lucide-react";
 import type { ToolTraceStatus } from "./transcript-model";
 import { useT, type Translate } from "../../lib/i18n/use-t";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 
 function limitToolText(value: string, truncatedLabel = "[tool data truncated]"): string {
   const limit = 100_000;
@@ -107,6 +108,7 @@ export function useToolDisclosure(
 
 export function ToolCard(props: ToolCardProps) {
   const t = useT();
+  const contentId = useId();
   const [open, setOpen] = useToolDisclosure(props);
   const Icon = toolIcon(props.name);
   const canExpand =
@@ -135,6 +137,7 @@ export function ToolCard(props: ToolCardProps) {
           if (canExpand) setOpen(!open);
         }}
         aria-expanded={canExpand ? open : undefined}
+        aria-controls={canExpand ? contentId : undefined}
       >
         <Icon size={14} className="shrink-0 text-muted" />
         <span
@@ -161,43 +164,47 @@ export function ToolCard(props: ToolCardProps) {
         {canExpand && (
           <ChevronRight
             size={13}
-            className={`shrink-0 text-muted transition-transform ${open ? "rotate-90" : ""}`}
+            className={`shrink-0 text-muted transition-transform duration-[160ms] motion-reduce:transition-none ${
+              open ? "rotate-90" : ""
+            }`}
           />
         )}
       </button>
-      {open && canExpand && (
-        <div className="mb-2 ml-[22px] mt-1 flex flex-col gap-2">
-          {props.args !== undefined && (
-            <ToolSection label={t("toolArguments")} value={props.args} />
-          )}
-          {props.result !== undefined && (
-            <ToolSection
-              label={props.status === "error" ? t("toolError") : t("toolResult")}
-              value={props.result}
-              error={props.status === "error"}
-              terminal={props.name.toLocaleLowerCase().includes("bash")}
-            />
-          )}
-          {props.resultContent !== undefined && (
-            <section>
-              <div className="mb-1 text-[10px] font-medium text-muted">
-                {props.status === "error" ? t("toolError") : t("toolResult")}
-              </div>
-              <div
-                className={
-                  props.status === "error"
-                    ? "max-h-56 min-w-0 overflow-auto rounded-md bg-danger/10 px-3 py-2 text-danger"
-                    : "max-h-56 min-w-0 overflow-auto rounded-md bg-surface-overlay/35 px-3 py-2 text-foreground/80"
-                }
-              >
-                {props.resultContent}
-              </div>
-            </section>
-          )}
-          {props.details !== undefined && (
-            <ToolSection label={t("toolDetails")} value={props.details} />
-          )}
-        </div>
+      {canExpand && (
+        <CollapsibleRegion open={open} id={contentId}>
+          <div className="mb-2 ml-[22px] mt-1 flex flex-col gap-2">
+            {props.args !== undefined && (
+              <ToolSection label={t("toolArguments")} value={props.args} />
+            )}
+            {props.result !== undefined && (
+              <ToolSection
+                label={props.status === "error" ? t("toolError") : t("toolResult")}
+                value={props.result}
+                error={props.status === "error"}
+                terminal={props.name.toLocaleLowerCase().includes("bash")}
+              />
+            )}
+            {props.resultContent !== undefined && (
+              <section>
+                <div className="mb-1 text-[10px] font-medium text-muted">
+                  {props.status === "error" ? t("toolError") : t("toolResult")}
+                </div>
+                <div
+                  className={
+                    props.status === "error"
+                      ? "max-h-56 min-w-0 overflow-auto rounded-md bg-danger/10 px-3 py-2 text-danger"
+                      : "max-h-56 min-w-0 overflow-auto rounded-md bg-surface-overlay/35 px-3 py-2 text-foreground/80"
+                  }
+                >
+                  {props.resultContent}
+                </div>
+              </section>
+            )}
+            {props.details !== undefined && (
+              <ToolSection label={t("toolDetails")} value={props.details} />
+            )}
+          </div>
+        </CollapsibleRegion>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { ChevronRight, PanelRightOpen, Search } from "lucide-react";
 import { openChatLink } from "./chat-link";
 import { isSafeExternalUrl } from "./markdown-utils";
@@ -11,6 +11,7 @@ import {
   type ToolCardProps,
 } from "./ToolCard";
 import { useT } from "../../lib/i18n/use-t";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 
 export type SearchResultItem = {
   title: string;
@@ -157,6 +158,7 @@ export function isWebSearchTool(name: string): boolean {
 
 export function SearchToolCard(props: ToolCardProps) {
   const t = useT();
+  const contentId = useId();
   const results = useMemo(() => extractSearchResults(props.result), [props.result]);
   const [open, setOpen] = useToolDisclosure(props);
   const query = searchQuery(props.args);
@@ -184,6 +186,7 @@ export function SearchToolCard(props: ToolCardProps) {
           if (canExpand) setOpen(!open);
         }}
         aria-expanded={canExpand ? open : undefined}
+        aria-controls={canExpand ? contentId : undefined}
       >
         <Search size={14} className="shrink-0 text-muted" />
         <span className="shrink-0 text-xs font-medium text-foreground/80">{t("toolSearch")}</span>
@@ -199,44 +202,48 @@ export function SearchToolCard(props: ToolCardProps) {
         {canExpand && (
           <ChevronRight
             size={13}
-            className={`shrink-0 text-muted transition-transform ${open ? "rotate-90" : ""}`}
+            className={`shrink-0 text-muted transition-transform duration-[160ms] motion-reduce:transition-none ${
+              open ? "rotate-90" : ""
+            }`}
           />
         )}
       </button>
-      {open && canExpand && (
-        <div className="mb-2 ml-[22px] mt-1 space-y-1 border-l border-border pl-3">
-          {results.map((result) => (
-            <a
-              key={result.url}
-              href={result.url}
-              className="group/result block min-w-0 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-overlay/55"
-              title={t("markdownOpenInDockBrowser", { url: result.url })}
-              onClick={(event) => {
-                event.preventDefault();
-                openChatLink(result.url, event);
-              }}
-              onAuxClick={(event) => {
-                if (event.button !== 1) return;
-                event.preventDefault();
-                openChatLink(result.url, event);
-              }}
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/85 underline decoration-border underline-offset-2 group-hover/result:decoration-foreground/50">
-                  {result.title}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted">{result.site}</span>
-                <PanelRightOpen size={11} className="shrink-0 text-muted" aria-hidden="true" />
-              </div>
-              {result.snippet && (
-                <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted">
-                  {result.snippet}
-                </p>
-              )}
-            </a>
-          ))}
-          <ToolDetailsDisclosure details={props.details} />
-        </div>
+      {canExpand && (
+        <CollapsibleRegion open={open} id={contentId}>
+          <div className="mb-2 ml-[22px] mt-1 space-y-1 border-l border-border pl-3">
+            {results.map((result) => (
+              <a
+                key={result.url}
+                href={result.url}
+                className="group/result block min-w-0 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-overlay/55"
+                title={t("markdownOpenInDockBrowser", { url: result.url })}
+                onClick={(event) => {
+                  event.preventDefault();
+                  openChatLink(result.url, event);
+                }}
+                onAuxClick={(event) => {
+                  if (event.button !== 1) return;
+                  event.preventDefault();
+                  openChatLink(result.url, event);
+                }}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/85 underline decoration-border underline-offset-2 group-hover/result:decoration-foreground/50">
+                    {result.title}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted">{result.site}</span>
+                  <PanelRightOpen size={11} className="shrink-0 text-muted" aria-hidden="true" />
+                </div>
+                {result.snippet && (
+                  <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted">
+                    {result.snippet}
+                  </p>
+                )}
+              </a>
+            ))}
+            <ToolDetailsDisclosure details={props.details} />
+          </div>
+        </CollapsibleRegion>
       )}
     </div>
   );

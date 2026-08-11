@@ -637,6 +637,7 @@ export const en = {
   transcriptShowEarlier: "Show earlier messages ({count} hidden)",
   transcriptPiWorking: "Pi is working...",
   transcriptJumpLatest: "Jump to latest message",
+  transcriptThinkingJumpLatest: "Jump to latest thought",
   transcriptAttachmentAlt: "Attachment",
   transcriptToolResultAlt: "Tool result",
   transcriptForkHere: "Fork from here",

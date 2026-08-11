@@ -611,6 +611,7 @@ export const zh: Record<MessageKey, string> = {
   transcriptShowEarlier: "显示更早的消息（已隐藏 {count} 条）",
   transcriptPiWorking: "Pi 正在处理...",
   transcriptJumpLatest: "跳到最新消息",
+  transcriptThinkingJumpLatest: "回到最新思考",
   transcriptAttachmentAlt: "附件",
   transcriptToolResultAlt: "工具结果",
   transcriptForkHere: "从此处分叉",
