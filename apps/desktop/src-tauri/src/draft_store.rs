@@ -490,6 +490,10 @@ mod tests {
         dir
     }
 
+    fn workspace_cwd(dir: &Path, name: &str) -> String {
+        dir.join(name).to_string_lossy().into_owned()
+    }
+
     fn session_target(cwd: &str, session_id: &str) -> DraftTarget {
         DraftTarget {
             kind: DraftKind::Session,
@@ -516,12 +520,14 @@ mod tests {
     #[test]
     fn writes_round_trips_and_filters_by_workspace() {
         let dir = test_dir("roundtrip");
+        let repo_a = workspace_cwd(&dir, "repo-a");
+        let repo_b = workspace_cwd(&dir, "repo-b");
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
         let result = store
             .apply(vec![
-                upsert(new_target("/repo/a"), "new A"),
-                upsert(session_target("/repo/a", "s1"), "session A"),
-                upsert(session_target("/repo/b", "s2"), "session B"),
+                upsert(new_target(&repo_a), "new A"),
+                upsert(session_target(&repo_a, "s1"), "session A"),
+                upsert(session_target(&repo_b, "s2"), "session B"),
             ])
             .unwrap();
         assert_eq!(result.applied, 3);
@@ -536,7 +542,7 @@ mod tests {
             .ends_with(".tmp")));
 
         let mut reloaded = DraftStore::load_from_dir(&dir).unwrap();
-        let snapshot = reloaded.workspace_snapshot("/repo/a").unwrap();
+        let snapshot = reloaded.workspace_snapshot(&repo_a).unwrap();
         assert_eq!(snapshot.drafts.len(), 2);
         assert_eq!(snapshot.drafts[0].kind, DraftKind::NewConversation);
         assert_eq!(snapshot.drafts[1].session_id.as_deref(), Some("s1"));
@@ -546,8 +552,9 @@ mod tests {
     #[test]
     fn coalesces_identical_upserts_and_deletes_empty_or_explicit_targets() {
         let dir = test_dir("mutations");
+        let cwd = workspace_cwd(&dir, "repo");
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
-        let target = session_target("/repo", "s1");
+        let target = session_target(&cwd, "s1");
         assert_eq!(
             store
                 .apply(vec![upsert(target.clone(), "draft")])
@@ -569,7 +576,7 @@ mod tests {
                 .applied,
             1
         );
-        assert!(store.workspace_snapshot("/repo").unwrap().drafts.is_empty());
+        assert!(store.workspace_snapshot(&cwd).unwrap().drafts.is_empty());
 
         store.apply(vec![upsert(target.clone(), "again")]).unwrap();
         assert_eq!(
@@ -585,16 +592,17 @@ mod tests {
     #[test]
     fn quarantines_corrupt_data_and_surfaces_one_warning() {
         let dir = test_dir("corrupt");
+        let cwd = workspace_cwd(&dir, "repo");
         fs::write(dir.join(DRAFT_FILE_NAME), b"{not-json").unwrap();
 
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
-        let first = store.workspace_snapshot("/repo").unwrap();
+        let first = store.workspace_snapshot(&cwd).unwrap();
         assert!(first.warning.is_some());
         let backup = first.recovered_from.expect("corrupt backup path");
         assert!(Path::new(&backup).exists());
-        assert!(store.workspace_snapshot("/repo").unwrap().warning.is_none());
+        assert!(store.workspace_snapshot(&cwd).unwrap().warning.is_none());
         store
-            .apply(vec![upsert(new_target("/repo"), "recovered")])
+            .apply(vec![upsert(new_target(&cwd), "recovered")])
             .unwrap();
         assert!(dir.join(DRAFT_FILE_NAME).exists());
         fs::remove_dir_all(dir).unwrap();
@@ -603,14 +611,15 @@ mod tests {
     #[test]
     fn preserves_unknown_newer_schema_read_only() {
         let dir = test_dir("newer");
+        let cwd = workspace_cwd(&dir, "repo");
         let path = dir.join(DRAFT_FILE_NAME);
         let original = r#"{"schemaVersion":2,"drafts":[{"future":true}]}"#;
         fs::write(&path, original).unwrap();
 
         let mut store = DraftStore::load_from_dir(&dir).unwrap();
-        assert!(store.workspace_snapshot("/repo").unwrap().warning.is_some());
+        assert!(store.workspace_snapshot(&cwd).unwrap().warning.is_some());
         assert!(store
-            .apply(vec![upsert(new_target("/repo"), "no overwrite")])
+            .apply(vec![upsert(new_target(&cwd), "no overwrite")])
             .is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
         fs::remove_dir_all(dir).unwrap();
