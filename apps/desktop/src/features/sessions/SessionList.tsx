@@ -17,6 +17,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tCurrent, useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -1099,83 +1100,94 @@ export function SessionList({
                         >
                           <MoreHorizontal size={14} />
                         </button>
-                        {menuOpen && menuPosition && (
-                          <div
-                            className="theme-floating-surface fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
-                            style={menuPosition}
-                            data-session-menu
-                          >
-                            <button
-                              type="button"
-                              title={canRename ? t("sessionsRenameTitle") : t("sessionsRenameWait")}
-                              disabled={!canRename}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                              onClick={() => beginRename(item)}
+                        {menuOpen &&
+                          menuPosition &&
+                          createPortal(
+                            <div
+                              className="theme-floating-surface fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                              style={menuPosition}
+                              data-session-menu
                             >
-                              <Pencil size={13} />
-                              {t("sessionsRename")}
-                            </button>
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay"
-                              onClick={() => togglePinnedSession(item)}
-                            >
-                              {pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                              {pinned ? t("sessionsUnpin") : t("sessionsPin")}
-                            </button>
-                            <button
-                              type="button"
-                              title={
-                                canReload
-                                  ? t("sessionsReloadTitle")
-                                  : active
-                                    ? t("sessionsReloadWait")
-                                    : t("sessionsReloadOnlyActive")
-                              }
-                              disabled={!canReload}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                              onClick={() => void reloadSessionFromDisk()}
-                            >
-                              <RefreshCw size={13} />
-                              {t("sessionsReload")}
-                            </button>
-                            <div className="my-1 border-t border-border" />
-                            <button
-                              type="button"
-                              title={
-                                item.archived
-                                  ? t("sessionsRestoreTitle")
-                                  : canArchive
-                                    ? t("sessionsArchiveTitle")
-                                    : t("sessionsArchiveWait")
-                              }
-                              disabled={!item.archived && !canArchive}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                              onClick={() =>
-                                void runSessionFileAction(
-                                  item.archived ? "session.restore" : "session.archive",
-                                  item,
-                                )
-                              }
-                            >
-                              {item.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-                              {item.archived ? t("sessionsRestore") : t("sessionsArchive")}
-                            </button>
-                            <button
-                              type="button"
-                              title={canDelete ? t("sessionsDeleteTitle") : t("sessionsDeleteWait")}
-                              disabled={!canDelete}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-danger hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                              onClick={() => {
-                                setMenuSessionId(null);
-                                setConfirmAction({ kind: "delete", item });
-                              }}
-                            >
-                              <Trash2 size={13} />
-                              {t("commonDelete")}
-                            </button>
-                          </div>
-                        )}
+                              <button
+                                type="button"
+                                title={
+                                  canRename ? t("sessionsRenameTitle") : t("sessionsRenameWait")
+                                }
+                                disabled={!canRename}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => beginRename(item)}
+                              >
+                                <Pencil size={13} />
+                                {t("sessionsRename")}
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay"
+                                onClick={() => togglePinnedSession(item)}
+                              >
+                                {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                                {pinned ? t("sessionsUnpin") : t("sessionsPin")}
+                              </button>
+                              <button
+                                type="button"
+                                title={
+                                  canReload
+                                    ? t("sessionsReloadTitle")
+                                    : active
+                                      ? t("sessionsReloadWait")
+                                      : t("sessionsReloadOnlyActive")
+                                }
+                                disabled={!canReload}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => void reloadSessionFromDisk()}
+                              >
+                                <RefreshCw size={13} />
+                                {t("sessionsReload")}
+                              </button>
+                              <div className="my-1 border-t border-border" />
+                              <button
+                                type="button"
+                                title={
+                                  item.archived
+                                    ? t("sessionsRestoreTitle")
+                                    : canArchive
+                                      ? t("sessionsArchiveTitle")
+                                      : t("sessionsArchiveWait")
+                                }
+                                disabled={!item.archived && !canArchive}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() =>
+                                  void runSessionFileAction(
+                                    item.archived ? "session.restore" : "session.archive",
+                                    item,
+                                  )
+                                }
+                              >
+                                {item.archived ? (
+                                  <ArchiveRestore size={13} />
+                                ) : (
+                                  <Archive size={13} />
+                                )}
+                                {item.archived ? t("sessionsRestore") : t("sessionsArchive")}
+                              </button>
+                              <button
+                                type="button"
+                                title={
+                                  canDelete ? t("sessionsDeleteTitle") : t("sessionsDeleteWait")
+                                }
+                                disabled={!canDelete}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-danger hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => {
+                                  setMenuSessionId(null);
+                                  setConfirmAction({ kind: "delete", item });
+                                }}
+                              >
+                                <Trash2 size={13} />
+                                {t("commonDelete")}
+                              </button>
+                            </div>,
+                            document.body,
+                          )}
                       </div>
                     </>
                   )}
