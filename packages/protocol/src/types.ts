@@ -771,6 +771,38 @@ export type SessionUsageReport = {
   sessions: SessionUsageReportItem[];
 };
 
+export type SessionSearchMatch = {
+  role: "user" | "assistant";
+  /** Short excerpt around the first matched term, whitespace-collapsed. */
+  snippet: string;
+};
+
+export type SessionSearchResultItem = {
+  sessionId: string;
+  sessionPath: string;
+  name?: string;
+  /** Workspace path recorded in the session header. */
+  cwd: string;
+  archived: boolean;
+  updatedAt: number;
+  /** Total matching message blocks in the session (may exceed matches.length). */
+  matchCount: number;
+  /** Capped list of match excerpts. */
+  matches: SessionSearchMatch[];
+  /** True when the session name itself matched the query. */
+  nameMatched: boolean;
+};
+
+export type SessionSearchReport = {
+  generatedAt: number;
+  query: string;
+  /** Total session files scanned across all workspaces. */
+  scannedCount: number;
+  /** True when more sessions matched than the returned item cap. */
+  truncated: boolean;
+  items: SessionSearchResultItem[];
+};
+
 export type CommandSummary = {
   /** Text after the leading slash, e.g. "plan" or "skill:review" */
   invocation: string;

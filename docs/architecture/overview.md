@@ -34,7 +34,7 @@ When a workspace is selected, Host immediately creates a **cwd-bound** graph:
 - `SessionManager`
 - `AgentSession` (via `createAgentSession`)
 
-Switching workspace **retains** the outgoing idle graph in an LRU pool (max 3)
+Switching workspace **retains** the outgoing idle graph in an LRU pool (max 5)
 and reactivates it in milliseconds on return (stable workspace id, advancing
 revisions); graphs that cannot be safely parked and LRU
 eviction dispose and rebuild the graph under `serviceGraphLock`.

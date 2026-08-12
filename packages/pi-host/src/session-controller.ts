@@ -7,6 +7,7 @@ import {
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
+import { searchSessions } from "./session-search.js";
 
 type SdkSessionTreeNode = {
   entry: unknown;
@@ -24,9 +25,7 @@ function toWireTreeNode(node: SdkSessionTreeNode): JsonValue {
     entry: toJsonValue(node.entry),
     children: node.children.map(toWireTreeNode),
     ...(node.label !== undefined ? { label: node.label } : {}),
-    ...(node.labelTimestamp !== undefined
-      ? { labelTimestamp: node.labelTimestamp }
-      : {}),
+    ...(node.labelTimestamp !== undefined ? { labelTimestamp: node.labelTimestamp } : {}),
   };
 }
 
@@ -132,11 +131,7 @@ export function createSessionHandlers(
       const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
       if (stale) return { error: stale };
       const params = ctx.params as { sessionId: string; sessionPath: string };
-      const result = await factory.deleteSession(
-        ctx.id,
-        params.sessionId,
-        params.sessionPath,
-      );
+      const result = await factory.deleteSession(ctx.id, params.sessionId, params.sessionPath);
       if ("error" in result) return { error: result.error };
       return { result };
     },
@@ -278,9 +273,7 @@ export function createSessionHandlers(
           const g = factory.getGraph();
           if (!g?.sessionManager) throw new Error("No active session");
           return {
-            tree: (g.sessionManager.getTree() as SdkSessionTreeNode[]).map(
-              toWireTreeNode,
-            ),
+            tree: (g.sessionManager.getTree() as SdkSessionTreeNode[]).map(toWireTreeNode),
             leafId: g.sessionManager.getLeafId(),
           };
         },
@@ -349,12 +342,10 @@ export function createSessionHandlers(
           const g = factory.getGraph();
           if (!g?.agentSession) throw new Error("No active session");
           return {
-            items: g.agentSession
-              .getUserMessagesForForking()
-              .map(({ entryId, text }) => ({
-                entryId,
-                text: stripAttachmentReferenceBlocks(text),
-              })),
+            items: g.agentSession.getUserMessagesForForking().map(({ entryId, text }) => ({
+              entryId,
+              text: stripAttachmentReferenceBlocks(text),
+            })),
           };
         },
       });
@@ -373,10 +364,7 @@ export function createSessionHandlers(
       if (!g?.agentSession || !g.sessionManager || !server) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
-      if (
-        !g.agentSession.isIdle ||
-        factory.getSessionOperationLock(g.agentSession).isHeld()
-      ) {
+      if (!g.agentSession.isIdle || factory.getSessionOperationLock(g.agentSession).isHeld()) {
         return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
       }
       const params = ctx.params as { entryId: string; position?: "before" | "at" };
@@ -396,9 +384,7 @@ export function createSessionHandlers(
       return {
         result: {
           session: opened,
-          ...(prepared.selectedText !== undefined
-            ? { selectedText: prepared.selectedText }
-            : {}),
+          ...(prepared.selectedText !== undefined ? { selectedText: prepared.selectedText } : {}),
         },
       };
     },
@@ -414,10 +400,7 @@ export function createSessionHandlers(
       if (!g?.agentSession || !server) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
-      if (
-        !g.agentSession.isIdle ||
-        factory.getSessionOperationLock(g.agentSession).isHeld()
-      ) {
+      if (!g.agentSession.isIdle || factory.getSessionOperationLock(g.agentSession).isHeld()) {
         return { error: createHostError("AGENT_BUSY", "Agent busy", { retryable: true }) };
       }
       const params = ctx.params as { format: "html" | "jsonl"; path?: string };
@@ -460,6 +443,34 @@ export function createSessionHandlers(
       });
       if (!out.ok) return { error: out.error, identity: out.identity };
       return { result: out.result, identity: out.identity };
+    },
+
+    "session.searchAll": async (ctx) => {
+      // Host-scoped read of session files on disk: no workspace graph or lock
+      // is involved, so search works across every workspace at any time.
+      const params = ctx.params as {
+        query: string;
+        limit?: number;
+        includeArchived?: boolean;
+      };
+      try {
+        const report = await searchSessions({
+          agentDir: factory.deps.agentDir,
+          query: params.query,
+          ...(params.limit !== undefined ? { limit: params.limit } : {}),
+          ...(params.includeArchived !== undefined
+            ? { includeArchived: params.includeArchived }
+            : {}),
+        });
+        return { result: report };
+      } catch (err) {
+        return {
+          error: createHostError(
+            "INTERNAL_ERROR",
+            err instanceof Error ? err.message : "Session search failed",
+          ),
+        };
+      }
     },
 
     "session.getCommands": async (ctx) => {

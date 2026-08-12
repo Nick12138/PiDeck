@@ -14,7 +14,6 @@ import {
   PinOff,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -45,7 +44,7 @@ import {
 import { sessionCatalogItems, type SessionCatalogEntry } from "../../lib/stores/session-catalog";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
-import { subscribeSessionSearchFocus } from "../../lib/commands/events";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { requestExport } from "../../lib/export-actions";
@@ -96,10 +95,7 @@ export function SessionList({
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
-  const [query, setQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<SessionFilter>("active");
-  const [controlsOpen, setControlsOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
@@ -258,16 +254,6 @@ export function SessionList({
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
   }
-
-  useEffect(
-    () =>
-      subscribeSessionSearchFocus(() => {
-        if (collapsed) onToggleCollapsed?.();
-        setControlsOpen(true);
-        requestAnimationFrame(() => requestAnimationFrame(() => searchInputRef.current?.focus()));
-      }),
-    [collapsed, onToggleCollapsed],
-  );
 
   /** Create and adopt a fresh session; false when it failed or the request was superseded. */
   async function requestFreshSession(request: number): Promise<boolean> {
@@ -733,8 +719,9 @@ export function SessionList({
   }
 
   const allItems = prioritizePinnedSessions(sessionCatalogItems(sessionCatalog), pinnedSessionIds);
-  const visibleItems = filterSessionItems(allItems, query, filter, t("sessionsUntitled"));
+  const visibleItems = filterSessionItems(allItems, filter);
   const archivedCount = allItems.filter((item) => item.archived).length;
+  const showArchivedToggle = archivedCount > 0 || filter === "archived";
   const extensionUiWaitingBySession = deriveExtensionUiWaitingBySession(
     extensionUiRequest,
     extensionUiQueue,
@@ -749,6 +736,7 @@ export function SessionList({
             type="button"
             onClick={onToggleCollapsed}
             aria-expanded={!collapsed}
+            aria-controls="session-list-region"
             title={collapsed ? t("sessionsExpand") : t("sessionsCollapse")}
             className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
           >
@@ -764,7 +752,7 @@ export function SessionList({
           <span className="text-[11px] font-medium text-muted">{t("sessionsRecent")}</span>
         )}
         <div className="flex items-center gap-0.5">
-          {archivedCount > 0 && (
+          {filter === "archived" && archivedCount > 0 && (
             <button
               type="button"
               title={t("sessionsClearArchivedTitle", { count: archivedCount })}
@@ -776,15 +764,30 @@ export function SessionList({
               <Trash2 size={13} />
             </button>
           )}
-          <button
-            type="button"
-            title={t("sessionsSearchFilterTitle")}
-            aria-label={t("sessionsSearchFilterTitle")}
-            className="rounded p-1 text-muted hover:bg-surface-overlay hover:text-foreground"
-            onClick={() => setControlsOpen((open) => !open)}
-          >
-            <Search size={14} />
-          </button>
+          {showArchivedToggle && (
+            <button
+              type="button"
+              aria-pressed={filter === "archived"}
+              title={
+                filter === "archived"
+                  ? t("sessionsShowActiveTitle")
+                  : t("sessionsShowArchivedTitle", { count: archivedCount })
+              }
+              aria-label={
+                filter === "archived"
+                  ? t("sessionsShowActiveTitle")
+                  : t("sessionsShowArchivedTitle", { count: archivedCount })
+              }
+              className={`rounded p-1 transition-colors ${
+                filter === "archived"
+                  ? "bg-selection text-selection-foreground"
+                  : "text-muted hover:bg-surface-overlay hover:text-foreground"
+              }`}
+              onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
+            >
+              <Archive size={13} />
+            </button>
+          )}
           {showCreateAction && (
             <button
               type="button"
@@ -798,66 +801,10 @@ export function SessionList({
           )}
         </div>
       </div>
-      {collapsed ? null : (
+      <CollapsibleRegion open={!collapsed} id="session-list-region">
         <>
           {!workspace?.servicesReady && (
             <p className="px-1 text-xs text-muted">{t("sessionsSelectWorkspaceFirst")}</p>
-          )}
-          {workspace?.servicesReady && (controlsOpen || Boolean(query) || filter !== "active") && (
-            <div className="flex gap-1 px-1">
-              <label className="relative min-w-0 flex-1">
-                <Search
-                  size={13}
-                  className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
-                />
-                <input
-                  ref={searchInputRef}
-                  type="search"
-                  aria-label={t("sessionsSearchAria")}
-                  placeholder={t("sessionsSearchPlaceholder")}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="h-7 w-full rounded-md border border-border bg-surface pl-7 pr-2 text-xs outline-none focus:border-focus"
-                />
-              </label>
-              <div
-                role="group"
-                aria-label={t("sessionsFilterAria")}
-                data-ui="segmented"
-                className="flex h-7 shrink-0 overflow-hidden rounded-md border border-border text-xs"
-              >
-                <button
-                  type="button"
-                  onClick={() => setFilter("active")}
-                  aria-pressed={filter === "active"}
-                  data-ui="segmented-item"
-                  data-state={filter === "active" ? "active" : "inactive"}
-                  className={`px-2 transition-colors ${
-                    filter === "active"
-                      ? "bg-selection text-selection-foreground"
-                      : "bg-surface text-muted hover:text-foreground"
-                  }`}
-                >
-                  {t("sessionsFilterActive")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilter("archived")}
-                  aria-pressed={filter === "archived"}
-                  data-ui="segmented-item"
-                  data-state={filter === "archived" ? "active" : "inactive"}
-                  className={`border-l border-border px-2 transition-colors ${
-                    filter === "archived"
-                      ? "bg-selection text-selection-foreground"
-                      : "bg-surface text-muted hover:text-foreground"
-                  }`}
-                >
-                  {archivedCount > 0
-                    ? t("sessionsFilterArchivedCount", { count: archivedCount })
-                    : t("sessionsFilterArchived")}
-                </button>
-              </div>
-            </div>
           )}
           <ul className="flex flex-col gap-0.5">
             {visibleItems.map((item) => {
@@ -1288,7 +1235,7 @@ export function SessionList({
             </div>
           )}
         </>
-      )}
+      </CollapsibleRegion>
     </div>
   );
 }

@@ -864,6 +864,58 @@ function isSessionUsageReport(value: unknown): boolean {
   return value.totals.sessionCount === value.sessions.length;
 }
 
+function isSessionSearchMatch(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["role", "snippet"]) &&
+    (value.role === "user" || value.role === "assistant") &&
+    isString(value.snippet)
+  );
+}
+
+function isSessionSearchResultItem(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [
+        "sessionId",
+        "sessionPath",
+        "cwd",
+        "archived",
+        "updatedAt",
+        "matchCount",
+        "matches",
+        "nameMatched",
+      ],
+      ["name"],
+    ) &&
+    isUuid(value.sessionId) &&
+    isString(value.sessionPath) &&
+    isOptionalString(value.name) &&
+    isString(value.cwd) &&
+    isBoolean(value.archived) &&
+    isNonNegativeNumber(value.updatedAt) &&
+    isSafeRevision(value.matchCount) &&
+    Array.isArray(value.matches) &&
+    value.matches.every(isSessionSearchMatch) &&
+    isBoolean(value.nameMatched)
+  );
+}
+
+function isSessionSearchReport(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["generatedAt", "query", "scannedCount", "truncated", "items"]) &&
+    isNonNegativeNumber(value.generatedAt) &&
+    isString(value.query) &&
+    isSafeRevision(value.scannedCount) &&
+    isBoolean(value.truncated) &&
+    Array.isArray(value.items) &&
+    value.items.every(isSessionSearchResultItem)
+  );
+}
+
 function isDiagnostic(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -1701,6 +1753,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid session stats";
     case "session.usageReport":
       return isSessionUsageReport(result) ? null : "invalid session usage report";
+    case "session.searchAll":
+      return isSessionSearchReport(result) ? null : "invalid session search report";
     case "session.getForkPoints":
       return isPlainObject(result) &&
         hasExactKeys(result, ["items"]) &&

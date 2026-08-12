@@ -23,6 +23,7 @@ import type {
   SessionSummary,
   SessionStatsSnapshot,
   SessionUsageReport,
+  SessionSearchReport,
   ToolSnapshot,
   ModelSummary,
   ModelConfigHealth,
@@ -110,6 +111,7 @@ export type HostContextMap = {
   "session.fork": ActiveSessionContext;
   "session.export": ActiveSessionContext;
   "session.usageReport": WorkspaceContext;
+  "session.searchAll": HostContext;
   "session.getCommands": ActiveSessionContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
@@ -217,6 +219,7 @@ export type HostRequestParams = {
   "session.fork": { entryId: string; position?: "before" | "at" };
   "session.export": { format: "html" | "jsonl"; path?: string };
   "session.usageReport": null;
+  "session.searchAll": { query: string; limit?: number; includeArchived?: boolean };
   "session.getCommands": null;
   "agent.prompt": {
     text: string;
@@ -350,6 +353,7 @@ export type HostResultMap = {
   "session.fork": { session: SessionSnapshot; selectedText?: string };
   "session.export": { path: string };
   "session.usageReport": SessionUsageReport;
+  "session.searchAll": SessionSearchReport;
   "session.getCommands": { commands: CommandSummary[] };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };

@@ -1,5 +1,6 @@
-import { ChevronDown, Folder, FolderPlus, Plus, X } from "lucide-react";
+import { ChevronDown, Folder, FolderPlus, LoaderCircle, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
@@ -49,6 +50,7 @@ export function WorkspacePicker() {
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
+  const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setSession = useAppStore((s) => s.setSession);
   const pushNotification = useAppStore((s) => s.pushNotification);
@@ -91,6 +93,7 @@ export function WorkspacePicker() {
     const request = ++requestRef.current;
     const generation = captureRequestGeneration(host);
     setPending(true);
+    useAppStore.getState().setWorkspaceSwitchTarget(cwd);
     try {
       const res = await hostClient.request(
         "workspace.setCurrent",
@@ -142,7 +145,10 @@ export function WorkspacePicker() {
         packageRevision: res.packageRevision,
       });
     } finally {
-      if (request === requestRef.current) setPending(false);
+      if (request === requestRef.current) {
+        setPending(false);
+        useAppStore.getState().setWorkspaceSwitchTarget(null);
+      }
     }
   }
 
@@ -176,6 +182,7 @@ export function WorkspacePicker() {
           type="button"
           onClick={toggleCollapsed}
           aria-expanded={!collapsed}
+          aria-controls="workspace-list-region"
           title={collapsed ? t("workspacesExpand") : t("workspacesCollapse")}
           className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
         >
@@ -198,65 +205,71 @@ export function WorkspacePicker() {
           <Plus size={15} />
         </button>
       </div>
-      {collapsed ? null : listed.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => void pickAndAdd()}
-          disabled={!host || pending}
-          className="interface-density-nav-row flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-        >
-          <FolderPlus size={16} />
-          <span>{pending ? t("workspacesOpening") : t("workspacesAdd")}</span>
-        </button>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
-          {listed.map((path) => {
-            const active = Boolean(currentCwd && samePath(currentCwd, path));
-            return (
-              <li
-                key={path}
-                className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
-                  active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => void switchTo(path)}
-                  disabled={!host || pending || active}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
-                  title={`${workspaceDisplayName(path)}\n${path}`}
-                  aria-current={active ? "true" : undefined}
+      <CollapsibleRegion open={!collapsed} id="workspace-list-region">
+        {listed.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => void pickAndAdd()}
+            disabled={!host || pending}
+            className="interface-density-nav-row flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+          >
+            <FolderPlus size={16} />
+            <span>{pending ? t("workspacesOpening") : t("workspacesAdd")}</span>
+          </button>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {listed.map((path) => {
+              const active = Boolean(currentCwd && samePath(currentCwd, path));
+              return (
+                <li
+                  key={path}
+                  className={`interface-density-nav-row group flex h-9 items-center rounded-md text-[13px] ${
+                    active ? "bg-surface-overlay font-medium" : "hover:bg-surface-overlay/70"
+                  }`}
                 >
-                  <Folder
-                    size={16}
-                    className={`shrink-0 ${active ? "text-accent" : "text-muted"}`}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>
-                  {active && (
-                    <span
-                      className={`size-1.5 shrink-0 rounded-full ${
-                        workspace?.servicesReady ? "bg-success" : "bg-warning"
-                      }`}
-                    />
-                  )}
-                </button>
-                {!active && (
                   <button
                     type="button"
-                    onClick={() => removeFromList(path)}
-                    disabled={pending}
-                    className="mr-1 hidden rounded p-1 text-muted hover:bg-surface hover:text-foreground group-hover:block"
-                    title={t("workspacesRemoveTitle")}
-                    aria-label={t("workspacesRemoveAria", { name: workspaceDisplayName(path) })}
+                    onClick={() => void switchTo(path)}
+                    disabled={!host || pending || active}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
+                    title={`${workspaceDisplayName(path)}\n${path}`}
+                    aria-current={active ? "true" : undefined}
                   >
-                    <X size={13} />
+                    {pending && switchTarget !== null && samePath(switchTarget, path) ? (
+                      <LoaderCircle size={16} className="shrink-0 animate-spin text-muted" />
+                    ) : (
+                      <Folder
+                        size={16}
+                        className={`shrink-0 ${active ? "text-accent" : "text-muted"}`}
+                      />
+                    )}
+                    <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>
+                    {active && (
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ${
+                          workspace?.servicesReady ? "bg-success" : "bg-warning"
+                        }`}
+                      />
+                    )}
                   </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  {!active && (
+                    <button
+                      type="button"
+                      onClick={() => removeFromList(path)}
+                      disabled={pending}
+                      className="mr-1 hidden rounded p-1 text-muted hover:bg-surface hover:text-foreground group-hover:block"
+                      title={t("workspacesRemoveTitle")}
+                      aria-label={t("workspacesRemoveAria", { name: workspaceDisplayName(path) })}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CollapsibleRegion>
     </section>
   );
 }

@@ -46,6 +46,7 @@ export const HOST_METHODS = [
   "session.fork",
   "session.export",
   "session.usageReport",
+  "session.searchAll",
   "session.getCommands",
   "agent.prompt",
   "agent.steer",
@@ -153,6 +154,7 @@ export type HostOnlyMethod =
   | "provider.logout"
   | "provider.builtinModels"
   | "provider.setBuiltinModels"
+  | "session.searchAll"
   | "extensionUi.configure";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
@@ -308,6 +310,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.fork": "activeSession",
   "session.export": "activeSession",
   "session.usageReport": "workspace",
+  "session.searchAll": "host",
   "session.getCommands": "activeSession",
   "agent.prompt": "activeSession",
   "agent.steer": "activeSession",

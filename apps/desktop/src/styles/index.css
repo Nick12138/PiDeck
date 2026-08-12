@@ -1243,6 +1243,28 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* The global-search input sits inside a modal header that already reads as
+   the focused surface; the per-input ring would draw a box within it. */
+.global-search-input:focus-visible {
+  outline: none;
+}
+
+.workspace-switch-skeleton {
+  animation: workspace-switch-skeleton-in 150ms ease-out;
+}
+
+@keyframes workspace-switch-skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-switch-skeleton {
+    animation: none;
+  }
+}
+
 .new-conversation-copy {
   font-family: var(--font-mono);
   letter-spacing: 0;

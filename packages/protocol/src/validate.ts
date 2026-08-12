@@ -332,6 +332,19 @@ export function validateRequestParams<M extends HostMethod>(
             params.limit <= 5000))
         ? ok(params)
         : fail("invalid workspace.searchFiles params", { method });
+    case "session.searchAll":
+      return exactObject(params, ["query"], ["limit", "includeArchived"]) &&
+        isString(params.query) &&
+        params.query.trim().length >= 1 &&
+        params.query.length <= 256 &&
+        (params.limit === undefined ||
+          (typeof params.limit === "number" &&
+            Number.isInteger(params.limit) &&
+            params.limit >= 1 &&
+            params.limit <= 200)) &&
+        (params.includeArchived === undefined || typeof params.includeArchived === "boolean")
+        ? ok(params)
+        : fail("invalid session.searchAll params", { method });
     case "workspace.listDirectory":
       return exactObject(params, ["path"]) && isString(params.path)
         ? ok(params)

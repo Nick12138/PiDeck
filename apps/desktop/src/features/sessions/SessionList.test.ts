@@ -266,21 +266,9 @@ describe("filterSessionItems", () => {
     },
   ];
 
-  it("searches names, fallback labels, cwd, and ids", () => {
-    expect(filterSessionItems(items, "reconnect", "active", "新会话")).toEqual([items[0]]);
-    expect(filterSessionItems(items, "beta", "active", "新会话")).toEqual([items[1]]);
-    expect(filterSessionItems(items, "tests-session", "active", "新会话")).toEqual([items[1]]);
-    expect(filterSessionItems(items, "新会话", "active", "新会话")).toEqual([items[1]]);
-  });
-
-  it("matches the untitled label in the caller's locale", () => {
-    expect(filterSessionItems(items, "new session", "active", "New session")).toEqual([items[1]]);
-    expect(filterSessionItems(items, "新会话", "active", "New session")).toEqual([]);
-  });
-
   it("keeps archived Sessions out of the active view", () => {
-    expect(filterSessionItems(items, "", "active", "新会话")).toEqual(items.slice(0, 2));
-    expect(filterSessionItems(items, "investigation", "archived", "新会话")).toEqual([items[2]]);
+    expect(filterSessionItems(items, "active")).toEqual(items.slice(0, 2));
+    expect(filterSessionItems(items, "archived")).toEqual([items[2]]);
   });
 });
 
