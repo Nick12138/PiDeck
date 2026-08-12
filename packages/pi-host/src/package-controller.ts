@@ -16,6 +16,7 @@ import {
 } from "./package-snapshot.js";
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
+import { getPackageCatalog } from "./package-catalog.js";
 import {
   matchesResourcePattern,
   setPackageResourceFilter,
@@ -258,6 +259,16 @@ export function createPackageHandlers(
       });
       if (!out.ok) return { error: out.error, identity: out.identity };
       return { result: out.result, identity: out.identity };
+    },
+
+    "package.catalog": async (ctx) => {
+      // Host-scoped discovery read: no workspace graph or lock involved.
+      const params = (ctx.params ?? {}) as { refresh?: boolean };
+      const out = await getPackageCatalog({
+        ...(params.refresh !== undefined ? { refresh: params.refresh } : {}),
+      });
+      if ("error" in out) return { error: out.error };
+      return { result: out.catalog };
     },
 
     "package.install": async (ctx) => mutatePackage(factory, ctx, "install"),

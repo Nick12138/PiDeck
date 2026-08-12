@@ -187,6 +187,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
   "package.list": { scope: "all" },
+  "package.catalog": {},
   "package.install": { source: "npm:x", scope: "user" },
   "package.remove": { packageId: "p1" },
   "package.checkUpdates": null,
@@ -372,6 +373,8 @@ function invalidParams(method: HostMethod): unknown {
       return {};
     case "package.list":
       return { scope: "both" };
+    case "package.catalog":
+      return { refresh: "yes" };
     case "package.install":
       return { source: "x", scope: "all" };
     case "package.remove":

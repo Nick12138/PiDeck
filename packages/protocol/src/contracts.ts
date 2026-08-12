@@ -28,6 +28,7 @@ import type {
   ModelSummary,
   ModelConfigHealth,
   PackageSnapshot,
+  PackageCatalog,
   PackageMutationResult,
   PackageUpdateSummary,
   PackageRecord,
@@ -145,6 +146,7 @@ export type HostContextMap = {
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
   "package.list": WorkspaceContext;
+  "package.catalog": HostContext;
   "package.install": SessionPackageContext;
   "package.remove": SessionPackageContext;
   "package.checkUpdates": WorkspaceContext;
@@ -270,6 +272,7 @@ export type HostRequestParams = {
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
   "package.list": { scope: "user" | "project" | "all"; includeResources?: boolean };
+  "package.catalog": { refresh?: boolean };
   "package.install": { source: string; scope: "user" | "project" };
   "package.remove": { packageId: string };
   "package.checkUpdates": { packageId?: string } | null;
@@ -420,6 +423,7 @@ export type HostResultMap = {
   };
   "model.setThinkingLevel": SessionSnapshot;
   "package.list": PackageSnapshot;
+  "package.catalog": PackageCatalog;
   "package.install": PackageMutationResult;
   "package.remove": PackageMutationResult;
   "package.checkUpdates": { supported: boolean; updates: PackageUpdateSummary[] };

@@ -25,6 +25,7 @@ export const HOST_ERROR_CODES = [
   "PACKAGE_PARTIAL_FAILURE",
   "PACKAGE_RESOLVE_FAILED",
   "PACKAGE_MUTATION_BUSY",
+  "CATALOG_UNAVAILABLE",
   "PROJECT_NOT_SELECTED",
   "RESOURCE_NOT_FOUND",
   "RESOURCE_NOT_CONFIGURABLE",
@@ -41,12 +42,7 @@ export const HOST_ERROR_CODES = [
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
 
 export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type HostError = {
   code: HostErrorCode;

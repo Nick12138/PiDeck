@@ -624,6 +624,11 @@ export function validateRequestParams<M extends HostMethod>(
         (params.includeResources === undefined || isBoolean(params.includeResources))
         ? ok(params)
         : fail("invalid package.list params", { method });
+    case "package.catalog":
+      return exactObject(params, [], ["refresh"]) &&
+        (params.refresh === undefined || isBoolean(params.refresh))
+        ? ok(params)
+        : fail("invalid package.catalog params", { method });
     case "package.install":
       return exactObject(params, ["source", "scope"]) &&
         isNonEmptyString(params.source) &&

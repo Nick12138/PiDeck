@@ -1,17 +1,13 @@
 import type {
   HostRequestParams,
+  PackageCatalogItem,
   PackageRecord,
   ResourcePreferenceUpdate,
   ResourceRecord,
   ResourceType,
 } from "@pideck/protocol";
 
-export const PACKAGE_RESOURCE_TYPES: ResourceType[] = [
-  "extension",
-  "skill",
-  "prompt",
-  "theme",
-];
+export const PACKAGE_RESOURCE_TYPES: ResourceType[] = ["extension", "skill", "prompt", "theme"];
 
 export type PackageScopeFilter = "all" | "user" | "project";
 export type ResourceTypeFilter = "all" | ResourceType;
@@ -112,10 +108,7 @@ export function filterInstalledPackages(
 ): PackageRecord[] {
   return packages.filter((pkg) => {
     if (filters.scope !== "all" && pkg.scope !== filters.scope) return false;
-    if (
-      filters.type !== "all" &&
-      !packageContainsType(pkg, resources, filters.type)
-    ) {
+    if (filters.type !== "all" && !packageContainsType(pkg, resources, filters.type)) {
       return false;
     }
     return includesQuery(
@@ -164,7 +157,8 @@ export function filterResources(
       if (filters.type !== "all" && resource.type !== filters.type) return false;
       const runtime = resource.scope === "temporary" || resource.origin === "extension";
       if (filters.origin === "package" && (runtime || resource.origin !== "package")) return false;
-      if (filters.origin === "standalone" && (runtime || resource.origin !== "top-level")) return false;
+      if (filters.origin === "standalone" && (runtime || resource.origin !== "top-level"))
+        return false;
       if (filters.origin === "runtime" && !runtime) return false;
       if (
         filters.packageId &&
@@ -251,9 +245,7 @@ export function buildResourceListItems(
   return [...packageItems, ...individualItems];
 }
 
-export function preferenceResourcesForListItems(
-  items: ResourceListItem[],
-): ResourceRecord[] {
+export function preferenceResourcesForListItems(items: ResourceListItem[]): ResourceRecord[] {
   const resourcesById = new Map<string, ResourceRecord>();
   for (const item of items) {
     const itemResources = item.kind === "package" ? item.resources : [item.resource];
@@ -272,13 +264,8 @@ export function resourcePreference(
   return resource.preferences.user ?? (resource.enabled ? "enabled" : "disabled");
 }
 
-export function canConfigureResource(
-  resource: ResourceRecord,
-  mode: ResourceMode,
-): boolean {
-  return (
-    resource.control.kind === "preference" && resource.control.scopes.includes(mode)
-  );
+export function canConfigureResource(resource: ResourceRecord, mode: ResourceMode): boolean {
+  return resource.control.kind === "preference" && resource.control.scopes.includes(mode);
 }
 
 export function buildResourcePreferenceUpdate(
@@ -306,10 +293,7 @@ export function buildResourcePreferenceUpdates(
   });
 }
 
-function optimisticEnabled(
-  resource: ResourceRecord,
-  update: ResourcePreferenceUpdate,
-): boolean {
+function optimisticEnabled(resource: ResourceRecord, update: ResourcePreferenceUpdate): boolean {
   if (update.targetScope === "user") return update.preference === "enabled";
   if (update.preference === "enabled") return true;
   if (update.preference === "disabled") return false;
@@ -330,9 +314,10 @@ export function applyOptimisticResourcePreferences(
   const byId = new Map(updates.map((update) => [update.resourceId, update]));
   return resources.map((resource) => {
     const direct = byId.get(resource.id);
-    const ownerUpdate = resource.control.kind === "owner-extension"
-      ? byId.get(resource.control.ownerResourceId)
-      : undefined;
+    const ownerUpdate =
+      resource.control.kind === "owner-extension"
+        ? byId.get(resource.control.ownerResourceId)
+        : undefined;
     const update = direct ?? ownerUpdate;
     if (!update) return resource;
     return {
@@ -370,4 +355,51 @@ export function hasActiveResourceFilters(filters: ResourceFilters): boolean {
     filters.origin !== "all" ||
     Boolean(filters.packageId)
   );
+}
+
+export type CatalogSort = "downloads" | "recent";
+
+export function filterCatalogItems(
+  items: PackageCatalogItem[],
+  query: string,
+  type: ResourceTypeFilter,
+): PackageCatalogItem[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return items.filter((item) => {
+    if (type !== "all" && !item.types.includes(type)) return false;
+    if (!normalizedQuery) return true;
+    const haystack = item.searchText || `${item.name} ${item.description} ${item.author ?? ""}`;
+    return haystack.toLocaleLowerCase().includes(normalizedQuery);
+  });
+}
+
+export function sortCatalogItems(
+  items: PackageCatalogItem[],
+  sort: CatalogSort,
+): PackageCatalogItem[] {
+  const sorted = [...items];
+  if (sort === "downloads") {
+    sorted.sort((left, right) => (right.downloadsPerMonth ?? 0) - (left.downloadsPerMonth ?? 0));
+  } else {
+    sorted.sort((left, right) => (right.publishedAt ?? 0) - (left.publishedAt ?? 0));
+  }
+  return sorted;
+}
+
+/** Configured identity/source strings both look like "npm:<name>"; match either. */
+export function isCatalogItemInstalled(
+  item: PackageCatalogItem,
+  packages: PackageRecord[],
+): boolean {
+  const wanted = `npm:${item.name}`.toLocaleLowerCase();
+  return packages.some(
+    (pkg) =>
+      pkg.identity.toLocaleLowerCase() === wanted || pkg.source.toLocaleLowerCase() === wanted,
+  );
+}
+
+export function formatDownloadsPerMonth(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(count);
 }

@@ -470,6 +470,33 @@ export type SessionSnapshot = {
   tools: ToolSnapshot;
 };
 
+export type PackageCatalogItem = {
+  /** npm package name, e.g. "@scope/pkg" or "pi-web-access". */
+  name: string;
+  description: string;
+  author?: string;
+  /** Resource kinds advertised by the catalog, e.g. ["extension", "skill"]. */
+  types: string[];
+  downloadsPerMonth?: number;
+  /** Publication timestamp in epoch milliseconds. */
+  publishedAt?: number;
+  npmUrl?: string;
+  githubUrl?: string;
+  /** Catalog-provided text blob for client-side filtering. */
+  searchText: string;
+  /** Source string accepted by package.install, e.g. "npm:pi-web-access". */
+  installSource: string;
+  /** Detail page on the catalog site. */
+  pageUrl: string;
+};
+
+export type PackageCatalog = {
+  generatedAt: number;
+  /** True when served from the in-memory cache instead of a fresh fetch. */
+  fromCache: boolean;
+  items: PackageCatalogItem[];
+};
+
 export type PackageRecord = {
   id: string;
   identity: string;

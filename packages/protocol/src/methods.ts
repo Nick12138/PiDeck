@@ -80,6 +80,7 @@ export const HOST_METHODS = [
   "model.setCurrent",
   "model.setThinkingLevel",
   "package.list",
+  "package.catalog",
   "package.install",
   "package.remove",
   "package.checkUpdates",
@@ -155,6 +156,7 @@ export type HostOnlyMethod =
   | "provider.builtinModels"
   | "provider.setBuiltinModels"
   | "session.searchAll"
+  | "package.catalog"
   | "extensionUi.configure";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
@@ -344,6 +346,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",
   "package.list": "workspace",
+  "package.catalog": "host",
   "package.install": "sessionPackage",
   "package.remove": "sessionPackage",
   "package.checkUpdates": "workspace",
