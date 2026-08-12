@@ -207,9 +207,6 @@ export function SidebarLayout({
             <span className="text-[15px] font-semibold" data-sidebar-brand>
               Pi Agent
             </span>
-            <div className="ml-auto">
-              <NotificationCenter />
-            </div>
           </div>
 
           <div className="px-2 pb-3 pt-2">
@@ -270,6 +267,9 @@ export function SidebarLayout({
                 title={connectionTitle}
               />
             )}
+            <div className="ml-auto">
+              <NotificationCenter />
+            </div>
           </div>
         </>
       )}
