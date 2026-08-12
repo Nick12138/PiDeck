@@ -1249,6 +1249,37 @@ textarea:focus-visible {
   outline: none;
 }
 
+.notification-toast {
+  animation: notification-toast-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+.notification-toast--leaving {
+  opacity: 0;
+  transform: translateX(0.5rem);
+  pointer-events: none;
+}
+
+@keyframes notification-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-toast {
+    animation: none;
+    transition: none;
+  }
+
+  .notification-toast--leaving {
+    transform: none;
+  }
+}
+
 .workspace-switch-skeleton {
   animation: workspace-switch-skeleton-in 150ms ease-out;
 }

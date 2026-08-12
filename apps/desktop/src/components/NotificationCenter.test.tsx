@@ -7,8 +7,20 @@ describe("NotificationPanel", () => {
     const html = renderToStaticMarkup(
       <NotificationPanel
         notifications={[
-          { id: "older", message: "Provider unavailable", level: "error", createdAt: 1_700_000_000_000 },
-          { id: "newer", message: "Settings backup created", level: "warning", createdAt: 1_700_000_001_000 },
+          {
+            id: "older",
+            message: "Provider unavailable",
+            level: "error",
+            createdAt: 1_700_000_000_000,
+            read: true,
+          },
+          {
+            id: "newer",
+            message: "Settings backup created",
+            level: "warning",
+            createdAt: 1_700_000_001_000,
+            read: false,
+          },
         ]}
         onDismiss={vi.fn()}
         onClear={vi.fn()}

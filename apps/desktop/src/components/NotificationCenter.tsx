@@ -6,13 +6,23 @@ import { useAppStore, type AppNotification } from "../lib/stores/app-store";
 function levelStyle(level: string) {
   switch (level) {
     case "error":
-      return { icon: AlertCircle, color: "text-danger", label: "Error" };
+      return { icon: AlertCircle, color: "text-danger", accent: "border-l-danger", label: "Error" };
     case "warning":
-      return { icon: AlertTriangle, color: "text-warning", label: "Warning" };
+      return {
+        icon: AlertTriangle,
+        color: "text-warning",
+        accent: "border-l-warning",
+        label: "Warning",
+      };
     case "success":
-      return { icon: CheckCircle2, color: "text-success", label: "Success" };
+      return {
+        icon: CheckCircle2,
+        color: "text-success",
+        accent: "border-l-success",
+        label: "Success",
+      };
     default:
-      return { icon: Info, color: "text-info", label: "Information" };
+      return { icon: Info, color: "text-info", accent: "border-l-info", label: "Information" };
   }
 }
 
@@ -102,25 +112,68 @@ export function NotificationPanel({
   );
 }
 
+const TOAST_DURATION_MS = 6_000;
+const TOAST_LEAVE_MS = 200;
+const MAX_STACKED_TOASTS = 3;
+
+type ActiveToast = { id: string; leaving: boolean };
+
 export function NotificationCenter() {
   const t = useT();
   const notifications = useAppStore((state) => state.notifications);
   const dismissNotification = useAppStore((state) => state.dismissNotification);
   const clearNotifications = useAppStore((state) => state.clearNotifications);
+  const markNotificationsRead = useAppStore((state) => state.markNotificationsRead);
   const [open, setOpen] = useState(false);
-  const [toastId, setToastId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ActiveToast[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousLatestId = useRef<string | null>(null);
-  const latest = notifications.at(-1) ?? null;
-  const latestId = latest?.id ?? null;
+  const toastTimers = useRef(new Map<string, number[]>());
+  const latestId = notifications.at(-1)?.id ?? null;
+
+  function clearToastTimers(id: string) {
+    for (const timer of toastTimers.current.get(id) ?? []) window.clearTimeout(timer);
+    toastTimers.current.delete(id);
+  }
+
+  function dismissAllToasts() {
+    for (const id of toastTimers.current.keys()) {
+      for (const timer of toastTimers.current.get(id) ?? []) window.clearTimeout(timer);
+    }
+    toastTimers.current.clear();
+    setToasts([]);
+  }
 
   useEffect(() => {
     if (!latestId || latestId === previousLatestId.current) return;
     previousLatestId.current = latestId;
-    setToastId(latestId);
-    const timer = window.setTimeout(() => setToastId(null), 6_000);
-    return () => window.clearTimeout(timer);
-  }, [latestId]);
+    // The open panel already shows (and marks read) incoming notifications.
+    if (open) return;
+    setToasts((current) =>
+      [...current.filter((toast) => toast.id !== latestId), { id: latestId, leaving: false }].slice(
+        -MAX_STACKED_TOASTS,
+      ),
+    );
+    const leaveTimer = window.setTimeout(() => {
+      setToasts((current) =>
+        current.map((toast) => (toast.id === latestId ? { ...toast, leaving: true } : toast)),
+      );
+    }, TOAST_DURATION_MS - TOAST_LEAVE_MS);
+    const removeTimer = window.setTimeout(() => {
+      toastTimers.current.delete(latestId);
+      setToasts((current) => current.filter((toast) => toast.id !== latestId));
+    }, TOAST_DURATION_MS);
+    toastTimers.current.set(latestId, [leaveTimer, removeTimer]);
+  }, [latestId, open]);
+
+  useEffect(
+    () => () => {
+      for (const timers of toastTimers.current.values()) {
+        for (const timer of timers) window.clearTimeout(timer);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -139,33 +192,47 @@ export function NotificationCenter() {
     };
   }, [open]);
 
-  const toast = !open && toastId ? notifications.find((item) => item.id === toastId) : null;
-  const urgentCount = notifications.filter(
-    (notification) => notification.level === "error" || notification.level === "warning",
-  ).length;
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const urgentUnread = notifications.some(
+    (notification) =>
+      !notification.read && (notification.level === "error" || notification.level === "warning"),
+  );
+
+  useEffect(() => {
+    if (open && unreadCount > 0) markNotificationsRead();
+  }, [open, unreadCount, markNotificationsRead]);
+
+  function openPanel() {
+    setOpen(true);
+    markNotificationsRead();
+    dismissAllToasts();
+  }
 
   return (
     <>
       {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
-        the toast is a sibling so its own z-[70] layer stays on top of both. */}
+        the toast stack is a sibling so its own z-[70] layer stays on top of both. */}
       <div ref={rootRef} className="relative z-30">
         <button
           type="button"
           title={t("notifCenterTitle")}
-          aria-label={t("notifCenterLabel", { count: notifications.length })}
+          aria-label={t("notifCenterLabel", { count: unreadCount })}
           aria-expanded={open}
           onClick={() => {
-            setOpen((value) => !value);
-            setToastId(null);
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            openPanel();
           }}
           className={`relative flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
-            urgentCount > 0 ? "text-warning" : ""
+            urgentUnread ? "text-warning" : ""
           }`}
         >
           <Bell size={15} />
-          {notifications.length > 0 && (
+          {unreadCount > 0 && (
             <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
-              {notifications.length > 99 ? "99+" : notifications.length}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </button>
@@ -180,32 +247,44 @@ export function NotificationCenter() {
           </div>
         )}
       </div>
-      {toast && (
-        <button
-          type="button"
-          aria-live="assertive"
-          onClick={() => {
-            setOpen(true);
-            setToastId(null);
-          }}
-          className="theme-floating-surface fixed left-3 top-14 z-[70] flex w-[min(25rem,calc(100vw-1.5rem))] items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl"
+      {!open && toasts.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed right-3 top-14 z-[70] flex w-[min(23rem,calc(100vw-1.5rem))] flex-col gap-2"
         >
-          {(() => {
-            const style = levelStyle(toast.level);
+          {toasts.map(({ id, leaving }) => {
+            const notification = notifications.find((item) => item.id === id);
+            if (!notification) return null;
+            const style = levelStyle(notification.level);
             const Icon = style.icon;
-            return <Icon size={16} aria-label={style.label} className={`mt-0.5 ${style.color}`} />;
-          })()}
-          <span className="min-w-0 flex-1 break-words text-sm leading-5">{toast.message}</span>
-          <X
-            size={14}
-            aria-label={t("notifCenterDismissPreview")}
-            className="mt-0.5 shrink-0 text-muted"
-            onClick={(event) => {
-              event.stopPropagation();
-              setToastId(null);
-            }}
-          />
-        </button>
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={openPanel}
+                className={`notification-toast theme-floating-surface pointer-events-auto flex items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl border-l-2 ${style.accent} ${
+                  leaving ? "notification-toast--leaving" : ""
+                }`}
+              >
+                <Icon size={16} aria-label={style.label} className={`mt-0.5 ${style.color}`} />
+                <span className="min-w-0 flex-1 break-words text-sm leading-5">
+                  {notification.message}
+                </span>
+                <X
+                  size={14}
+                  aria-label={t("notifCenterDismissPreview")}
+                  className="mt-0.5 shrink-0 text-muted"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    clearToastTimers(id);
+                    setToasts((current) => current.filter((toast) => toast.id !== id));
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
       )}
     </>
   );
