@@ -704,14 +704,6 @@ export const zh: Record<MessageKey, string> = {
   toolNoOutput: "（无输出）",
 
   // Composer
-  composerStarterExplore: "了解代码库",
-  composerStarterExplorePrompt: "浏览这个代码库并说明它的结构。",
-  composerStarterIssue: "查找问题",
-  composerStarterIssuePrompt: "审查这个代码库，找出一个值得修复的问题。",
-  composerStarterTests: "运行测试",
-  composerStarterTestsPrompt: "运行相关测试，并调查所有失败项。",
-  composerStarterChange: "进行修改",
-  composerStarterChangePrompt: "帮我修改这个项目。",
   composerStartIn: "从 {workspace} 开始",
   composerQuestion: "你想先处理什么？",
   composerCommandKindPrompt: "提示词",

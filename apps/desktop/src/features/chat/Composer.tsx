@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import {
-  Bug,
   CircleAlert,
   CircleCheck,
   ClipboardPaste,
   FileText,
-  FolderSearch,
   LoaderCircle,
   MessageCircleQuestion,
-  PencilLine,
   Plus,
   Puzzle,
   RefreshCw,
   Send,
   Square,
-  TestTube,
   Undo2,
   X,
 } from "lucide-react";
@@ -75,29 +71,6 @@ import {
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
-
-const STARTER_PROMPTS = [
-  {
-    labelKey: "composerStarterExplore",
-    promptKey: "composerStarterExplorePrompt",
-    icon: FolderSearch,
-  },
-  {
-    labelKey: "composerStarterIssue",
-    promptKey: "composerStarterIssuePrompt",
-    icon: Bug,
-  },
-  {
-    labelKey: "composerStarterTests",
-    promptKey: "composerStarterTestsPrompt",
-    icon: TestTube,
-  },
-  {
-    labelKey: "composerStarterChange",
-    promptKey: "composerStarterChangePrompt",
-    icon: PencilLine,
-  },
-] as const;
 
 function ExtensionStatusStrip() {
   const statuses = useAppStore((state) => state.extensionStatuses);
@@ -1306,16 +1279,6 @@ export function Composer({
   const documentsReady = documents.every((document) => document.status === "ready");
   const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
-  function selectStarterPrompt(prompt: string) {
-    if (!draftTarget || disabled) return;
-    editDraft(draftTarget, prompt);
-    dismissCompletion();
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(prompt.length, prompt.length);
-    });
-  }
-
   return (
     <div
       className={
@@ -1715,31 +1678,6 @@ export function Composer({
         <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
         <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
       </div>
-      {welcomeWorkspaceName && (
-        <div
-          className={`conversation-content-width mx-auto mt-3 flex min-h-9 w-full flex-wrap justify-center gap-1.5 ${
-            hasDraftContent ? "invisible pointer-events-none" : ""
-          }`}
-          aria-hidden={hasDraftContent || undefined}
-        >
-          {STARTER_PROMPTS.map(({ labelKey, promptKey, icon: Icon }) => {
-            const label = t(labelKey);
-            const prompt = t(promptKey);
-            return (
-              <button
-                key={labelKey}
-                type="button"
-                disabled={disabled}
-                className="theme-starter-prompt flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => selectStarterPrompt(prompt)}
-              >
-                <Icon size={14} className="shrink-0" />
-                <span className="truncate">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

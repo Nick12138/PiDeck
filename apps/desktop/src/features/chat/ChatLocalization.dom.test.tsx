@@ -45,16 +45,15 @@ describe("Chinese chat localization", () => {
     expect(screen.getByText("已完成")).toBeVisible();
     expect(screen.getByText("/workspace/src/app.ts")).toBeVisible();
     expect(screen.getByText("从 Demo 开始")).toBeVisible();
-    expect(screen.getByRole("button", { name: "了解代码库" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "了解代码库" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查找问题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "运行测试" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进行修改" })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("对话不可用")).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "添加 PDF、DOCX、图片或文本文件" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加 PDF、DOCX、图片或文本文件" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
 
-    await user.click(
-      screen.getByRole("button", { name: "没有可用的模型上下文信息" }),
-    );
+    await user.click(screen.getByRole("button", { name: "没有可用的模型上下文信息" }));
 
     expect(screen.getByText("上下文用量")).toBeVisible();
     expect(screen.getByText("自动压缩")).toBeVisible();

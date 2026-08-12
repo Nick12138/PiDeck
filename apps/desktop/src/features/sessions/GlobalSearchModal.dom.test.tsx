@@ -152,6 +152,11 @@ describe("GlobalSearchModal", () => {
   it("shows the hint without querying until text is entered", () => {
     const request = vi.spyOn(hostClient, "request");
     render(<GlobalSearchModal onClose={() => {}} />);
+    expect(screen.getByRole("searchbox", { name: "Search all sessions" })).toHaveClass(
+      "global-search-input",
+      "!bg-transparent",
+      "!shadow-none",
+    );
     expect(
       screen.getByText("Type to search message content across all workspaces"),
     ).toBeInTheDocument();

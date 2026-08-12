@@ -731,14 +731,6 @@ export const en = {
   toolNoOutput: "(no output)",
 
   // Composer
-  composerStarterExplore: "Explore the codebase",
-  composerStarterExplorePrompt: "Explore this codebase and explain its structure.",
-  composerStarterIssue: "Find an issue",
-  composerStarterIssuePrompt: "Review this codebase and identify a meaningful issue to fix.",
-  composerStarterTests: "Run tests",
-  composerStarterTestsPrompt: "Run the relevant test suite and investigate any failures.",
-  composerStarterChange: "Make a change",
-  composerStarterChangePrompt: "Help me make a change to this project.",
   composerStartIn: "Start in {workspace}",
   composerQuestion: "What would you like to work on?",
   composerCommandKindPrompt: "prompt",

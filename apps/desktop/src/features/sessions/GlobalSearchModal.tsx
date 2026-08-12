@@ -262,7 +262,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
             placeholder={t("globalSearchPlaceholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="global-search-input h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+            className="global-search-input h-8 min-w-0 flex-1 !bg-transparent text-sm !shadow-none outline-none placeholder:text-muted"
           />
           <button
             type="button"
