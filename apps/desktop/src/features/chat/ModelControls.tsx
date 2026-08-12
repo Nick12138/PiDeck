@@ -173,7 +173,7 @@ export function ContextUsageRing() {
     <span ref={containerRef} className="relative flex shrink-0 items-center">
       <button
         type="button"
-        className="relative flex size-6 shrink-0 items-center justify-center rounded-full"
+        className="relative flex size-7 shrink-0 items-center justify-center rounded-full"
         style={{
           background: `conic-gradient(var(--color-accent) ${
             percent === null ? 0 : percent * 3.6
