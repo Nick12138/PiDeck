@@ -34,8 +34,28 @@ describe("Sidebar", () => {
     );
 
     expect(html).toContain('aria-label="Expand sidebar"');
-    expect(html).toContain("margin-left:-268px");
+    expect(html).toContain("width:0");
+    expect(html).toContain('data-sidebar-collapsed="true"');
     expect(html).not.toContain("New conversation");
     expect(html).not.toContain("Recent conversations");
+  });
+
+  it("renders the collapse handle anchored to the sidebar width when expanded", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) =>
+        key === "pideck.sidebar.width.v1" ? "300" : null,
+      setItem: vi.fn(),
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
+    );
+
+    // The expanded handle must be present and fixed-positioned at left:<width>px
+    // so it docks on the sidebar's right edge regardless of ancestor positioning.
+    expect(html).toContain('aria-label="Collapse sidebar"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toMatch(/position:\s*fixed[^}]*left:\s*300/);
+    expect(html).not.toContain('data-sidebar-collapsed="true"');
   });
 });

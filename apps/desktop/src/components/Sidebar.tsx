@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Settings } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
@@ -18,8 +18,6 @@ const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
-
-const COLLAPSED_WIDTH = 268;
 
 function clampSidebarWidth(width: number, viewportWidth = 1280): number {
   const responsiveMax = Math.max(DEFAULT_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360));
@@ -134,32 +132,19 @@ export function SidebarLayout({
   useEffect(() => subscribeSidebarToggle(toggleSidebarCollapsed), []);
 
   return (
+    <Fragment>
     <aside
       style={{
-        width: sidebarWidth,
-        marginLeft: sidebarCollapsed ? -COLLAPSED_WIDTH : 0,
+        width: sidebarCollapsed ? 0 : sidebarWidth,
       }}
       data-sidebar
       data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
-      className={`sidebar-edge-shadow relative flex shrink-0 flex-col border-r border-border bg-sidebar ${
+      className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar ${
         resizing
           ? "transition-none"
-          : "transition-[margin-left] duration-200 ease-out"
+          : "transition-[width] duration-200 ease-out"
       }`}
     >
-      <div className="group/sidebar-edge absolute -right-4 top-0 z-40 h-full w-4">
-        <button
-          type="button"
-          title={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
-          aria-label={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
-          aria-expanded={!sidebarCollapsed}
-          className="absolute top-1/2 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface-raised text-muted opacity-0 shadow-sm transition-opacity group-hover/sidebar-edge:opacity-100 hover:text-foreground focus-visible:opacity-100"
-          onClick={toggleSidebarCollapsed}
-        >
-          {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-        </button>
-      </div>
-
       {!sidebarCollapsed && (
         <div
           role="separator"
@@ -169,7 +154,7 @@ export function SidebarLayout({
           aria-valuemin={MIN_SIDEBAR_WIDTH}
           aria-valuemax={MAX_SIDEBAR_WIDTH}
           aria-valuenow={sidebarWidth}
-          className="absolute -right-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20"
+          className="absolute -right-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
@@ -288,6 +273,33 @@ export function SidebarLayout({
           </div>
         </>
       )}
-    </aside>
+      </aside>
+
+      {/* Expand/collapse handle lives outside <aside> so the collapsed
+          width:0 + overflow:hidden can't clip it. It is fixed to the
+          viewport so it doesn't depend on any ancestor positioning
+          context: when collapsed it docks at the viewport's left edge;
+          when expanded it docks at the sidebar's right edge (driven by
+          sidebarWidth). */}
+      <div
+        className="group/sidebar-edge"
+        style={
+          sidebarCollapsed
+            ? { position: "fixed", left: 0, top: 0, height: "100vh", width: "1rem", zIndex: 40 }
+            : { position: "fixed", left: sidebarWidth, top: 0, height: "100vh", width: "1rem", zIndex: 40 }
+        }
+      >
+        <button
+          type="button"
+          title={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
+          aria-label={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
+          aria-expanded={!sidebarCollapsed}
+          className="absolute top-1/2 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface-raised text-muted opacity-0 shadow-sm transition-opacity group-hover/sidebar-edge:opacity-100 hover:text-foreground focus-visible:opacity-100"
+          onClick={toggleSidebarCollapsed}
+        >
+          {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        </button>
+      </div>
+    </Fragment>
   );
 }

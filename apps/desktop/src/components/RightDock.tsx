@@ -481,7 +481,7 @@ export function RightDock() {
           aria-valuemin={MIN_DOCK_WIDTH}
           aria-valuemax={MAX_DOCK_WIDTH}
           aria-valuenow={dockWidth}
-          className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20"
+          className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
