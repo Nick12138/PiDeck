@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -21,6 +21,12 @@ const MODEL: ModelSummary = {
   provider: "muapi",
   modelId: "grok-4.5",
   name: "Grok 4.5",
+  thinkingLevels: ["off", "high"],
+};
+const LONG_NAME_MODEL: ModelSummary = {
+  provider: "muapi",
+  modelId: "grok-4.5-long-preview",
+  name: "Grok 4.5 Long Running Preview",
   thinkingLevels: ["off", "high"],
 };
 
@@ -56,7 +62,7 @@ function workspace(): WorkspaceSnapshot {
   };
 }
 
-function session(): SessionSnapshot {
+function session(model: ModelSummary = MODEL): SessionSnapshot {
   return {
     sessionId: SESSION_ID,
     cwd: "/workspace",
@@ -65,7 +71,7 @@ function session(): SessionSnapshot {
     isIdle: true,
     isCompacting: false,
     isRetrying: false,
-    model: MODEL,
+    model,
     thinkingLevel: "off",
     autoCompactionEnabled: true,
     autoRetryEnabled: true,
@@ -101,7 +107,7 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
   } as HostResponseEnvelope;
 }
 
-describe("ModelControls model menu resizing", () => {
+describe("ModelControls model menu width", () => {
   const initialInnerWidth = window.innerWidth;
 
   beforeEach(() => {
@@ -132,7 +138,7 @@ describe("ModelControls model menu resizing", () => {
     useAppStore.getState().applySessionSnapshot(null);
   });
 
-  it("keeps the measured default and widens from the fixed left edge", async () => {
+  it("opens the model menu with no manual drag handle", async () => {
     vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
       if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
       return envelope(method, {
@@ -146,38 +152,74 @@ describe("ModelControls model menu resizing", () => {
     render(<ModelControls />);
 
     await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
+    await screen.findByRole("menu", { name: "Models" });
+
+    // The floated width tracks the model names automatically — no drag handle.
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+  });
+
+  it("floats the width to fit the widest model name in the list", async () => {
+    // jsdom reports scrollWidth = 0 for the hidden measure span, so synthesise
+    // measured widths so the auto-width effect has something to clamp. The
+    // width is recomputed during the render triggered by model.list.
+    const measuredWidth = 400;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [MODEL, LONG_NAME_MODEL],
+        current: MODEL,
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    const scrollWidthSpy = vi
+      .spyOn(Element.prototype, "scrollWidth", "get")
+      .mockImplementation(function (this: Element) {
+        // Only the hidden measure span carries the menu labels; let other
+        // elements fall through to jsdom's default (steers clear of the panel's
+        // own scrollWidth) so layout maths still work.
+        return measuredWidth;
+      });
+
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
     const menu = await screen.findByRole("menu", { name: "Models" });
-    const resizeHandle = screen.getByRole("separator", { name: "Resize model menu" });
-    const menuShell = resizeHandle.parentElement;
-    expect(menuShell).toHaveStyle({ width: "120px" });
-    expect(resizeHandle).toHaveAttribute("aria-valuenow", "120");
+    const menuShell = menu.parentElement;
 
-    vi.spyOn(menu, "getBoundingClientRect").mockReturnValue({
-      x: 100,
-      y: 100,
-      left: 100,
-      right: 220,
-      top: 100,
-      bottom: 300,
-      width: 120,
-      height: 200,
-      toJSON: () => ({}),
+    // measured content (400) + row controls (48) exceeds the 280 default max,
+    // so the floated shell caps at the maximum width.
+    await waitFor(() => expect(menuShell).toHaveStyle({ width: "280px" }));
+
+    scrollWidthSpy.mockRestore();
+  });
+
+  it("keeps the minimum width when model names are short", async () => {
+    const measuredWidth = 10;
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [MODEL],
+        current: MODEL,
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi"],
+      }) as never;
     });
-    Object.assign(resizeHandle, {
-      setPointerCapture: vi.fn(),
-      hasPointerCapture: vi.fn(() => true),
-      releasePointerCapture: vi.fn(),
+    vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (
+      this: Element,
+    ) {
+      return measuredWidth;
     });
 
-    fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 220, pointerId: 7 });
-    fireEvent.pointerMove(resizeHandle, { clientX: 520, pointerId: 7 });
+    const user = userEvent.setup();
+    render(<ModelControls />);
 
-    await waitFor(() => expect(menuShell).toHaveStyle({ width: "420px" }));
-    expect(resizeHandle).toHaveAttribute("aria-valuenow", "420");
+    await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
+    const menu = await screen.findByRole("menu", { name: "Models" });
+    const menuShell = menu.parentElement;
 
-    fireEvent.keyDown(resizeHandle, { key: "ArrowRight" });
-    expect(menuShell).toHaveStyle({ width: "440px" });
-    fireEvent.pointerUp(resizeHandle, { pointerId: 7 });
-    expect(resizeHandle.releasePointerCapture).toHaveBeenCalledWith(7);
+    // Short names never drop below the minimum width.
+    await waitFor(() => expect(menuShell).toHaveStyle({ width: "120px" }));
   });
 });

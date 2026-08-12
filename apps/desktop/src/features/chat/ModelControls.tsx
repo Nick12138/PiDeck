@@ -16,9 +16,8 @@ import { useT } from "../../lib/i18n/use-t";
 
 const MODEL_MENU_MIN_WIDTH = 120;
 const MODEL_MENU_DEFAULT_MAX_WIDTH = 280;
-const MODEL_MENU_RESIZE_MAX_WIDTH = 640;
+const MODEL_MENU_MAX_WIDTH = 640;
 const MODEL_MENU_ROW_CONTROLS_WIDTH = 48;
-const MODEL_MENU_RESIZE_STEP = 20;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
 const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
 const CONTEXT_BREAKDOWN_KEYS = [
@@ -42,7 +41,7 @@ export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): numb
     Math.max(0, menuLeft) -
     MODEL_MENU_VIEWPORT_GUTTER -
     MODEL_MENU_THINKING_RESERVE_WIDTH;
-  return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_RESIZE_MAX_WIDTH, viewportLimit));
+  return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_MAX_WIDTH, viewportLimit));
 }
 
 export function clampModelMenuWidth(
@@ -173,7 +172,7 @@ export function ContextUsageRing() {
     <span ref={containerRef} className="relative flex shrink-0 items-center">
       <button
         type="button"
-        className="relative flex size-7 shrink-0 items-center justify-center rounded-full"
+        className="relative flex size-8 shrink-0 items-center justify-center rounded-full"
         style={{
           background: `conic-gradient(var(--color-accent) ${
             percent === null ? 0 : percent * 3.6
@@ -264,17 +263,10 @@ export function ModelControls() {
   const [enabledProviders, setEnabledProviders] = useState<string[] | undefined>();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuWidth, setModelMenuWidth] = useState(MODEL_MENU_MIN_WIDTH);
-  const [modelMenuResizeMax, setModelMenuResizeMax] = useState(MODEL_MENU_RESIZE_MAX_WIDTH);
   const listRequest = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelMenuMeasureRef = useRef<HTMLSpanElement>(null);
   const modelMenuPanelRef = useRef<HTMLDivElement>(null);
-  const modelMenuManuallyResized = useRef(false);
-  const modelMenuResizeStart = useRef<{
-    pointerId: number;
-    x: number;
-    width: number;
-  } | null>(null);
   const hostInstanceId = host?.hostInstanceId;
   const workspaceId = workspace?.id;
   const workspaceRevision = workspace?.revision;
@@ -387,8 +379,9 @@ export function ModelControls() {
     modelOptions.length > 0 ? modelOptions.map(modelOptionLabel) : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
 
+  // Menu width tracks the widest model name so the floated dropdown always
+  // fits its contents — no manual drag handle.
   useLayoutEffect(() => {
-    if (modelMenuManuallyResized.current) return;
     const contentWidth = modelMenuMeasureRef.current?.scrollWidth;
     if (contentWidth === undefined) return;
     const nextWidth = Math.min(
@@ -398,12 +391,13 @@ export function ModelControls() {
     setModelMenuWidth((current) => (current === nextWidth ? current : nextWidth));
   }, [modelMenuMeasureKey]);
 
+  // Keep the floated dropdown inside the viewport if its measured width would
+  // overflow the available space on the right.
   useLayoutEffect(() => {
     if (!menuOpen) return;
     const clampToViewport = () => {
       const menuLeft = modelMenuPanelRef.current?.getBoundingClientRect().left ?? 0;
       const maxWidth = modelMenuMaxWidth(menuLeft, window.innerWidth);
-      setModelMenuResizeMax(maxWidth);
       setModelMenuWidth((current) => Math.min(current, maxWidth));
     };
     clampToViewport();
@@ -457,23 +451,9 @@ export function ModelControls() {
     return false;
   }
 
-  function resizeModelMenu(width: number) {
-    const menuLeft = modelMenuPanelRef.current?.getBoundingClientRect().left ?? 0;
-    const maxWidth = modelMenuMaxWidth(menuLeft, window.innerWidth);
-    modelMenuManuallyResized.current = true;
-    setModelMenuResizeMax(maxWidth);
-    setModelMenuWidth(clampModelMenuWidth(width, menuLeft, window.innerWidth));
-  }
-
-  function finishModelMenuResize(target: HTMLDivElement, pointerId: number) {
-    if (modelMenuResizeStart.current?.pointerId !== pointerId) return;
-    modelMenuResizeStart.current = null;
-    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
-  }
-
   return (
     <div className="flex min-w-0 items-center">
-      <div ref={menuRef} className="relative flex h-7 min-w-0 max-w-[280px] items-center">
+      <div ref={menuRef} className="relative flex h-8 min-w-0 max-w-[280px] items-center">
         <span
           ref={modelMenuMeasureRef}
           aria-hidden="true"
@@ -485,7 +465,7 @@ export function ModelControls() {
         </span>
         <button
           type="button"
-          className="composer-control flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -547,53 +527,6 @@ export function ModelControls() {
                   );
                 })
               )}
-            </div>
-            <div
-              role="separator"
-
-              tabIndex={0}
-              aria-label={t("modelMenuResize")}
-              aria-orientation="vertical"
-              aria-valuemin={MODEL_MENU_MIN_WIDTH}
-              aria-valuemax={modelMenuResizeMax}
-              aria-valuenow={modelMenuWidth}
-              title={t("modelMenuResize")}
-              className="group absolute -right-2 top-0 z-10 h-full w-2 cursor-col-resize touch-none rounded-sm outline-none"
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                modelMenuResizeStart.current = {
-                  pointerId: event.pointerId,
-                  x: event.clientX,
-                  width: modelMenuWidth,
-                };
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                const start = modelMenuResizeStart.current;
-                if (!start || start.pointerId !== event.pointerId) return;
-                resizeModelMenu(start.width + event.clientX - start.x);
-              }}
-              onPointerUp={(event) => finishModelMenuResize(event.currentTarget, event.pointerId)}
-              onPointerCancel={(event) =>
-                finishModelMenuResize(event.currentTarget, event.pointerId)
-              }
-              onLostPointerCapture={() => {
-                modelMenuResizeStart.current = null;
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                event.preventDefault();
-                resizeModelMenu(
-                  modelMenuWidth +
-                    (event.key === "ArrowRight" ? MODEL_MENU_RESIZE_STEP : -MODEL_MENU_RESIZE_STEP),
-                );
-              }}
-            >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-px -translate-x-1/2 -translate-y-1/2 bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent"
-              />
             </div>
           </div>
         )}
@@ -660,7 +593,7 @@ export function ThinkingControls() {
     <div ref={containerRef} className="relative flex min-w-0 items-center">
       <button
         type="button"
-        className={`composer-control flex h-7 items-center justify-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
+        className={`composer-control flex h-8 items-center justify-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
           open ? "bg-surface-overlay text-foreground" : "text-muted hover:bg-surface-overlay hover:text-foreground"
         } disabled:cursor-default disabled:opacity-40`}
         disabled={!session.isIdle && !session.isCompacting}

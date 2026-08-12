@@ -415,7 +415,7 @@ export function ExtensionWidgetsButton({
       title={t("extWidgetsTitle", {
         names: entries.map((entry) => entry.key).join(", "),
       })}
-      className={`flex size-7 items-center justify-center rounded-md transition-colors ${
+      className={`flex size-8 items-center justify-center rounded-md transition-colors ${
         open
           ? "bg-accent/15 text-accent"
           : "text-muted hover:bg-surface-overlay hover:text-foreground"

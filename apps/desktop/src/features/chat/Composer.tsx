@@ -1678,7 +1678,7 @@ export function Composer({
               type="button"
               title={t("composerAttach")}
               aria-label={t("composerAttach")}
-              className="composer-control flex size-7 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+              className="composer-control flex size-8 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
               disabled={
                 disabled ||
                 (images.length >= MAX_AGENT_REQUEST_IMAGES &&
