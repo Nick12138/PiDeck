@@ -485,7 +485,7 @@ export function ModelControls() {
         </span>
         <button
           type="button"
-          className="flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+          className="composer-control flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -660,7 +660,7 @@ export function ThinkingControls() {
     <div ref={containerRef} className="relative flex min-w-0 items-center">
       <button
         type="button"
-        className={`flex h-7 items-center justify-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
+        className={`composer-control flex h-7 items-center justify-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
           open ? "bg-surface-overlay text-foreground" : "text-muted hover:bg-surface-overlay hover:text-foreground"
         } disabled:cursor-default disabled:opacity-40`}
         disabled={!session.isIdle && !session.isCompacting}

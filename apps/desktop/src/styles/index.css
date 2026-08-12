@@ -1225,6 +1225,23 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* Composer toolbar controls: keep their chrome (border + hover surface) quiet
+   until the composer holds focus or the pointer hovers them. Keeps the
+   composer's resting state calm and draws the controls forward on demand. */
+.chat-composer-surface .composer-control {
+  border-color: transparent;
+  background-color: transparent;
+}
+.chat-composer-surface:focus-within .composer-control,
+.chat-composer-surface .composer-control:hover {
+  border-color: var(--color-border-subtle);
+}
+/* An open menu/drawer is its own focused state — keep the trigger lit. */
+.chat-composer-surface .composer-control[aria-expanded="true"] {
+  border-color: var(--color-border-subtle);
+  background-color: color-mix(in srgb, var(--color-surface-overlay) 100%, transparent);
+}
+
 .new-conversation-copy {
   font-family: var(--font-mono);
   letter-spacing: 0;
