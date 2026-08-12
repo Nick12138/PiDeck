@@ -45,7 +45,6 @@ describe("Chinese chat localization", () => {
     expect(screen.getByText("已完成")).toBeVisible();
     expect(screen.getByText("/workspace/src/app.ts")).toBeVisible();
     expect(screen.getByText("从 Demo 开始")).toBeVisible();
-    expect(screen.getByRole("button", { name: "了解代码库" })).toBeDisabled();
     expect(screen.getByPlaceholderText("对话不可用")).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "添加 PDF、DOCX、图片或文本文件" }),

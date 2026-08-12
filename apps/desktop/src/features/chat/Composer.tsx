@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import {
-  Bug,
   CircleAlert,
   CircleCheck,
   ClipboardPaste,
   FileText,
-  FolderSearch,
   LoaderCircle,
   MessageCircleQuestion,
-  PencilLine,
-  Plus,
+  Paperclip,
   Puzzle,
   RefreshCw,
   Send,
   Square,
-  TestTube,
   Undo2,
   X,
 } from "lucide-react";
@@ -34,7 +30,7 @@ import {
   type SerializableImage,
 } from "@pideck/protocol";
 import { buildAttachedFileBlock } from "./transcript-model";
-import { ContextUsageRing, ModelControls } from "./ModelControls";
+import { ContextUsageRing, ModelControls, ThinkingControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import { ExtensionWidgetsPopover, ExtensionWidgetsButton } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
@@ -75,29 +71,6 @@ import {
 
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 256 * 1024;
-
-const STARTER_PROMPTS = [
-  {
-    labelKey: "composerStarterExplore",
-    promptKey: "composerStarterExplorePrompt",
-    icon: FolderSearch,
-  },
-  {
-    labelKey: "composerStarterIssue",
-    promptKey: "composerStarterIssuePrompt",
-    icon: Bug,
-  },
-  {
-    labelKey: "composerStarterTests",
-    promptKey: "composerStarterTestsPrompt",
-    icon: TestTube,
-  },
-  {
-    labelKey: "composerStarterChange",
-    promptKey: "composerStarterChangePrompt",
-    icon: PencilLine,
-  },
-] as const;
 
 function ExtensionStatusStrip() {
   const statuses = useAppStore((state) => state.extensionStatuses);
@@ -332,6 +305,32 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousBlockedSessionRef = useRef<string | null>(null);
   const documentsRef = useRef<PendingDocument[]>([]);
+
+  // autoresize the composer textarea: grow with content, never shrink below
+  // the user's current height, clamp to [60px, 280px] via CSS min-h/max-h.
+  // manual resize is handled by the top-edge ns-resize handle (see JSX).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const prevHeight = el.clientHeight;
+    el.style.height = "auto";
+    const target = Math.min(el.scrollHeight, 280);
+    el.style.height = `${Math.max(target, Math.min(prevHeight, 280))}px`;
+  }, [text]);
+  const composerResizeStart = useRef<{ pointerId: number; y: number; height: number } | null>(null);
+
+  function finishComposerResize(target: HTMLDivElement, pointerId: number) {
+    if (composerResizeStart.current?.pointerId !== pointerId) return;
+    composerResizeStart.current = null;
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+  }
+
+  function applyComposerResize(nextHeight: number) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const clamped = Math.min(280, Math.max(60, Math.round(nextHeight)));
+    el.style.height = `${clamped}px`;
+  }
   const recoveringPastedTextRef = useRef(new Set<string>());
   const recoverFailedPastedTextCallbackRef = useRef<
     (document: PendingPastedText, error?: string) => Promise<void>
@@ -1306,16 +1305,6 @@ export function Composer({
   const documentsReady = documents.every((document) => document.status === "ready");
   const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
-  function selectStarterPrompt(prompt: string) {
-    if (!draftTarget || disabled) return;
-    editDraft(draftTarget, prompt);
-    dismissCompletion();
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(prompt.length, prompt.length);
-    });
-  }
-
   return (
     <div
       className={
@@ -1326,7 +1315,7 @@ export function Composer({
     >
       {welcomeWorkspaceName && (
         <div className="conversation-content-width new-conversation-copy mx-auto mb-6 flex flex-col items-center text-center">
-          <PiMark className="mb-4 size-10" />
+          <PiMark className="mb-4 size-20" />
           <h2 className="max-w-full truncate text-xl font-medium text-foreground">
             {t("composerStartIn", { workspace: welcomeWorkspaceName })}
           </h2>
@@ -1359,6 +1348,45 @@ export function Composer({
             void addFiles(event.dataTransfer.files);
           }}
         >
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-label={t("composerResize")}
+            aria-orientation="horizontal"
+            aria-valuemin={60}
+            aria-valuemax={280}
+            className="group/composer-resize -mx-2 -mt-2 mb-1 h-1.5 touch-none rounded-t-xl cursor-ns-resize bg-transparent"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              const el = textareaRef.current;
+              if (!el) return;
+              event.preventDefault();
+              composerResizeStart.current = {
+                pointerId: event.pointerId,
+                y: event.clientY,
+                height: el.clientHeight,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+              const start = composerResizeStart.current;
+              if (!start || start.pointerId !== event.pointerId) return;
+              // handle is at the top of the textarea: dragging up (clientY shrinks) grows it.
+              applyComposerResize(start.height + (start.y - event.clientY));
+            }}
+            onPointerUp={(event) => finishComposerResize(event.currentTarget, event.pointerId)}
+            onPointerCancel={(event) => finishComposerResize(event.currentTarget, event.pointerId)}
+            onLostPointerCapture={() => {
+              composerResizeStart.current = null;
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+              event.preventDefault();
+              const el = textareaRef.current;
+              if (!el) return;
+              applyComposerResize(el.clientHeight + (event.key === "ArrowUp" ? 12 : -12));
+            }}
+          />
           {documents.length > 0 && (
             <div
               className="grid gap-1.5 px-2 pt-1.5 sm:grid-cols-2"
@@ -1556,7 +1584,7 @@ export function Composer({
             )}
             <textarea
               ref={textareaRef}
-              className="chat-composer-input min-h-[60px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
+              className="chat-composer-input min-h-[60px] max-h-[280px] w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted"
               placeholder={disabled ? t("composerUnavailable") : t("composerPlaceholder")}
               value={text}
               disabled={disabled}
@@ -1634,7 +1662,7 @@ export function Composer({
               }}
             />
           </div>
-          <div className="flex h-8 items-center gap-2 px-1">
+          <div className="flex h-8 items-center gap-2.5 px-1">
             <input
               ref={fileInputRef}
               type="file"
@@ -1650,7 +1678,7 @@ export function Composer({
               type="button"
               title={t("composerAttach")}
               aria-label={t("composerAttach")}
-              className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+              className="flex size-7 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
               disabled={
                 disabled ||
                 (images.length >= MAX_AGENT_REQUEST_IMAGES &&
@@ -1659,15 +1687,16 @@ export function Composer({
               }
               onClick={() => void chooseAttachments()}
             >
-              <Plus size={16} />
+              <Paperclip size={16} />
             </button>
-            <ModelControls />
-            <div className="ml-auto flex items-center gap-1.5">
-              <ExtensionWidgetsButton
-                open={extensionWidgetsOpen}
-                onToggle={toggleExtensionWidgets}
-              />
+            <ExtensionWidgetsButton
+              open={extensionWidgetsOpen}
+              onToggle={toggleExtensionWidgets}
+            />
+            <div className="ml-auto flex items-center gap-2.5">
               <ContextUsageRing />
+              <ModelControls />
+              <ThinkingControls />
               {busy ? (
                 canSend ? (
                   <button
@@ -1715,31 +1744,6 @@ export function Composer({
         <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
         <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
       </div>
-      {welcomeWorkspaceName && (
-        <div
-          className={`conversation-content-width mx-auto mt-3 flex min-h-9 w-full flex-wrap justify-center gap-1.5 ${
-            hasDraftContent ? "invisible pointer-events-none" : ""
-          }`}
-          aria-hidden={hasDraftContent || undefined}
-        >
-          {STARTER_PROMPTS.map(({ labelKey, promptKey, icon: Icon }) => {
-            const label = t(labelKey);
-            const prompt = t(promptKey);
-            return (
-              <button
-                key={labelKey}
-                type="button"
-                disabled={disabled}
-                className="theme-starter-prompt flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => selectStarterPrompt(prompt)}
-              >
-                <Icon size={14} className="shrink-0" />
-                <span className="truncate">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

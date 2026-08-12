@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
@@ -13,6 +13,29 @@ import {
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
 import { subscribeSidebarToggle } from "../lib/commands/events";
+
+const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
+const DEFAULT_SIDEBAR_WIDTH = 268;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
+
+const COLLAPSED_WIDTH = 268;
+
+function clampSidebarWidth(width: number, viewportWidth = 1280): number {
+  const responsiveMax = Math.max(DEFAULT_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360));
+  if (!Number.isFinite(width)) return Math.min(DEFAULT_SIDEBAR_WIDTH, responsiveMax);
+  return Math.min(responsiveMax, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
+}
+
+function initialSidebarWidth(): number {
+  const viewportWidth = typeof window === "undefined" ? 1280 : window.innerWidth;
+  try {
+    const stored = Number(globalThis.localStorage?.getItem(SIDEBAR_WIDTH_KEY));
+    return clampSidebarWidth(stored || DEFAULT_SIDEBAR_WIDTH, viewportWidth);
+  } catch {
+    return clampSidebarWidth(DEFAULT_SIDEBAR_WIDTH, viewportWidth);
+  }
+}
 
 function NewSessionButton() {
   const t = useT();
@@ -70,6 +93,29 @@ export function SidebarLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.collapsed"),
   );
+  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
+  const [resizing, setResizing] = useState(false);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarWidthRef.current = sidebarWidth;
+  const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
+
+  function finishResize(target: HTMLDivElement, pointerId: number) {
+    if (resizeStart.current?.pointerId !== pointerId) return;
+    resizeStart.current = null;
+    setResizing(false);
+    try {
+      globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
+    } catch {
+      /* ignore unavailable localStorage */
+    }
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+  }
+
+  function resizeSidebar(width: number) {
+    const next = clampSidebarWidth(width, window.innerWidth);
+    sidebarWidthRef.current = next;
+    setSidebarWidth(next);
+  }
 
   function toggleSessionsCollapsed() {
     setSessionsCollapsed((current) => {
@@ -89,10 +135,17 @@ export function SidebarLayout({
 
   return (
     <aside
-      style={{ marginLeft: sidebarCollapsed ? -268 : 0 }}
+      style={{
+        width: sidebarWidth,
+        marginLeft: sidebarCollapsed ? -COLLAPSED_WIDTH : 0,
+      }}
       data-sidebar
       data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
-      className="sidebar-edge-shadow relative flex w-[268px] shrink-0 flex-col border-r border-border bg-sidebar transition-[margin-left] duration-200 ease-out"
+      className={`sidebar-edge-shadow relative flex shrink-0 flex-col border-r border-border bg-sidebar ${
+        resizing
+          ? "transition-none"
+          : "transition-[margin-left] duration-200 ease-out"
+      }`}
     >
       <div className="group/sidebar-edge absolute -right-4 top-0 z-40 h-full w-4">
         <button
@@ -106,6 +159,57 @@ export function SidebarLayout({
           {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
         </button>
       </div>
+
+      {!sidebarCollapsed && (
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-label={t("sidebarResize")}
+          aria-orientation="vertical"
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={MAX_SIDEBAR_WIDTH}
+          aria-valuenow={sidebarWidth}
+          className="absolute -right-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            resizeStart.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              width: sidebarWidth,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setResizing(true);
+          }}
+          onPointerMove={(event) => {
+            const start = resizeStart.current;
+            if (!start || start.pointerId !== event.pointerId) return;
+            // sidebar is on the left edge: dragging right (clientX grows) widens it
+            resizeSidebar(start.width + (event.clientX - start.x));
+          }}
+          onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
+          onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
+          onLostPointerCapture={() => {
+            resizeStart.current = null;
+            setResizing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            const next = clampSidebarWidth(
+              sidebarWidth + (event.key === "ArrowRight" ? 20 : -20),
+              window.innerWidth,
+            );
+            sidebarWidthRef.current = next;
+            setSidebarWidth(next);
+            try {
+              globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next));
+            } catch {
+              /* ignore unavailable localStorage */
+            }
+          }}
+        />
+      )}
 
       {sidebarCollapsed ? null : (
         <>
@@ -146,39 +250,41 @@ export function SidebarLayout({
             />
           </div>
 
-          <div className="shrink-0 border-t border-border p-2">
+          <div className="shrink-0 flex items-center gap-1 px-2 pb-2">
             <button
               type="button"
               onClick={() => setPage(page === "chat" ? "settings" : "chat")}
               data-ui="nav-item"
               data-state={page !== "chat" ? "active" : "inactive"}
-              className={`interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm transition-colors ${
+              title={t("settingsTitle")}
+              aria-label={t("settingsTitle")}
+              aria-pressed={page !== "chat"}
+              className={`flex size-9 shrink-0 items-center justify-center rounded-md transition-colors ${
                 page !== "chat"
                   ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                   : "text-foreground hover:bg-surface-overlay"
               }`}
             >
               <Settings size={17} />
-              <span className="flex-1">{t("settingsTitle")}</span>
-              {connectionPending ? (
-                <span className="flex shrink-0" title={connectionTitle}>
-                  <LoaderCircle size={14} className="animate-spin text-muted" />
-                </span>
-              ) : (
-                <span
-                  className={`size-1.5 rounded-full ${
-                    hostFatal
-                      ? "bg-danger"
-                      : hostReady
-                        ? "bg-success"
-                        : host
-                          ? "bg-warning"
-                          : "bg-muted"
-                  }`}
-                  title={connectionTitle}
-                />
-              )}
             </button>
+            {connectionPending ? (
+              <span className="flex size-4 shrink-0 items-center justify-center" title={connectionTitle}>
+                <LoaderCircle size={14} className="animate-spin text-muted" />
+              </span>
+            ) : (
+              <span
+                className={`size-1.5 shrink-0 rounded-full ${
+                  hostFatal
+                    ? "bg-danger"
+                    : hostReady
+                      ? "bg-success"
+                      : host
+                        ? "bg-warning"
+                        : "bg-muted"
+                }`}
+                title={connectionTitle}
+              />
+            )}
           </div>
         </>
       )}
