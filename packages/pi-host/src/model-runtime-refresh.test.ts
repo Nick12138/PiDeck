@@ -96,11 +96,10 @@ describe("Host-owned runtime injection", () => {
     }
 
     expect(callSites.length).toBeGreaterThan(0);
-    for (const site of callSites) {
-      expect(site.text, `${site.file} must inject the Host-owned runtime`).toContain(
-        "modelRuntime",
-      );
-    }
+    expect(callSites.map((site) => site.file)).toEqual(["agent-session-factory.ts"]);
+    const factorySource = readFileSync(join(sourceDir, "agent-session-factory.ts"), "utf8");
+    expect(factorySource).toContain("modelRuntime: ModelRuntime");
+    expect(callSites[0]!.text).toContain("...options");
   });
 
   it("keeps AuthStorage and ModelRegistry.create out of production source", () => {
