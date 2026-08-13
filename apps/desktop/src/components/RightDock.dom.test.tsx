@@ -36,6 +36,7 @@ vi.mock("../features/dock/ChangesPanel", () => ({
 }));
 
 import { RightDock } from "./RightDock";
+import { ChatHeader } from "../features/chat/ChatHeader";
 
 class ResizeObserverStub {
   observe() {}
@@ -87,12 +88,16 @@ describe("RightDock pages", () => {
   it("localizes Dock navigation and shortcuts in Chinese", async () => {
     const user = userEvent.setup();
     useAppStore.setState({ desktopSettings: settings("auto", "zh") });
-    render(<RightDock />);
+    render(
+      <>
+        <ChatHeader />
+        <RightDock />
+      </>,
+    );
 
-    expect(screen.getByRole("button", { name: "收起右侧面板" })).toHaveClass(
-      "opacity-0",
-      "group-hover/dock-edge:opacity-100",
-      "focus-visible:opacity-100",
+    expect(screen.getByRole("button", { name: "收起右侧面板" })).toHaveAttribute(
+      "title",
+      "收起面板 (Ctrl+J)",
     );
     expect(screen.getByRole("button", { name: "打开：文件" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：会话树" })).toBeVisible();
@@ -110,6 +115,36 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("menuitem", { name: "浏览器" }));
     expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
+  });
+
+  it("moves the toolbar toggle with the chat edge as the Dock opens and closes", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <>
+        <ChatHeader />
+        <RightDock />
+      </>,
+    );
+    const header = container.querySelector<HTMLElement>("[data-chat-header]")!;
+
+    expect(header).toHaveAttribute("data-dock-open", "true");
+    expect(header).toHaveClass("pr-2");
+
+    await user.click(screen.getByRole("button", { name: "Collapse right panel" }));
+
+    expect(useAppStore.getState().dockOpen).toBe(false);
+    expect(header).toHaveAttribute("data-dock-open", "false");
+    expect(header).toHaveClass("pr-[140px]");
+    expect(screen.getByRole("button", { name: "Open right panel" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Open right panel" })).toHaveAttribute(
+      "aria-controls",
+      "right-dock",
+    );
+    expect(container.querySelector("#right-dock")).toBeInTheDocument();
+    expect(container.querySelector("[data-dock-toolbar-toggle]")).toBeVisible();
   });
 
   it("opens each tool from the empty-state shortcuts", async () => {
