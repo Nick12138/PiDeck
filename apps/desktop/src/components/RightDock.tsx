@@ -720,7 +720,7 @@ export function RightDock() {
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
                   onClick={createFiles}
                 >
                   <FolderTree size={14} />
@@ -729,7 +729,7 @@ export function RightDock() {
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
                   onClick={createTree}
                 >
                   <GitBranch size={14} />
@@ -739,7 +739,7 @@ export function RightDock() {
                   type="button"
                   role="menuitem"
                   disabled={!workspaceCwd}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                   onClick={createChanges}
                 >
                   <GitCompareArrows size={14} />
@@ -749,7 +749,7 @@ export function RightDock() {
                   type="button"
                   role="menuitem"
                   disabled={browserTabs.length >= MAX_BROWSER_TABS}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                   onClick={createBrowser}
                 >
                   <Globe2 size={14} />
@@ -759,7 +759,7 @@ export function RightDock() {
                   type="button"
                   role="menuitem"
                   disabled={!workspaceCwd}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
                   onClick={createShell}
                 >
                   <SquareTerminal size={14} />

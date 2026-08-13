@@ -83,8 +83,8 @@
   --interface-primary-row-height: 2.5rem;
   --interface-list-padding-y: 0.75rem;
   --interface-compact-list-padding-y: 0.5rem;
-  --interface-menu-padding-y: 0.5rem;
-  --interface-compact-menu-padding-y: 0.375rem;
+  --interface-menu-padding-y: 0.625rem;
+  --interface-compact-menu-padding-y: 0.5rem;
   --interface-table-header-padding-y: 0.625rem;
   --interface-table-padding-y: 0.75rem;
   --interface-card-gap: 1rem;
@@ -114,8 +114,8 @@
   --interface-primary-row-height: 2.25rem;
   --interface-list-padding-y: 0.5rem;
   --interface-compact-list-padding-y: 0.375rem;
-  --interface-menu-padding-y: 0.375rem;
-  --interface-compact-menu-padding-y: 0.25rem;
+  --interface-menu-padding-y: 0.5rem;
+  --interface-compact-menu-padding-y: 0.375rem;
   --interface-table-header-padding-y: 0.375rem;
   --interface-table-padding-y: 0.5rem;
   --interface-card-gap: 0.75rem;
@@ -128,8 +128,8 @@
   --interface-primary-row-height: 2.75rem;
   --interface-list-padding-y: 1rem;
   --interface-compact-list-padding-y: 0.75rem;
-  --interface-menu-padding-y: 0.625rem;
-  --interface-compact-menu-padding-y: 0.5rem;
+  --interface-menu-padding-y: 0.75rem;
+  --interface-compact-menu-padding-y: 0.625rem;
   --interface-table-header-padding-y: 0.875rem;
   --interface-table-padding-y: 1rem;
   --interface-card-gap: 1.25rem;
@@ -204,6 +204,33 @@ body,
 .interface-density-compact-menu [role="menuitem"] {
   padding-top: var(--interface-compact-menu-padding-y);
   padding-bottom: var(--interface-compact-menu-padding-y);
+}
+
+/* Opened single-select option lists (custom menus and native selects): keep a
+   uniform panel background; options get a background tint only on hover or
+   selection. Font color is left untouched. */
+.theme-floating-surface [role="menuitem"],
+.theme-floating-surface [role="menuitemradio"] {
+  margin-block: 4px;
+  margin-inline: 4px;
+  padding-inline: 1rem;
+  padding-block: 0.5rem;
+  border-radius: var(--radius-md);
+  width: calc(100% - 8px);
+}
+
+@layer components {
+  .theme-floating-surface [role="menuitem"]:hover,
+  .theme-floating-surface [role="menuitemradio"]:hover,
+  .theme-floating-surface [role="menuitem"]:focus-visible,
+  .theme-floating-surface [role="menuitemradio"]:focus-visible {
+    background-color: var(--color-surface-overlay);
+  }
+}
+
+select option {
+  padding: 0.375rem 0.75rem;
+  background-color: var(--color-surface-overlay);
 }
 
 .interface-density-table-header-row > th {
@@ -1232,7 +1259,6 @@ textarea:focus-visible {
   border-color: transparent;
   background-color: transparent;
 }
-.chat-composer-surface:focus-within .composer-control,
 .chat-composer-surface .composer-control:hover {
   border-color: var(--color-border-subtle);
 }

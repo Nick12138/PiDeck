@@ -188,9 +188,9 @@ describe("ModelControls model menu width", () => {
     const menu = await screen.findByRole("menu", { name: "Models" });
     const menuShell = menu.parentElement;
 
-    // measured content (400) + row controls (48) exceeds the 280 default max,
-    // so the floated shell caps at the maximum width.
-    await waitFor(() => expect(menuShell).toHaveStyle({ width: "280px" }));
+    // measured content (400) + row controls (96) fits within the default max,
+    // so the floated shell matches the measured content width.
+    await waitFor(() => expect(menuShell).toHaveStyle({ width: "496px" }));
 
     scrollWidthSpy.mockRestore();
   });
@@ -206,9 +206,7 @@ describe("ModelControls model menu width", () => {
         enabledProviders: ["muapi"],
       }) as never;
     });
-    vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (
-      this: Element,
-    ) {
+    vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (this: Element) {
       return measuredWidth;
     });
 

@@ -245,9 +245,7 @@ export const en = {
   providersLoginPageSubtitle:
     "Sign in to built-in Providers with OAuth or an API key. Credentials are shared with the pi CLI.",
   providersAddChoiceOauth: "OAuth sign-in",
-  providersAddChoiceOauthHint: "Anthropic, OpenAI, Copilot, and other built-in accounts",
   providersAddChoiceCustom: "Custom Provider",
-  providersAddChoiceCustomHint: "Custom API endpoint and model list",
   providersLoginRefresh: "Refresh login status",
   providersLoginInProgress: "Signing in...",
   providersLoginConfigured: "Signed in",

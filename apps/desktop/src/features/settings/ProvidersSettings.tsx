@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Save,
   Search,
-  Server,
   SlidersHorizontal,
   Trash2,
   X,
@@ -166,7 +165,6 @@ export function ProvidersSettings() {
   const ime = useImeComposition();
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [oauthOpen, setOauthOpen] = useState(false);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<
     { kind: "select"; id: string } | { kind: "new" } | { kind: "oauth" } | null
   >(null);
@@ -649,68 +647,18 @@ export function ProvidersSettings() {
                 onChange={(event) => setProviderSearch(event.target.value)}
               />
             </div>
-            <div className="relative">
-              <button
-                type="button"
-                className="theme-secondary-control flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
-                title={t("providersAdd")}
-                aria-haspopup="menu"
-                aria-expanded={addMenuOpen}
-                onClick={() => setAddMenuOpen((current) => !current)}
-              >
-                <Plus size={15} />
-              </button>
-              {addMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setAddMenuOpen(false)} />
-                  <div
-                    role="menu"
-                    className="theme-floating-surface interface-density-menu absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
-                  >
-                    <button
-                      role="menuitem"
-                      type="button"
-                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-control-hover"
-                      onClick={() => {
-                        setAddMenuOpen(false);
-                        if (dirty) setPendingSwitch({ kind: "oauth" });
-                        else openOauthLogin();
-                      }}
-                    >
-                      <LogIn className="mt-0.5 shrink-0 text-muted" size={14} />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium">
-                          {t("providersAddChoiceOauth")}
-                        </span>
-                        <span className="block text-[10px] text-muted">
-                          {t("providersAddChoiceOauthHint")}
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      type="button"
-                      className="flex w-full items-start gap-2 rounded px-2.5 py-2 text-left hover:bg-control-hover"
-                      onClick={() => {
-                        setAddMenuOpen(false);
-                        if (dirty) setPendingSwitch({ kind: "new" });
-                        else startNewProvider();
-                      }}
-                    >
-                      <Server className="mt-0.5 shrink-0 text-muted" size={14} />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium">
-                          {t("providersAddChoiceCustom")}
-                        </span>
-                        <span className="block text-[10px] text-muted">
-                          {t("providersAddChoiceCustomHint")}
-                        </span>
-                      </span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <button
+              type="button"
+              className="theme-secondary-control flex size-8 shrink-0 items-center justify-center rounded-md border border-border hover:bg-surface-overlay"
+              title={t("providersAdd")}
+              aria-label={t("providersAdd")}
+              onClick={() => {
+                if (dirty) setPendingSwitch({ kind: "new" });
+                else startNewProvider();
+              }}
+            >
+              <Plus size={15} />
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {loading ? (

@@ -15,9 +15,9 @@ import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 
 const MODEL_MENU_MIN_WIDTH = 120;
-const MODEL_MENU_DEFAULT_MAX_WIDTH = 280;
+const MODEL_MENU_DEFAULT_MAX_WIDTH = 640;
 const MODEL_MENU_MAX_WIDTH = 640;
-const MODEL_MENU_ROW_CONTROLS_WIDTH = 48;
+const MODEL_MENU_ROW_CONTROLS_WIDTH = 96;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
 const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
 const CONTEXT_BREAKDOWN_KEYS = [
@@ -172,7 +172,7 @@ export function ContextUsageRing() {
     <span ref={containerRef} className="relative flex shrink-0 items-center">
       <button
         type="button"
-        className="relative flex size-8 shrink-0 items-center justify-center rounded-full"
+        className="relative flex size-6 shrink-0 items-center justify-center rounded-full"
         style={{
           background: `conic-gradient(var(--color-accent) ${
             percent === null ? 0 : percent * 3.6
@@ -453,7 +453,7 @@ export function ModelControls() {
 
   return (
     <div className="flex min-w-0 items-center">
-      <div ref={menuRef} className="relative flex h-8 min-w-0 max-w-[280px] items-center">
+      <div ref={menuRef} className="relative flex h-8 min-w-0 max-w-[480px] items-center">
         <span
           ref={modelMenuMeasureRef}
           aria-hidden="true"
@@ -502,28 +502,32 @@ export function ModelControls() {
                     session?.model?.provider === model.provider &&
                     session.model.modelId === model.modelId;
                   return (
-                    <div key={key} className="flex h-8 items-center gap-0.5 px-1">
-                      <button
-                        type="button"
-                        className={`min-w-0 flex-1 truncate px-1.5 py-1 text-left text-xs ${
-                          selected ? "font-medium text-accent" : "text-foreground hover:text-accent"
-                        }`}
-                        role="menuitemradio"
-                        aria-checked={selected}
-                        title={modelOptionLabel(model)}
-                        onClick={() => {
-                          if (selected) {
-                            setMenuOpen(false);
-                            return;
-                          }
-                          void setModel(model.provider, model.modelId).then((changed) => {
-                            if (changed) setMenuOpen(false);
-                          });
-                        }}
-                      >
-                        {modelOptionLabel(model)}
-                      </button>
-                    </div>
+                    <button
+                      key={key}
+                      type="button"
+                      className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs text-muted ${
+                        selected ? "font-medium" : ""
+                      }`}
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      title={modelOptionLabel(model)}
+                      onClick={() => {
+                        if (selected) {
+                          setMenuOpen(false);
+                          return;
+                        }
+                        void setModel(model.provider, model.modelId).then((changed) => {
+                          if (changed) setMenuOpen(false);
+                        });
+                      }}
+                    >
+                      <span className="whitespace-nowrap">{modelOptionLabel(model)}</span>
+                      {selected && (
+                        <span className="ml-auto flex shrink-0 items-center justify-center">
+                          <Check size={16} strokeWidth={2.5} />
+                        </span>
+                      )}
+                    </button>
                   );
                 })
               )}
@@ -593,8 +597,10 @@ export function ThinkingControls() {
     <div ref={containerRef} className="relative flex min-w-0 items-center">
       <button
         type="button"
-        className={`composer-control flex h-8 items-center justify-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
-          open ? "bg-surface-overlay text-foreground" : "text-muted hover:bg-surface-overlay hover:text-foreground"
+        className={`composer-control flex h-8 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
+          open
+            ? "bg-surface-overlay text-foreground"
+            : "text-muted hover:bg-surface-overlay hover:text-foreground"
         } disabled:cursor-default disabled:opacity-40`}
         disabled={!session.isIdle && !session.isCompacting}
         aria-haspopup="menu"
@@ -603,11 +609,11 @@ export function ThinkingControls() {
         onClick={() => setOpen((current) => !current)}
       >
         <Brain size={15} className="shrink-0" />
+        <span className="whitespace-nowrap capitalize">{thinkingLevelLabel(currentLevel)}</span>
       </button>
       {open && (
         <div
-          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
-          role="menu"
+          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-[150px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"          role="menu"
           aria-label={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
         >
           {levels.map((level) => {
@@ -616,19 +622,19 @@ export function ThinkingControls() {
               <button
                 key={level}
                 type="button"
-                className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] capitalize ${
-                  active
-                    ? "bg-accent/15 text-accent"
-                    : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                className={`flex h-8 w-full items-center gap-1.5 whitespace-nowrap px-2.5 text-left text-[11px] capitalize text-muted ${
+                  active ? "font-medium" : ""
                 }`}
                 role="menuitemradio"
                 aria-checked={active}
                 onClick={() => void applyLevel(level)}
               >
-                <span className="flex size-3 shrink-0 items-center justify-center">
-                  {active && <Check size={11} />}
-                </span>
                 {thinkingLevelLabel(level)}
+                {active && (
+                  <span className="ml-auto flex shrink-0 items-center justify-center">
+                    <Check size={16} strokeWidth={2.5} />
+                  </span>
+                )}
               </button>
             );
           })}
