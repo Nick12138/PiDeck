@@ -8,6 +8,9 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
 import { PROGRESSIVE_BATCH_ROWS } from "./progressive-mount";
+import { requestTranscriptScroll } from "../../lib/transcript-navigation";
+import { clearTranscriptScrollPositions } from "./transcript-scroll-memory";
+import { buildTranscriptRows } from "./transcript-model";
 
 const linkMocks = vi.hoisted(() => ({
   requestDockBrowser: vi.fn(),
@@ -157,6 +160,7 @@ describe("Transcript Session-open scrolling", () => {
     });
     linkMocks.requestDockBrowser.mockReset().mockReturnValue(true);
     linkMocks.openSystemUrl.mockReset().mockResolvedValue(undefined);
+    clearTranscriptScrollPositions();
   });
 
   afterEach(() => {
@@ -419,6 +423,44 @@ describe("Transcript Session-open scrolling", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
       flushIdleToConvergence();
       expect(container.querySelectorAll(".transcript-row")).toHaveLength(150);
+    });
+
+    it("jumps to an unmounted row, mounting and flashing it", () => {
+      const longA = longSession(SESSION_A, 150);
+      act(() => useAppStore.setState({ session: longA }));
+      const { container } = render(<Transcript />);
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+
+      const targetKey = buildTranscriptRows(longA.messages)[5]!.key;
+      let handled = false;
+      act(() => {
+        handled = requestTranscriptScroll({ rowKey: targetKey });
+      });
+
+      expect(handled).toBe(true);
+      // hidden dropped to the target index minus context rows (5 - 3 = 2).
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(148);
+      const flashed = container.querySelector('[data-jump-flash="true"]');
+      expect(flashed).not.toBeNull();
+      expect(flashed).toHaveAttribute("data-row-key", targetKey);
+    });
+
+    it("restores the reading position when switching back to a session", () => {
+      const longA = longSession(SESSION_A, 150);
+      act(() => useAppStore.setState({ session: longA }));
+      const { container } = render(<Transcript />);
+      const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+      unfollow(scroll);
+      expect(scroll.scrollTop).toBe(650);
+
+      act(() => useAppStore.setState({ session: session(SESSION_B, "Second Session") }));
+      flushFrames();
+      expect(scroll.scrollTop).toBe(700);
+
+      act(() => useAppStore.setState({ session: longA }));
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+      expect(scroll.scrollTop).toBe(650);
+      expect(screen.getByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
     });
 
     it("mounts the next batch synchronously when the reader nears the top edge", () => {
