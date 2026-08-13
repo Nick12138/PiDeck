@@ -1325,11 +1325,15 @@ textarea:focus-visible {
   background: var(--color-border);
 }
 
-/* Transcript virtualization: skip layout/paint for offscreen rows.
-   `auto` keeps the last measured size once a row has been rendered. */
-.transcript-row {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
+/* Transcript rows render fully at mount (no content-visibility): estimated
+   placeholder heights caused upward-scroll drift on WebKit when offscreen
+   rows swapped to their real size. Mounting is paced instead by the idle
+   batches in progressive-mount.ts, so scroll geometry is always exact. */
+
+/* Transcript.tsx compensates scroll position for batch prepends itself;
+   native scroll anchoring would adjust a second time and cause jitter. */
+[data-transcript-scroll] {
+  overflow-anchor: none;
 }
 
 /* Keep the long-running trace indicator on WebKit's compositor while the

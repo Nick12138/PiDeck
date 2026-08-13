@@ -7,6 +7,7 @@ import type { SessionSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
+import { PROGRESSIVE_BATCH_ROWS } from "./progressive-mount";
 
 const linkMocks = vi.hoisted(() => ({
   requestDockBrowser: vi.fn(),
@@ -24,6 +25,16 @@ vi.mock("../../lib/open-system-url", () => ({
 const SESSION_A = "33333333-3333-4333-8333-333333333333";
 const SESSION_B = "44444444-4444-4444-8444-444444444444";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
+
+function longSession(sessionId: string, messageCount: number): SessionSnapshot {
+  return {
+    ...session(sessionId, "seed"),
+    messages: Array.from({ length: messageCount }, (_, index) => ({
+      role: "user" as const,
+      content: `Message ${index + 1}`,
+    })),
+  };
+}
 
 function session(sessionId: string, text: string): SessionSnapshot {
   return {
@@ -79,6 +90,24 @@ function flushFrames() {
   });
 }
 
+let nextIdleId = 1;
+let idleCallbacks = new Map<number, () => void>();
+
+function flushIdle() {
+  act(() => {
+    const pending = [...idleCallbacks.values()];
+    idleCallbacks.clear();
+    pending.forEach((callback) => callback());
+  });
+}
+
+/** Each flush runs one mount batch; loop until the idle queue settles. */
+function flushIdleToConvergence(maxBatches = 60) {
+  for (let batch = 0; batch < maxBatches && idleCallbacks.size > 0; batch++) {
+    flushIdle();
+  }
+}
+
 describe("Transcript Session-open scrolling", () => {
   beforeEach(() => {
     nextFrameId = 1;
@@ -97,6 +126,22 @@ describe("Transcript Session-open scrolling", () => {
       "cancelAnimationFrame",
       vi.fn((id: number) => {
         frames.delete(id);
+      }),
+    );
+    nextIdleId = 1;
+    idleCallbacks = new Map();
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: () => void) => {
+        const id = nextIdleId++;
+        idleCallbacks.set(id, callback);
+        return id;
+      }),
+    );
+    vi.stubGlobal(
+      "cancelIdleCallback",
+      vi.fn((id: number) => {
+        idleCallbacks.delete(id);
       }),
     );
     useAppStore.setState({
@@ -309,5 +354,90 @@ describe("Transcript Session-open scrolling", () => {
       shiftKey: true,
     });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  describe("progressive mounting", () => {
+    /** Fake metrics, then release the tail pin with an upward history read. */
+    function unfollow(scroll: HTMLElement) {
+      let scrollTop = 0;
+      Object.defineProperties(scroll, {
+        clientHeight: { configurable: true, get: () => 300 },
+        scrollHeight: { configurable: true, get: () => 1_000 },
+        scrollTop: {
+          configurable: true,
+          get: () => scrollTop,
+          set: (value: number) => {
+            scrollTop = Math.max(0, Math.min(value, 700));
+          },
+        },
+      });
+      flushFrames();
+      scroll.scrollTop = 650;
+      fireEvent.scroll(scroll);
+    }
+
+    it("opens with only the tail mounted, then converges once the reader unpins", async () => {
+      act(() => useAppStore.setState({ session: longSession(SESSION_A, 150) }));
+      const { container } = render(<Transcript />);
+      const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+      expect(
+        screen.getByRole("button", { name: "Show earlier messages (90 hidden)" }),
+      ).toBeInTheDocument();
+
+      unfollow(scroll);
+      // A genuine user scroll pauses idle mounting for the quiet window.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      flushIdleToConvergence();
+
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(150);
+      expect(
+        screen.queryByRole("button", { name: /Show earlier messages/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("yields idle mounting to a followed stream and converges after it settles", async () => {
+      act(() =>
+        useAppStore.setState({
+          session: { ...longSession(SESSION_A, 150), isStreaming: true, isIdle: false },
+        }),
+      );
+      const { container } = render(<Transcript />);
+      const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+
+      expect(idleCallbacks.size).toBe(0);
+      flushIdleToConvergence();
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+
+      act(() =>
+        useAppStore.setState({
+          session: { ...longSession(SESSION_A, 150), isStreaming: false, isIdle: true },
+        }),
+      );
+      unfollow(scroll);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      flushIdleToConvergence();
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(150);
+    });
+
+    it("mounts the next batch synchronously when the reader nears the top edge", () => {
+      act(() => useAppStore.setState({ session: longSession(SESSION_A, 300) }));
+      const { container } = render(<Transcript />);
+      const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+      Object.defineProperties(scroll, {
+        clientHeight: { configurable: true, get: () => 300 },
+        scrollHeight: { configurable: true, get: () => 2_000 },
+        scrollTop: { configurable: true, writable: true, value: 500 },
+      });
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+
+      fireEvent.scroll(scroll);
+
+      // One synchronous boost batch at the initial adaptive size.
+      expect(container.querySelectorAll(".transcript-row")).toHaveLength(
+        60 + PROGRESSIVE_BATCH_ROWS,
+      );
+    });
   });
 });
