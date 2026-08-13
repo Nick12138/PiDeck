@@ -45,19 +45,9 @@ export function sessionStatusDotClass(state: SessionRuntimeState): string | null
 
 export function filterSessionItems(
   items: SessionCatalogEntry[],
-  query: string,
   filter: SessionFilter,
-  untitledLabel: string,
 ): SessionCatalogEntry[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  return items.filter((item) => {
-    if (filter === "archived" ? !item.archived : item.archived) return false;
-    if (!normalizedQuery) return true;
-    return [sessionDisplayName(item, untitledLabel), item.cwd, item.sessionId]
-      .join("\n")
-      .toLocaleLowerCase()
-      .includes(normalizedQuery);
-  });
+  return items.filter((item) => (filter === "archived" ? item.archived : !item.archived));
 }
 
 export function canReloadSession(

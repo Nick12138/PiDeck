@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, LoaderCircle, MessageCirclePlus, Settings } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  MessageCirclePlus,
+  Search,
+  Settings,
+} from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -12,7 +19,7 @@ import {
   isCreateSessionPending,
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
-import { subscribeSidebarToggle } from "../lib/commands/events";
+import { requestGlobalSearchOpen, subscribeSidebarToggle } from "../lib/commands/events";
 
 const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
@@ -207,6 +214,18 @@ export function SidebarLayout({
             <span className="text-[15px] font-semibold" data-sidebar-brand>
               Pi Agent
             </span>
+            <div className="ml-auto flex items-center gap-0.5">
+              <button
+                type="button"
+                title={t("commandGlobalSearch")}
+                aria-label={t("commandGlobalSearch")}
+                disabled={!host}
+                className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                onClick={requestGlobalSearchOpen}
+              >
+                <Search size={15} />
+              </button>
+            </div>
           </div>
 
           <div className="px-2 pb-3 pt-2">
@@ -217,14 +236,8 @@ export function SidebarLayout({
             <WorkspacePicker />
           </div>
 
-          {/* Collapsed: the header row docks at the bottom, right above Settings. */}
-          <div
-            className={
-              sessionsCollapsed
-                ? "mt-auto shrink-0 border-t border-border px-2 py-1"
-                : "scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3"
-            }
-          >
+          {/* Collapsed or not, the header row stays in place below Workspaces. */}
+          <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             <SessionList
               showCreateAction={false}
               collapsed={sessionsCollapsed}

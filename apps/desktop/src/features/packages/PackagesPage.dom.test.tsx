@@ -859,3 +859,116 @@ describe("PackagesPage DOM workflows", () => {
     expect(shellOpen).toHaveBeenCalledWith("https://pi.dev/packages");
   });
 });
+
+describe("PackagesPage market tab", () => {
+  let request: MockInstance<typeof hostClient.request>;
+  let catalogResult: () => HostResponseEnvelope;
+
+  function catalogEnvelope(): HostResponseEnvelope {
+    return envelope("package.catalog", {
+      generatedAt: 1,
+      fromCache: false,
+      items: [
+        {
+          name: "tools",
+          description: "Already installed helper",
+          author: "tester",
+          types: ["extension"],
+          downloadsPerMonth: 43_100,
+          publishedAt: 1_784_623_367_738,
+          npmUrl: "https://www.npmjs.com/package/tools",
+          searchText: "tools already installed helper",
+          installSource: "npm:tools",
+          pageUrl: "https://pi.dev/packages/tools",
+        },
+        {
+          name: "pi-web-access",
+          description: "Web search for Pi",
+          author: "nicopreme",
+          types: ["extension", "skill"],
+          downloadsPerMonth: 222_000,
+          publishedAt: 1_785_450_190_149,
+          searchText: "pi-web-access web search",
+          installSource: "npm:pi-web-access",
+          pageUrl: "https://pi.dev/packages/pi-web-access",
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    shellOpen.mockReset();
+    catalogResult = catalogEnvelope;
+    useAppStore.getState().setHost(null);
+    useAppStore.getState().setWorkspace(null);
+    useAppStore.getState().applyPackageSnapshot(null);
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applyPackageSnapshot(snapshot());
+    request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method === "package.list") return envelope(method, snapshot());
+      if (method === "package.catalog") return catalogResult();
+      throw new Error(`Unexpected method ${method}`);
+    });
+  });
+
+  afterEach(() => {
+    request.mockRestore();
+    cleanup();
+  });
+
+  it("loads the catalog lazily and marks installed packages", async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    expect(request).not.toHaveBeenCalledWith(
+      "package.catalog",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Market" }));
+    expect(await screen.findByText("pi-web-access")).toBeInTheDocument();
+    expect(request).toHaveBeenCalledWith(
+      "package.catalog",
+      { expectedHostInstanceId: "h1" },
+      {},
+      30_000,
+    );
+
+    const installedCard = screen.getByText("tools").closest("[data-market-card]");
+    expect(installedCard).not.toBeNull();
+    expect(within(installedCard as HTMLElement).getByText("Installed")).toBeInTheDocument();
+    expect(screen.getByText("222K/mo")).toBeInTheDocument();
+  });
+
+  it("starts the existing install review from a market card", async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(await screen.findByRole("button", { name: "Market" }));
+
+    const card = (await screen.findByText("pi-web-access")).closest("[data-market-card]");
+    await user.click(within(card as HTMLElement).getByRole("button", { name: /Install/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("npm:pi-web-access")).toBeInTheDocument();
+  });
+
+  it("shows a recoverable error with a browser fallback", async () => {
+    catalogResult = () =>
+      ({
+        ...catalogEnvelope(),
+        ok: false,
+        result: undefined,
+        error: { code: "CATALOG_UNAVAILABLE", message: "offline", retryable: true },
+      }) as unknown as HostResponseEnvelope;
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(await screen.findByRole("button", { name: "Market" }));
+
+    expect(await screen.findByText("Couldn't load the package catalog")).toBeInTheDocument();
+    expect(screen.getByText("offline")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Open pi.dev/ }));
+    expect(shellOpen).toHaveBeenCalledWith("https://pi.dev/packages");
+  });
+});

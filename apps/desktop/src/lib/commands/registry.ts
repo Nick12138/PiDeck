@@ -5,7 +5,7 @@ import { requestTreePanel } from "../dock-tree";
 import { abortCurrentAgent, createNewSession, isCreateSessionPending } from "./actions";
 import {
   requestDockCommand,
-  requestSessionSearchFocus,
+  requestGlobalSearchOpen,
   requestShortcutHelp,
   requestSidebarToggle,
 } from "./events";
@@ -36,7 +36,8 @@ export const appCommands: readonly AppCommand[] = [
     titleKey: "commandNewSession",
     chord: "mod+n",
     worksInTerminal: true,
-    enabled: (state) => Boolean(state.host && state.workspace?.servicesReady) && !isCreateSessionPending(),
+    enabled: (state) =>
+      Boolean(state.host && state.workspace?.servicesReady) && !isCreateSessionPending(),
     run: createNewSession,
   },
   {
@@ -68,12 +69,12 @@ export const appCommands: readonly AppCommand[] = [
     run: requestTreePanel,
   },
   {
-    id: "sessions.focusSearch",
-    titleKey: "commandFocusSessionSearch",
+    id: "sessions.globalSearch",
+    titleKey: "commandGlobalSearch",
     chord: "mod+f",
-    run: () => {
-      if (!requestSessionSearchFocus()) requestSidebarToggle();
-    },
+    worksInTerminal: true,
+    enabled: (state) => Boolean(state.host),
+    run: requestGlobalSearchOpen,
   },
   ...dockTabCommands,
   {

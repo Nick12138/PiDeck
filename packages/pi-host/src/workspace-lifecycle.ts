@@ -56,7 +56,7 @@ function workspaceCanonicalPathsEqual(
 }
 
 export class WorkspaceLifecycle {
-  private static readonly MAX_RETAINED_GRAPHS = 3;
+  private static readonly MAX_RETAINED_GRAPHS = 5;
   private readonly retainedGraphs = new Map<string, WorkspaceGraph>();
 
   constructor(

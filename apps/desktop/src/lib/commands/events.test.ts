@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  requestSessionSearchFocus,
-  subscribeSessionSearchFocus,
-} from "./events";
+import { requestGlobalSearchOpen, subscribeGlobalSearchOpen } from "./events";
 
-describe("session search command bus", () => {
-  it("queues focus until the collapsed Sidebar remounts SessionList", () => {
-    expect(requestSessionSearchFocus()).toBe(false);
+describe("global search command bus", () => {
+  it("notifies the subscribed handler and stops after unsubscribe", () => {
     const handler = vi.fn();
-    const unsubscribe = subscribeSessionSearchFocus(handler);
+    requestGlobalSearchOpen();
+    expect(handler).not.toHaveBeenCalled();
+
+    const unsubscribe = subscribeGlobalSearchOpen(handler);
+    requestGlobalSearchOpen();
     expect(handler).toHaveBeenCalledOnce();
-    expect(requestSessionSearchFocus()).toBe(true);
-    expect(handler).toHaveBeenCalledTimes(2);
+
     unsubscribe();
+    requestGlobalSearchOpen();
+    expect(handler).toHaveBeenCalledOnce();
   });
 });

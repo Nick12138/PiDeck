@@ -6,7 +6,7 @@ import {
   FileText,
   LoaderCircle,
   MessageCircleQuestion,
-  Paperclip,
+Paperclip,
   Puzzle,
   RefreshCw,
   Send,

@@ -14,6 +14,8 @@ import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { Dialog } from "../components/Dialog";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
+import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
+import { WorkspaceSwitchTransition } from "../features/workspaces/WorkspaceSwitchTransition";
 import { applyTheme } from "../lib/theme";
 import { applyAppearancePreferences } from "../lib/appearance-preferences";
 import {
@@ -1043,7 +1045,7 @@ export function App() {
         aria-hidden={startupVisible ? true : undefined}
       >
         <Sidebar />
-        <main className="flex min-w-0 flex-1 flex-col bg-surface">
+        <main className="relative flex min-w-0 flex-1 flex-col bg-surface">
           {hostFatal ? (
             <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
               <h2 className="mb-2 font-semibold text-danger">Host unavailable</h2>
@@ -1054,7 +1056,9 @@ export function App() {
               </p>
             </div>
           ) : (
-            <ChatPage />
+            <WorkspaceSwitchTransition>
+              <ChatPage />
+            </WorkspaceSwitchTransition>
           )}
         </main>
         <RightDock />
@@ -1065,6 +1069,7 @@ export function App() {
         />
       )}
       <ExtensionUiModal />
+      <GlobalSearchHost />
       <CommandLayer />
       {startupVisible && (
         <StartupScreen stage={startupStage} exiting={startupPhase === "exiting"} />

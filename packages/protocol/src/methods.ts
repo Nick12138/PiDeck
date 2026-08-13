@@ -46,6 +46,7 @@ export const HOST_METHODS = [
   "session.fork",
   "session.export",
   "session.usageReport",
+  "session.searchAll",
   "session.getCommands",
   "agent.prompt",
   "agent.steer",
@@ -79,6 +80,7 @@ export const HOST_METHODS = [
   "model.setCurrent",
   "model.setThinkingLevel",
   "package.list",
+  "package.catalog",
   "package.install",
   "package.remove",
   "package.checkUpdates",
@@ -153,6 +155,8 @@ export type HostOnlyMethod =
   | "provider.logout"
   | "provider.builtinModels"
   | "provider.setBuiltinModels"
+  | "session.searchAll"
+  | "package.catalog"
   | "extensionUi.configure";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
@@ -308,6 +312,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.fork": "activeSession",
   "session.export": "activeSession",
   "session.usageReport": "workspace",
+  "session.searchAll": "host",
   "session.getCommands": "activeSession",
   "agent.prompt": "activeSession",
   "agent.steer": "activeSession",
@@ -341,6 +346,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",
   "package.list": "workspace",
+  "package.catalog": "host",
   "package.install": "sessionPackage",
   "package.remove": "sessionPackage",
   "package.checkUpdates": "workspace",

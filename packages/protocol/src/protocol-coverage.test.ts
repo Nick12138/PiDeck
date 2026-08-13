@@ -130,6 +130,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.fork": { entryId: "55555555-5555-4555-8555-555555555555" },
   "session.export": { format: "html" },
   "session.usageReport": null,
+  "session.searchAll": { query: "hello" },
   "session.getCommands": null,
   "agent.prompt": { text: "hi" },
   "agent.steer": { text: "hi" },
@@ -186,6 +187,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
   "package.list": { scope: "all" },
+  "package.catalog": {},
   "package.install": { source: "npm:x", scope: "user" },
   "package.remove": { packageId: "p1" },
   "package.checkUpdates": null,
@@ -270,6 +272,8 @@ function invalidParams(method: HostMethod): unknown {
       return { path: "x" }; // missing cwd
     case "workspace.searchFiles":
       return { query: 1 };
+    case "session.searchAll":
+      return { query: "   " };
     case "workspace.listDirectory":
       return { path: 1 };
     case "workspace.setDirectoryWatches":
@@ -369,6 +373,8 @@ function invalidParams(method: HostMethod): unknown {
       return {};
     case "package.list":
       return { scope: "both" };
+    case "package.catalog":
+      return { refresh: "yes" };
     case "package.install":
       return { source: "x", scope: "all" };
     case "package.remove":

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, forwardRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { AlertCircle, AlertTriangle, Bell, CheckCircle2, Info, Trash2, X } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 import { useAppStore, type AppNotification } from "../lib/stores/app-store";
@@ -6,13 +6,23 @@ import { useAppStore, type AppNotification } from "../lib/stores/app-store";
 function levelStyle(level: string) {
   switch (level) {
     case "error":
-      return { icon: AlertCircle, color: "text-danger", label: "Error" };
+      return { icon: AlertCircle, color: "text-danger", accent: "border-l-danger", label: "Error" };
     case "warning":
-      return { icon: AlertTriangle, color: "text-warning", label: "Warning" };
+      return {
+        icon: AlertTriangle,
+        color: "text-warning",
+        accent: "border-l-warning",
+        label: "Warning",
+      };
     case "success":
-      return { icon: CheckCircle2, color: "text-success", label: "Success" };
+      return {
+        icon: CheckCircle2,
+        color: "text-success",
+        accent: "border-l-success",
+        label: "Success",
+      };
     default:
-      return { icon: Info, color: "text-info", label: "Information" };
+      return { icon: Info, color: "text-info", accent: "border-l-info", label: "Information" };
   }
 }
 
@@ -24,27 +34,23 @@ function notificationTime(createdAt: number) {
   }).format(createdAt);
 }
 
-// Matches the panel width in the CSS (`w-[min(25rem,calc(100vw-1.5rem))]`);
-// on desktop the 25rem cap is what applies. Used to center the popover on
-// the bell button without measuring the rendered element.
-const PANEL_WIDTH = 25 * 16;
-
-export const NotificationPanel = forwardRef<
-  HTMLElement,
-  {
-    notifications: AppNotification[];
-    onDismiss: (id: string) => void;
-    onClear: () => void;
-    anchorStyle?: CSSProperties;
-  }
->(function NotificationPanel({ notifications, onDismiss, onClear, anchorStyle }, ref) {
+export function NotificationPanel({
+  notifications,
+  onDismiss,
+  onClear,
+  style,
+}: {
+  notifications: AppNotification[];
+  onDismiss: (id: string) => void;
+  onClear: () => void;
+  style?: CSSProperties;
+}) {
   const t = useT();
   return (
     <section
-      ref={ref}
       role="dialog"
       aria-label={t("notifCenterTitle")}
-      style={anchorStyle}
+      style={style}
       className="theme-floating-surface fixed z-[70] flex max-h-[min(32rem,calc(100vh-4.25rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
@@ -107,36 +113,94 @@ export const NotificationPanel = forwardRef<
       )}
     </section>
   );
-});
+}
+
+const TOAST_DURATION_MS = 6_000;
+const TOAST_LEAVE_MS = 200;
+const MAX_STACKED_TOASTS = 3;
+
+// Matches the panel width in the CSS (`w-[min(25rem,calc(100vw-1.5rem))]`);
+// on desktop the 25rem cap is what applies.
+const PANEL_WIDTH_PX = 25 * 16;
+
+// The popover uses fixed positioning anchored to the bell button so it can
+// overflow the sidebar's overflow:hidden (the sidebar is only 220–420px wide,
+// a 25rem panel would be clipped by an absolute anchor). It opens above the
+// button with its left edge aligned to the button's left edge, growing right.
+// The +0.5rem on `bottom` keeps the panel clear of the bell's hover bg.
+function panelAnchorStyle(rootRef: RefObject<HTMLDivElement | null>): CSSProperties {
+  const rect = rootRef.current?.getBoundingClientRect();
+  if (!rect) return { visibility: "hidden" };
+  const left = Math.min(rect.left, window.innerWidth - PANEL_WIDTH_PX - 8);
+  return {
+    left: `${Math.max(8, Math.round(left))}px`,
+    bottom: `calc(100vh - ${Math.round(rect.top)}px + 0.5rem)`,
+  };
+}
+
+type ActiveToast = { id: string; leaving: boolean };
 
 export function NotificationCenter() {
   const t = useT();
   const notifications = useAppStore((state) => state.notifications);
   const dismissNotification = useAppStore((state) => state.dismissNotification);
   const clearNotifications = useAppStore((state) => state.clearNotifications);
+  const markNotificationsRead = useAppStore((state) => state.markNotificationsRead);
   const [open, setOpen] = useState(false);
-  const [toastId, setToastId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ActiveToast[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLElement>(null);
   const previousLatestId = useRef<string | null>(null);
-  const latest = notifications.at(-1) ?? null;
-  const latestId = latest?.id ?? null;
+  const toastTimers = useRef(new Map<string, number[]>());
+  const latestId = notifications.at(-1)?.id ?? null;
+
+  function clearToastTimers(id: string) {
+    for (const timer of toastTimers.current.get(id) ?? []) window.clearTimeout(timer);
+    toastTimers.current.delete(id);
+  }
+
+  function dismissAllToasts() {
+    for (const id of toastTimers.current.keys()) {
+      for (const timer of toastTimers.current.get(id) ?? []) window.clearTimeout(timer);
+    }
+    toastTimers.current.clear();
+    setToasts([]);
+  }
 
   useEffect(() => {
     if (!latestId || latestId === previousLatestId.current) return;
     previousLatestId.current = latestId;
-    setToastId(latestId);
-    const timer = window.setTimeout(() => setToastId(null), 6_000);
-    return () => window.clearTimeout(timer);
-  }, [latestId]);
+    // The open panel already shows (and marks read) incoming notifications.
+    if (open) return;
+    setToasts((current) =>
+      [...current.filter((toast) => toast.id !== latestId), { id: latestId, leaving: false }].slice(
+        -MAX_STACKED_TOASTS,
+      ),
+    );
+    const leaveTimer = window.setTimeout(() => {
+      setToasts((current) =>
+        current.map((toast) => (toast.id === latestId ? { ...toast, leaving: true } : toast)),
+      );
+    }, TOAST_DURATION_MS - TOAST_LEAVE_MS);
+    const removeTimer = window.setTimeout(() => {
+      toastTimers.current.delete(latestId);
+      setToasts((current) => current.filter((toast) => toast.id !== latestId));
+    }, TOAST_DURATION_MS);
+    toastTimers.current.set(latestId, [leaveTimer, removeTimer]);
+  }, [latestId, open]);
+
+  useEffect(
+    () => () => {
+      for (const timers of toastTimers.current.values()) {
+        for (const timer of timers) window.clearTimeout(timer);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
     const closeOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
-        setOpen(false);
-      }
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       // A dialog or modal above us already acted on this Escape.
@@ -150,10 +214,11 @@ export function NotificationCenter() {
     };
   }, [open]);
 
-  // Re-anchor the panel/toast if the viewport changes (window resize,
+  // Re-anchor the anchored panel if the viewport changes (window resize,
   // sidebar resize handle, device pixel ratio change, scroll, etc).
   const [anchorTick, setAnchorTick] = useState(0);
   useEffect(() => {
+    if (!open) return;
     const reanchor = () => setAnchorTick((n) => n + 1);
     window.addEventListener("resize", reanchor);
     window.addEventListener("scroll", reanchor, true);
@@ -161,102 +226,106 @@ export function NotificationCenter() {
       window.removeEventListener("resize", reanchor);
       window.removeEventListener("scroll", reanchor, true);
     };
-  }, []);
-  // anchorTick is only read indirectly via getAnchorStyle's closure over
+  }, [open]);
+  // anchorTick is only read indirectly via panelAnchorStyle's closure over
   // rootRef.current; referencing it here keeps the linter happy and makes the
   // re-render dependency explicit.
   void anchorTick;
 
-  const toast = !open && toastId ? notifications.find((item) => item.id === toastId) : null;
-  const urgentCount = notifications.filter(
-    (notification) => notification.level === "error" || notification.level === "warning",
-  ).length;
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const urgentUnread = notifications.some(
+    (notification) =>
+      !notification.read && (notification.level === "error" || notification.level === "warning"),
+  );
 
-  // The popover/toast are rendered with fixed positioning anchored to the bell
-  // button's bounding rect so they can overflow the sidebar's overflow:hidden
-  // (the sidebar is only 220–420px wide; the 25rem panel would be clipped by
-  // an absolute anchor). Compute the anchor on each render that matters.
-  // The +0.5rem on `bottom` keeps the panel clear of the bell's hover bg.
-  const getAnchorStyle = (): CSSProperties => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return { visibility: "hidden" as const };
-    // Horizontally center the panel on the bell; clamp to the viewport edges
-    // (at the minimum sidebar width the centering would overflow the left).
-    const center = rect.left + rect.width / 2;
-    const left = Math.max(8, Math.min(center - PANEL_WIDTH / 2, window.innerWidth - PANEL_WIDTH - 8));
-    return {
-      left: `${Math.round(left)}px`,
-      bottom: `calc(100vh - ${Math.round(rect.top)}px + 0.5rem)`,
-    };
-  };
+  useEffect(() => {
+    if (open && unreadCount > 0) markNotificationsRead();
+  }, [open, unreadCount, markNotificationsRead]);
+
+  function openPanel() {
+    setOpen(true);
+    markNotificationsRead();
+    dismissAllToasts();
+  }
 
   return (
     <>
       {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
-        the toast is a sibling so its own z-[70] layer stays on top of both.
-        The panel/toast render as siblings of rootRef (not inside it) so their
-        fixed z-[70]/[71] stack globally instead of being contained by the
-        bell wrapper's z-30 stacking context. They still anchor to the bell
-        via rootRef.getBoundingClientRect(). */}
+        the toast stack is a sibling so its own z-[70] layer stays on top of both. */}
       <div ref={rootRef} className="relative z-30">
         <button
           type="button"
           title={t("notifCenterTitle")}
-          aria-label={t("notifCenterLabel", { count: notifications.length })}
+          aria-label={t("notifCenterLabel", { count: unreadCount })}
           aria-expanded={open}
           onClick={() => {
-            setOpen((value) => !value);
-            setToastId(null);
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            openPanel();
           }}
           className={`relative flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
-            urgentCount > 0 ? "text-warning" : ""
+            urgentUnread ? "text-warning" : ""
           }`}
         >
           <Bell size={15} />
-          {notifications.length > 0 && (
+          {unreadCount > 0 && (
             <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
-              {notifications.length > 99 ? "99+" : notifications.length}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </button>
-      </div>
 
-      {open && (
-        <NotificationPanel
-          ref={panelRef}
-          notifications={notifications}
-          onDismiss={dismissNotification}
-          onClear={clearNotifications}
-          anchorStyle={getAnchorStyle()}
-        />
-      )}
-      {toast && (
-        <button
-          type="button"
-          aria-live="assertive"
-          onClick={() => {
-            setOpen(true);
-            setToastId(null);
-          }}
-          style={getAnchorStyle()}
-          className="theme-floating-surface fixed z-[71] flex w-[min(25rem,calc(100vw-1.5rem))] items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl"
+        {open && (
+          <div>
+            <NotificationPanel
+              style={panelAnchorStyle(rootRef)}
+              notifications={notifications}
+              onDismiss={dismissNotification}
+              onClear={clearNotifications}
+            />
+          </div>
+        )}
+      </div>
+      {!open && toasts.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed right-3 top-14 z-[70] flex w-[min(23rem,calc(100vw-1.5rem))] flex-col gap-2"
         >
-          {(() => {
-            const style = levelStyle(toast.level);
+          {toasts.map(({ id, leaving }) => {
+            const notification = notifications.find((item) => item.id === id);
+            if (!notification) return null;
+            const style = levelStyle(notification.level);
             const Icon = style.icon;
-            return <Icon size={16} aria-label={style.label} className={`mt-0.5 ${style.color}`} />;
-          })()}
-          <span className="min-w-0 flex-1 break-words text-sm leading-5">{toast.message}</span>
-          <X
-            size={14}
-            aria-label={t("notifCenterDismissPreview")}
-            className="mt-0.5 shrink-0 text-muted"
-            onClick={(event) => {
-              event.stopPropagation();
-              setToastId(null);
-            }}
-          />
-        </button>
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={openPanel}
+                className={`notification-toast theme-floating-surface pointer-events-auto flex items-start gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-xl border-l-2 ${style.accent} ${
+                  leaving ? "notification-toast--leaving" : ""
+                }`}
+              >
+                <Icon size={16} aria-label={style.label} className={`mt-0.5 ${style.color}`} />
+                <span className="min-w-0 flex-1 break-words text-sm leading-5">
+                  {notification.message}
+                </span>
+                <X
+                  size={14}
+                  aria-label={t("notifCenterDismissPreview")}
+                  className="mt-0.5 shrink-0 text-muted"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    clearToastTimers(id);
+                    setToasts((current) => current.filter((toast) => toast.id !== id));
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
       )}
     </>
   );

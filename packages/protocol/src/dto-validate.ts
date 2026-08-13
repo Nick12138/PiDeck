@@ -864,6 +864,94 @@ function isSessionUsageReport(value: unknown): boolean {
   return value.totals.sessionCount === value.sessions.length;
 }
 
+function isPackageCatalogItem(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["name", "description", "types", "searchText", "installSource", "pageUrl"],
+      ["author", "downloadsPerMonth", "publishedAt", "npmUrl", "githubUrl"],
+    ) &&
+    isString(value.name) &&
+    value.name.length > 0 &&
+    isString(value.description) &&
+    Array.isArray(value.types) &&
+    value.types.every(isString) &&
+    isOptionalString(value.author) &&
+    (value.downloadsPerMonth === undefined || isNonNegativeNumber(value.downloadsPerMonth)) &&
+    (value.publishedAt === undefined || isNonNegativeNumber(value.publishedAt)) &&
+    isOptionalString(value.npmUrl) &&
+    isOptionalString(value.githubUrl) &&
+    isString(value.searchText) &&
+    isString(value.installSource) &&
+    value.installSource.length > 0 &&
+    isString(value.pageUrl)
+  );
+}
+
+function isPackageCatalog(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["generatedAt", "fromCache", "items"]) &&
+    isNonNegativeNumber(value.generatedAt) &&
+    isBoolean(value.fromCache) &&
+    Array.isArray(value.items) &&
+    value.items.every(isPackageCatalogItem)
+  );
+}
+
+function isSessionSearchMatch(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["role", "snippet"]) &&
+    (value.role === "user" || value.role === "assistant") &&
+    isString(value.snippet)
+  );
+}
+
+function isSessionSearchResultItem(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [
+        "sessionId",
+        "sessionPath",
+        "cwd",
+        "archived",
+        "updatedAt",
+        "matchCount",
+        "matches",
+        "nameMatched",
+      ],
+      ["name"],
+    ) &&
+    isUuid(value.sessionId) &&
+    isString(value.sessionPath) &&
+    isOptionalString(value.name) &&
+    isString(value.cwd) &&
+    isBoolean(value.archived) &&
+    isNonNegativeNumber(value.updatedAt) &&
+    isSafeRevision(value.matchCount) &&
+    Array.isArray(value.matches) &&
+    value.matches.every(isSessionSearchMatch) &&
+    isBoolean(value.nameMatched)
+  );
+}
+
+function isSessionSearchReport(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["generatedAt", "query", "scannedCount", "truncated", "items"]) &&
+    isNonNegativeNumber(value.generatedAt) &&
+    isString(value.query) &&
+    isSafeRevision(value.scannedCount) &&
+    isBoolean(value.truncated) &&
+    Array.isArray(value.items) &&
+    value.items.every(isSessionSearchResultItem)
+  );
+}
+
 function isDiagnostic(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -1701,6 +1789,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid session stats";
     case "session.usageReport":
       return isSessionUsageReport(result) ? null : "invalid session usage report";
+    case "session.searchAll":
+      return isSessionSearchReport(result) ? null : "invalid session search report";
     case "session.getForkPoints":
       return isPlainObject(result) &&
         hasExactKeys(result, ["items"]) &&
@@ -1929,6 +2019,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid model.setCurrent result";
     case "package.list":
       return isPackageSnapshot(result) ? null : "invalid PackageSnapshot";
+    case "package.catalog":
+      return isPackageCatalog(result) ? null : "invalid package catalog";
     case "package.install":
     case "package.remove":
     case "package.update":

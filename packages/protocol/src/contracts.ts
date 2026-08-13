@@ -23,10 +23,12 @@ import type {
   SessionSummary,
   SessionStatsSnapshot,
   SessionUsageReport,
+  SessionSearchReport,
   ToolSnapshot,
   ModelSummary,
   ModelConfigHealth,
   PackageSnapshot,
+  PackageCatalog,
   PackageMutationResult,
   PackageUpdateSummary,
   PackageRecord,
@@ -110,6 +112,7 @@ export type HostContextMap = {
   "session.fork": ActiveSessionContext;
   "session.export": ActiveSessionContext;
   "session.usageReport": WorkspaceContext;
+  "session.searchAll": HostContext;
   "session.getCommands": ActiveSessionContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
@@ -143,6 +146,7 @@ export type HostContextMap = {
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
   "package.list": WorkspaceContext;
+  "package.catalog": HostContext;
   "package.install": SessionPackageContext;
   "package.remove": SessionPackageContext;
   "package.checkUpdates": WorkspaceContext;
@@ -217,6 +221,7 @@ export type HostRequestParams = {
   "session.fork": { entryId: string; position?: "before" | "at" };
   "session.export": { format: "html" | "jsonl"; path?: string };
   "session.usageReport": null;
+  "session.searchAll": { query: string; limit?: number; includeArchived?: boolean };
   "session.getCommands": null;
   "agent.prompt": {
     text: string;
@@ -267,6 +272,7 @@ export type HostRequestParams = {
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
   "package.list": { scope: "user" | "project" | "all"; includeResources?: boolean };
+  "package.catalog": { refresh?: boolean };
   "package.install": { source: string; scope: "user" | "project" };
   "package.remove": { packageId: string };
   "package.checkUpdates": { packageId?: string } | null;
@@ -350,6 +356,7 @@ export type HostResultMap = {
   "session.fork": { session: SessionSnapshot; selectedText?: string };
   "session.export": { path: string };
   "session.usageReport": SessionUsageReport;
+  "session.searchAll": SessionSearchReport;
   "session.getCommands": { commands: CommandSummary[] };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
@@ -416,6 +423,7 @@ export type HostResultMap = {
   };
   "model.setThinkingLevel": SessionSnapshot;
   "package.list": PackageSnapshot;
+  "package.catalog": PackageCatalog;
   "package.install": PackageMutationResult;
   "package.remove": PackageMutationResult;
   "package.checkUpdates": { supported: boolean; updates: PackageUpdateSummary[] };

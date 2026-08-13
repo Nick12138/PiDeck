@@ -107,6 +107,8 @@ export type AppNotification = {
   message: string;
   level: string;
   createdAt: number;
+  /** Cleared when the notification center is opened; drives the unread badge. */
+  read: boolean;
 };
 
 type AppUpdatePhase =
@@ -250,6 +252,7 @@ export type AppState = EpochState & {
   pushNotification: (message: string, level?: string) => void;
   dismissNotification: (id: string) => void;
   clearNotifications: () => void;
+  markNotificationsRead: () => void;
   setHostFatal: (msg: string | null) => void;
   /**
    * Settle into a terminal Host failure: record the fatal message and stop
@@ -261,6 +264,9 @@ export type AppState = EpochState & {
   settleHostFailure: (message: string) => void;
   setConnecting: (v: boolean) => void;
   setRehydrating: (v: boolean) => void;
+  /** Requested cwd while a workspace switch is in flight; drives switch feedback UI. */
+  workspaceSwitchTarget: string | null;
+  setWorkspaceSwitchTarget: (target: string | null) => void;
   markDesynchronized: (reason: string) => void;
   noteSequence: (sequence: number) => "apply" | "drop" | "gap";
   completeRehydrate: (snap: {
@@ -948,9 +954,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       notifications: [
         ...s.notifications.slice(-49),
-        { id: crypto.randomUUID(), message, level, createdAt: Date.now() },
+        { id: crypto.randomUUID(), message, level, createdAt: Date.now(), read: false },
       ],
     })),
+  markNotificationsRead: () =>
+    set((state) =>
+      state.notifications.some((notification) => !notification.read)
+        ? {
+            notifications: state.notifications.map((notification) =>
+              notification.read ? notification : { ...notification, read: true },
+            ),
+          }
+        : state,
+    ),
   dismissNotification: (id) =>
     set((state) => ({
       notifications: state.notifications.filter((notification) => notification.id !== id),
@@ -967,6 +983,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setConnecting: (connecting) => set({ connecting }),
   setRehydrating: (rehydrating) => set({ rehydrating }),
+  workspaceSwitchTarget: null,
+  setWorkspaceSwitchTarget: (workspaceSwitchTarget) => set({ workspaceSwitchTarget }),
 
   markDesynchronized: (reason) => {
     const next = epochMarkDesync(epochSlice(get()), reason);

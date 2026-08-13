@@ -470,6 +470,33 @@ export type SessionSnapshot = {
   tools: ToolSnapshot;
 };
 
+export type PackageCatalogItem = {
+  /** npm package name, e.g. "@scope/pkg" or "pi-web-access". */
+  name: string;
+  description: string;
+  author?: string;
+  /** Resource kinds advertised by the catalog, e.g. ["extension", "skill"]. */
+  types: string[];
+  downloadsPerMonth?: number;
+  /** Publication timestamp in epoch milliseconds. */
+  publishedAt?: number;
+  npmUrl?: string;
+  githubUrl?: string;
+  /** Catalog-provided text blob for client-side filtering. */
+  searchText: string;
+  /** Source string accepted by package.install, e.g. "npm:pi-web-access". */
+  installSource: string;
+  /** Detail page on the catalog site. */
+  pageUrl: string;
+};
+
+export type PackageCatalog = {
+  generatedAt: number;
+  /** True when served from the in-memory cache instead of a fresh fetch. */
+  fromCache: boolean;
+  items: PackageCatalogItem[];
+};
+
 export type PackageRecord = {
   id: string;
   identity: string;
@@ -769,6 +796,38 @@ export type SessionUsageReport = {
     usage: SerializableUsage;
   };
   sessions: SessionUsageReportItem[];
+};
+
+export type SessionSearchMatch = {
+  role: "user" | "assistant";
+  /** Short excerpt around the first matched term, whitespace-collapsed. */
+  snippet: string;
+};
+
+export type SessionSearchResultItem = {
+  sessionId: string;
+  sessionPath: string;
+  name?: string;
+  /** Workspace path recorded in the session header. */
+  cwd: string;
+  archived: boolean;
+  updatedAt: number;
+  /** Total matching message blocks in the session (may exceed matches.length). */
+  matchCount: number;
+  /** Capped list of match excerpts. */
+  matches: SessionSearchMatch[];
+  /** True when the session name itself matched the query. */
+  nameMatched: boolean;
+};
+
+export type SessionSearchReport = {
+  generatedAt: number;
+  query: string;
+  /** Total session files scanned across all workspaces. */
+  scannedCount: number;
+  /** True when more sessions matched than the returned item cap. */
+  truncated: boolean;
+  items: SessionSearchResultItem[];
 };
 
 export type CommandSummary = {

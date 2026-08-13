@@ -18,6 +18,8 @@ import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog"
 import type {
   HostRequestParams,
   HostStatusSnapshot,
+  PackageCatalog,
+  PackageCatalogItem,
   PackageMutationResult,
   PackageRecord,
   ResourceRecord,
@@ -29,6 +31,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import {
   captureRequestGeneration,
   captureWorkspaceAuthorization,
+  hostContext,
   isCurrentWorkspaceAuthorization,
   isExpectedPackageMutationCompletion,
   mergeHostIdentity,
@@ -46,14 +49,19 @@ import {
   buildResourcePreferenceUpdate,
   buildResourcePreferenceUpdates,
   canConfigureResource,
+  filterCatalogItems,
   filterInstalledPackages,
   filterResources,
+  formatDownloadsPerMonth,
   hasActiveInstalledFilters,
   hasActiveResourceFilters,
+  isCatalogItemInstalled,
   planPackageUpdate,
   preferenceResourcesForListItems,
   resourcePreference,
+  sortCatalogItems,
   summarizeResources,
+  type CatalogSort,
   type PackageScopeFilter,
   type ResourceListItem,
   type ResourceMode,
@@ -272,7 +280,7 @@ export function PackagesPage() {
   const setPackageRetry = useAppStore((state) => state.setPackageRetry);
   const pushNotification = useAppStore((state) => state.pushNotification);
 
-  const [tab, setTab] = useState<"installed" | "resources">("installed");
+  const [tab, setTab] = useState<"installed" | "resources" | "market">("installed");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [installedQuery, setInstalledQuery] = useState("");
   const [installedScope, setInstalledScope] = useState<PackageScopeFilter>("all");
@@ -284,6 +292,14 @@ export function PackagesPage() {
   const [resourceOwnerId, setResourceOwnerId] = useState("");
   const [installSource, setInstallSource] = useState("");
   const [installScope, setInstallScope] = useState<"user" | "project">("user");
+  const [marketCatalog, setMarketCatalog] = useState<PackageCatalog | null>(null);
+  const [marketState, setMarketState] = useState<LoadState>("idle");
+  const [marketError, setMarketError] = useState("");
+  const [marketQuery, setMarketQuery] = useState("");
+  const [marketType, setMarketType] = useState<ResourceTypeFilter>("all");
+  const [marketSort, setMarketSort] = useState<CatalogSort>("downloads");
+  const [marketScope, setMarketScope] = useState<"user" | "project">("user");
+  const marketRequest = useRef(0);
   const [busy, setBusy] = useState(false);
   const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<
     ResourcePreferenceUpdate[]
@@ -331,6 +347,14 @@ export function PackagesPage() {
   const resourcesById = useMemo(
     () => new Map(allResources.map((item) => [item.id, item])),
     [allResources],
+  );
+  const visibleMarketItems = useMemo(
+    () =>
+      sortCatalogItems(
+        filterCatalogItems(marketCatalog?.items ?? [], marketQuery, marketType),
+        marketSort,
+      ),
+    [marketCatalog, marketQuery, marketType, marketSort],
   );
   const selectedResources = selected
     ? filterResources(allResources, allPackages, {
@@ -419,6 +443,61 @@ export function PackagesPage() {
     // Package data is always loaded at all scope; controls below are local view filters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.hostInstanceId, workspace?.id, workspace?.revision]);
+
+  async function loadMarket(refresh = false) {
+    if (!host) return;
+    const request = ++marketRequest.current;
+    const expectedHostId = host.hostInstanceId;
+    setMarketState("loading");
+    setMarketError("");
+    try {
+      const response = await hostClient.request(
+        "package.catalog",
+        hostContext(host),
+        refresh ? { refresh: true } : {},
+        30_000,
+      );
+      if (
+        request !== marketRequest.current ||
+        useAppStore.getState().host?.hostInstanceId !== expectedHostId
+      ) {
+        return;
+      }
+      if (!response.ok) {
+        setMarketState("error");
+        setMarketError(response.error?.message ?? t("packagesMarketError"));
+        return;
+      }
+      setMarketCatalog(response.result);
+      setMarketState("ready");
+    } catch (error) {
+      if (request !== marketRequest.current) return;
+      setMarketState("error");
+      setMarketError(error instanceof Error ? error.message : t("packagesMarketError"));
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "market" && marketState === "idle") void loadMarket();
+    // The catalog is host-global; a single lazy load per Host epoch suffices.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, marketState, host?.hostInstanceId]);
+
+  function beginCatalogInstall(item: PackageCatalogItem) {
+    if (!host || !workspace) return;
+    const params: HostRequestParams["package.install"] = {
+      source: item.installSource,
+      scope: marketScope,
+    };
+    setReview({
+      kind: "install",
+      method: "package.install",
+      params,
+      packages: [],
+      authorization:
+        marketScope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
+    });
+  }
 
   useEffect(() => {
     if (!progressActive) return;
@@ -760,14 +839,17 @@ export function PackagesPage() {
     setResourceType("extension");
   }
 
-  async function openCatalog() {
-    const url = "https://pi.dev/packages";
+  async function openExternal(url: string) {
     try {
       const { open } = await import("@tauri-apps/plugin-shell");
       await open(url);
     } catch {
       window.open(url, "_blank", "noopener,noreferrer");
     }
+  }
+
+  async function openCatalog() {
+    await openExternal("https://pi.dev/packages");
   }
 
   function packageDiagnosticCount(item: PackageRecord): number {
@@ -1349,6 +1431,16 @@ export function PackagesPage() {
           >
             {t("packagesTabResources")}
           </button>
+          <button
+            aria-pressed={tab === "market"}
+            type="button"
+            data-ui="segmented-item"
+            data-state={tab === "market" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            onClick={() => setTab("market")}
+          >
+            {t("packagesTabMarket")}
+          </button>
         </div>
         <button
           type="button"
@@ -1359,7 +1451,175 @@ export function PackagesPage() {
         </button>
       </header>
 
-      {loadState === "error" && !packages ? (
+      {tab === "market" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+            <label className="relative min-w-48 flex-1">
+              <Search
+                size={13}
+                className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+              />
+              <input
+                className={`${inputClass} w-full pl-7`}
+                aria-label={t("packagesMarketSearchAria")}
+                placeholder={t("packagesMarketSearchPlaceholder")}
+                value={marketQuery}
+                onChange={(event) => setMarketQuery(event.target.value)}
+              />
+            </label>
+            <select
+              className={inputClass}
+              aria-label={t("packagesMarketTypeAria")}
+              value={marketType}
+              onChange={(event) => setMarketType(event.target.value as ResourceTypeFilter)}
+            >
+              <option value="all">{t("packagesMarketTypeAll")}</option>
+              {PACKAGE_RESOURCE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+            <select
+              className={inputClass}
+              aria-label={t("packagesMarketSortAria")}
+              value={marketSort}
+              onChange={(event) => setMarketSort(event.target.value as CatalogSort)}
+            >
+              <option value="downloads">{t("packagesMarketSortDownloads")}</option>
+              <option value="recent">{t("packagesMarketSortRecent")}</option>
+            </select>
+            <select
+              className={inputClass}
+              aria-label={t("packagesInstallScope")}
+              value={marketScope}
+              onChange={(event) => setMarketScope(event.target.value as "user" | "project")}
+            >
+              <option value="user">{t("packagesScopeUser")}</option>
+              <option value="project">{t("packagesScopeProject")}</option>
+            </select>
+            <button
+              type="button"
+              className={secondaryButton}
+              title={t("packagesMarketRefresh")}
+              aria-label={t("packagesMarketRefresh")}
+              disabled={marketState === "loading"}
+              onClick={() => void loadMarket(true)}
+            >
+              <RefreshCw size={13} className={marketState === "loading" ? "animate-spin" : ""} />
+            </button>
+          </div>
+          {marketState === "error" && !marketCatalog ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+              <AlertTriangle size={24} className="text-danger" />
+              <div>
+                <p className="text-sm font-medium">{t("packagesMarketError")}</p>
+                <p className="mt-1 max-w-lg text-xs text-muted">{marketError}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => void loadMarket(true)}
+                >
+                  <RefreshCw size={13} />
+                  {t("packagesTryAgain")}
+                </button>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => void openCatalog()}
+                >
+                  <ExternalLink size={13} />
+                  {t("packagesMarketOpenSite")}
+                </button>
+              </div>
+            </div>
+          ) : marketCatalog === null ? (
+            <p className="p-8 text-center text-sm text-muted">{t("packagesMarketLoading")}</p>
+          ) : visibleMarketItems.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted">{t("packagesMarketEmpty")}</p>
+          ) : (
+            <div className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
+              {visibleMarketItems.map((item) => {
+                const installed = isCatalogItemInstalled(item, allPackages);
+                return (
+                  <article
+                    key={item.name}
+                    data-market-card={item.name}
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="min-w-0 truncate text-[13px] font-semibold" title={item.name}>
+                        {item.name}
+                      </h3>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                        {item.types.map((type) => (
+                          <span
+                            key={type}
+                            className="meta-chip rounded border border-border px-1 text-[10px] text-muted"
+                          >
+                            {type}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <p
+                      className="line-clamp-2 min-h-10 text-xs leading-5 text-muted"
+                      title={item.description}
+                    >
+                      {item.description}
+                    </p>
+                    <div className="mt-auto flex items-center gap-2 text-[11px] text-muted">
+                      {item.author && (
+                        <span className="min-w-0 truncate" title={item.author}>
+                          {item.author}
+                        </span>
+                      )}
+                      {item.downloadsPerMonth !== undefined && (
+                        <span className="shrink-0 tabular-nums">
+                          {t("packagesMarketDownloads", {
+                            count: formatDownloadsPerMonth(item.downloadsPerMonth),
+                          })}
+                        </span>
+                      )}
+                      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                        {item.npmUrl && (
+                          <button
+                            type="button"
+                            className="text-muted hover:text-foreground"
+                            title="npm"
+                            aria-label={`npm: ${item.name}`}
+                            onClick={() => void openExternal(item.npmUrl!)}
+                          >
+                            <ExternalLink size={12} />
+                          </button>
+                        )}
+                        {installed ? (
+                          <span className="inline-flex items-center gap-1 text-success">
+                            <Check size={12} />
+                            {t("packagesMarketInstalled")}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={primaryButton}
+                            disabled={mutationBlocked}
+                            onClick={() => beginCatalogInstall(item)}
+                          >
+                            <Download size={13} />
+                            {t("packagesInstallAction")}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : loadState === "error" && !packages ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <AlertTriangle size={24} className="text-danger" />
           <div>

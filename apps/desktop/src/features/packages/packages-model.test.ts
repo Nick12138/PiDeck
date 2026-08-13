@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { PackageRecord, ResourceRecord } from "@pideck/protocol";
+import type { PackageCatalogItem, PackageRecord, ResourceRecord } from "@pideck/protocol";
+import {
+  filterCatalogItems,
+  formatDownloadsPerMonth,
+  isCatalogItemInstalled,
+  sortCatalogItems,
+} from "./packages-model";
 import {
   PACKAGE_LIST_PARAMS,
   applyOptimisticResourcePreferences,
@@ -330,11 +336,12 @@ describe("Package view models", () => {
       scope: "project",
     });
 
-    const userItems = buildResourceListItems(
-      [projectResource, userResource],
-      [replacedPackage],
-      { query: "", mode: "user", type: "extension", origin: "all" },
-    );
+    const userItems = buildResourceListItems([projectResource, userResource], [replacedPackage], {
+      query: "",
+      mode: "user",
+      type: "extension",
+      origin: "all",
+    });
     expect(userItems).toHaveLength(1);
     expect(userItems[0]).toMatchObject({
       kind: "package",
@@ -454,10 +461,13 @@ describe("Package view models", () => {
       preferences: { user: "disabled", project: "inherit" },
     });
 
-    const projected = applyOptimisticResourcePreferences([owner, dynamic, prompt], [
-      { resourceId: owner.id, targetScope: "user", preference: "disabled" },
-      { resourceId: prompt.id, targetScope: "user", preference: "enabled" },
-    ]);
+    const projected = applyOptimisticResourcePreferences(
+      [owner, dynamic, prompt],
+      [
+        { resourceId: owner.id, targetScope: "user", preference: "disabled" },
+        { resourceId: prompt.id, targetScope: "user", preference: "enabled" },
+      ],
+    );
 
     expect(projected.map((item) => item.enabled)).toEqual([false, false, true]);
     expect(projected[0]?.preferences.user).toBe("disabled");
@@ -465,12 +475,8 @@ describe("Package view models", () => {
   });
 
   it("detects active filters without treating view mode as a filter", () => {
-    expect(
-      hasActiveInstalledFilters({ query: "", scope: "all", type: "all" }),
-    ).toBe(false);
-    expect(
-      hasActiveInstalledFilters({ query: " tools ", scope: "all", type: "all" }),
-    ).toBe(true);
+    expect(hasActiveInstalledFilters({ query: "", scope: "all", type: "all" })).toBe(false);
+    expect(hasActiveInstalledFilters({ query: " tools ", scope: "all", type: "all" })).toBe(true);
     expect(
       hasActiveResourceFilters({
         query: "",
@@ -488,5 +494,75 @@ describe("Package view models", () => {
         packageId: "package:user:tools",
       }),
     ).toBe(true);
+  });
+});
+
+function catalogItem(overrides: Partial<PackageCatalogItem>): PackageCatalogItem {
+  return {
+    name: "pi-alpha",
+    description: "Alpha helper",
+    types: ["extension"],
+    searchText: "pi-alpha alpha helper tester",
+    installSource: "npm:pi-alpha",
+    pageUrl: "https://pi.dev/packages/pi-alpha",
+    ...overrides,
+  };
+}
+
+describe("catalog model", () => {
+  const items = [
+    catalogItem({ name: "pi-alpha", downloadsPerMonth: 100, publishedAt: 300 }),
+    catalogItem({
+      name: "pi-beta",
+      types: ["skill"],
+      searchText: "pi-beta beta 中文搜索",
+      downloadsPerMonth: 900,
+      publishedAt: 100,
+    }),
+    catalogItem({
+      name: "pi-gamma",
+      types: ["extension", "theme"],
+      searchText: "pi-gamma gamma theme",
+      publishedAt: 200,
+    }),
+  ];
+
+  it("filters by search text case-insensitively and by type", () => {
+    expect(filterCatalogItems(items, "ALPHA", "all").map((item) => item.name)).toEqual([
+      "pi-alpha",
+    ]);
+    expect(filterCatalogItems(items, "中文", "all").map((item) => item.name)).toEqual(["pi-beta"]);
+    expect(filterCatalogItems(items, "", "theme").map((item) => item.name)).toEqual(["pi-gamma"]);
+    expect(filterCatalogItems(items, "beta", "extension")).toEqual([]);
+  });
+
+  it("sorts by downloads or recency with missing values last", () => {
+    expect(sortCatalogItems(items, "downloads").map((item) => item.name)).toEqual([
+      "pi-beta",
+      "pi-alpha",
+      "pi-gamma",
+    ]);
+    expect(sortCatalogItems(items, "recent").map((item) => item.name)).toEqual([
+      "pi-alpha",
+      "pi-gamma",
+      "pi-beta",
+    ]);
+  });
+
+  it("detects installed packages by identity or source", () => {
+    const installed = [
+      { identity: "npm:pi-alpha", source: "npm:pi-alpha@1.0.0" },
+      { identity: "npm:other", source: "npm:PI-BETA" },
+    ] as PackageRecord[];
+    expect(isCatalogItemInstalled(catalogItem({ name: "pi-alpha" }), installed)).toBe(true);
+    expect(isCatalogItemInstalled(catalogItem({ name: "pi-beta" }), installed)).toBe(true);
+    expect(isCatalogItemInstalled(catalogItem({ name: "pi-gamma" }), installed)).toBe(false);
+  });
+
+  it("formats monthly downloads compactly", () => {
+    expect(formatDownloadsPerMonth(950)).toBe("950");
+    expect(formatDownloadsPerMonth(43_100)).toBe("43.1K");
+    expect(formatDownloadsPerMonth(480_000)).toBe("480K");
+    expect(formatDownloadsPerMonth(1_500_000)).toBe("1.5M");
   });
 });
