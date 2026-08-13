@@ -83,7 +83,7 @@ export class PiHostServer {
   private readonly shutdownController = new AbortController();
   private sequence = 0;
   private phase: HostPhase = "booting";
-  private extensionDecisionPresentation: ExtensionDecisionPresentation = "legacy-modal";
+  private extensionDecisionPresentation: ExtensionDecisionPresentation = "auto";
   private shuttingDown = false;
   private lastError?: HostError;
   private fatalError?: HostError;

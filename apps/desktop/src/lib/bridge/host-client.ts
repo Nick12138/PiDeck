@@ -242,7 +242,7 @@ export class HostClient {
   async hello(
     clientName = "pideck",
     clientVersion = "0.1.0",
-    extensionDecisionPresentation: ExtensionDecisionPresentation = "legacy-modal",
+    extensionDecisionPresentation: ExtensionDecisionPresentation = "auto",
   ): Promise<HostStatusSnapshot> {
     const res = await this.request(
       "system.hello",
