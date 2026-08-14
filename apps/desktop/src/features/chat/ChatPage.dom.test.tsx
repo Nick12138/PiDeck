@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
+import type { SessionSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
 import {
@@ -17,6 +18,33 @@ const BASE_SETTINGS = {
   extensionDecisionPresentation: "auto" as const,
   terminalProfile: "auto" as const,
 };
+
+function session(messages: SessionSnapshot["messages"] = []): SessionSnapshot {
+  return {
+    sessionId: "33333333-3333-4333-8333-333333333333",
+    cwd: "/workspace",
+    revision: 1,
+    isStreaming: false,
+    isIdle: true,
+    isCompacting: false,
+    isRetrying: false,
+    thinkingLevel: "off",
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    steeringMode: "all",
+    followUpMode: "all",
+    pending: { revision: 1, steering: [], followUp: [] },
+    messages,
+    tools: {
+      revision: 1,
+      workspaceId: "22222222-2222-4222-8222-222222222222",
+      sessionId: "33333333-3333-4333-8333-333333333333",
+      sessionRevision: 1,
+      tools: [],
+      active: [],
+    },
+  };
+}
 
 describe("ChatPage conversation width", () => {
   beforeEach(() => {
@@ -59,5 +87,27 @@ describe("ChatPage conversation width", () => {
     expect(page.style.getPropertyValue("--conversation-max-width")).toBe(
       `${DEFAULT_CONVERSATION_MAX_WIDTH}px`,
     );
+  });
+
+  it("hides the default session heading while a new conversation is empty", () => {
+    useAppStore.getState().applySessionSnapshot(session());
+
+    const { container } = render(<ChatPage />);
+
+    expect(screen.queryByRole("heading", { name: "New conversation" })).toBeNull();
+    expect(container.querySelector("[data-chat-status]")).toBeNull();
+    expect(container.querySelector("[data-chat-header]")).toBeInTheDocument();
+    expect(container.querySelector("[data-dock-toolbar-toggle]")).toBeInTheDocument();
+  });
+
+  it("shows the default session heading once the conversation has data", () => {
+    useAppStore.getState().applySessionSnapshot(
+      session([{ role: "user", content: "Hello", timestamp: 1 }]),
+    );
+
+    const { container } = render(<ChatPage />);
+
+    expect(screen.getByRole("heading", { name: "New conversation" })).toBeVisible();
+    expect(container.querySelector("[data-chat-status]")).toHaveTextContent("Ready");
   });
 });

@@ -23,7 +23,7 @@ describe("Sidebar", () => {
     },
   );
 
-  it("keeps only the hover edge control mounted when the sidebar is collapsed", () => {
+  it("keeps the PI sidebar toggle mounted when the sidebar is collapsed", () => {
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => (key === "pideck.sidebar.collapsed" ? "1" : null),
       setItem: vi.fn(),
@@ -34,13 +34,17 @@ describe("Sidebar", () => {
     );
 
     expect(html).toContain('aria-label="Expand sidebar"');
+    expect(html).toContain('data-sidebar-brand-toggle="true"');
+    expect(html).toContain('data-sidebar-collapsed-toggle-slot="true"');
+    expect(html).toContain("h-12 w-14 items-center justify-center");
+    expect(html).toContain("translate-x-0.5 translate-y-0.5");
     expect(html).toContain("width:0");
     expect(html).toContain('data-sidebar-collapsed="true"');
     expect(html).not.toContain("New conversation");
     expect(html).not.toContain("Recent conversations");
   });
 
-  it("renders the collapse handle anchored to the sidebar width when expanded", () => {
+  it("renders the PI sidebar toggle instead of an edge handle when expanded", () => {
     vi.stubGlobal("localStorage", {
       getItem: (key: string) =>
         key === "pideck.sidebar.width.v1" ? "300" : null,
@@ -51,11 +55,10 @@ describe("Sidebar", () => {
       createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    // The expanded handle must be present and fixed-positioned at left:<width>px
-    // so it docks on the sidebar's right edge regardless of ancestor positioning.
     expect(html).toContain('aria-label="Collapse sidebar"');
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toMatch(/position:\s*fixed[^}]*left:\s*300/);
+    expect(html).toContain('data-sidebar-brand-toggle="true"');
+    expect(html).not.toContain("group/sidebar-edge");
     expect(html).not.toContain('data-sidebar-collapsed="true"');
   });
 });

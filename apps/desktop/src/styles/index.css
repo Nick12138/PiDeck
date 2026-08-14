@@ -432,11 +432,6 @@ select option {
 
 [data-window-platform="macos"] [data-chat-header] {
   padding-right: 8px;
-  transition: padding-left 200ms ease-out;
-}
-
-[data-window-platform="macos"] [data-sidebar-collapsed="true"] + main [data-chat-header] {
-  padding-left: 76px;
 }
 
 [data-window-platform="macos"] [data-dock-header] {
@@ -953,6 +948,11 @@ html[data-theme-family="apple"] [data-dock-header] {
 
 html[data-theme-family="apple"] [data-chat-header] {
   padding-left: 24px;
+}
+
+[data-sidebar-collapsed="true"] ~ main [data-chat-header],
+html[data-theme-family="apple"] [data-sidebar-collapsed="true"] ~ main [data-chat-header] {
+  padding-left: 56px;
 }
 
 html[data-theme-family="apple"] [data-chat-header-fade] {

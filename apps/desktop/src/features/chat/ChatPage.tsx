@@ -59,7 +59,7 @@ export function ChatPage() {
       data-chat-page
       style={conversationContentWidthStyle(conversationMinWidth, conversationMaxWidth)}
     >
-      <ChatHeader />
+      <ChatHeader hideSessionInfo={isNewConversation} />
       {authBlocked && (
         <div
           role="status"

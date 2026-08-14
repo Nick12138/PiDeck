@@ -1,8 +1,8 @@
 import {
-  ChevronLeft,
-  ChevronRight,
   LoaderCircle,
   MessageCirclePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   Settings,
 } from "lucide-react";
@@ -25,6 +25,36 @@ const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
+
+function SidebarBrandToggle({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  const label = collapsed ? t("sidebarExpand") : t("sidebarCollapse");
+  const PanelIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-expanded={!collapsed}
+      data-sidebar-brand-toggle
+      className="group relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      onClick={onToggle}
+    >
+      <PiMark className="mac-sidebar-brand-mark size-8 transition-opacity group-hover:opacity-0 group-focus:opacity-0" />
+      <PanelIcon
+        size={18}
+        className="absolute text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+      />
+    </button>
+  );
+}
 
 function clampSidebarWidth(width: number, viewportWidth = 1280): number {
   const responsiveMax = Math.max(DEFAULT_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360));
@@ -210,7 +240,7 @@ export function SidebarLayout({
             data-sidebar-header
             data-tauri-drag-region
           >
-            <PiMark className="mac-sidebar-brand-mark size-8" />
+            <SidebarBrandToggle collapsed={false} onToggle={toggleSidebarCollapsed} />
             <span className="text-[15px] font-semibold" data-sidebar-brand>
               Pi Agent
             </span>
@@ -288,31 +318,17 @@ export function SidebarLayout({
       )}
       </aside>
 
-      {/* Expand/collapse handle lives outside <aside> so the collapsed
-          width:0 + overflow:hidden can't clip it. It is fixed to the
-          viewport so it doesn't depend on any ancestor positioning
-          context: when collapsed it docks at the viewport's left edge;
-          when expanded it docks at the sidebar's right edge (driven by
-          sidebarWidth). */}
-      <div
-        className="group/sidebar-edge"
-        style={
-          sidebarCollapsed
-            ? { position: "fixed", left: 0, top: 0, height: "100vh", width: "1rem", zIndex: 40 }
-            : { position: "fixed", left: sidebarWidth, top: 0, height: "100vh", width: "1rem", zIndex: 40 }
-        }
-      >
-        <button
-          type="button"
-          title={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
-          aria-label={sidebarCollapsed ? t("sidebarExpand") : t("sidebarCollapse")}
-          aria-expanded={!sidebarCollapsed}
-          className="absolute top-1/2 flex h-12 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface-raised text-muted opacity-0 shadow-sm transition-opacity group-hover/sidebar-edge:opacity-100 hover:text-foreground focus-visible:opacity-100"
-          onClick={toggleSidebarCollapsed}
+      {sidebarCollapsed && (
+        <div
+          className="fixed left-0 top-0 z-40 flex h-12 w-14 items-center justify-center"
+          data-sidebar-collapsed-toggle-slot
+          data-tauri-drag-region
         >
-          {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-        </button>
-      </div>
+          <div className="translate-x-0.5 translate-y-0.5">
+            <SidebarBrandToggle collapsed onToggle={toggleSidebarCollapsed} />
+          </div>
+        </div>
+      )}
     </Fragment>
   );
 }
