@@ -19,7 +19,8 @@ export function ChatPage() {
   const providerConfigRevision = useAppStore((s) => s.providerConfigRevision);
   const openSettingsSection = useAppStore((s) => s.openSettingsSection);
   const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
-  const conversationContentWidth = useAppStore((s) => s.desktopSettings?.conversationContentWidth);
+  const conversationMinWidth = useAppStore((s) => s.desktopSettings?.conversationMinWidth);
+  const conversationMaxWidth = useAppStore((s) => s.desktopSettings?.conversationMaxWidth);
 
   // A login/logout/config save bumps the revision: the blockage the banner
   // describes may be resolved, so re-check by sending again.
@@ -56,7 +57,7 @@ export function ChatPage() {
     <div
       className="flex min-h-0 flex-1 flex-col"
       data-chat-page
-      style={conversationContentWidthStyle(conversationContentWidth)}
+      style={conversationContentWidthStyle(conversationMinWidth, conversationMaxWidth)}
     >
       <ChatHeader />
       {authBlocked && (

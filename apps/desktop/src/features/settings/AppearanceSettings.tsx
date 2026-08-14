@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@pideck/protocol";
 import { Minus, Plus } from "lucide-react";
 import { SectionHeader } from "../../components/SectionHeader";
+import { Select } from "../../components/Select";
 import {
   applyAppearancePreferences,
   MAX_CODE_FONT_SIZE,
@@ -22,9 +23,10 @@ import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { applyTheme } from "../../lib/theme";
 import {
-  DEFAULT_CONVERSATION_CONTENT_WIDTH,
-  MIN_CONVERSATION_CONTENT_WIDTH,
-  resolveConversationContentWidth,
+  HARD_MAX_CONVERSATION_WIDTH,
+  HARD_MIN_CONVERSATION_WIDTH,
+  resolveConversationMaxWidth,
+  resolveConversationMinWidth,
 } from "../chat/conversation-layout";
 
 function FontSizeStepper({
@@ -80,22 +82,41 @@ function FontSizeStepper({
 export function AppearanceSettings() {
   const t = useT();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
-  const configuredConversationWidth = resolveConversationContentWidth(
-    desktopSettings?.conversationContentWidth,
-  );
   const themeFamily = desktopSettings?.themeFamily ?? "pideck";
   const interfaceDensity = resolveInterfaceDensity(desktopSettings?.interfaceDensity);
+  const conversationMinWidth = resolveConversationMinWidth(desktopSettings?.conversationMinWidth);
+  const conversationMaxWidth = resolveConversationMaxWidth(desktopSettings?.conversationMaxWidth);
   const conversationFontSize = resolveConversationFontSize(desktopSettings?.conversationFontSize);
-  const codeFontSize = resolveCodeFontSize(desktopSettings?.codeFontSize);
-  const [conversationWidthDraft, setConversationWidthDraft] = useState(
-    String(configuredConversationWidth),
-  );
-  const [conversationWidthInvalid, setConversationWidthInvalid] = useState(false);
+  const [conversationMaxDraft, setConversationMaxDraft] = useState(String(conversationMaxWidth));
+  const [conversationMinDraft, setConversationMinDraft] = useState(String(conversationMinWidth));
 
   useEffect(() => {
-    setConversationWidthDraft(String(configuredConversationWidth));
-    setConversationWidthInvalid(false);
-  }, [configuredConversationWidth]);
+    setConversationMaxDraft(String(conversationMaxWidth));
+    setConversationMinDraft(String(conversationMinWidth));
+  }, [conversationMaxWidth, conversationMinWidth]);
+
+  function commitConversationMax() {
+    const parsed = Math.floor(Number(conversationMaxDraft));
+    if (!Number.isInteger(parsed)) return;
+    const clamped = Math.min(
+      HARD_MAX_CONVERSATION_WIDTH,
+      Math.max(HARD_MIN_CONVERSATION_WIDTH, parsed),
+    );
+    setConversationMaxDraft(String(clamped));
+    void patchDesktop({ conversationMaxWidth: clamped });
+  }
+
+  function commitConversationMin() {
+    const parsed = Math.floor(Number(conversationMinDraft));
+    if (!Number.isInteger(parsed)) return;
+    const clamped = Math.min(
+      HARD_MAX_CONVERSATION_WIDTH,
+      Math.max(HARD_MIN_CONVERSATION_WIDTH, parsed),
+    );
+    setConversationMinDraft(String(clamped));
+    void patchDesktop({ conversationMinWidth: clamped });
+  }
+  const codeFontSize = resolveCodeFontSize(desktopSettings?.codeFontSize);
 
   async function patchDesktop(patch: DesktopSettingsUpdate) {
     try {
@@ -111,28 +132,6 @@ export function AppearanceSettings() {
     } catch (error) {
       notifyDesktopSettingsSaveFailure(error);
       return false;
-    }
-  }
-
-  async function commitConversationWidth() {
-    const parsed = Number(conversationWidthDraft.trim());
-    if (!Number.isInteger(parsed) || parsed < MIN_CONVERSATION_CONTENT_WIDTH) {
-      setConversationWidthInvalid(true);
-      return;
-    }
-
-    setConversationWidthInvalid(false);
-    setConversationWidthDraft(String(parsed));
-    const saved = await patchDesktop({ conversationContentWidth: parsed });
-    if (!saved) {
-      setConversationWidthDraft(
-        String(
-          resolveConversationContentWidth(
-            useAppStore.getState().desktopSettings?.conversationContentWidth ??
-              DEFAULT_CONVERSATION_CONTENT_WIDTH,
-          ),
-        ),
-      );
     }
   }
 
@@ -217,20 +216,19 @@ export function AppearanceSettings() {
                   <span className="block text-sm">{t("appearanceColorMode")}</span>
                   <span className="block text-xs text-muted">{t("appearanceColorModeDesc")}</span>
                 </span>
-                <select
-                  className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
-                  aria-label={t("appearanceColorMode")}
+                <Select
+                  className="w-24"
+                  ariaLabel={t("appearanceColorMode")}
                   value={desktopSettings?.theme ?? "system"}
-                  onChange={(event) =>
-                    void patchDesktop({
-                      theme: event.target.value as "light" | "dark" | "system",
-                    })
+                  onChange={(next) =>
+                    void patchDesktop({ theme: next as "light" | "dark" | "system" })
                   }
-                >
-                  <option value="system">{t("commonSystem")}</option>
-                  <option value="light">{t("generalThemeLight")}</option>
-                  <option value="dark">{t("generalThemeDark")}</option>
-                </select>
+                  options={[
+                    { value: "system", label: t("commonSystem") },
+                    { value: "light", label: t("generalThemeLight") },
+                    { value: "dark", label: t("generalThemeDark") },
+                  ]}
+                />
               </label>
 
               <label className="flex items-center justify-between gap-4">
@@ -238,19 +236,19 @@ export function AppearanceSettings() {
                   <span className="block text-sm">{t("generalLanguage")}</span>
                   <span className="block text-xs text-muted">{t("generalLanguageDesc")}</span>
                 </span>
-                <select
-                  className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-xs"
+                <Select
+                  className="w-24"
+                  ariaLabel={t("generalLanguage")}
                   value={desktopSettings?.language ?? "system"}
-                  onChange={(event) =>
-                    void patchDesktop({
-                      language: event.target.value as "system" | "en" | "zh",
-                    })
+                  onChange={(next) =>
+                    void patchDesktop({ language: next as "system" | "en" | "zh" })
                   }
-                >
-                  <option value="system">{t("commonSystem")}</option>
-                  <option value="en">English</option>
-                  <option value="zh">中文</option>
-                </select>
+                  options={[
+                    { value: "system", label: t("commonSystem") },
+                    { value: "en", label: "English" },
+                    { value: "zh", label: "中文" },
+                  ]}
+                />
               </label>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -293,62 +291,81 @@ export function AppearanceSettings() {
               {t("appearanceConversationGroup")}
             </h2>
             <div className="interface-density-card flex flex-col gap-4 rounded-lg border border-border p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="min-w-0">
-                  <label htmlFor="conversation-content-width" className="block text-sm">
-                    {t("generalConversationWidth")}
+                  <label htmlFor="conversation-max-width" className="block text-sm">
+                    {t("generalConversationMaxWidth")}
                   </label>
                   <span
-                    id="conversation-content-width-description"
+                    id="conversation-max-width-description"
                     className="block text-xs text-muted"
                   >
-                    {t("generalConversationWidthDesc", {
-                      min: MIN_CONVERSATION_CONTENT_WIDTH,
+                    {t("generalConversationMaxWidthDesc", {
+                      max: HARD_MAX_CONVERSATION_WIDTH,
                     })}
                   </span>
                 </span>
                 <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
-                  <span
-                    className={`interface-density-control flex h-8 w-24 items-center rounded-md border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus ${
-                      conversationWidthInvalid ? "border-danger" : "border-border"
-                    }`}
-                  >
+                  <span className="interface-density-control flex h-8 w-24 items-center rounded-md border border-border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus">
                     <input
-                      id="conversation-content-width"
+                      id="conversation-max-width"
                       type="number"
-                      min={MIN_CONVERSATION_CONTENT_WIDTH}
+                      min={HARD_MIN_CONVERSATION_WIDTH}
+                      max={HARD_MAX_CONVERSATION_WIDTH}
                       step={1}
                       inputMode="numeric"
                       className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
-                      value={conversationWidthDraft}
-                      aria-invalid={conversationWidthInvalid || undefined}
-                      aria-describedby={`conversation-content-width-description${
-                        conversationWidthInvalid ? " conversation-content-width-error" : ""
-                      }`}
-                      onChange={(event) => {
-                        setConversationWidthDraft(event.target.value);
-                        if (conversationWidthInvalid) setConversationWidthInvalid(false);
-                      }}
-                      onBlur={() => void commitConversationWidth()}
+                      value={conversationMaxDraft}
+                      aria-describedby="conversation-max-width-description"
+                      onChange={(event) => setConversationMaxDraft(event.target.value)}
+                      onBlur={commitConversationMax}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
                         event.preventDefault();
-                        void commitConversationWidth();
+                        commitConversationMax();
                       }}
                     />
                     <span className="ml-1 text-[11px] text-muted">px</span>
                   </span>
-                  {conversationWidthInvalid && (
-                    <span
-                      id="conversation-content-width-error"
-                      role="alert"
-                      className="max-w-64 text-[11px] leading-4 text-danger sm:text-right"
-                    >
-                      {t("generalConversationWidthError", {
-                        min: MIN_CONVERSATION_CONTENT_WIDTH,
-                      })}
-                    </span>
-                  )}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <span className="min-w-0">
+                  <label htmlFor="conversation-min-width" className="block text-sm">
+                    {t("generalConversationMinWidth")}
+                  </label>
+                  <span
+                    id="conversation-min-width-description"
+                    className="block text-xs text-muted"
+                  >
+                    {t("generalConversationMinWidthDesc", {
+                      min: HARD_MIN_CONVERSATION_WIDTH,
+                    })}
+                  </span>
+                </span>
+                <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
+                  <span className="interface-density-control flex h-8 w-24 items-center rounded-md border border-border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus">
+                    <input
+                      id="conversation-min-width"
+                      type="number"
+                      min={HARD_MIN_CONVERSATION_WIDTH}
+                      max={HARD_MAX_CONVERSATION_WIDTH}
+                      step={1}
+                      inputMode="numeric"
+                      className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
+                      value={conversationMinDraft}
+                      aria-describedby="conversation-min-width-description"
+                      onChange={(event) => setConversationMinDraft(event.target.value)}
+                      onBlur={commitConversationMin}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        commitConversationMin();
+                      }}
+                    />
+                    <span className="ml-1 text-[11px] text-muted">px</span>
+                  </span>
                 </span>
               </div>
 

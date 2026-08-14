@@ -1,5 +1,5 @@
 import { Brain, Check, ChevronDown } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -19,7 +19,16 @@ const MODEL_MENU_DEFAULT_MAX_WIDTH = 640;
 const MODEL_MENU_MAX_WIDTH = 640;
 const MODEL_MENU_ROW_CONTROLS_WIDTH = 96;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
-const MODEL_MENU_THINKING_RESERVE_WIDTH = 120;
+const CONTEXT_POPOVER_CENTER_MAX_WIDTH = 560;
+
+function subscribeToViewportWidth(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+function getViewportWidth(): number {
+  return window.innerWidth;
+}
 const CONTEXT_BREAKDOWN_KEYS = [
   "systemPrompt",
   "toolDefinitions",
@@ -36,11 +45,7 @@ function estimatedContextTokens(breakdown: SessionContextBreakdown | undefined):
 }
 
 export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): number {
-  const viewportLimit =
-    viewportWidth -
-    Math.max(0, menuLeft) -
-    MODEL_MENU_VIEWPORT_GUTTER -
-    MODEL_MENU_THINKING_RESERVE_WIDTH;
+  const viewportLimit = viewportWidth - Math.max(0, menuLeft) - MODEL_MENU_VIEWPORT_GUTTER;
   return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_MAX_WIDTH, viewportLimit));
 }
 
@@ -84,7 +89,8 @@ export function thinkingLevelsForModel(
 }
 
 export function modelOptionLabel(model: ModelSummary): string {
-  return `${model.provider}/${model.name || model.modelId}`;
+  const providerLabel = model.providerName || model.provider;
+  return `${providerLabel}/${model.name || model.modelId}`;
 }
 
 export function thinkingLevelLabel(level: string): string {
@@ -120,6 +126,12 @@ export function canRequestModelList(args: {
 export function ContextUsageRing() {
   const t = useT();
   const session = useAppStore((s) => s.session);
+  const viewportWidth = useSyncExternalStore(
+    subscribeToViewportWidth,
+    getViewportWidth,
+    getViewportWidth,
+  );
+  const centerPopover = viewportWidth <= CONTEXT_POPOVER_CENTER_MAX_WIDTH;
   const contextUsage = session?.contextUsage;
   const breakdown = contextUsage?.breakdown;
   const estimatedTokens = contextUsage?.tokens === null ? estimatedContextTokens(breakdown) : null;
@@ -190,7 +202,11 @@ export function ContextUsageRing() {
         </span>
       </button>
       {open && (
-        <div className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg">
+        <div
+          className={`theme-floating-surface absolute bottom-full z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg ${
+            centerPopover ? "left-1/2 -translate-x-1/2" : "right-0"
+          }`}
+        >
           <span className="font-medium">{t("contextUsageTitle")}</span>
           <span className="mt-0.5 tabular-nums text-muted">{title}</span>
           {breakdown && (
@@ -389,7 +405,7 @@ export function ModelControls() {
       Math.max(MODEL_MENU_MIN_WIDTH, Math.ceil(contentWidth) + MODEL_MENU_ROW_CONTROLS_WIDTH),
     );
     setModelMenuWidth((current) => (current === nextWidth ? current : nextWidth));
-  }, [modelMenuMeasureKey]);
+  }, [modelMenuMeasureKey, menuOpen]);
 
   // Keep the floated dropdown inside the viewport if its measured width would
   // overflow the available space on the right.
@@ -457,7 +473,7 @@ export function ModelControls() {
         <span
           ref={modelMenuMeasureRef}
           aria-hidden="true"
-          className="pointer-events-none invisible absolute flex w-max flex-col whitespace-nowrap text-xs"
+          className="pointer-events-none invisible absolute flex w-max flex-col whitespace-nowrap text-[11px]"
         >
           {modelMenuLabels.map((label, index) => (
             <span key={`${index}:${label}`}>{label}</span>
@@ -465,7 +481,7 @@ export function ModelControls() {
         </span>
         <button
           type="button"
-          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -505,7 +521,7 @@ export function ModelControls() {
                     <button
                       key={key}
                       type="button"
-                      className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs text-muted ${
+                      className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-[11px] text-muted ${
                         selected ? "font-medium" : ""
                       }`}
                       role="menuitemradio"
@@ -597,7 +613,7 @@ export function ThinkingControls() {
     <div ref={containerRef} className="relative flex min-w-0 items-center">
       <button
         type="button"
-        className={`composer-control flex h-8 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs transition-colors ${
+        className={`composer-control flex h-8 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] transition-colors ${
           open
             ? "bg-surface-overlay text-foreground"
             : "text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -613,7 +629,8 @@ export function ThinkingControls() {
       </button>
       {open && (
         <div
-          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-[150px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"          role="menu"
+          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-[150px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+          role="menu"
           aria-label={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
         >
           {levels.map((level) => {

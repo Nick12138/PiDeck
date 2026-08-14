@@ -44,18 +44,19 @@ describe("includeCurrentModel", () => {
         thinkingLevels: ["off"],
       },
     ];
-    expect(thinkingLevelsForModel(models, current, ["off"])).toEqual([
-      "low",
-      "medium",
-      "high",
-    ]);
+    expect(thinkingLevelsForModel(models, current, ["off"])).toEqual(["low", "medium", "high"]);
     expect(thinkingLevelsForModel(models, models[1], ["low"])).toEqual(["off"]);
   });
 });
 
 describe("modelOptionLabel", () => {
-  it("prefixes the display name with the Provider ID", () => {
+  it("prefixes the model name with the Provider display name", () => {
     expect(modelOptionLabel(current)).toBe("muapi/Grok 4.5");
+    expect(modelOptionLabel({ ...current, providerName: "天机阁" })).toBe("天机阁/Grok 4.5");
+  });
+
+  it("falls back to the Provider ID when no display name is present", () => {
+    expect(modelOptionLabel({ ...current, providerName: undefined })).toBe("muapi/Grok 4.5");
   });
 });
 
@@ -66,22 +67,15 @@ describe("model menu resize geometry", () => {
     expect(clampModelMenuWidth(900, 100, 1_000)).toBe(640);
   });
 
-  it("reserves viewport room for the thinking-level submenu", () => {
-    expect(modelMenuMaxWidth(100, 700)).toBe(468);
-    expect(clampModelMenuWidth(600, 100, 700)).toBe(468);
+  it("caps the menu width at the viewport limit", () => {
+    expect(modelMenuMaxWidth(100, 700)).toBe(588);
+    expect(clampModelMenuWidth(600, 100, 700)).toBe(588);
   });
 });
 
 describe("thinkingLevelLabel", () => {
   it("keeps model thinking levels in English", () => {
-    expect([
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-    ].map(thinkingLevelLabel)).toEqual([
+    expect(["off", "minimal", "low", "medium", "high", "xhigh"].map(thinkingLevelLabel)).toEqual([
       "Off",
       "Minimal",
       "Low",
@@ -114,7 +108,8 @@ describe("canRequestModelList", () => {
 
 describe("requestModelListWithRetry", () => {
   it("retries transient failures until the model list succeeds", async () => {
-    const request = vi.fn()
+    const request = vi
+      .fn()
       .mockResolvedValueOnce({
         ok: false as const,
         error: { code: "SERVICE_GRAPH_BUSY", retryable: true },
@@ -169,9 +164,7 @@ describe("requestModelListWithRetry", () => {
       active = false;
     });
 
-    await expect(
-      requestModelListWithRetry(request, wait, () => active),
-    ).resolves.toBeNull();
+    await expect(requestModelListWithRetry(request, wait, () => active)).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(1);
   });
 });

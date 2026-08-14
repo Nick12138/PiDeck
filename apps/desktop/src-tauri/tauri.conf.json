@@ -16,7 +16,7 @@
         "title": "PiDeck",
         "width": 1280,
         "height": 800,
-        "minWidth": 960,
+        "minWidth": 420,
         "minHeight": 600,
         "resizable": true,
         "decorations": false,

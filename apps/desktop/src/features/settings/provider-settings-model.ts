@@ -77,6 +77,15 @@ export function emptyProviderDraft(): ProviderDraftState {
   };
 }
 
+/** Smallest unused positive-integer Provider ID across the current list.
+ *  Existing string IDs (e.g. "openai") are left untouched and ignored here. */
+export function nextProviderId(existingIds: string[]): string {
+  const used = new Set(existingIds.map((id) => id.trim()).filter(Boolean));
+  let n = 1;
+  while (used.has(String(n))) n += 1;
+  return String(n);
+}
+
 export function enabledProviderCatalog(models: ProviderModelConfig[]): DiscoveredProviderModel[] {
   return models.map((model) => {
     const detected = detectModelThinking(model.id);
@@ -122,10 +131,6 @@ export function automaticThinkingConfig(
     thinkingLevelMap: detected.thinkingLevelMap,
     thinkingSource: detected.reasoning ? detected.source : "default",
   };
-}
-
-export function shouldOpenAdvancedEndpoint(modelsUrl: string | undefined): boolean {
-  return Boolean(modelsUrl?.trim());
 }
 
 function isHttpUrl(value: string): boolean {

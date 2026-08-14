@@ -141,7 +141,6 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByLabelText("Color mode")).toBeInTheDocument();
     expect(screen.getByLabelText(/Language/)).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Interface density" })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Conversation width" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Conversation font size" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Code font size" })).toBeInTheDocument();
     expect(screen.queryByText("Restore last session")).not.toBeInTheDocument();
@@ -174,6 +173,30 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.getByText("13px")).toBeInTheDocument();
   });
 
+  it("persists the conversation min and max width from Appearance settings", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="appearance" />);
+
+    const maxWidth = screen.getByRole("spinbutton", { name: "Conversation max width" });
+    const minWidth = screen.getByRole("spinbutton", { name: "Conversation min width" });
+    expect(maxWidth).toHaveValue(1100);
+    expect(minWidth).toHaveValue(350);
+
+    await user.clear(maxWidth);
+    await user.type(maxWidth, "1200");
+    await user.tab();
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.conversationMaxWidth).toBe(1200),
+    );
+
+    await user.clear(minWidth);
+    await user.type(minWidth, "640");
+    await user.tab();
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.conversationMinWidth).toBe(640),
+    );
+  });
+
   it("persists the theme family separately from the color mode", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
@@ -203,7 +226,8 @@ describe("SettingsPage navigation guard", () => {
     expect(apple).toHaveAttribute("data-state", "active");
     expect(vercel).toHaveAttribute("data-state", "inactive");
 
-    await user.selectOptions(screen.getByLabelText("Color mode"), "light");
+    await user.click(screen.getByLabelText("Color mode"));
+    await user.click(await screen.findByRole("option", { name: "Light" }));
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.theme).toBe("light"));
     expect(useAppStore.getState().desktopSettings?.themeFamily).toBe("apple");
     expect(document.documentElement).toHaveClass("light");
@@ -274,38 +298,14 @@ describe("SettingsPage navigation guard", () => {
 
     expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText(/Language/), "zh");
+    await user.click(screen.getByLabelText(/Language/));
+    await user.click(await screen.findByRole("option", { name: "中文" }));
 
     expect(screen.getByRole("button", { name: "通用" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "外观" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "主机" })).toBeInTheDocument();
     expect(screen.getByText("界面")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "General" })).not.toBeInTheDocument();
-  });
-
-  it("validates and persists the conversation width from Appearance settings", async () => {
-    const user = userEvent.setup();
-    render(<SettingsPage initialSection="appearance" />);
-
-    const input = screen.getByRole("spinbutton", { name: "Conversation width" });
-    expect(input).toHaveValue(668);
-
-    await user.clear(input);
-    await user.type(input, "559");
-    await user.tab();
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a whole number of at least 560px.");
-    expect(useAppStore.getState().desktopSettings?.conversationContentWidth).toBeUndefined();
-
-    await user.click(input);
-    await user.clear(input);
-    await user.type(input, "920");
-    await user.tab();
-
-    await waitFor(() =>
-      expect(useAppStore.getState().desktopSettings?.conversationContentWidth).toBe(920),
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("synchronizes automatic presentation and offers one-click legacy rollback", async () => {
@@ -365,7 +365,8 @@ describe("SettingsPage navigation guard", () => {
     });
     render(<SettingsPage initialSection="appearance" />);
 
-    await user.selectOptions(screen.getByLabelText("Color mode"), "light");
+    await user.click(screen.getByLabelText("Color mode"));
+    await user.click(await screen.findByRole("option", { name: "Light" }));
 
     await waitFor(() =>
       expect(tauriMocks.invoke).toHaveBeenCalledWith("desktop_settings_patch", {

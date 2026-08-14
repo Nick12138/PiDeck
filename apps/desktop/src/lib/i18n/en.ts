@@ -131,10 +131,12 @@ export const en = {
   generalThemeDark: "Dark",
   generalLanguage: "Language",
   generalLanguageDesc: "Language of the PiDeck interface.",
-  generalConversationWidth: "Conversation width",
-  generalConversationWidthDesc:
-    "Maximum width for messages, the composer, and inline panels. Minimum {min}px.",
-  generalConversationWidthError: "Enter a whole number of at least {min}px.",
+  generalConversationMaxWidth: "Conversation max width",
+  generalConversationMaxWidthDesc:
+    "The conversation widens to fill the window up to this maximum. At most {max}px.",
+  generalConversationMinWidth: "Conversation min width",
+  generalConversationMinWidthDesc:
+    "The conversation never narrows below this minimum. At least {min}px.",
 
   // General
   generalSubtitle: "Startup behavior and Pi Host configuration",
@@ -285,13 +287,9 @@ export const en = {
   providersUseSystemRole: "Use system role",
   providersOmitReasoningEffort: "Omit reasoning_effort",
   providersDisplayName: "Display name",
-  providersId: "Provider ID",
+  providersVendorName: "Vendor name",
   providersBaseUrl: "Base URL",
   providersApiProtocol: "API protocol",
-  providersAdvancedEndpoint: "Advanced endpoint",
-  providersModelsUrl: "Models URL",
-  providersOptional: "(optional)",
-  providersModelsUrlPlaceholder: "Auto-detect from Base URL",
   providersErrorNameRequired: "Display name is required",
   providersErrorIdRequired: "Provider ID is required",
   providersErrorBaseUrlRequired: "Base URL is required",

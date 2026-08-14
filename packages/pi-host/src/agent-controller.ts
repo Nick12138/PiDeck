@@ -48,9 +48,10 @@ function toSdkImages(images: SerializableImage[] | undefined): ImageContent[] | 
 /** Upper bound for waiting on session.abort() while holding the graph lock. */
 const ABORT_SETTLE_TIMEOUT_MS = 15_000;
 
-export function summarizeModel(model: Model<any>): ModelSummary {
+export function summarizeModel(model: Model<any>, providerName?: string): ModelSummary {
   return {
     provider: model.provider,
+    providerName,
     modelId: model.id,
     name: model.name ?? model.id,
     thinkingLevels: getSupportedThinkingLevels(model).map(String),
@@ -1219,6 +1220,11 @@ export function createAgentHandlers(
             factory.deps.modelRuntime.getProviders().map((provider) => provider.id),
           );
           const enabledProviderSet = enabledProviders ? new Set(enabledProviders) : undefined;
+          const providerNames = new Map(
+            factory.deps.modelRuntime
+              .getProviders()
+              .map((provider) => [provider.id, provider.name] as const),
+          );
           const modelAllowLists = await getProviderModelAllowLists(factory.deps.agentDir);
           const models: ModelSummary[] = all
             .filter(
@@ -1233,13 +1239,14 @@ export function createAgentHandlers(
               }
               return allow.includes(model.id);
             })
-            .map((model: Model<any>) => summarizeModel(model));
+            .map((model: Model<any>) => summarizeModel(model, providerNames.get(model.provider)));
           return {
             models,
             ...(enabledProviders ? { enabledProviders } : {}),
             current: current
               ? {
                   provider: current.provider,
+                  providerName: providerNames.get(current.provider),
                   modelId: current.id,
                   name: current.name ?? current.id,
                 }

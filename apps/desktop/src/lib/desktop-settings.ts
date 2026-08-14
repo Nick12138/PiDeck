@@ -12,6 +12,10 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
 } from "./appearance-preferences";
+import {
+  HARD_MAX_CONVERSATION_WIDTH,
+  HARD_MIN_CONVERSATION_WIDTH,
+} from "../features/chat/conversation-layout";
 import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
@@ -46,7 +50,8 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "terminalProfile",
   "language",
   "interfaceDensity",
-  "conversationContentWidth",
+  "conversationMinWidth",
+  "conversationMaxWidth",
   "conversationFontSize",
   "codeFontSize",
   "knownWorkspaces",
@@ -102,12 +107,27 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   ) {
     throw new Error("Invalid interface density");
   }
-  const width = values.conversationContentWidth;
+  const conversationMinWidth = values.conversationMinWidth;
   if (
-    width !== undefined &&
-    (typeof width !== "number" || !Number.isInteger(width) || width < 560 || width > 0xffff_ffff)
+    conversationMinWidth !== undefined &&
+    (typeof conversationMinWidth !== "number" ||
+      !Number.isInteger(conversationMinWidth) ||
+      conversationMinWidth < HARD_MIN_CONVERSATION_WIDTH)
   ) {
-    throw new Error("conversationContentWidth must be an integer between 560 and 4294967295");
+    throw new Error(
+      `conversationMinWidth must be an integer of at least ${HARD_MIN_CONVERSATION_WIDTH}`,
+    );
+  }
+  const conversationMaxWidth = values.conversationMaxWidth;
+  if (
+    conversationMaxWidth !== undefined &&
+    (typeof conversationMaxWidth !== "number" ||
+      !Number.isInteger(conversationMaxWidth) ||
+      conversationMaxWidth > HARD_MAX_CONVERSATION_WIDTH)
+  ) {
+    throw new Error(
+      `conversationMaxWidth must be an integer of at most ${HARD_MAX_CONVERSATION_WIDTH}`,
+    );
   }
   for (const [key, min, max] of [
     ["conversationFontSize", MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE],

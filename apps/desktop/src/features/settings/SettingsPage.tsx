@@ -14,6 +14,7 @@ import {
 import type { ExtensionDecisionPresentation, TerminalProfileId } from "@pideck/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
+import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
@@ -255,36 +256,41 @@ function GeneralSettings() {
                   <span className="block text-xs text-muted">{t("generalDefaultShellDesc")}</span>
                 </label>
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <select
-                    id="default-shell"
-                    className="h-8 min-w-44 max-w-72 rounded-md border border-border bg-surface px-2 text-xs"
+                  <Select
+                    className="min-w-44 max-w-72"
+                    ariaLabel={t("generalDefaultShell")}
                     value={desktopSettings?.terminalProfile ?? "auto"}
                     disabled={shellCatalogLoading && !shellCatalog}
-                    onChange={(event) =>
-                      void patchDesktop({
-                        terminalProfile: event.target.value as TerminalProfileId,
-                      })
+                    onChange={(next) =>
+                      void patchDesktop({ terminalProfile: next as TerminalProfileId })
                     }
-                  >
-                    <option value="auto">
-                      {t("generalShellAutomatic")}
-                      {shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""}
-                    </option>
-                    {shellCatalog?.profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.label}
-                      </option>
-                    ))}
-                    {desktopSettings?.terminalProfile &&
+                    options={[
+                      {
+                        value: "auto",
+                        label:
+                          t("generalShellAutomatic") +
+                          (shellCatalog ? ` (${shellCatalog.automaticProfile.label})` : ""),
+                      },
+                      ...(shellCatalog?.profiles.map((profile) => ({
+                        value: profile.id,
+                        label: profile.label,
+                      })) ?? []),
+                      ...(desktopSettings?.terminalProfile &&
                       desktopSettings.terminalProfile !== "auto" &&
                       !shellCatalog?.profiles.some(
                         (profile) => profile.id === desktopSettings.terminalProfile,
-                      ) && (
-                        <option value={desktopSettings.terminalProfile} disabled>
-                          {t("generalShellUnavailable", { id: desktopSettings.terminalProfile })}
-                        </option>
-                      )}
-                  </select>
+                      )
+                        ? [
+                            {
+                              value: desktopSettings.terminalProfile,
+                              label: t("generalShellUnavailable", {
+                                id: desktopSettings.terminalProfile,
+                              }),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
                   <button
                     type="button"
                     title={t("generalDetectShells")}

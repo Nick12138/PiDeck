@@ -1,19 +1,43 @@
 import type { CSSProperties } from "react";
 
-export const DEFAULT_CONVERSATION_CONTENT_WIDTH = 668;
-export const MIN_CONVERSATION_CONTENT_WIDTH = 560;
+export const DEFAULT_CONVERSATION_MIN_WIDTH = 350;
+export const DEFAULT_CONVERSATION_MAX_WIDTH = 1100;
+export const HARD_MIN_CONVERSATION_WIDTH = 350;
+export const HARD_MAX_CONVERSATION_WIDTH = 2400;
 
-export function resolveConversationContentWidth(value: number | undefined): number {
+function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return DEFAULT_CONVERSATION_CONTENT_WIDTH;
+    return fallback;
   }
-  return Math.max(MIN_CONVERSATION_CONTENT_WIDTH, Math.floor(value));
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+export function resolveConversationMinWidth(value: number | undefined): number {
+  return clampInt(
+    value,
+    DEFAULT_CONVERSATION_MIN_WIDTH,
+    HARD_MIN_CONVERSATION_WIDTH,
+    DEFAULT_CONVERSATION_MAX_WIDTH,
+  );
+}
+
+export function resolveConversationMaxWidth(value: number | undefined): number {
+  return clampInt(
+    value,
+    DEFAULT_CONVERSATION_MAX_WIDTH,
+    DEFAULT_CONVERSATION_MIN_WIDTH,
+    HARD_MAX_CONVERSATION_WIDTH,
+  );
 }
 
 export function conversationContentWidthStyle(
-  value: number | undefined,
+  min: number | undefined,
+  max: number | undefined,
 ): CSSProperties {
+  const resolvedMin = resolveConversationMinWidth(min);
+  const resolvedMax = Math.max(resolveConversationMaxWidth(max), resolvedMin);
   return {
-    "--conversation-content-width": `${resolveConversationContentWidth(value)}px`,
+    "--conversation-min-width": `${resolvedMin}px`,
+    "--conversation-max-width": `${resolvedMax}px`,
   } as CSSProperties;
 }

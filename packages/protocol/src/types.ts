@@ -213,6 +213,8 @@ export type SessionRuntimeState = "starting" | "running" | "queued" | "idle" | "
 
 export type ModelSummary = {
   provider: string;
+  /** Human-readable Provider (vendor) display name, e.g. "天机阁". Falls back to `provider`. */
+  providerName?: string;
   modelId: string;
   name: string;
   thinkingLevels?: string[];
@@ -933,8 +935,10 @@ export type DesktopSettings = {
   language?: DesktopLanguage;
   /** Spacing density for frequently used interface controls and rows. */
   interfaceDensity?: DesktopInterfaceDensity;
+  /** Minimum width of the aligned conversation surfaces, in CSS pixels. */
+  conversationMinWidth?: number;
   /** Maximum width of the aligned conversation surfaces, in CSS pixels. */
-  conversationContentWidth?: number;
+  conversationMaxWidth?: number;
   /** Base font size for conversation content, in CSS pixels. */
   conversationFontSize?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */

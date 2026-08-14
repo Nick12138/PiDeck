@@ -1,11 +1,12 @@
 import {
   Activity,
   AlertTriangle,
+  Brain,
   Check,
-  ChevronRight,
   CircleCheck,
   Eye,
   EyeOff,
+  Image as ImageIcon,
   LogIn,
   Plus,
   RefreshCw,
@@ -30,10 +31,12 @@ import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { SectionHeader } from "../../components/SectionHeader";
+import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import type { MessageKey } from "../../lib/i18n";
 import { useT, type Translate } from "../../lib/i18n/use-t";
 import { useImeComposition } from "../../lib/use-ime-composition";
+import { formatTokenCount } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import {
   automaticThinkingConfig,
@@ -42,13 +45,13 @@ import {
   emptyProviderDraft as emptyDraft,
   enabledProviderCatalog as enabledCatalog,
   newProviderModel,
+  nextProviderId,
   providerDraftFingerprint as draftFingerprint,
   providerDraftForSave,
   providerLoadFailureMessage,
   providerSaveFailureMessage,
   providerThinkingMode as thinkingMode,
   providerThinkingSourceLabel as thinkingSourceLabel,
-  shouldOpenAdvancedEndpoint,
   snapshotToDraft,
   stripProviderModelState as stripEnabled,
   validateProviderDraft,
@@ -160,7 +163,6 @@ export function ProvidersSettings() {
   const [connectionResult, setConnectionResult] = useState<ProviderConnectionResult | null>(null);
   const [updatingProviderId, setUpdatingProviderId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
-  const [advancedEndpointOpen, setAdvancedEndpointOpen] = useState(false);
   const [manualId, setManualId] = useState("");
   const ime = useImeComposition();
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
@@ -199,7 +201,6 @@ export function ProvidersSettings() {
       baselineRef.current = null;
       draftEpochRef.current += 1;
       setPendingSwitch(null);
-      setAdvancedEndpointOpen(false);
       return;
     }
     const requestHost = useAppStore.getState().host;
@@ -238,14 +239,12 @@ export function ProvidersSettings() {
           baselineRef.current = draftFingerprint(nextDraft);
           draftEpochRef.current += 1;
           setCatalog(enabledCatalog(nextDraft.models));
-          setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
         } else {
           setSelectedId(null);
           setDraft(null);
           baselineRef.current = null;
           draftEpochRef.current += 1;
           setCatalog([]);
-          setAdvancedEndpointOpen(false);
         }
       })
       .catch((error) => {
@@ -290,12 +289,11 @@ export function ProvidersSettings() {
     setEditingModelId(null);
     setManualOpen(false);
     setFieldErrors({});
-    setAdvancedEndpointOpen(shouldOpenAdvancedEndpoint(nextDraft.modelsUrl));
     setConnectionResult(null);
   }
 
   function startNewProvider() {
-    const nextDraft = emptyDraft();
+    const nextDraft = { ...emptyDraft(), id: nextProviderId(providers.map((p) => p.id)) };
     setOauthOpen(false);
     setSelectedId(null);
     setDraft(nextDraft);
@@ -307,7 +305,6 @@ export function ProvidersSettings() {
     setEditingModelId(null);
     setManualOpen(false);
     setFieldErrors({});
-    setAdvancedEndpointOpen(false);
     setConnectionResult(null);
   }
 
@@ -324,7 +321,6 @@ export function ProvidersSettings() {
     setEditingModelId(null);
     setManualOpen(false);
     setFieldErrors({});
-    setAdvancedEndpointOpen(false);
     setConnectionResult(null);
     setOauthOpen(true);
   }
@@ -341,7 +337,7 @@ export function ProvidersSettings() {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }
 
-  function validateUrlField(field: "baseUrl" | "modelsUrl") {
+  function validateUrlField(field: "baseUrl") {
     if (!draft) return;
     const errors = validateProviderDraft(draft);
     setFieldErrors((current) => {
@@ -901,7 +897,7 @@ export function ProvidersSettings() {
               <section className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1.5 text-xs text-muted">
                   <span>
-                    {t("providersDisplayName")} <span className="text-danger">*</span>
+                    {t("providersVendorName")} <span className="text-danger">*</span>
                   </span>
                   <input
                     className={`h-8 rounded-md border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus ${
@@ -917,21 +913,16 @@ export function ProvidersSettings() {
                   )}
                 </label>
                 <label className="flex flex-col gap-1.5 text-xs text-muted">
-                  <span>
-                    {t("providersId")} <span className="text-danger">*</span>
-                  </span>
-                  <input
-                    className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-focus ${
-                      fieldErrors.id ? "border-danger" : "border-border"
-                    }`}
-                    value={draft.id}
-                    onChange={(event) => updateDraft({ id: event.target.value })}
+                  {t("providersApiProtocol")}
+                  <Select
+                    ariaLabel={t("providersApiProtocol")}
+                    value={draft.api}
+                    onChange={(next) => updateDraft({ api: next as ProviderDraft["api"] })}
+                    options={API_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
                   />
-                  {fieldErrors.id && (
-                    <span className="text-[11px] text-danger">
-                      {t(fieldErrors.id as MessageKey)}
-                    </span>
-                  )}
                 </label>
                 <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
                   <span>
@@ -956,87 +947,40 @@ export function ProvidersSettings() {
                     </span>
                   )}
                 </label>
-                <label className="col-span-2 flex flex-col gap-1.5 text-xs text-muted">
-                  {t("providersApiProtocol")}
-                  <select
-                    className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
-                    value={draft.api}
-                    onChange={(event) =>
-                      updateDraft({ api: event.target.value as ProviderDraft["api"] })
-                    }
-                  >
-                    {API_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <details
-                  className="group col-span-2"
-                  open={advancedEndpointOpen}
-                  onToggle={(event) => setAdvancedEndpointOpen(event.currentTarget.open)}
-                >
-                  <summary className="flex h-8 cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
-                    <ChevronRight className="transition-transform group-open:rotate-90" size={14} />
-                    {t("providersAdvancedEndpoint")}
-                  </summary>
-                  <label className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
-                    <span>
-                      {t("providersModelsUrl")}{" "}
-                      <span className="font-normal text-muted">{t("providersOptional")}</span>
-                    </span>
-                    <input
-                      className={`h-8 rounded-md border bg-surface px-3 font-mono text-xs text-foreground outline-none focus:border-focus ${
-                        fieldErrors.modelsUrl ? "border-danger" : "border-border"
-                      }`}
-                      placeholder={t("providersModelsUrlPlaceholder")}
-                      value={draft.modelsUrl ?? ""}
-                      onChange={(event) => updateDraft({ modelsUrl: event.target.value })}
-                      onBlur={() => validateUrlField("modelsUrl")}
-                    />
-                    {fieldErrors.modelsUrl && (
-                      <span className="text-[11px] text-danger">
-                        {t(fieldErrors.modelsUrl as MessageKey)}
-                      </span>
-                    )}
-                  </label>
-                </details>
                 {draft.api === "openai-completions" && (
                   <div className="col-span-2 grid grid-cols-2 gap-4">
                     <h2 className="col-span-2 text-sm font-medium">{t("providersCompatGroup")}</h2>
                     <label className="flex flex-col gap-1.5 text-xs text-muted">
                       {t("providersCompatSystemRole")}
-                      <select
-                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
+                      <Select
+                        ariaLabel={t("providersCompatSystemRole")}
                         value={compatibilityChoice(draft.compat?.supportsDeveloperRole ?? false)}
-                        onChange={(event) =>
-                          updateCompatibility(
-                            "supportsDeveloperRole",
-                            event.target.value === "enabled",
-                          )
+                        onChange={(next) =>
+                          updateCompatibility("supportsDeveloperRole", next === "enabled")
                         }
-                      >
-                        <option value="enabled">{t("providersCompatDeveloper")}</option>
-                        <option value="disabled">{t("providersCompatSystem")}</option>
-                      </select>
+                        options={[
+                          { value: "enabled", label: t("providersCompatDeveloper") },
+                          { value: "disabled", label: t("providersCompatSystem") },
+                        ]}
+                      />
                     </label>
                     <label className="flex flex-col gap-1.5 text-xs text-muted">
                       {t("providersCompatReasoningEffort")}
-                      <select
-                        className="h-8 rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus:border-focus"
+                      <Select
+                        ariaLabel={t("providersCompatReasoningEffort")}
                         value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
-                        onChange={(event) =>
+                        onChange={(next) =>
                           updateCompatibility(
                             "supportsReasoningEffort",
-                            event.target.value === "auto" ? null : event.target.value === "enabled",
+                            next === "auto" ? null : next === "enabled",
                           )
                         }
-                      >
-                        <option value="auto">{t("commonAuto")}</option>
-                        <option value="enabled">{t("providersCompatSend")}</option>
-                        <option value="disabled">{t("providersCompatOmit")}</option>
-                      </select>
+                        options={[
+                          { value: "auto", label: t("commonAuto") },
+                          { value: "enabled", label: t("providersCompatSend") },
+                          { value: "disabled", label: t("providersCompatOmit") },
+                        ]}
+                      />
                     </label>
                   </div>
                 )}
@@ -1187,14 +1131,32 @@ export function ProvidersSettings() {
                           <span className="min-w-0 flex-1 truncate text-sm" title={model.id}>
                             {model.name}
                           </span>
-                          {model.reasoning && (
-                            <span
-                              className="text-[11px] text-muted"
-                              title={thinkingSourceLabel(t, model)}
-                            >
-                              {t("providersReasoningBadge")}
-                            </span>
-                          )}
+                          <span className="flex shrink-0 items-center gap-1.5 text-muted">
+                            {model.reasoning && (
+                              <span
+                                className="flex items-center gap-1 text-[11px]"
+                                title={thinkingSourceLabel(t, model)}
+                              >
+                                <Brain size={13} />
+                              </span>
+                            )}
+                            {model.input.includes("image") && (
+                              <span
+                                className="flex items-center text-[11px]"
+                                title={t("providersImages")}
+                              >
+                                <ImageIcon size={13} />
+                              </span>
+                            )}
+                            {model.contextWindow > 0 && (
+                              <span
+                                className="text-[11px] tabular-nums"
+                                title={t("providersContextWindow")}
+                              >
+                                {formatTokenCount(model.contextWindow)}
+                              </span>
+                            )}
+                          </span>
                           <button
                             type="button"
                             className={`flex size-7 items-center justify-center rounded-md ${
@@ -1251,11 +1213,11 @@ export function ProvidersSettings() {
                             />
                             <label className="flex flex-col gap-1 text-[11px] text-muted">
                               {t("providersThinkingSupport")}
-                              <select
-                                className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+                              <Select
+                                ariaLabel={t("providersThinkingSupport")}
                                 value={thinkingMode(model)}
-                                onChange={(event) => {
-                                  const mode = event.target.value;
+                                onChange={(next) => {
+                                  const mode = next;
                                   if (mode === "disabled") {
                                     updateModel(model.id, {
                                       reasoning: false,
@@ -1274,11 +1236,12 @@ export function ProvidersSettings() {
                                   }
                                   updateModel(model.id, automaticThinkingConfig(model.id));
                                 }}
-                              >
-                                <option value="auto">{t("commonAuto")}</option>
-                                <option value="custom">{t("commonCustom")}</option>
-                                <option value="disabled">{t("commonDisabled")}</option>
-                              </select>
+                                options={[
+                                  { value: "auto", label: t("commonAuto") },
+                                  { value: "custom", label: t("commonCustom") },
+                                  { value: "disabled", label: t("commonDisabled") },
+                                ]}
+                              />
                             </label>
                             <div className="flex items-end gap-4 pb-1 text-xs">
                               <label className="flex items-center gap-2">

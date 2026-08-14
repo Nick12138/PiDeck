@@ -161,7 +161,9 @@ body,
 }
 
 .conversation-content-width {
-  max-width: min(100%, var(--conversation-content-width, 48rem));
+  width: 100%;
+  max-width: var(--conversation-max-width, 68rem);
+  min-width: var(--conversation-min-width, 35rem);
 }
 
 .interface-density-control {
@@ -210,7 +212,8 @@ body,
    uniform panel background; options get a background tint only on hover or
    selection. Font color is left untouched. */
 .theme-floating-surface [role="menuitem"],
-.theme-floating-surface [role="menuitemradio"] {
+.theme-floating-surface [role="menuitemradio"],
+.theme-floating-surface [role="option"] {
   margin-block: 4px;
   margin-inline: 4px;
   padding-inline: 1rem;
@@ -222,8 +225,10 @@ body,
 @layer components {
   .theme-floating-surface [role="menuitem"]:hover,
   .theme-floating-surface [role="menuitemradio"]:hover,
+  .theme-floating-surface [role="option"]:hover,
   .theme-floating-surface [role="menuitem"]:focus-visible,
-  .theme-floating-surface [role="menuitemradio"]:focus-visible {
+  .theme-floating-surface [role="menuitemradio"]:focus-visible,
+  .theme-floating-surface [role="option"]:focus-visible {
     background-color: var(--color-surface-overlay);
   }
 }
@@ -370,9 +375,11 @@ select option {
   box-shadow: 0 2px 4px rgb(0 0 0 / 12%);
 }
 
-button {
-  font: inherit;
-  cursor: pointer;
+@layer base {
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
 }
 
 .mac-window-control-dot {

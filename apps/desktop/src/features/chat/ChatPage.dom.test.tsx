@@ -1,8 +1,12 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
+import {
+  DEFAULT_CONVERSATION_MAX_WIDTH,
+  DEFAULT_CONVERSATION_MIN_WIDTH,
+} from "./conversation-layout";
 import { ChatPage } from "./ChatPage";
 
 const BASE_SETTINGS = {
@@ -24,10 +28,7 @@ describe("ChatPage conversation width", () => {
       servicesReady: true,
     });
     useAppStore.getState().applySessionSnapshot(null);
-    useAppStore.getState().setDesktopSettings({
-      ...BASE_SETTINGS,
-      conversationContentWidth: 920,
-    });
+    useAppStore.getState().setDesktopSettings(BASE_SETTINGS);
   });
 
   afterEach(() => {
@@ -36,19 +37,27 @@ describe("ChatPage conversation width", () => {
     useAppStore.getState().setDesktopSettings(null);
   });
 
-  it("publishes the configured width and clamps stale below-minimum values", () => {
+  it("publishes the configured conversation min and max width bounds", () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      conversationMinWidth: 640,
+      conversationMaxWidth: 1200,
+    });
     const { container } = render(<ChatPage />);
     const page = container.querySelector<HTMLElement>("[data-chat-page]")!;
-    expect(page.style.getPropertyValue("--conversation-content-width")).toBe("920px");
+    expect(page.style.getPropertyValue("--conversation-min-width")).toBe("640px");
+    expect(page.style.getPropertyValue("--conversation-max-width")).toBe("1200px");
     expect(page.querySelector("[data-chat-header-fade]")).toHaveAttribute("aria-hidden", "true");
+  });
 
-    act(() => {
-      useAppStore.getState().setDesktopSettings({
-        ...BASE_SETTINGS,
-        conversationContentWidth: 500,
-      });
-    });
-
-    expect(page.style.getPropertyValue("--conversation-content-width")).toBe("560px");
+  it("falls back to default bounds when none are configured", () => {
+    const { container } = render(<ChatPage />);
+    const page = container.querySelector<HTMLElement>("[data-chat-page]")!;
+    expect(page.style.getPropertyValue("--conversation-min-width")).toBe(
+      `${DEFAULT_CONVERSATION_MIN_WIDTH}px`,
+    );
+    expect(page.style.getPropertyValue("--conversation-max-width")).toBe(
+      `${DEFAULT_CONVERSATION_MAX_WIDTH}px`,
+    );
   });
 });

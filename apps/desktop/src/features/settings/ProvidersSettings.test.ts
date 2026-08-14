@@ -3,9 +3,9 @@ import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@pideck/
 import {
   automaticThinkingConfig,
   newProviderModel,
+  nextProviderId,
   providerDraftForSave,
   providerSaveFailureMessage,
-  shouldOpenAdvancedEndpoint,
 } from "./provider-settings-model";
 
 describe("newProviderModel", () => {
@@ -93,14 +93,18 @@ describe("automaticThinkingConfig", () => {
   });
 });
 
-describe("shouldOpenAdvancedEndpoint", () => {
-  it("keeps unused optional endpoint settings collapsed", () => {
-    expect(shouldOpenAdvancedEndpoint(undefined)).toBe(false);
-    expect(shouldOpenAdvancedEndpoint("  ")).toBe(false);
+describe("nextProviderId", () => {
+  it("starts from 1 when no numeric IDs exist", () => {
+    expect(nextProviderId(["openai", "muapi"])).toBe("1");
   });
 
-  it("reveals an existing custom Models URL", () => {
-    expect(shouldOpenAdvancedEndpoint("https://catalog.example/v1/models")).toBe(true);
+  it("reuses the smallest unused positive integer", () => {
+    expect(nextProviderId(["1", "3"])).toBe("2");
+    expect(nextProviderId(["1", "2", "3"])).toBe("4");
+  });
+
+  it("ignores empty and non-numeric IDs", () => {
+    expect(nextProviderId(["", "openai", "1"])).toBe("2");
   });
 });
 

@@ -1604,7 +1604,7 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
           : event.label;
   return (
     <div>
-      <div className="flex items-center gap-3 py-1 text-[11px] text-muted">
+      <div className="flex items-center gap-3 py-1 text-[9px] text-muted">
         <div className="h-px flex-1 bg-border/70" />
         <span className="flex min-w-0 max-w-[80%] items-center gap-1.5 text-center">
           <Icon size={13} />

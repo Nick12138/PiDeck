@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
+import { Select } from "../../components/Select";
 import type {
   HostRequestParams,
   HostStatusSnapshot,
@@ -1467,37 +1468,36 @@ export function PackagesPage() {
                 onChange={(event) => setMarketQuery(event.target.value)}
               />
             </label>
-            <select
-              className={inputClass}
-              aria-label={t("packagesMarketTypeAria")}
+            <Select
+              className="h-8"
+              ariaLabel={t("packagesMarketTypeAria")}
               value={marketType}
-              onChange={(event) => setMarketType(event.target.value as ResourceTypeFilter)}
-            >
-              <option value="all">{t("packagesMarketTypeAll")}</option>
-              {PACKAGE_RESOURCE_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <select
-              className={inputClass}
-              aria-label={t("packagesMarketSortAria")}
+              onChange={(next) => setMarketType(next as ResourceTypeFilter)}
+              options={[
+                { value: "all", label: t("packagesMarketTypeAll") },
+                ...PACKAGE_RESOURCE_TYPES.map((type) => ({ value: type, label: type })),
+              ]}
+            />
+            <Select
+              className="h-8"
+              ariaLabel={t("packagesMarketSortAria")}
               value={marketSort}
-              onChange={(event) => setMarketSort(event.target.value as CatalogSort)}
-            >
-              <option value="downloads">{t("packagesMarketSortDownloads")}</option>
-              <option value="recent">{t("packagesMarketSortRecent")}</option>
-            </select>
-            <select
-              className={inputClass}
-              aria-label={t("packagesInstallScope")}
+              onChange={(next) => setMarketSort(next as CatalogSort)}
+              options={[
+                { value: "downloads", label: t("packagesMarketSortDownloads") },
+                { value: "recent", label: t("packagesMarketSortRecent") },
+              ]}
+            />
+            <Select
+              className="h-8"
+              ariaLabel={t("packagesInstallScope")}
               value={marketScope}
-              onChange={(event) => setMarketScope(event.target.value as "user" | "project")}
-            >
-              <option value="user">{t("packagesScopeUser")}</option>
-              <option value="project">{t("packagesScopeProject")}</option>
-            </select>
+              onChange={(next) => setMarketScope(next as "user" | "project")}
+              options={[
+                { value: "user", label: t("packagesScopeUser") },
+                { value: "project", label: t("packagesScopeProject") },
+              ]}
+            />
             <button
               type="button"
               className={secondaryButton}
@@ -1644,15 +1644,16 @@ export function PackagesPage() {
                   onChange={(event) => setInstallSource(event.target.value)}
                 />
                 <div className="flex gap-2">
-                  <select
-                    className={inputClass}
-                    aria-label={t("packagesInstallScope")}
+                  <Select
+                    className="h-8"
+                    ariaLabel={t("packagesInstallScope")}
                     value={installScope}
-                    onChange={(event) => setInstallScope(event.target.value as "user" | "project")}
-                  >
-                    <option value="user">{t("packagesScopeUser")}</option>
-                    <option value="project">{t("packagesScopeProject")}</option>
-                  </select>
+                    onChange={(next) => setInstallScope(next as "user" | "project")}
+                    options={[
+                      { value: "user", label: t("packagesScopeUser") },
+                      { value: "project", label: t("packagesScopeProject") },
+                    ]}
+                  />
                   <button
                     type="button"
                     className={primaryButton}
@@ -1679,29 +1680,30 @@ export function PackagesPage() {
                   onChange={(event) => setInstalledQuery(event.target.value)}
                 />
               </label>
-              <select
-                aria-label={t("packagesFilterScope")}
-                className={inputClass}
+              <Select
+                ariaLabel={t("packagesFilterScope")}
+                className="h-8"
                 value={installedScope}
-                onChange={(event) => setInstalledScope(event.target.value as PackageScopeFilter)}
-              >
-                <option value="all">{t("packagesFilterAllScopes")}</option>
-                <option value="user">{t("packagesScopeUser")}</option>
-                <option value="project">{t("packagesScopeProject")}</option>
-              </select>
-              <select
-                aria-label={t("packagesFilterType")}
-                className={inputClass}
+                onChange={(next) => setInstalledScope(next as PackageScopeFilter)}
+                options={[
+                  { value: "all", label: t("packagesFilterAllScopes") },
+                  { value: "user", label: t("packagesScopeUser") },
+                  { value: "project", label: t("packagesScopeProject") },
+                ]}
+              />
+              <Select
+                ariaLabel={t("packagesFilterType")}
+                className="h-8"
                 value={installedType}
-                onChange={(event) => setInstalledType(event.target.value as ResourceTypeFilter)}
-              >
-                <option value="all">{t("packagesFilterContainsAny")}</option>
-                {PACKAGE_RESOURCE_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {t("packagesFilterContains", { type: singularType(t, type) })}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => setInstalledType(next as ResourceTypeFilter)}
+                options={[
+                  { value: "all", label: t("packagesFilterContainsAny") },
+                  ...PACKAGE_RESOURCE_TYPES.map((type) => ({
+                    value: type,
+                    label: t("packagesFilterContains", { type: singularType(t, type) }),
+                  })),
+                ]}
+              />
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-1.5">
               {loadState === "loading" && !packages && (
@@ -2019,31 +2021,32 @@ export function PackagesPage() {
                 onChange={(event) => setResourceQuery(event.target.value)}
               />
             </label>
-            <select
-              aria-label={t("packagesFilterOrigin")}
-              className={inputClass}
+            <Select
+              className="h-8"
+              ariaLabel={t("packagesFilterOrigin")}
               value={resourceOrigin}
-              onChange={(event) => setResourceOrigin(event.target.value as ResourceOriginFilter)}
-            >
-              <option value="all">{t("packagesFilterAll")}</option>
-              <option value="package">{t("packagesOriginPackage")}</option>
-              <option value="standalone">{t("packagesOriginStandalone")}</option>
-              <option value="runtime">{t("packagesOriginRuntime")}</option>
-            </select>
+              onChange={(next) => setResourceOrigin(next as ResourceOriginFilter)}
+              options={[
+                { value: "all", label: t("packagesFilterAll") },
+                { value: "package", label: t("packagesOriginPackage") },
+                { value: "standalone", label: t("packagesOriginStandalone") },
+                { value: "runtime", label: t("packagesOriginRuntime") },
+              ]}
+            />
             <div className="flex min-w-0 items-center gap-1">
-              <select
-                aria-label={t("packagesOwnerFilter")}
-                className={`${inputClass} max-w-52`}
+              <Select
+                className="h-8 max-w-52"
+                ariaLabel={t("packagesOwnerFilter")}
                 value={resourceOwnerId}
-                onChange={(event) => setResourceOwnerId(event.target.value)}
-              >
-                <option value="">{t("packagesAllOwners")}</option>
-                {allPackages.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.displayName} ({scopeLabel(t, item.scope)})
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => setResourceOwnerId(next)}
+                options={[
+                  { value: "", label: t("packagesAllOwners") },
+                  ...allPackages.map((item) => ({
+                    value: item.id,
+                    label: `${item.displayName} (${scopeLabel(t, item.scope)})`,
+                  })),
+                ]}
+              />
               {resourceOwnerId && (
                 <button
                   type="button"

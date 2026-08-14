@@ -11,8 +11,10 @@ const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const SETTINGS_FILE_NAME: &str = "desktop-settings.json";
 const PIDECK_DATA_DIR_NAME: &str = "pideck";
 const DEFAULT_PROJECT_DIR_NAME: &str = "DefaultProject";
-const DEFAULT_CONVERSATION_CONTENT_WIDTH: u32 = 668;
-const MIN_CONVERSATION_CONTENT_WIDTH: u32 = 560;
+const DEFAULT_CONVERSATION_MIN_WIDTH: u32 = 350;
+const DEFAULT_CONVERSATION_MAX_WIDTH: u32 = 1100;
+const HARD_MIN_CONVERSATION_WIDTH: u32 = 350;
+const HARD_MAX_CONVERSATION_WIDTH: u32 = 2400;
 const DEFAULT_CONVERSATION_FONT_SIZE: u32 = 14;
 const MIN_CONVERSATION_FONT_SIZE: u32 = 12;
 const MAX_CONVERSATION_FONT_SIZE: u32 = 18;
@@ -105,7 +107,8 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<DesktopLanguage>,
     pub interface_density: DesktopInterfaceDensity,
-    pub conversation_content_width: u32,
+    pub conversation_min_width: u32,
+    pub conversation_max_width: u32,
     pub conversation_font_size: u32,
     pub code_font_size: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -129,7 +132,8 @@ impl Default for DesktopSettings {
             terminal_profile: TerminalProfileId::Auto,
             language: None,
             interface_density: DesktopInterfaceDensity::Standard,
-            conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
+            conversation_min_width: DEFAULT_CONVERSATION_MIN_WIDTH,
+            conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             known_workspaces: Vec::new(),
@@ -246,9 +250,15 @@ impl DesktopSettingsStore {
             let settings = serde_json::from_value(value).map_err(|e| e.to_string())?;
             (settings, true)
         };
-        settings.conversation_content_width = settings
-            .conversation_content_width
-            .max(MIN_CONVERSATION_CONTENT_WIDTH);
+        settings.conversation_min_width = settings
+            .conversation_min_width
+            .clamp(HARD_MIN_CONVERSATION_WIDTH, HARD_MAX_CONVERSATION_WIDTH);
+        settings.conversation_max_width = settings
+            .conversation_max_width
+            .clamp(HARD_MIN_CONVERSATION_WIDTH, HARD_MAX_CONVERSATION_WIDTH);
+        if settings.conversation_max_width < settings.conversation_min_width {
+            settings.conversation_max_width = settings.conversation_min_width;
+        }
         settings.conversation_font_size = settings
             .conversation_font_size
             .clamp(MIN_CONVERSATION_FONT_SIZE, MAX_CONVERSATION_FONT_SIZE);
@@ -259,9 +269,19 @@ impl DesktopSettingsStore {
     }
 
     fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
-        if settings.conversation_content_width < MIN_CONVERSATION_CONTENT_WIDTH {
+        if settings.conversation_min_width < HARD_MIN_CONVERSATION_WIDTH {
             return Err(format!(
-                "conversationContentWidth must be at least {MIN_CONVERSATION_CONTENT_WIDTH}"
+                "conversationMinWidth must be at least {HARD_MIN_CONVERSATION_WIDTH}"
+            ));
+        }
+        if settings.conversation_max_width > HARD_MAX_CONVERSATION_WIDTH {
+            return Err(format!(
+                "conversationMaxWidth must be at most {HARD_MAX_CONVERSATION_WIDTH}"
+            ));
+        }
+        if settings.conversation_max_width < settings.conversation_min_width {
+            return Err(format!(
+                "conversationMaxWidth must be greater than or equal to conversationMinWidth"
             ));
         }
         if !(MIN_CONVERSATION_FONT_SIZE..=MAX_CONVERSATION_FONT_SIZE)
@@ -395,7 +415,8 @@ impl DesktopSettingsStore {
                     | "terminalProfile"
                     | "language"
                     | "interfaceDensity"
-                    | "conversationContentWidth"
+                    | "conversationMinWidth"
+                    | "conversationMaxWidth"
                     | "conversationFontSize"
                     | "codeFontSize"
                     | "knownWorkspaces"
@@ -527,45 +548,6 @@ mod tests {
     }
 
     #[test]
-    fn defaults_validates_and_persists_conversation_content_width() {
-        let dir = test_dir("conversation-content-width");
-        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(
-            store.settings.conversation_content_width,
-            DEFAULT_CONVERSATION_CONTENT_WIDTH
-        );
-
-        store
-            .patch(serde_json::json!({ "conversationContentWidth": 920 }))
-            .unwrap();
-        assert_eq!(store.settings.conversation_content_width, 920);
-
-        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
-        assert_eq!(reloaded.settings.conversation_content_width, 920);
-
-        let mut invalid = reloaded;
-        assert!(invalid
-            .patch(serde_json::json!({ "conversationContentWidth": 559 }))
-            .unwrap_err()
-            .contains("must be at least 560"));
-        assert_eq!(invalid.settings.conversation_content_width, 920);
-        fs::remove_dir_all(dir).unwrap();
-
-        let stale_dir = test_dir("stale-conversation-content-width");
-        fs::write(
-            stale_dir.join(SETTINGS_FILE_NAME),
-            r#"{"schemaVersion":1,"settings":{"conversationContentWidth":500}}"#,
-        )
-        .unwrap();
-        let normalized = DesktopSettingsStore::load_from_dir(&stale_dir).unwrap();
-        assert_eq!(
-            normalized.settings.conversation_content_width,
-            MIN_CONVERSATION_CONTENT_WIDTH
-        );
-        fs::remove_dir_all(stale_dir).unwrap();
-    }
-
-    #[test]
     fn defaults_validates_and_persists_appearance_preferences() {
         let dir = test_dir("appearance-preferences");
         let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
@@ -615,6 +597,53 @@ mod tests {
             .unwrap_err()
             .contains("between 10 and 18"));
         assert_eq!(invalid.settings.code_font_size, 15);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn defaults_validates_and_persists_conversation_min_max_width() {
+        let dir = test_dir("conversation-min-max-width");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            store.settings.conversation_min_width,
+            DEFAULT_CONVERSATION_MIN_WIDTH
+        );
+        assert_eq!(
+            store.settings.conversation_max_width,
+            DEFAULT_CONVERSATION_MAX_WIDTH
+        );
+
+        store
+            .patch(serde_json::json!({
+                "conversationMinWidth": 640,
+                "conversationMaxWidth": 1200
+            }))
+            .unwrap();
+        assert_eq!(store.settings.conversation_min_width, 640);
+        assert_eq!(store.settings.conversation_max_width, 1200);
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.conversation_min_width, 640);
+        assert_eq!(reloaded.settings.conversation_max_width, 1200);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "conversationMinWidth": 100 }))
+            .unwrap_err()
+            .contains("must be at least 350"));
+        assert!(invalid
+            .patch(serde_json::json!({ "conversationMaxWidth": 3000 }))
+            .unwrap_err()
+            .contains("must be at most 2400"));
+        assert!(invalid
+            .patch(serde_json::json!({
+                "conversationMinWidth": 1200,
+                "conversationMaxWidth": 800
+            }))
+            .unwrap_err()
+            .contains("greater than or equal"));
+        assert_eq!(invalid.settings.conversation_min_width, 640);
+        assert_eq!(invalid.settings.conversation_max_width, 1200);
         fs::remove_dir_all(dir).unwrap();
     }
 
