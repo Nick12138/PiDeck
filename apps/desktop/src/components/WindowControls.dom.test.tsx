@@ -81,7 +81,11 @@ describe("WindowControls", () => {
       "Maximize or restore window",
       "Close window",
     ]);
-    expect(buttons.every((button) => button.classList.contains("h-11"))).toBe(true);
+    expect(
+      buttons.every((button) =>
+        button.classList.contains("h-[var(--theme-toolbar-height)]"),
+      ),
+    ).toBe(true);
   });
 
   it("routes macOS traffic-light clicks through the shared Tauri window actions", async () => {
