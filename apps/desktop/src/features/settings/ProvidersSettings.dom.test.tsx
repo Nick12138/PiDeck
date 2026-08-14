@@ -164,6 +164,14 @@ afterEach(() => {
 });
 
 describe("ProvidersSettings loading", () => {
+  it("hides OpenAI compatibility overrides from the Provider form", async () => {
+    await renderLoaded();
+
+    expect(screen.queryByText("OpenAI compatibility")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("System instruction role")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Reasoning effort field")).not.toBeInTheDocument();
+  });
+
   it("retries transient graph contention before showing Providers", async () => {
     let requests = 0;
     const spy = mockRequests({

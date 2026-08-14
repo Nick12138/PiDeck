@@ -40,7 +40,6 @@ import { formatTokenCount } from "../../lib/format-token-count";
 import { ProviderLoginPage } from "./ProviderLoginSection";
 import {
   automaticThinkingConfig,
-  compatibilityChoice,
   customThinkingMap,
   emptyProviderDraft as emptyDraft,
   enabledProviderCatalog as enabledCatalog,
@@ -947,43 +946,6 @@ export function ProvidersSettings() {
                     </span>
                   )}
                 </label>
-                {draft.api === "openai-completions" && (
-                  <div className="col-span-2 grid grid-cols-2 gap-4">
-                    <h2 className="col-span-2 text-sm font-medium">{t("providersCompatGroup")}</h2>
-                    <label className="flex flex-col gap-1.5 text-xs text-muted">
-                      {t("providersCompatSystemRole")}
-                      <Select
-                        ariaLabel={t("providersCompatSystemRole")}
-                        value={compatibilityChoice(draft.compat?.supportsDeveloperRole ?? false)}
-                        onChange={(next) =>
-                          updateCompatibility("supportsDeveloperRole", next === "enabled")
-                        }
-                        options={[
-                          { value: "enabled", label: t("providersCompatDeveloper") },
-                          { value: "disabled", label: t("providersCompatSystem") },
-                        ]}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1.5 text-xs text-muted">
-                      {t("providersCompatReasoningEffort")}
-                      <Select
-                        ariaLabel={t("providersCompatReasoningEffort")}
-                        value={compatibilityChoice(draft.compat?.supportsReasoningEffort)}
-                        onChange={(next) =>
-                          updateCompatibility(
-                            "supportsReasoningEffort",
-                            next === "auto" ? null : next === "enabled",
-                          )
-                        }
-                        options={[
-                          { value: "auto", label: t("commonAuto") },
-                          { value: "enabled", label: t("providersCompatSend") },
-                          { value: "disabled", label: t("providersCompatOmit") },
-                        ]}
-                      />
-                    </label>
-                  </div>
-                )}
               </section>
 
               <section>
