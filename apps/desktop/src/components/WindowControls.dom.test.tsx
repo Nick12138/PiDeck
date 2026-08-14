@@ -82,9 +82,7 @@ describe("WindowControls", () => {
       "Close window",
     ]);
     expect(
-      buttons.every((button) =>
-        button.classList.contains("h-[var(--theme-toolbar-height)]"),
-      ),
+      buttons.every((button) => button.classList.contains("h-[var(--theme-toolbar-height)]")),
     ).toBe(true);
   });
 
