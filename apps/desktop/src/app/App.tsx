@@ -582,7 +582,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
-            extensionDecisionPresentation: "legacy-modal",
+            extensionDecisionPresentation: "auto",
             terminalProfile: "auto",
           });
           applyTheme("dark");
@@ -590,7 +590,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
-            extensionDecisionPresentation: "legacy-modal",
+            extensionDecisionPresentation: "auto",
             terminalProfile: "auto",
           });
           store.pushNotification(
@@ -695,8 +695,7 @@ export function App() {
               for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
                 try {
                   const configuredPresentation =
-                    useAppStore.getState().desktopSettings?.extensionDecisionPresentation ??
-                    "legacy-modal";
+                    useAppStore.getState().desktopSettings?.extensionDecisionPresentation ?? "auto";
                   const status = await hostClient.hello(
                     "pideck",
                     await getAppVersion(),

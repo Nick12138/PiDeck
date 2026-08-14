@@ -59,6 +59,19 @@ import {
 } from "./transcript-model";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
+import {
+  autoMountFloor,
+  createBatchSizer,
+  NEAR_TOP_BOOST_VIEWPORTS,
+  scheduleIdleMount,
+  SCROLL_QUIET_MS,
+} from "./progressive-mount";
+import { subscribeTranscriptScroll } from "../../lib/transcript-navigation";
+import {
+  forgetTranscriptScrollPosition,
+  readTranscriptScrollPosition,
+  saveTranscriptScrollPosition,
+} from "./transcript-scroll-memory";
 
 const MarkdownMessage = lazy(() =>
   import("./MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
@@ -90,9 +103,25 @@ function LazyMarkdownMessage({
   );
 }
 
-/** Rows mounted when a session opens; older rows load in chunks on demand. */
+/**
+ * Rows mounted synchronously when a session opens; the idle loop in
+ * progressive-mount.ts converges the rest afterwards.
+ */
 const INITIAL_VISIBLE_ROWS = 60;
 const SHOW_EARLIER_CHUNK = 120;
+/** Rows mounted above a jump target for reading context. */
+const JUMP_CONTEXT_ROWS = 3;
+/** Matches the transcript-jump-flash animation duration in index.css. */
+const JUMP_FLASH_MS = 1400;
+
+/** Reopen a session at its remembered reading position, else at the tail. */
+function initialHiddenFor(sessionId: string | null, rowCount: number): number {
+  const tailHidden = Math.max(0, rowCount - INITIAL_VISIBLE_ROWS);
+  if (sessionId === null) return tailHidden;
+  const remembered = readTranscriptScrollPosition(sessionId);
+  if (remembered === undefined) return tailHidden;
+  return Math.min(remembered.hidden, Math.max(0, rowCount - 1));
+}
 
 export function Transcript() {
   const t = useT();
@@ -119,6 +148,19 @@ export function Transcript() {
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
 
+  // Persistent reading anchor: the tail spacer's viewport position, captured
+  // on genuine user scrolls only. Batch compensation always corrects back to
+  // this one baseline, so sub-pixel quantization loss cannot accumulate into
+  // a slow directional drift across hundreds of batches.
+  const tailAnchorRef = useRef<HTMLDivElement>(null);
+  const readingAnchorTopRef = useRef<number | null>(null);
+  const programmaticScrollTopRef = useRef<number | null>(null);
+
+  const refreshReadingAnchor = useCallback(() => {
+    const tail = tailAnchorRef.current;
+    readingAnchorTopRef.current = tail ? tail.getBoundingClientRect().top : null;
+  }, []);
+
   const cancelScheduledScroll = useCallback(() => {
     if (scrollFrameRef.current === null) return;
     cancelAnimationFrame(scrollFrameRef.current);
@@ -129,6 +171,7 @@ export function Transcript() {
     const element = scrollRef.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
+    programmaticScrollTopRef.current = element.scrollTop;
     scrollMetricsRef.current = {
       top: element.scrollTop,
       height: element.scrollHeight,
@@ -151,21 +194,36 @@ export function Transcript() {
   const stopFollowing = useCallback(() => {
     cancelScheduledScroll();
     updateFollowing(false);
-  }, [cancelScheduledScroll, updateFollowing]);
+    refreshReadingAnchor();
+  }, [cancelScheduledScroll, refreshReadingAnchor, updateFollowing]);
 
   // Top-anchored window: `hidden` rows stay unmounted above the fold. New
   // rows stream in at the tail without disturbing what is on screen.
-  // Derived-during-render so a freshly opened long session never mounts in
-  // full even once.
+  // Derived-during-render so a freshly opened long session only mounts its
+  // tail on first paint; idle-time batches then converge toward a fully
+  // mounted transcript (see progressive-mount.ts).
   const sessionKey = session?.sessionId ?? null;
   const [hiddenState, setHiddenState] = useState<{ sessionId: string | null; hidden: number }>({
     sessionId: sessionKey,
-    hidden: Math.max(0, rows.length - INITIAL_VISIBLE_ROWS),
+    hidden: initialHiddenFor(sessionKey, rows.length),
   });
   if (hiddenState.sessionId !== sessionKey) {
+    // Remember (or forget) the departing session's reading position before
+    // the window resets. Idempotent, so the render-phase setState pattern
+    // stays safe under double-invoked renders.
+    if (hiddenState.sessionId !== null) {
+      if (followingRef.current) {
+        forgetTranscriptScrollPosition(hiddenState.sessionId);
+      } else {
+        saveTranscriptScrollPosition(hiddenState.sessionId, {
+          hidden: hiddenState.hidden,
+          scrollTop: scrollMetricsRef.current.top,
+        });
+      }
+    }
     setHiddenState({
       sessionId: sessionKey,
-      hidden: Math.max(0, rows.length - INITIAL_VISIBLE_ROWS),
+      hidden: initialHiddenFor(sessionKey, rows.length),
     });
   }
   const hidden = Math.min(
@@ -174,8 +232,11 @@ export function Transcript() {
   );
   const visibleRows = hidden > 0 ? rows.slice(hidden) : rows;
   const expandAnchorRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
 
-  function showEarlier() {
+  const mountEarlier = useCallback((count: number, floor = 0) => {
+    if (hiddenRef.current <= floor) return;
     const element = scrollRef.current;
     if (element) {
       expandAnchorRef.current = {
@@ -185,24 +246,181 @@ export function Transcript() {
     }
     setHiddenState((current) => ({
       ...current,
-      hidden: Math.max(0, current.hidden - SHOW_EARLIER_CHUNK),
+      hidden: Math.max(floor, current.hidden - count),
     }));
-  }
+  }, []);
+
+  // Row-level navigation: outline/find/search request a row through the
+  // transcript-navigation bus; unmounted targets mount synchronously first
+  // and the centering runs from the layout effect once the row exists.
+  const pendingJumpKeyRef = useRef<string | null>(null);
+  const [flashRowKey, setFlashRowKey] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+
+  const flashRow = useCallback((key: string) => {
+    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+    setFlashRowKey(key);
+    flashTimerRef.current = window.setTimeout(() => {
+      flashTimerRef.current = null;
+      setFlashRowKey(null);
+    }, JUMP_FLASH_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
+
+  const centerRow = useCallback(
+    (key: string): boolean => {
+      const scroller = scrollRef.current;
+      if (!scroller) return false;
+      const rowElement = scroller.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`);
+      if (!rowElement) return false;
+      const rowRect = rowElement.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      scroller.scrollTop +=
+        rowRect.top - scrollerRect.top - Math.max(0, (scroller.clientHeight - rowRect.height) / 2);
+      programmaticScrollTopRef.current = scroller.scrollTop;
+      scrollMetricsRef.current = {
+        top: scroller.scrollTop,
+        height: scroller.scrollHeight,
+      };
+      refreshReadingAnchor();
+      flashRow(key);
+      return true;
+    },
+    [flashRow, refreshReadingAnchor],
+  );
+
+  const scrollToRowRef = useRef<(key: string) => boolean>(() => false);
+  scrollToRowRef.current = (key) => {
+    const index = rows.findIndex((row) => row.key === key);
+    if (index < 0) return false;
+    stopFollowing();
+    if (index < hidden) {
+      pendingJumpKeyRef.current = key;
+      setHiddenState((current) => ({
+        ...current,
+        hidden: Math.max(0, Math.min(current.hidden, index - JUMP_CONTEXT_ROWS)),
+      }));
+      return true;
+    }
+    return centerRow(key);
+  };
+  useEffect(
+    () => subscribeTranscriptScroll((request) => scrollToRowRef.current(request.rowKey)),
+    [],
+  );
+
+  // Save the reading position when the transcript unmounts (e.g. workspace
+  // switches); session switches are handled by the render-phase reset above.
+  const sessionKeyRef = useRef(sessionKey);
+  sessionKeyRef.current = sessionKey;
+  useEffect(
+    () => () => {
+      const departing = sessionKeyRef.current;
+      if (departing === null) return;
+      if (followingRef.current) {
+        forgetTranscriptScrollPosition(departing);
+      } else {
+        saveTranscriptScrollPosition(departing, {
+          hidden: hiddenRef.current,
+          scrollTop: scrollMetricsRef.current.top,
+        });
+      }
+    },
+    [],
+  );
+
+  // Idle-time convergence toward a fully mounted transcript (bounded by the
+  // full-mount cap). Each batch triggers this effect again through `hidden`,
+  // which paces the loop one batch per idle slice. Batch size adapts to the
+  // measured cost of this session's rows. Convergence only runs when its
+  // scroll adjustments cannot be seen: bottom realignment carries sub-pixel
+  // rounding wobble, so a focused reader pinned to the tail pauses the loop
+  // until they scroll into history (or the window blurs).
+  const mountFloor = autoMountFloor(rows.length);
+  const isStreaming = session?.isStreaming === true;
+  const batchSizerRef = useRef(createBatchSizer());
+  const batchStartRef = useRef<number | null>(null);
+  const lastUserScrollAtRef = useRef(0);
+  const [windowFocused, setWindowFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const onFocus = () => setWindowFocused(true);
+    const onBlur = () => setWindowFocused(false);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+  useEffect(() => {
+    if (hidden <= mountFloor) return;
+    if (isStreaming && following) return;
+    if (following && windowFocused) return;
+    let cancelled = false;
+    let cancel: (() => void) | null = null;
+    const tick = () => {
+      if (cancelled) return;
+      if (performance.now() - lastUserScrollAtRef.current < SCROLL_QUIET_MS) {
+        cancel = scheduleIdleMount(tick);
+        return;
+      }
+      batchStartRef.current = performance.now();
+      mountEarlier(batchSizerRef.current.size(), mountFloor);
+    };
+    cancel = scheduleIdleMount(tick);
+    return () => {
+      cancelled = true;
+      cancel?.();
+    };
+  }, [hidden, mountFloor, isStreaming, following, windowFocused, mountEarlier]);
 
   useLayoutEffect(() => {
+    // A pending jump wins over batch compensation: the target row just
+    // mounted, so center it and re-baseline instead of preserving the old
+    // viewport position.
+    const pendingJumpKey = pendingJumpKeyRef.current;
+    if (pendingJumpKey !== null && centerRow(pendingJumpKey)) {
+      pendingJumpKeyRef.current = null;
+      expandAnchorRef.current = null;
+      batchStartRef.current = null;
+      return;
+    }
     // Keep the viewport anchored on the previously-visible content after
-    // older rows mount above it.
+    // older rows mount above it. While pinned to the tail, snap straight to
+    // the bottom instead of delta math so convergence batches can never
+    // accumulate sub-pixel drift.
     const anchor = expandAnchorRef.current;
     if (!anchor) return;
     expandAnchorRef.current = null;
     const element = scrollRef.current;
     if (!element) return;
-    element.scrollTop = anchor.prevTop + (element.scrollHeight - anchor.prevHeight);
-    scrollMetricsRef.current = {
-      top: element.scrollTop,
-      height: element.scrollHeight,
-    };
-  }, [hidden]);
+    if (followingRef.current) {
+      alignToBottom();
+    } else {
+      const readingTop = readingAnchorTopRef.current;
+      const tail = tailAnchorRef.current;
+      element.scrollTop =
+        readingTop !== null && tail
+          ? element.scrollTop + (tail.getBoundingClientRect().top - readingTop)
+          : anchor.prevTop + (element.scrollHeight - anchor.prevHeight);
+      programmaticScrollTopRef.current = element.scrollTop;
+      scrollMetricsRef.current = {
+        top: element.scrollTop,
+        height: element.scrollHeight,
+      };
+    }
+    // Reading scrollHeight above forced layout, so this measures the full
+    // render + layout cost of the batch that just mounted.
+    if (batchStartRef.current !== null) {
+      batchSizerRef.current.record(performance.now() - batchStartRef.current);
+      batchStartRef.current = null;
+    }
+  }, [hidden, alignToBottom, centerRow]);
 
   const lastAssistantRow = [...rows].reverse().find((row) => row.role === "assistant");
   const streamingAssistantKey = findStreamingAssistantKey(
@@ -219,10 +437,25 @@ export function Transcript() {
     session && !session.isIdle && tailRow?.role === "assistant" ? tailRow.key : undefined;
 
   useLayoutEffect(() => {
+    const remembered = sessionKey !== null ? readTranscriptScrollPosition(sessionKey) : undefined;
+    const element = scrollRef.current;
+    if (remembered !== undefined && element) {
+      // Reopen at the remembered reading position; row layout is unchanged
+      // for identical content, so the saved pixel offset stays meaningful.
+      updateFollowing(false);
+      element.scrollTop = remembered.scrollTop;
+      programmaticScrollTopRef.current = element.scrollTop;
+      scrollMetricsRef.current = {
+        top: element.scrollTop,
+        height: element.scrollHeight,
+      };
+      refreshReadingAnchor();
+      return;
+    }
     updateFollowing(true);
     alignToBottom();
     scheduleBottomAlignment();
-  }, [alignToBottom, scheduleBottomAlignment, sessionKey, updateFollowing]);
+  }, [alignToBottom, refreshReadingAnchor, scheduleBottomAlignment, sessionKey, updateFollowing]);
 
   useLayoutEffect(() => {
     if (followingRef.current) scheduleBottomAlignment();
@@ -254,10 +487,31 @@ export function Transcript() {
         data-transcript-scroll
         className="scrollbar-auto-hide h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
         onWheel={(event) => {
+          lastUserScrollAtRef.current = performance.now();
           if (event.deltaY < 0) stopFollowing();
         }}
         onScroll={(event) => {
           const element = event.currentTarget;
+          // Genuine user scrolls move the reading anchor; echoes of our own
+          // compensation (within a pixel of the last programmatic value)
+          // must not, or batch corrections would re-baseline onto their own
+          // quantization error and drift.
+          const programmaticTop = programmaticScrollTopRef.current;
+          programmaticScrollTopRef.current = null;
+          if (programmaticTop === null || Math.abs(element.scrollTop - programmaticTop) >= 1) {
+            lastUserScrollAtRef.current = performance.now();
+            refreshReadingAnchor();
+          }
+          // Near-edge boost: mount the next batch synchronously when the
+          // reader approaches the top of the mounted region, so fast upward
+          // scrolling never has to wait for the idle loop.
+          if (
+            hidden > mountFloor &&
+            element.scrollTop < element.clientHeight * NEAR_TOP_BOOST_VIEWPORTS
+          ) {
+            batchStartRef.current = performance.now();
+            mountEarlier(batchSizerRef.current.size(), mountFloor);
+          }
           const previous = scrollMetricsRef.current;
           const movingUp =
             element.scrollTop < previous.top && element.scrollHeight >= previous.height;
@@ -285,7 +539,7 @@ export function Transcript() {
           {hidden > 0 && (
             <button
               type="button"
-              onClick={showEarlier}
+              onClick={() => mountEarlier(SHOW_EARLIER_CHUNK)}
               className="mx-auto flex h-8 items-center rounded-full border border-border bg-surface-raised px-4 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
             >
               {t("transcriptShowEarlier", { count: hidden })}
@@ -296,6 +550,8 @@ export function Transcript() {
             return (
               <div
                 className="transcript-row"
+                data-row-key={row.key}
+                data-jump-flash={row.key === flashRowKey || undefined}
                 key={`${session?.sessionId ?? "session"}:${row.key}`}
                 onContextMenu={(event) => {
                   if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
@@ -384,7 +640,7 @@ export function Transcript() {
                 <span>{t("transcriptPiWorking")}</span>
               </div>
             )}
-          <div className="h-1" aria-hidden="true" />
+          <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />
         </div>
       </div>
       {!following && (

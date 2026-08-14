@@ -117,6 +117,20 @@ function runtimeSession(model: Model<Api>, isIdle: boolean) {
   const setModel = vi.fn(async (next: Model<Api>) => {
     state.model = next;
   });
+  const clearModel = vi.fn(async () => {
+    state.model = {
+      provider: "unknown",
+      id: "unknown",
+      name: "unknown",
+      api: "unknown",
+      baseUrl: "",
+      reasoning: false,
+      input: [],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 0,
+      maxTokens: 0,
+    } as Model<Api>;
+  });
   const session = {
     isIdle,
     get model() {
@@ -126,8 +140,9 @@ function runtimeSession(model: Model<Api>, isIdle: boolean) {
     thinkingLevel: "off",
     setThinkingLevel: vi.fn(),
     setModel,
+    clearModel,
   } as unknown as AgentSession;
-  return { session, setModel, state };
+  return { session, setModel, clearModel, state };
 }
 
 function attachRuntimeGraph(
@@ -687,6 +702,70 @@ describe("Provider controller", () => {
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.providers.custom.authHeader).toBe(false);
+    expect(persisted.pideckEnabledProviders).toEqual([]);
+  });
+
+  it("keeps a first empty Provider disabled so its model catalog can be fetched", async () => {
+    const catalogServer = createServer((_request, response) => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "remote-model" }] }));
+    });
+    httpServers.push(catalogServer);
+    await new Promise<void>((resolve) => catalogServer.listen(0, "127.0.0.1", resolve));
+    const address = catalogServer.address();
+    if (!address || typeof address === "string") throw new Error("No HTTP address");
+
+    const { layout, factory, handlers } = await setup({ providers: {} });
+    const firstRun = runtimeSession({ provider: "unknown", id: "unknown" } as Model<Api>, true);
+    attachRuntimeGraph(factory, firstRun.session);
+    const provider = {
+      ...draft([]),
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      modelsUrl: `http://127.0.0.1:${address.port}/models`,
+    };
+    const saved = await handlers["provider.save"]!({
+      id: "save-empty-before-fetch",
+      params: { provider },
+    } as never);
+
+    expect("error" in saved ? saved.error.message : null).toBeNull();
+    if ("error" in saved) return;
+    expect((saved.result as { provider: { enabled: boolean } }).provider.enabled).toBe(false);
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).toEqual([]);
+
+    const fetched = await handlers["provider.fetchModels"]!({
+      id: "fetch-first-provider-models",
+      params: { providerId: "custom" },
+    } as never);
+    expect("error" in fetched ? fetched.error.message : null).toBeNull();
+    if (!fetched || "error" in fetched) return;
+    expect((fetched.result as { models: Array<{ id: string }> }).models).toEqual([
+      expect.objectContaining({ id: "remote-model" }),
+    ]);
+  });
+
+  it("rejects explicitly enabling a custom Provider with no models", async () => {
+    const { layout, handlers } = await setup({
+      pideckEnabledProviders: [],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-completions",
+          models: [],
+        },
+      },
+    });
+
+    const outcome = await handlers["provider.setEnabled"]!({
+      id: "enable-empty-provider",
+      params: { providerId: "custom", enabled: true },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("INVALID_REQUEST");
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).toEqual([]);
   });
 
   it("defaults a new OpenAI Chat Completions Provider to the system role", async () => {
@@ -1807,6 +1886,35 @@ describe("Provider login", () => {
     });
   });
 
+  it("allows disabling the final Provider and clears the idle Session model", async () => {
+    const { factory, handlers, layout, modelRegistry } = await setup({
+      pideckEnabledProviders: ["custom"],
+      providers: {
+        custom: {
+          name: "Custom",
+          baseUrl: "https://custom.example/v1",
+          api: "openai-responses",
+          models: [{ id: "primary" }],
+        },
+      },
+    });
+    const current = modelRegistry.find("custom", "primary");
+    if (!current) throw new Error("Missing current model fixture");
+    const active = runtimeSession(current, true);
+    attachRuntimeGraph(factory, active.session);
+
+    const outcome = await handlers["provider.setEnabled"]!({
+      id: "disable-final-provider",
+      params: { providerId: "custom", enabled: false },
+    } as never);
+
+    expect("error" in outcome ? outcome.error.message : null).toBeNull();
+    expect(active.clearModel).toHaveBeenCalledOnce();
+    expect(active.state.model).toMatchObject({ provider: "unknown", id: "unknown" });
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckEnabledProviders).toEqual([]);
+  });
+
   it("toggles a builtin Provider in the enabled list by id", async () => {
     const { layout, handlers } = await setup({ providers: {} });
     const enable = await handlers["provider.setEnabled"]!({
@@ -1939,6 +2047,22 @@ describe("Builtin provider models", () => {
       provider: "anthropic",
       id: catalog[1]!.id,
     });
+  });
+
+  it("rejects hiding every model while a builtin Provider is enabled", async () => {
+    const { layout, handlers } = await setup({
+      pideckEnabledProviders: ["anthropic"],
+      providers: {},
+    });
+
+    const outcome = await handlers["provider.setBuiltinModels"]!({
+      id: "hide-all-enabled-builtin-models",
+      params: { providerId: "anthropic", modelIds: [] },
+    } as never);
+
+    expect("error" in outcome && outcome.error.code).toBe("INVALID_REQUEST");
+    const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
+    expect(persisted.pideckProviderModels).toBeUndefined();
   });
 
   it("rejects custom Providers and unknown ids", async () => {

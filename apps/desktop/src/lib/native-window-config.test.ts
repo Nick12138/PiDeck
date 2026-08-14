@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import defaultCapability from "../../src-tauri/capabilities/default.json";
 import macosConfig from "../../src-tauri/tauri.macos.conf.json";
 import baseConfig from "../../src-tauri/tauri.conf.json";
 import windowsConfig from "../../src-tauri/tauri.windows.conf.json";
@@ -27,6 +28,17 @@ const macosWindow = macosConfig.app.windows[0] as WindowConfig;
 const windowsWindow = windowsConfig.app.windows[0] as WindowConfig;
 
 describe("native window platform configuration", () => {
+  it("allows the intercepted close flow to destroy the main window", () => {
+    expect(defaultCapability.webviews).toContain("main");
+    expect(defaultCapability.permissions).toEqual(
+      expect.arrayContaining([
+        "core:window:allow-close",
+        "core:window:allow-destroy",
+        "core:window:allow-hide",
+      ]),
+    );
+  });
+
   it("keeps the Cargo-managed macOS private API feature allowlisted in shared config", () => {
     expect(baseConfig.app.macOSPrivateApi).toBe(true);
   });

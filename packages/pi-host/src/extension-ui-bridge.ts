@@ -526,7 +526,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       inlineSurfaceAvailable,
     );
     const route = resolveDecisionRoute({
-      mode: opts.getExtensionDecisionPresentation?.() ?? "legacy-modal",
+      mode: opts.getExtensionDecisionPresentation?.() ?? "auto",
       kind,
       origin,
       ...classifyHostDecisionRisk(origin),

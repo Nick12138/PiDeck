@@ -97,7 +97,7 @@ function WindowsWindowControls() {
         title="Minimize"
         aria-label="Minimize window"
         data-window-action="minimize"
-        className="flex h-9 w-11 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+        className="flex h-[var(--theme-toolbar-height)] w-11 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
         onClick={() => void windowAction("minimize")}
       >
         <Minus size={14} />
@@ -107,7 +107,7 @@ function WindowsWindowControls() {
         title="Maximize / restore"
         aria-label="Maximize or restore window"
         data-window-action="toggleMaximize"
-        className="flex h-9 w-11 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
+        className="flex h-[var(--theme-toolbar-height)] w-11 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground"
         onClick={() => void windowAction("toggleMaximize")}
       >
         <Square size={11} />
@@ -117,7 +117,7 @@ function WindowsWindowControls() {
         title="Close"
         aria-label="Close window"
         data-window-action="close"
-        className="flex h-9 w-11 items-center justify-center text-muted transition-colors hover:bg-danger hover:text-white"
+        className="flex h-[var(--theme-toolbar-height)] w-11 items-center justify-center text-muted transition-colors hover:bg-danger hover:text-white"
         onClick={() => void windowAction("close")}
       >
         <X size={15} />

@@ -4,7 +4,6 @@ import { mkdir, rename, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import {
   AgentSession,
-  createAgentSession,
   DefaultResourceLoader,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -27,6 +26,7 @@ import { captureActiveSessionState, commitActiveSessionState } from "./session-r
 import { sessionStorageDirs as resolveSessionStorageDirs } from "./session-storage.js";
 import { withoutImplicitPackageInstall } from "./offline-package-resolution.js";
 import { createReadAttachmentTool } from "./attachment-tool.js";
+import { createHostAgentSession } from "./agent-session-factory.js";
 
 function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
   return resolveSessionStorageDirs(factory.deps.agentDir, g.canonicalCwd);
@@ -528,7 +528,7 @@ export async function createSession(
     const candidateResourceLoader = await createSessionResourceLoader(factory, g);
     markStep("resourceLoader.reload");
 
-    const created = await createAgentSession({
+    const created = await createHostAgentSession({
       cwd: g.canonicalCwd,
       agentDir: factory.deps.agentDir,
       modelRuntime: factory.deps.modelRuntime,
@@ -847,7 +847,7 @@ export async function openSession(
       const candidateResourceLoader = await createSessionResourceLoader(factory, g);
       markStep("resourceLoader.reload");
 
-      const created = await createAgentSession({
+      const created = await createHostAgentSession({
         cwd: g.canonicalCwd,
         agentDir: factory.deps.agentDir,
         modelRuntime: factory.deps.modelRuntime,

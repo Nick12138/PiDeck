@@ -38,6 +38,52 @@ function attachTestTransport(client: HostClient) {
 }
 
 describe("HostClient hello configuration", () => {
+  it("sends auto when no Extension decision mode is provided", async () => {
+    const client = new HostClient();
+    const transport = attachTestTransport(client);
+    const pending = client.hello();
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "system.hello",
+      params: {
+        clientName: "pideck",
+        clientVersion: "0.1.0",
+        protocolVersion: 1,
+        extensionDecisionPresentation: "auto",
+      },
+    });
+    transport.emit({
+      protocolVersion: 1,
+      ...RESPONSE_IDENTITY,
+      id: transport.sent[0]!.id,
+      method: "system.hello",
+      ok: true,
+      result: {
+        protocolVersion: 1,
+        ...RESPONSE_IDENTITY,
+        sdkVersion: "0.82.1",
+        nodeVersion: "v24.18.0",
+        agentDir: "/agent",
+        phase: "waitingForWorkspace",
+        capabilities: {
+          packageUpdateCheck: false,
+          extensionUi: true,
+          sessionExport: true,
+        },
+        modelConfigHealth: {
+          state: "ok",
+          source: "ModelRegistry.getError",
+        },
+        extensionDecisionPresentation: "auto",
+      },
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      extensionDecisionPresentation: "auto",
+    });
+    client.detach("test cleanup");
+  });
+
   it("sends and accepts the persisted Extension decision mode", async () => {
     const client = new HostClient();
     const transport = attachTestTransport(client);
@@ -119,8 +165,7 @@ describe("HostClient response settlement", () => {
     expect(outcome).toMatchObject({
       status: "rejected",
       error: expect.objectContaining({
-        message:
-          "Host protocol mismatch for system.shutdown response: invalid Host response",
+        message: "Host protocol mismatch for system.shutdown response: invalid Host response",
       }),
     });
   });
@@ -229,11 +274,7 @@ describe("HostClient lifecycle failures", () => {
     client.onTransportError((error) => errors.push(error));
 
     await expect(
-      client.request(
-        "system.getStatus",
-        { expectedHostInstanceId: "h1" },
-        null,
-      ),
+      client.request("system.getStatus", { expectedHostInstanceId: "h1" }, null),
     ).rejects.toThrow("host not running");
     expect(errors).toHaveLength(1);
     expect(errors[0]).toBeInstanceOf(Error);

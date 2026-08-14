@@ -16,6 +16,33 @@ export function shouldAwaitDraftFlushOnClose(
   return !/Windows/i.test(userAgent);
 }
 
+type CloseRequest = {
+  preventDefault: () => void;
+};
+
+type ClosingWindow = {
+  hide: () => Promise<void>;
+  destroy: () => Promise<void>;
+};
+
+export async function closeWindowAfterDraftFlush(
+  event: CloseRequest,
+  appWindow: ClosingWindow,
+  settleDraftWrites = settleDraftWritesWithin,
+): Promise<void> {
+  event.preventDefault();
+  try {
+    await appWindow.hide();
+  } catch {
+    // Hiding only removes perceived close latency; it must not block shutdown.
+  }
+  try {
+    await settleDraftWrites();
+  } finally {
+    await appWindow.destroy();
+  }
+}
+
 export function DraftPersistenceController() {
   const workspace = useAppStore((state) => state.workspace);
   const session = useAppStore((state) => state.session);
@@ -67,12 +94,7 @@ export function DraftPersistenceController() {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const appWindow = getCurrentWindow();
       const unlisten = await appWindow.onCloseRequested(async (event) => {
-        event.preventDefault();
-        try {
-          await settleDraftWritesWithin();
-        } finally {
-          await appWindow.destroy();
-        }
+        await closeWindowAfterDraftFlush(event, appWindow);
       });
       if (disposed) unlisten();
       else stopListening = unlisten;

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { shouldAwaitDraftFlushOnClose } from "./DraftPersistenceController";
+import {
+  closeWindowAfterDraftFlush,
+  shouldAwaitDraftFlushOnClose,
+} from "./DraftPersistenceController";
 
 describe("shouldAwaitDraftFlushOnClose", () => {
   it("leaves Windows close-to-tray behavior to the native shell", () => {
@@ -15,5 +18,50 @@ describe("shouldAwaitDraftFlushOnClose", () => {
   it("falls back to the user agent when Tauri platform metadata is unavailable", () => {
     expect(shouldAwaitDraftFlushOnClose(undefined, "Windows NT 10.0")).toBe(false);
     expect(shouldAwaitDraftFlushOnClose(undefined, "Macintosh")).toBe(true);
+  });
+});
+
+describe("closeWindowAfterDraftFlush", () => {
+  it("hides the window before settling drafts and destroying it", async () => {
+    const calls: string[] = [];
+
+    await closeWindowAfterDraftFlush(
+      { preventDefault: () => calls.push("prevent") },
+      {
+        hide: async () => {
+          calls.push("hide");
+        },
+        destroy: async () => {
+          calls.push("destroy");
+        },
+      },
+      async () => {
+        calls.push("settle");
+      },
+    );
+
+    expect(calls).toEqual(["prevent", "hide", "settle", "destroy"]);
+  });
+
+  it("still settles drafts and destroys the window when hiding fails", async () => {
+    const calls: string[] = [];
+
+    await closeWindowAfterDraftFlush(
+      { preventDefault: () => calls.push("prevent") },
+      {
+        hide: async () => {
+          calls.push("hide");
+          throw new Error("hide failed");
+        },
+        destroy: async () => {
+          calls.push("destroy");
+        },
+      },
+      async () => {
+        calls.push("settle");
+      },
+    );
+
+    expect(calls).toEqual(["prevent", "hide", "settle", "destroy"]);
   });
 });

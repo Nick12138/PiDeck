@@ -94,6 +94,26 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function providerHasEligibleModel(
+  config: Awaited<ReturnType<typeof readModelsConfig>>,
+  factory: WorkspaceGraphFactory,
+  providerId: string,
+): boolean {
+  const custom = config.providers[providerId];
+  if (isObject(custom)) {
+    return (
+      Array.isArray(custom.models) &&
+      custom.models.some(
+        (model) => isObject(model) && typeof model.id === "string" && model.id.trim().length > 0,
+      )
+    );
+  }
+  const allow = readProviderModelAllowLists(config)[providerId];
+  return factory.deps.modelRuntime
+    .getModels(providerId)
+    .some((model) => allow === undefined || allow.includes(model.id));
+}
+
 function normalizeModel(value: unknown): ProviderModelConfig | null {
   if (!isObject(value) || typeof value.id !== "string" || !value.id.trim()) return null;
   const id = value.id.trim();
@@ -437,6 +457,7 @@ async function reconcileIdleActiveSessionModel(
     remapProvider?: { from: string; to: string };
     preferredModelIds?: ReadonlyMap<string, readonly string[]>;
     allowedModelIds?: ReadonlyMap<string, ReadonlySet<string>>;
+    allowNoModel?: boolean;
   } = {},
 ): Promise<void> {
   const session = factory.getGraph()?.agentSession;
@@ -479,6 +500,10 @@ async function reconcileIdleActiveSessionModel(
 
   const model = candidates[0];
   if (!model) {
+    if (options.allowNoModel) {
+      await session.clearModel();
+      return;
+    }
     throw new Error("Enable at least one Provider model before changing the current Provider");
   }
   if (model.provider === current.provider && model.id === current.id) {
@@ -1074,6 +1099,14 @@ async function applyProviderEnabledMutation(
             runtimeProviderIds(factory),
           ),
         );
+        if (enabled && !providerHasEligibleModel(config, factory, providerId)) {
+          return {
+            error: createHostError(
+              "INVALID_REQUEST",
+              `Enable at least one model for Provider ${providerId} before enabling it`,
+            ),
+          };
+        }
         if (enabled) nextEnabled.add(providerId);
         else nextEnabled.delete(providerId);
         config.root[ENABLED_PROVIDERS_KEY] = [...nextEnabled];
@@ -1095,6 +1128,7 @@ async function applyProviderEnabledMutation(
           }
           await reconcileIdleActiveSessionModel(factory, nextEnabled, {
             preferredModelIds,
+            allowNoModel: !enabled && nextEnabled.size === 0,
           });
         } catch (error) {
           await restoreModelsConfig(modelsPath, config.original);
@@ -1418,9 +1452,10 @@ export function createProviderHandlers(
             );
             if (conflictUnderLock) return { error: conflictUnderLock };
             const config = await readModelsConfig(modelsPath);
+            const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
             const enabledBefore = resolveEnabledProviders(
               config,
-              factory.getGraph()?.agentSession?.model?.provider,
+              currentProvider,
               runtimeProviderIds(factory),
             );
             const wasFirstProvider = Object.keys(config.providers).length === 0;
@@ -1439,7 +1474,22 @@ export function createProviderHandlers(
             if (draft.id !== originalId) delete config.providers[originalId];
             config.providers[draft.id] = merged;
             const enabledAfter = enabledBefore.map((id) => (id === originalId ? draft.id : id));
-            if (wasFirstProvider && !enabledAfter.includes(draft.id)) enabledAfter.push(draft.id);
+            if (wasFirstProvider && draft.models.length > 0 && !enabledAfter.includes(draft.id)) {
+              enabledAfter.push(draft.id);
+            }
+            if (enabledAfter.includes(draft.id) && draft.models.length === 0) {
+              return {
+                error: createHostError(
+                  "INVALID_REQUEST",
+                  `Enable at least one model for Provider ${draft.id} before saving it as enabled`,
+                ),
+              };
+            }
+            const enabledProvidersChanged =
+              enabledAfter.length !== enabledBefore.length ||
+              enabledAfter.some((providerId) => !enabledBefore.includes(providerId));
+            const currentProviderChanged =
+              currentProvider === originalId || currentProvider === draft.id;
             config.root[ENABLED_PROVIDERS_KEY] = [...new Set(enabledAfter)];
             delete config.root[LEGACY_ACTIVE_PROVIDER_KEY];
 
@@ -1474,12 +1524,14 @@ export function createProviderHandlers(
               // Both durable writes landed; only reconciliation is left.
               await journal.markCommitted();
               await refreshRegistry(factory, true);
-              await reconcileIdleActiveSessionModel(factory, enabledAfter, {
-                ...(draft.id !== originalId
-                  ? { remapProvider: { from: originalId, to: draft.id } }
-                  : {}),
-                preferredModelIds: new Map([[draft.id, draft.models.map((model) => model.id)]]),
-              });
+              if (enabledProvidersChanged || currentProviderChanged) {
+                await reconcileIdleActiveSessionModel(factory, enabledAfter, {
+                  ...(draft.id !== originalId
+                    ? { remapProvider: { from: originalId, to: draft.id } }
+                    : {}),
+                  preferredModelIds: new Map([[draft.id, draft.models.map((model) => model.id)]]),
+                });
+              }
             } catch (error) {
               // Restores both files from the journal copies. A journal that
               // survives this means recovery failed and startup will report
@@ -2095,6 +2147,19 @@ export function createProviderHandlers(
             const catalogIds = new Set(catalog.map((model) => model.id));
             const selected = new Set(modelIds.filter((id) => catalogIds.has(id)));
             const lists = readProviderModelAllowLists(config);
+            const enabledProviders = resolveEnabledProviders(
+              config,
+              factory.getGraph()?.agentSession?.model?.provider,
+              runtimeProviderIds(factory),
+            );
+            if (enabledProviders.includes(providerId) && selected.size === 0) {
+              return {
+                error: createHostError(
+                  "INVALID_REQUEST",
+                  `Enable at least one model for Provider ${providerId} while it is enabled`,
+                ),
+              };
+            }
             // A full selection means "no filter": drop the entry so models the
             // provider adds later stay visible without another save.
             if (selected.size === catalogIds.size) delete lists[providerId];
@@ -2103,19 +2168,17 @@ export function createProviderHandlers(
             else config.root[PROVIDER_MODELS_KEY] = lists;
             await commitModelsConfig(modelsPath, config.root, factory);
             try {
-              const enabledProviders = resolveEnabledProviders(
-                config,
-                factory.getGraph()?.agentSession?.model?.provider,
-                runtimeProviderIds(factory),
-              );
               const preferredModelIds = new Map<string, string[]>(Object.entries(lists));
               preferredModelIds.set(providerId, [...selected]);
-              await reconcileIdleActiveSessionModel(factory, enabledProviders, {
-                preferredModelIds,
-                allowedModelIds: new Map(
-                  Object.entries(lists).map(([id, ids]) => [id, new Set(ids)]),
-                ),
-              });
+              const currentProvider = factory.getGraph()?.agentSession?.model?.provider;
+              if (enabledProviders.includes(providerId) || currentProvider === providerId) {
+                await reconcileIdleActiveSessionModel(factory, enabledProviders, {
+                  preferredModelIds,
+                  allowedModelIds: new Map(
+                    Object.entries(lists).map(([id, ids]) => [id, new Set(ids)]),
+                  ),
+                });
+              }
             } catch (error) {
               await restoreModelsConfig(modelsPath, config.original);
               throw error;

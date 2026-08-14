@@ -38,12 +38,10 @@ describe("PiHostServer.emitForIdentity", () => {
   it("keeps the global sequence while labeling an event with a background Session", async () => {
     const host = server();
     const lines: string[] = [];
-    vi.spyOn(process.stdout, "write").mockImplementation(
-      ((chunk: string | Uint8Array) => {
-        lines.push(String(chunk));
-        return true;
-      }) as typeof process.stdout.write,
-    );
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
     const identity: HostIdentity = {
       ...host.getIdentity(),
       sessionId: BACKGROUND_SESSION_ID,
@@ -87,12 +85,12 @@ describe("PiHostServer.emitForIdentity", () => {
 });
 
 describe("PiHostServer Extension UI presentation handshake", () => {
-  it("defaults to legacy modal and applies the optional hello mode", async () => {
+  it("defaults to auto and applies the optional hello mode", async () => {
     const host = server();
     const writeResponse = vi.spyOn(host, "writeResponse").mockImplementation(() => {});
 
-    expect(host.getExtensionDecisionPresentation()).toBe("legacy-modal");
-    expect(host.buildStatus().extensionDecisionPresentation).toBe("legacy-modal");
+    expect(host.getExtensionDecisionPresentation()).toBe("auto");
+    expect(host.buildStatus().extensionDecisionPresentation).toBe("auto");
 
     await host.handleLine(
       JSON.stringify({
@@ -122,64 +120,61 @@ describe("PiHostServer Extension UI presentation handshake", () => {
 });
 
 describe("PiHostServer rehydrate barrier", () => {
-  it.each<GraphOperationKind>([
-    "workspace.setCurrent",
-    "session.open",
-    "package.mutation",
-  ])("does not sample graph state during %s", async (operationKind) => {
-    const getRehydrateState = vi.fn(() => {
-      throw new Error("uncommitted graph state was sampled");
-    });
-    const host = new PiHostServer({
-      agentDir: "C:/agent",
-      sdkVersion: "0.82.1",
-      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
-      capabilities: {
-        packageUpdateCheck: false,
-        extensionUi: true,
-        sessionExport: false,
-      },
-      handlers: {},
-      getRehydrateState,
-    });
-    const responses: Array<Record<string, unknown>> = [];
-    vi.spyOn(process.stdout, "write").mockImplementation(
-      ((chunk: string | Uint8Array) => {
+  it.each<GraphOperationKind>(["workspace.setCurrent", "session.open", "package.mutation"])(
+    "does not sample graph state during %s",
+    async (operationKind) => {
+      const getRehydrateState = vi.fn(() => {
+        throw new Error("uncommitted graph state was sampled");
+      });
+      const host = new PiHostServer({
+        agentDir: "C:/agent",
+        sdkVersion: "0.82.1",
+        getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+        capabilities: {
+          packageUpdateCheck: false,
+          extensionUi: true,
+          sessionExport: false,
+        },
+        handlers: {},
+        getRehydrateState,
+      });
+      const responses: Array<Record<string, unknown>> = [];
+      vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
         responses.push(JSON.parse(String(chunk)) as Record<string, unknown>);
         return true;
-      }) as typeof process.stdout.write,
-    );
-    expect(
-      host.serviceGraphLock.tryAcquire({
-        operationKind,
-        requestId: "graph-mutation",
-      }),
-    ).toBe(true);
+      }) as typeof process.stdout.write);
+      expect(
+        host.serviceGraphLock.tryAcquire({
+          operationKind,
+          requestId: "graph-mutation",
+        }),
+      ).toBe(true);
 
-    await host.handleLine(
-      JSON.stringify({
-        protocolVersion: 1,
-        id: "55555555-5555-4555-8555-555555555555",
-        method: "system.rehydrate",
-        context: { expectedHostInstanceId: host.identity.hostInstanceId },
-        params: null,
-      }),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+      await host.handleLine(
+        JSON.stringify({
+          protocolVersion: 1,
+          id: "55555555-5555-4555-8555-555555555555",
+          method: "system.rehydrate",
+          context: { expectedHostInstanceId: host.identity.hostInstanceId },
+          params: null,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(getRehydrateState).not.toHaveBeenCalled();
-    expect(responses).toHaveLength(1);
-    expect(responses[0]).toMatchObject({
-      ok: false,
-      error: {
-        code: "SERVICE_GRAPH_BUSY",
-        retryable: true,
-        details: { operationKind },
-      },
-    });
-    expect(host.serviceGraphLock.getOwner()?.requestId).toBe("graph-mutation");
-    host.serviceGraphLock.release("graph-mutation");
-  });
+      expect(getRehydrateState).not.toHaveBeenCalled();
+      expect(responses).toHaveLength(1);
+      expect(responses[0]).toMatchObject({
+        ok: false,
+        error: {
+          code: "SERVICE_GRAPH_BUSY",
+          retryable: true,
+          details: { operationKind },
+        },
+      });
+      expect(host.serviceGraphLock.getOwner()?.requestId).toBe("graph-mutation");
+      host.serviceGraphLock.release("graph-mutation");
+    },
+  );
 
   it("returns an atomic no-Workspace snapshot at the preceding event watermark", async () => {
     const host = new PiHostServer({
@@ -197,12 +192,10 @@ describe("PiHostServer rehydrate barrier", () => {
       handlers: {},
     });
     const lines: string[] = [];
-    vi.spyOn(process.stdout, "write").mockImplementation(
-      ((chunk: string | Uint8Array) => {
-        lines.push(String(chunk));
-        return true;
-      }) as typeof process.stdout.write,
-    );
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
 
     host.emit("host.statusChanged", host.buildStatus());
     const response = host.handleLine(

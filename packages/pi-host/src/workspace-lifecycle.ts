@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { join, resolve as pathResolve, win32 } from "node:path";
 import {
-  createAgentSession,
   DefaultPackageManager,
   DefaultResourceLoader,
   SessionManager,
@@ -29,6 +28,7 @@ import { createReadAttachmentTool } from "./attachment-tool.js";
 import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
+import { createHostAgentSession } from "./agent-session-factory.js";
 
 export type WorkspaceLifecycleContext = {
   deps: GraphFactoryDeps;
@@ -721,7 +721,7 @@ export class WorkspaceLifecycle {
       const { session, extensionsResult } = await this.context.deps.providerOwnership.runAsOwner(
         providerOwner,
         () =>
-          createAgentSession({
+          createHostAgentSession({
             cwd: args.canonicalCwd,
             agentDir,
             modelRuntime,

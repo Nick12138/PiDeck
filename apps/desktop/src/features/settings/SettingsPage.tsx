@@ -94,7 +94,7 @@ function GeneralSettings() {
 
   async function patchExtensionDecisionPresentation(next: ExtensionDecisionPresentation) {
     const previous =
-      useAppStore.getState().desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
+      useAppStore.getState().desktopSettings?.extensionDecisionPresentation ?? "auto";
     if (next === previous || decisionPresentationSaving) return;
 
     const hostAtStart = useAppStore.getState().host;
@@ -131,7 +131,7 @@ function GeneralSettings() {
     }
   }
 
-  const decisionPresentation = desktopSettings?.extensionDecisionPresentation ?? "legacy-modal";
+  const decisionPresentation = desktopSettings?.extensionDecisionPresentation ?? "auto";
   const decisionPresentationOptions: Array<{
     value: ExtensionDecisionPresentation;
     label: MessageKey;

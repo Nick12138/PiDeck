@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index b7a48336ddf4c0bcbf9609a91aba1a260635a19d..a7fb9d189ddfda034e598f64cb9778234a5fa0c7 100644
+index b7a48336ddf4c0bcbf9609a91aba1a260635a19d..33e87d431da02543ec14d87a29c69258f90c51e7 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -16,7 +16,7 @@ import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLe
@@ -19,11 +19,43 @@ index b7a48336ddf4c0bcbf9609a91aba1a260635a19d..a7fb9d189ddfda034e598f64cb977823
      commandContextActions?: ExtensionCommandContextActions;
      abortHandler?: () => void;
      shutdownHandler?: ShutdownHandler;
+@@ -446,6 +447,11 @@ export declare class AgentSession {
+      * @throws Error if no auth is configured for the model
+      */
+     setModel(model: Model<any>): Promise<void>;
++    /**
++     * Clear the active model without changing the persisted default.
++     * Used when an embedder intentionally has no enabled Provider.
++     */
++    clearModel(): Promise<void>;
+     /**
+      * Cycle to next/previous model.
+      * Uses scoped models (from --models flag) if available, otherwise all available models.
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c1538152f 100644
+index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..a2e850a435ca7f5730606c60c04b0ab9a294dda2 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -119,6 +119,7 @@ export class AgentSession {
+@@ -72,6 +72,19 @@ function estimateMessagesTokens(messages) {
+ // ============================================================================
+ /** Standard thinking levels */
+ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"];
++/** Safe sentinel used while the application has no enabled Provider. */
++const NO_MODEL = Object.freeze({
++    id: "unknown",
++    name: "unknown",
++    api: "unknown",
++    provider: "unknown",
++    baseUrl: "",
++    reasoning: false,
++    input: [],
++    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
++    contextWindow: 0,
++    maxTokens: 0,
++});
+ // ============================================================================
+ // AgentSession Class
+ // ============================================================================
+@@ -119,6 +132,7 @@ export class AgentSession {
      _sessionStartEvent;
      _extensionUIContext;
      _extensionMode = "print";
@@ -31,7 +63,24 @@ index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c
      _extensionCommandContextActions;
      _extensionAbortHandler;
      _extensionShutdownHandler;
-@@ -1745,6 +1746,9 @@ export class AgentSession {
+@@ -1204,6 +1218,16 @@ export class AgentSession {
+         this.setThinkingLevel(thinkingLevel);
+         await this._emitModelSelect(model, previousModel, "set");
+     }
++    /**
++     * Clear the active model without changing the persisted default. This lets
++     * embedders represent an intentional state with no enabled Provider.
++     */
++    async clearModel() {
++        const previousModel = this.model;
++        this.agent.state.model = NO_MODEL;
++        this.setThinkingLevel("off");
++        await this._emitModelSelect(NO_MODEL, previousModel, "set");
++    }
+     /**
+      * Cycle to next/previous model.
+      * Uses scoped models (from --models flag) if available, otherwise all available models.
+@@ -1745,6 +1769,9 @@ export class AgentSession {
          if (bindings.mode !== undefined) {
              this._extensionMode = bindings.mode;
          }
@@ -41,7 +90,7 @@ index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c
          if (bindings.commandContextActions !== undefined) {
              this._extensionCommandContextActions = bindings.commandContextActions;
          }
-@@ -1803,6 +1807,7 @@ export class AgentSession {
+@@ -1803,6 +1830,7 @@ export class AgentSession {
      }
      _applyExtensionBindings(runner) {
          runner.setUIContext(this._extensionUIContext, this._extensionMode);
@@ -49,7 +98,7 @@ index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c
          runner.bindCommandContext(this._extensionCommandContextActions);
          this._extensionErrorUnsubscriber?.();
          this._extensionErrorUnsubscriber = this._extensionErrorListener
-@@ -2061,6 +2066,7 @@ export class AgentSession {
+@@ -2061,6 +2089,7 @@ export class AgentSession {
              includeAllExtensionTools: true,
          });
          const hasBindings = this._extensionUIContext ||
@@ -58,7 +107,7 @@ index c99a78f31ce2d58973ab1809bd72deb8a1f4135b..ddf637d638c64cfa0db599e1334f108c
              this._extensionShutdownHandler ||
              this._extensionErrorListener;
 diff --git a/dist/core/extensions/index.d.ts b/dist/core/extensions/index.d.ts
-index d2933c195eaeb7194b2bec4fcd48a27e2ea477ab..365e398aca0df2136b3b16c72b8e8c15d1b4294f 100644
+index d2933c195eaeb7194b2bec4fcd48a27e2ea477ab..b5e4ade012113c007eb625615055f16fe95d72ee 100644
 --- a/dist/core/extensions/index.d.ts
 +++ b/dist/core/extensions/index.d.ts
 @@ -6,7 +6,7 @@ export type { SourceInfo } from "../source-info.ts";
@@ -70,8 +119,9 @@ index d2933c195eaeb7194b2bec4fcd48a27e2ea477ab..365e398aca0df2136b3b16c72b8e8c15
  export { defineTool, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, } from "./types.ts";
  export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.ts";
  //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
 diff --git a/dist/core/extensions/runner.d.ts b/dist/core/extensions/runner.d.ts
-index 7a772b385d87d9aba7142136ef7c1b80a6665dec..7f337f5f4bd2085a4d10bd57bc8d3cdb5a9028a4 100644
+index 7a772b385d87d9aba7142136ef7c1b80a6665dec..fc1aa031f68451d1ed01c4939f6894131a2ed76b 100644
 --- a/dist/core/extensions/runner.d.ts
 +++ b/dist/core/extensions/runner.d.ts
 @@ -9,7 +9,7 @@ import type { KeybindingsConfig } from "../keybindings.ts";
@@ -109,7 +159,7 @@ index 7a772b385d87d9aba7142136ef7c1b80a6665dec..7f337f5f4bd2085a4d10bd57bc8d3cdb
      emitMessageEnd(event: MessageEndEvent): Promise<AgentMessage | undefined>;
      emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined>;
 diff --git a/dist/core/extensions/runner.js b/dist/core/extensions/runner.js
-index 686ff326fd6adc6fc1ddcb89e46f6d790621a197..df5cf2d202095c2a3b48c11bca7a8c8072fd3611 100644
+index 686ff326fd6adc6fc1ddcb89e46f6d790621a197..495f1346598892cc05afb700d2d405d892eaf2bd 100644
 --- a/dist/core/extensions/runner.js
 +++ b/dist/core/extensions/runner.js
 @@ -122,6 +122,7 @@ export class ExtensionRunner {
@@ -251,7 +301,7 @@ index 686ff326fd6adc6fc1ddcb89e46f6d790621a197..df5cf2d202095c2a3b48c11bca7a8c80
                          return result;
                      if (result?.action === "transform") {
 diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
-index a7d5547e62e36d252b90ae083bc847ce97a5bf6d..488155af665a6a3fa6516ec476ee04a8048e7fb9 100644
+index a7d5547e62e36d252b90ae083bc847ce97a5bf6d..c7e97cb62bff57f9e32dee18b4ed55e392efc2b4 100644
 --- a/dist/core/extensions/types.d.ts
 +++ b/dist/core/extensions/types.d.ts
 @@ -31,13 +31,44 @@ export type { ExecOptions, ExecResult } from "../exec.ts";
@@ -299,7 +349,7 @@ index a7d5547e62e36d252b90ae083bc847ce97a5bf6d..488155af665a6a3fa6516ec476ee04a8
  /** Placement for extension widgets. */
  export type WidgetPlacement = "aboveEditor" | "belowEditor";
  /** Options for extension widgets. */
-@@ -131,7 +161,7 @@ export interface ExtensionUIContext {
+@@ -131,7 +162,7 @@ export interface ExtensionUIContext {
      /** Get the current text from the core input editor. */
      getEditorText(): string;
      /** Show a multi-line editor for text editing. */
@@ -309,7 +359,7 @@ index a7d5547e62e36d252b90ae083bc847ce97a5bf6d..488155af665a6a3fa6516ec476ee04a8
      addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
      /**
 diff --git a/dist/core/extensions/wrapper.js b/dist/core/extensions/wrapper.js
-index 1e9f7134dbd02635f83e65295915fa6d8c8e8676..9c1ae6e05065e6c76d4c01d3a45c461245f2f532 100644
+index 1e9f7134dbd02635f83e65295915fa6d8c8e8676..77d603976740a37139982aadfc071ba7d819b8db 100644
 --- a/dist/core/extensions/wrapper.js
 +++ b/dist/core/extensions/wrapper.js
 @@ -14,7 +14,13 @@ export function wrapRegisteredTool(registeredTool, runner) {
@@ -327,7 +377,7 @@ index 1e9f7134dbd02635f83e65295915fa6d8c8e8676..9c1ae6e05065e6c76d4c01d3a45c4612
              const activeBefore = runner.getActiveTools();
              const result = await execute(toolCallId, params, signal, onUpdate);
              const activeAfter = runner.getActiveTools();
-@@ -28,7 +33,7 @@ export function wrapRegisteredTool(registeredTool, runner) {
+@@ -28,7 +34,7 @@ export function wrapRegisteredTool(registeredTool, runner) {
                  ...result,
                  addedToolNames: [...new Set([...(result.addedToolNames ?? []), ...addedToolNames])],
              };
@@ -387,10 +437,13 @@ index ec83cef50cab5316d6dace51c9229f677aa46713..e585410ec05d2948ed3a01970049f06b
      private shouldUpdateNpmSource;
      private updateNpmBatch;
 diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
-index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2e1df837a 100644
+index 4770478ac4c17dac0e2062917d551000aac8af27..45763415eb544c78310717014a2c7cfbfd35a796 100644
 --- a/dist/core/package-manager.js
 +++ b/dist/core/package-manager.js
-@@ -29,7 +29,6 @@ import { CONFIG_DIR_NAME } from "../config.js";
+@@ -26,10 +26,9 @@ import ignore from "ignore";
+ import { minimatch } from "minimatch";
+ import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
+ import { CONFIG_DIR_NAME } from "../config.js";
 -import { spawnProcess, spawnProcessSync } from "../utils/child-process.js";
 +import { spawnProcess, spawnProcessSync, waitForChildProcess } from "../utils/child-process.js";
  import { parseGitUrl } from "../utils/git.js";
@@ -399,7 +452,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
  const NETWORK_TIMEOUT_MS = 10000;
  const UPDATE_CHECK_CONCURRENCY = 4;
  const GIT_UPDATE_CONCURRENCY = 4;
-@@ -603,6 +603,7 @@ export class DefaultPackageManager {
+@@ -603,6 +602,7 @@ export class DefaultPackageManager {
      globalNpmRoot;
      globalNpmRootCommandKey;
      progressCallback;
@@ -407,7 +460,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
      constructor(options) {
          this.cwd = resolvePath(options.cwd);
          this.agentDir = resolvePath(options.agentDir);
-@@ -611,6 +612,12 @@ export class DefaultPackageManager {
+@@ -611,6 +611,12 @@ export class DefaultPackageManager {
      setProgressCallback(callback) {
          this.progressCallback = callback;
      }
@@ -420,7 +473,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
      addSourceToSettings(source, options) {
          const scope = options?.local ? "project" : "user";
          const currentSettings = scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-@@ -807,13 +814,15 @@ export class DefaultPackageManager {
+@@ -807,13 +813,15 @@ export class DefaultPackageManager {
          await this.remove(source, options);
          return this.removeSourceFromSettings(source, options);
      }
@@ -437,7 +490,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
              const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
              if (identity && this.getPackageIdentity(sourceStr, "user") !== identity)
                  continue;
-@@ -821,6 +830,7 @@ export class DefaultPackageManager {
+@@ -821,6 +829,7 @@ export class DefaultPackageManager {
              updateSources.push({ source: sourceStr, scope: "user" });
          }
          for (const pkg of projectSettings.packages ?? []) {
@@ -445,7 +498,9 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
              const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
              if (identity && this.getPackageIdentity(sourceStr, "project") !== identity)
                  continue;
-@@ -2055,6 +2065,7 @@ export class DefaultPackageManager {
+@@ -2053,8 +2062,9 @@ export class DefaultPackageManager {
+         const env = getEnv();
+         return spawnProcess(command, args, {
              cwd: options?.cwd,
 -            stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
 +            stdio: ["ignore", "pipe", "pipe"],
@@ -454,7 +509,7 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
          });
      }
      spawnCaptureCommand(command, args, options) {
-@@ -2064,62 +2075,65 @@ export class DefaultPackageManager {
+@@ -2064,62 +2074,65 @@ export class DefaultPackageManager {
              cwd: options?.cwd,
              stdio: ["ignore", "pipe", "pipe"],
              env,
@@ -569,8 +624,50 @@ index 4770478ac4c17dac0e2062917d551000aac8af27..7e5d814c4df5814883163210a72b76c2
          const env = getEnv();
          const result = spawnProcessSync(command, args, {
              stdio: ["ignore", "pipe", "pipe"],
+diff --git a/dist/core/sdk.d.ts b/dist/core/sdk.d.ts
+index 7778619c78a5abcfbcb0ddefff6559c67519cd7b..de508c589f17b7b9383e46883bf0859db6fc9a35 100644
+--- a/dist/core/sdk.d.ts
++++ b/dist/core/sdk.d.ts
+@@ -14,8 +14,8 @@ export interface CreateAgentSessionOptions {
+     agentDir?: string;
+     /** Canonical model/auth runtime. Defaults to a runtime using agentDir/auth.json and models.json. */
+     modelRuntime?: ModelRuntime;
+-    /** Model to use. Default: from settings, else first available */
+-    model?: Model<any>;
++    /** Model to use. Default: from settings, else first available. Pass null to disable automatic selection. */
++    model?: Model<any> | null;
+     /** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
+     thinkingLevel?: ThinkingLevel;
+     /** Models available for cycling (Ctrl+P in interactive mode) */
+diff --git a/dist/core/sdk.js b/dist/core/sdk.js
+index 2e8e67c884cf254112eb67a82d8958ec61c0cfa0..5f996b405387e8e6d7a1724af1b9d43102cfc86d 100644
+--- a/dist/core/sdk.js
++++ b/dist/core/sdk.js
+@@ -81,10 +81,11 @@ export async function createAgentSession(options = {}) {
+     const existingSession = sessionManager.buildSessionContext();
+     const hasExistingSession = existingSession.messages.length > 0;
+     const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
+-    let model = options.model;
++    const autoSelectModel = options.model !== null;
++    let model = options.model ?? undefined;
+     let modelFallbackMessage;
+     // If session has data, try to restore model from it
+-    if (!model && hasExistingSession && existingSession.model) {
++    if (autoSelectModel && !model && hasExistingSession && existingSession.model) {
+         const restoredModel = modelRuntime.getModel(existingSession.model.provider, existingSession.model.modelId);
+         if (restoredModel && modelRuntime.hasConfiguredAuth(restoredModel.provider)) {
+             model = restoredModel;
+@@ -94,7 +95,7 @@ export async function createAgentSession(options = {}) {
+         }
+     }
+     // If still no model, use findInitialModel (checks settings default, then provider defaults)
+-    if (!model) {
++    if (autoSelectModel && !model) {
+         const result = await findInitialModel({
+             scopedModels: [],
+             isContinuing: hasExistingSession,
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index e91e38f8bedfabb6e67305f9739277d1ebacde22..e6401249cd7ff8cf4edacc39eec0fa41c4484635 100644
+index e91e38f8bedfabb6e67305f9739277d1ebacde22..68745dcb5cdd88b4c382ad29d2ba953b5689f7b8 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -4,7 +4,7 @@ export { AgentSession, type AgentSessionConfig, type AgentSessionEvent, type Age

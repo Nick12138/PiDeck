@@ -72,15 +72,14 @@ function targetContext(identity: HostIdentity = id) {
 }
 
 function extensionUiHandlers() {
-  const checkIdentity = vi.fn(
-    (_context: unknown, requirements: { requireSession?: boolean }) =>
-      requirements.requireSession
-        ? {
-            code: "STALE_REVISION",
-            message: "Target Session is not active",
-            retryable: true,
-          }
-        : null,
+  const checkIdentity = vi.fn((_context: unknown, requirements: { requireSession?: boolean }) =>
+    requirements.requireSession
+      ? {
+          code: "STALE_REVISION",
+          message: "Target Session is not active",
+          retryable: true,
+        }
+      : null,
   );
   return {
     checkIdentity,
@@ -150,22 +149,18 @@ describe("extension-ui-bridge", () => {
       secondLongValue,
       ...Array.from({ length: MAX_EXTENSION_UI_OPTIONS }, (_, index) => `option-${index}`),
     ];
-    const pendingSelect = ui.select(
-      "t".repeat(MAX_EXTENSION_UI_TITLE_LENGTH + 1),
-      values,
-      {
-        pideck: {
-          sourceLabel: "s".repeat(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH + 1),
-          correlationId: "c".repeat(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH + 1),
-          optionDetails: [
-            {
-              id: "described",
-              description: "d".repeat(MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH + 1),
-            },
-          ],
-        },
-      } as never,
-    );
+    const pendingSelect = ui.select("t".repeat(MAX_EXTENSION_UI_TITLE_LENGTH + 1), values, {
+      pideck: {
+        sourceLabel: "s".repeat(MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH + 1),
+        correlationId: "c".repeat(MAX_EXTENSION_UI_CORRELATION_ID_LENGTH + 1),
+        optionDetails: [
+          {
+            id: "described",
+            description: "d".repeat(MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH + 1),
+          },
+        ],
+      },
+    } as never);
     const selectRequest = events.at(-1)?.p as {
       requestId: string;
       title: string;
@@ -192,26 +187,20 @@ describe("extension-ui-bridge", () => {
     respondExtensionUi(selectRequest.requestId, "resolved", selectRequest.options[2]?.id, id);
     await expect(pendingSelect).resolves.toBe(secondLongValue);
 
-    const pendingConfirm = ui.confirm(
-      "title",
-      "m".repeat(MAX_EXTENSION_UI_MESSAGE_LENGTH + 1),
-    );
+    const pendingConfirm = ui.confirm("title", "m".repeat(MAX_EXTENSION_UI_MESSAGE_LENGTH + 1));
     const confirmRequest = events.at(-1)?.p as { requestId: string; message: string };
     expect(confirmRequest.message).toHaveLength(MAX_EXTENSION_UI_MESSAGE_LENGTH);
     respondExtensionUi(confirmRequest.requestId, "cancelled", undefined, id);
     await expect(pendingConfirm).resolves.toBe(false);
 
-    const pendingEditor = ui.editor(
-      "title",
-      "d".repeat(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH + 1),
-    );
+    const pendingEditor = ui.editor("title", "d".repeat(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH + 1));
     const editorRequest = events.at(-1)?.p as { requestId: string; defaultValue: string };
     expect(editorRequest.defaultValue).toHaveLength(MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH);
     respondExtensionUi(editorRequest.requestId, "cancelled", undefined, id);
     await expect(pendingEditor).resolves.toBeUndefined();
   });
 
-  it("publishes trusted origin with the fail-safe legacy modal decision", async () => {
+  it("publishes trusted origin with the default auto decision", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const activeInvocation: ExtensionInvocationContext = {
       session: {} as ExtensionInvocationContext["session"],
@@ -246,9 +235,9 @@ describe("extension-ui-bridge", () => {
     expect(request).toMatchObject({
       sourceLabel: "Untrusted label",
       origin: activeInvocation.origin,
-      presentation: "modal",
+      presentation: "inline",
       risk: "normal",
-      routeReason: "explicit-modal",
+      routeReason: "active-tool",
     });
     respondExtensionUi(request.requestId, "cancelled", undefined, id);
     await expect(pending).resolves.toBe(false);
@@ -260,28 +249,24 @@ describe("extension-ui-bridge", () => {
       emit: (e, p) => events.push({ e, p }),
       getIdentity: () => id,
     });
-    const pendingSelect = ui.select(
-      "Pick",
-      ["keep", "delete"],
-      {
-        timeout: 5_000,
-        pideck: {
-          presentation: "inline",
-          sourceLabel: "\u001b[31mReview\u001b[0m",
-          correlationId: "review-1",
-          risk: "high",
-          allowFreeform: true,
-          optionDetails: [
-            {
-              id: "delete",
-              description: "\u001b[2KCannot be undone",
-              destructive: true,
-            },
-            { id: "missing", description: "ignored" },
-          ],
-        },
-      } as never,
-    );
+    const pendingSelect = ui.select("Pick", ["keep", "delete"], {
+      timeout: 5_000,
+      pideck: {
+        presentation: "inline",
+        sourceLabel: "\u001b[31mReview\u001b[0m",
+        correlationId: "review-1",
+        risk: "high",
+        allowFreeform: true,
+        optionDetails: [
+          {
+            id: "delete",
+            description: "\u001b[2KCannot be undone",
+            destructive: true,
+          },
+          { id: "missing", description: "ignored" },
+        ],
+      },
+    } as never);
 
     const request = events.find((event) => event.e === "extensionUi.request")?.p as {
       requestId: string;
@@ -537,8 +522,9 @@ describe("extension-ui-bridge", () => {
     await expect(p).resolves.toBe(true);
 
     const p2 = ui.confirm("Sure?", "Really");
-    const req2 = events.filter((x) => x.e === "extensionUi.request").at(-1)!
-      .p as { requestId: string };
+    const req2 = events.filter((x) => x.e === "extensionUi.request").at(-1)!.p as {
+      requestId: string;
+    };
     respondExtensionUi(req2.requestId, "cancelled", undefined, id);
     await expect(p2).resolves.toBe(false);
   });
@@ -861,11 +847,10 @@ describe("extension-ui-bridge", () => {
     const session = {
       sessionManager: { buildContextEntries: () => entries },
       extensionRunner: {
-        getMessageRenderer: () =>
-          (_message: unknown, options: { expanded: boolean }) => ({
-            render: () => [options.expanded ? `${renderState}: full` : renderState],
-            invalidate: () => undefined,
-          }),
+        getMessageRenderer: () => (_message: unknown, options: { expanded: boolean }) => ({
+          render: () => [options.expanded ? `${renderState}: full` : renderState],
+          invalidate: () => undefined,
+        }),
       },
       subscribe: (listener: () => void) => {
         sessionListener = listener;
@@ -919,9 +904,7 @@ describe("extension-ui-bridge", () => {
     const count = events.filter((event) => event.e === "extensionUi.messageRendered").length;
     sessionListener?.();
     await Promise.resolve();
-    expect(events.filter((event) => event.e === "extensionUi.messageRendered")).toHaveLength(
-      count,
-    );
+    expect(events.filter((event) => event.e === "extensionUi.messageRendered")).toHaveLength(count);
     binding.cleanup();
     expect(sessionListener).toBeUndefined();
   });
@@ -969,9 +952,7 @@ describe("extension-ui-bridge", () => {
       },
     );
 
-    const attention = events.filter(
-      (event) => event.e === "extensionUi.widgetAttentionRequested",
-    );
+    const attention = events.filter((event) => event.e === "extensionUi.widgetAttentionRequested");
     expect(attention).toEqual([
       {
         e: "extensionUi.widgetAttentionRequested",
@@ -1015,11 +996,8 @@ describe("extension-ui-bridge", () => {
 
   it("surfaces extension handler errors via extensionUi.notification", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
-    let onError: ((error: {
-      extensionPath: string;
-      event: string;
-      error: string;
-    }) => void) | undefined;
+    let onError:
+      ((error: { extensionPath: string; event: string; error: string }) => void) | undefined;
     const session = {
       bindExtensions: async (bindings: { onError?: typeof onError }) => {
         onError = bindings.onError;
@@ -1086,16 +1064,20 @@ describe("extension-ui-bridge", () => {
     const select = ui.select("\u001b]0;title\u0007Pick", ["\u001b[2Kalpha"]);
     const editor = ui.editor("\u001b[33mEdit\u001b[0m", "\u001b[1Gprefill");
     ui.setStatus("\u001b[31mstatus\u001b[0m", "\u001b]0;ignored\u0007ready");
-    ui.setWidget(
-      "\u001b[35mansi\u001b[0m",
-      {
-        "\u001b]8;;https://example.com\u0007label\u001b]8;;\u0007": "\u001b[2Jwidget",
-      } as never,
-    );
+    ui.setWidget("\u001b[35mansi\u001b[0m", {
+      "\u001b]8;;https://example.com\u0007label\u001b]8;;\u0007": "\u001b[2Jwidget",
+    } as never);
 
     const requests = events
       .filter((event) => event.e === "extensionUi.request")
-      .map((event) => event.p as { title?: string; options?: Array<{ id: string; label: string }>; defaultValue?: string });
+      .map(
+        (event) =>
+          event.p as {
+            title?: string;
+            options?: Array<{ id: string; label: string }>;
+            defaultValue?: string;
+          },
+      );
     expect(requests[0]?.title).toBe("Pick");
     expect(requests[0]?.options?.[0]).toEqual({ id: "alpha", label: "alpha" });
     expect(requests[1]?.title).toBe("Edit");
@@ -1120,7 +1102,11 @@ describe("extension-ui-bridge", () => {
   it("releases blocking candidate requests during activation and waits for bind completion", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const session = {
-      bindExtensions: async ({ uiContext }: { uiContext: ReturnType<typeof createExtensionUiContext> }) => {
+      bindExtensions: async ({
+        uiContext,
+      }: {
+        uiContext: ReturnType<typeof createExtensionUiContext>;
+      }) => {
         await uiContext.input("Startup", "value");
       },
     };
@@ -1146,7 +1132,11 @@ describe("extension-ui-bridge", () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const controller = new AbortController();
     const session = {
-      bindExtensions: async ({ uiContext }: { uiContext: ReturnType<typeof createExtensionUiContext> }) => {
+      bindExtensions: async ({
+        uiContext,
+      }: {
+        uiContext: ReturnType<typeof createExtensionUiContext>;
+      }) => {
         await uiContext.input("Startup", "value", { signal: controller.signal });
       },
     };
@@ -1255,7 +1245,11 @@ describe("extension-ui-bridge", () => {
   it("buffers non-blocking events until the candidate generation is published", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const session = {
-      bindExtensions: async ({ uiContext }: { uiContext: ReturnType<typeof createExtensionUiContext> }) => {
+      bindExtensions: async ({
+        uiContext,
+      }: {
+        uiContext: ReturnType<typeof createExtensionUiContext>;
+      }) => {
         uiContext.setStatus("startup", "loading");
         uiContext.setWidget("startup", ["loading"]);
         uiContext.setWidget("startup", ["ready"]);
@@ -1355,9 +1349,7 @@ describe("extension-ui-bridge", () => {
 
     expect(events.at(-1)?.identity.sessionRevision).toBe(promoted.sessionRevision);
     expect(respondExtensionUi(request.requestId, "resolved", "stale", id)).toBe(false);
-    expect(
-      respondExtensionUi(request.requestId, "resolved", "done", promoted),
-    ).toBe(true);
+    expect(respondExtensionUi(request.requestId, "resolved", "done", promoted)).toBe(true);
     await expect(pendingInput).resolves.toBe("done");
     binding.cleanup();
   });
@@ -1701,9 +1693,7 @@ describe("extension-ui-bridge", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(
-      events
-        .filter((event) => event.e === "extensionUi.widgetChanged")
-        .map((event) => event.p),
+      events.filter((event) => event.e === "extensionUi.widgetChanged").map((event) => event.p),
     ).toEqual([
       { key: "nano-context", widget: ["old context"] },
       { key: "nano-context", widget: ["new context"] },
@@ -1727,9 +1717,7 @@ describe("extension-ui-bridge", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(
-      events
-        .filter((event) => event.e === "extensionUi.widgetChanged")
-        .map((event) => event.p),
+      events.filter((event) => event.e === "extensionUi.widgetChanged").map((event) => event.p),
     ).toEqual([
       { key: "progress", widget: ["old"] },
       { key: "progress", widget: null },
@@ -1779,9 +1767,7 @@ describe("extension-ui-bridge", () => {
     failRender = false;
     requestRender?.();
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(
-      events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
-    ).toEqual([
+    expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
       {
         e: "extensionUi.widgetAttentionRequested",
         p: {
@@ -1845,9 +1831,7 @@ describe("extension-ui-bridge", () => {
         await new Promise((resolve) => setTimeout(resolve, 30));
       },
     );
-    expect(
-      events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
-    ).toEqual([
+    expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
       {
         e: "extensionUi.widgetAttentionRequested",
         p: {
@@ -1868,9 +1852,7 @@ describe("extension-ui-bridge", () => {
         await new Promise((resolve) => setTimeout(resolve, 30));
       },
     );
-    expect(
-      events.filter((event) => event.e === "extensionUi.widgetAttentionRequested"),
-    ).toEqual([
+    expect(events.filter((event) => event.e === "extensionUi.widgetAttentionRequested")).toEqual([
       {
         e: "extensionUi.widgetAttentionRequested",
         p: {
@@ -1901,7 +1883,11 @@ describe("extension-ui-bridge", () => {
   it("binding cleanup disposes live setWidget factories", async () => {
     let disposed = false;
     const session = {
-      bindExtensions: async ({ uiContext }: { uiContext: ReturnType<typeof createExtensionUiContext> }) => {
+      bindExtensions: async ({
+        uiContext,
+      }: {
+        uiContext: ReturnType<typeof createExtensionUiContext>;
+      }) => {
         uiContext.setWidget("live", () => ({
           render: () => ["live"],
           invalidate: () => {},
