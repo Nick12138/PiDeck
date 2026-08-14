@@ -69,17 +69,19 @@ describe("WindowControls", () => {
     ).toHaveClass("mac-window-control-dot--maximize");
   });
 
-  it("preserves the Windows controls at the top-right in the existing order", () => {
+  it("aligns the Windows controls with the chat header in native action order", () => {
     render(<WindowControls platform="windows" />);
 
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "windows");
     expect(controls).toHaveClass("right-0", "top-0");
-    expect(
-      within(controls)
-        .getAllByRole("button")
-        .map((button) => button.ariaLabel),
-    ).toEqual(["Minimize window", "Maximize or restore window", "Close window"]);
+    const buttons = within(controls).getAllByRole("button");
+    expect(buttons.map((button) => button.ariaLabel)).toEqual([
+      "Minimize window",
+      "Maximize or restore window",
+      "Close window",
+    ]);
+    expect(buttons.every((button) => button.classList.contains("h-11"))).toBe(true);
   });
 
   it("routes macOS traffic-light clicks through the shared Tauri window actions", async () => {
