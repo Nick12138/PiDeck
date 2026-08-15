@@ -179,6 +179,9 @@ export type AppState = EpochState & {
   thinkingLevels: string[];
   providerConfigRevision: number;
   sessionCatalog: SessionCatalogState;
+  /** True while the session is pinned to a tree-navigated position, so an empty
+   *  transcript at the start of a branch is not mistaken for a new conversation. */
+  sessionTreeNavigated: boolean;
   draftTexts: Record<DraftKey, string>;
   draftTargets: Record<DraftKey, DraftTarget>;
   draftEditVersions: Record<DraftKey, number>;
@@ -206,6 +209,7 @@ export type AppState = EpochState & {
   setWorkspace: (ws: WorkspaceSnapshot | null) => void;
   applySessionSnapshot: (s: SessionSnapshot | null) => void;
   setSession: (s: SessionSnapshot | null) => void;
+  setSessionTreeNavigated: (navigated: boolean) => void;
   applyPackageSnapshot: (p: PackageSnapshot | null) => void;
   applyPackageMutationResult: (result: PackageMutationResult) => void;
   setPackages: (p: PackageSnapshot | null) => void;
@@ -317,6 +321,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   thinkingLevels: [],
   providerConfigRevision: 0,
   sessionCatalog: emptySessionCatalog(),
+  sessionTreeNavigated: false,
   draftTexts: {},
   draftTargets: {},
   draftEditVersions: {},
@@ -536,6 +541,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         previousSession.sessionId !== session.sessionId ||
         previousSession.revision !== session.revision),
     );
+    const sessionChanged = Boolean(
+      !previousSession || !session || previousSession.sessionId !== session.sessionId,
+    );
     const extensionUi = alignExtensionUiToSession(
       current.extensionUiRequest,
       current.extensionUiQueue,
@@ -545,6 +553,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...next,
       sessionCatalog,
       ...extensionUi,
+      ...(sessionChanged ? { sessionTreeNavigated: false } : {}),
       ...(generationChanged
         ? {
             extensionStatus: null,
@@ -565,6 +574,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSession: (session) => {
     get().applySessionSnapshot(session);
   },
+
+  setSessionTreeNavigated: (navigated) => set({ sessionTreeNavigated: navigated }),
 
   applyPackageSnapshot: (packages) => {
     const next = epochApplyPackages(epochSlice(get()), packages);

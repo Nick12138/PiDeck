@@ -7,6 +7,7 @@ import {
   requestSessionOpenWithRetry,
   SESSION_OPEN_TIMEOUT_MS,
 } from "../../lib/bridge/session-open-request";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -97,7 +98,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
           if (request !== requestRef.current) return;
           setSearching(false);
           if (!res.ok) {
-            setError(res.error?.message ?? t("globalSearchFailed"));
+            setError(localizeHostError(res.error, t));
             return;
           }
           setReport(res.result);
@@ -140,7 +141,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
           useAppStore.getState().setWorkspaceSwitchTarget(null);
         }
         if (!switched.ok) {
-          state.pushNotification(switched.error?.message ?? t("notifSetWorkspaceFailed"), "error");
+          state.pushNotification(localizeHostError(switched.error, t), "error");
           return;
         }
         // workspace.changed / session.snapshot events usually land before this
@@ -206,7 +207,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
       if (!res.ok) {
         useAppStore
           .getState()
-          .pushNotification(res.error?.message ?? t("notifOpenSessionFailed"), "error");
+          .pushNotification(localizeHostError(res.error, t), "error");
         return;
       }
       const appliedSession = useAppStore.getState().session;

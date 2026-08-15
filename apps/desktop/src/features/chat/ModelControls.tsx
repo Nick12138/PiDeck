@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -91,6 +92,20 @@ export function thinkingLevelsForModel(
 export function modelOptionLabel(model: ModelSummary): string {
   const providerLabel = model.providerName || model.provider;
   return `${providerLabel}/${model.name || model.modelId}`;
+}
+
+/** Label for the session's current model, preferring the Provider display name
+ *  from the fetched model catalog when the snapshot summary lacks it. */
+export function currentModelLabel(
+  model: ModelSummary | undefined,
+  models: ModelSummary[],
+  fallback: string,
+): string {
+  if (!model) return fallback;
+  const catalogModel = models.find(
+    (candidate) => candidate.provider === model.provider && candidate.modelId === model.modelId,
+  );
+  return modelOptionLabel(catalogModel ?? model);
 }
 
 export function thinkingLevelLabel(level: string): string {
@@ -363,8 +378,10 @@ export function ModelControls() {
           const selected = latestSession?.model;
           if (
             latestSession &&
-            (selected?.provider !== res.result.current.provider ||
-              selected.modelId !== res.result.current.modelId)
+            selected &&
+            (selected.provider !== res.result.current.provider ||
+              selected.modelId !== res.result.current.modelId ||
+              !selected.providerName)
           ) {
             current.applySessionSnapshot({
               ...latestSession,
@@ -391,6 +408,7 @@ export function ModelControls() {
   ]);
 
   const modelOptions = includeCurrentModel(models, session?.model, enabledProviders);
+  const activeModelLabel = currentModelLabel(session?.model, models, "");
   const modelMenuLabels =
     modelOptions.length > 0 ? modelOptions.map(modelOptionLabel) : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
@@ -463,7 +481,7 @@ export function ModelControls() {
       setThinkingLevels(res.result.thinkingLevels);
       return true;
     }
-    pushNotification(res.error?.message ?? t("modelSwitchFailed"), "error");
+    pushNotification(localizeHostError(res.error, t), "error");
     return false;
   }
 
@@ -485,13 +503,13 @@ export function ModelControls() {
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          title={session?.model ? modelOptionLabel(session.model) : t("modelSelect")}
+          title={activeModelLabel || t("modelSelect")}
           onClick={() => {
             setMenuOpen((open) => !open);
           }}
         >
           <span className="truncate">
-            {session?.model ? modelOptionLabel(session.model) : t("modelNone")}
+            {activeModelLabel || t("modelNone")}
           </span>
           <ChevronDown
             className={`shrink-0 transition-transform ${menuOpen ? "rotate-180" : ""}`}
@@ -606,7 +624,7 @@ export function ThinkingControls() {
       setOpen(false);
       return;
     }
-    pushNotification(res.error?.message ?? t("modelThinkingSetFailed"), "error");
+    pushNotification(localizeHostError(res.error, t), "error");
   }
 
   return (

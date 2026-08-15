@@ -158,7 +158,7 @@ export async function hydrateDraftWorkspace(canonicalCwd: string): Promise<void>
     if (snapshot.warning) {
       store.pushNotification(
         snapshot.recoveredFrom
-          ? `${snapshot.warning}. Backup: ${snapshot.recoveredFrom}`
+          ? `${snapshot.warning}. ${tCurrent("notifBackupFrom", { path: snapshot.recoveredFrom })}`
           : snapshot.warning,
         "warning",
       );

@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { requestComposerInsert } from "../../lib/composer-insert";
@@ -103,7 +104,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
           { path },
         );
         if (!response.ok) {
-          throw new Error(response.error?.message ?? t("dockFilesListFailed"));
+          throw new Error(localizeHostError(response.error, t));
         }
         if (!isCurrentWorkspace()) return;
         setDirectories((items) =>

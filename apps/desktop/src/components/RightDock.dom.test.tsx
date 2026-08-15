@@ -170,14 +170,30 @@ describe("RightDock pages", () => {
     );
   });
 
-  it("keeps the add menu inside the Dock as tabs appear", async () => {
+  it("keeps the add menu anchored to the add button as tabs appear", async () => {
     const user = userEvent.setup();
     render(<RightDock />);
+    const button = screen.getByRole("button", { name: "New dock page" });
+    const rect = (left: number) =>
+      ({
+        x: left,
+        left,
+        right: left + 28,
+        top: 20,
+        bottom: 48,
+        width: 28,
+        height: 28,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(rect(300));
 
-    expect(await openAddMenu(user)).toHaveClass("left-0");
+    // No tabs yet: the menu's left edge aligns with the button.
+    expect(await openAddMenu(user)).toHaveStyle({ left: "300px" });
     await user.keyboard("{Escape}");
+
+    // With tabs present: the menu's right edge aligns with the button's right.
     await user.click(screen.getByRole("button", { name: "Open Files" }));
-    expect(await openAddMenu(user)).toHaveClass("right-0");
+    expect(await openAddMenu(user)).toHaveStyle({ left: `${300 + 28 - 176}px` });
   });
 
   it("keeps Files as a closable singleton", async () => {
@@ -194,7 +210,7 @@ describe("RightDock pages", () => {
     expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
   });
 
-  it("limits Browser pages to eight", async () => {
+it("limits Browser pages to eight", async () => {
     const user = userEvent.setup();
     render(<RightDock />);
 
@@ -202,12 +218,13 @@ describe("RightDock pages", () => {
       await openAddMenu(user);
       await user.click(screen.getByRole("menuitem", { name: "Browser" }));
     }
-    await openAddMenu(user);
 
+    await user.click(screen.getByTitle("More tabs"));
     expect(screen.getAllByRole("button", { name: "Close Browser" })).toHaveLength(8);
+
+    await openAddMenu(user);
     expect(screen.getByRole("menuitem", { name: "Browser" })).toBeDisabled();
     expect(requestDockBrowser({ url: "https://example.com/ninth" })).toBe(false);
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(8);
   });
 
   it("opens consecutive URL requests in new active Browser pages", async () => {

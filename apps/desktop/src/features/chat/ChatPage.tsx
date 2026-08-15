@@ -31,7 +31,10 @@ export function ChatPage() {
   const resourceReloadBlocked = packages?.resourceReloadRequired === true;
   const reconcileBlocked = packages?.mutation?.reconcileRequired === true;
   const packageBlocked = resourceReloadBlocked || reconcileBlocked;
-  const isNewConversation = Boolean(session && session.messages.length === 0 && session.isIdle);
+  const sessionTreeNavigated = useAppStore((s) => s.sessionTreeNavigated);
+  const isNewConversation = Boolean(
+    session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
+  );
 
   if (!workspace) {
     return (

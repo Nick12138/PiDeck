@@ -1,28 +1,38 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { AlertCircle, AlertTriangle, Bell, CheckCircle2, Info, Trash2, X } from "lucide-react";
-import { useT } from "../lib/i18n/use-t";
+import { useT, type Translate } from "../lib/i18n/use-t";
 import { useAppStore, type AppNotification } from "../lib/stores/app-store";
 
-function levelStyle(level: string) {
+function levelStyle(level: string, t: Translate) {
   switch (level) {
     case "error":
-      return { icon: AlertCircle, color: "text-danger", accent: "border-l-danger", label: "Error" };
+      return {
+        icon: AlertCircle,
+        color: "text-danger",
+        accent: "border-l-danger",
+        label: t("notifLevelError"),
+      };
     case "warning":
       return {
         icon: AlertTriangle,
         color: "text-warning",
         accent: "border-l-warning",
-        label: "Warning",
+        label: t("notifLevelWarning"),
       };
     case "success":
       return {
         icon: CheckCircle2,
         color: "text-success",
         accent: "border-l-success",
-        label: "Success",
+        label: t("notifLevelSuccess"),
       };
     default:
-      return { icon: Info, color: "text-info", accent: "border-l-info", label: "Information" };
+      return {
+        icon: Info,
+        color: "text-info",
+        accent: "border-l-info",
+        label: t("notifLevelInformation"),
+      };
   }
 }
 
@@ -74,7 +84,7 @@ export function NotificationPanel({
       ) : (
         <ol className="min-h-0 overflow-y-auto">
           {[...notifications].reverse().map((notification) => {
-            const style = levelStyle(notification.level);
+            const style = levelStyle(notification.level, t);
             const Icon = style.icon;
             return (
               <li
@@ -297,7 +307,7 @@ export function NotificationCenter() {
           {toasts.map(({ id, leaving }) => {
             const notification = notifications.find((item) => item.id === id);
             if (!notification) return null;
-            const style = levelStyle(notification.level);
+            const style = levelStyle(notification.level, t);
             const Icon = style.icon;
             return (
               <button

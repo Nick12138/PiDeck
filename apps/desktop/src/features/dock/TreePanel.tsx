@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, GitFork, LoaderCircle, RefreshCw } from "lucide-react";
 import type { SerializableSessionTreeNode } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
   isCurrentRequestGeneration,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
-import { editDraft } from "../../lib/draft-persistence";
-import { draftTargetFor } from "../../lib/draft-target";
 import { requestFork } from "../../lib/fork-actions";
+import { requestTranscriptScroll } from "../../lib/transcript-navigation";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { useT } from "../../lib/i18n/use-t";
 import { flattenSessionTree, type TreeRow } from "./tree-model";
@@ -19,6 +19,10 @@ const ROW_H = 28;
 const LANE_W = 14;
 const ACCENT = "var(--color-accent)";
 const BASE = "var(--color-border)";
+/** Estimated average glyph width (px) at the row's 12px font, used to budget
+ *  the excerpt length from the available panel width. CSS ellipsis still
+ *  applies the exact pixel-level cutoff. */
+const CHAR_W = 7;
 
 function laneX(lane: number): number {
   return lane * LANE_W + 7;
@@ -84,6 +88,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
   const t = useT();
   const session = useAppStore((state) => state.session);
   const applySessionSnapshot = useAppStore((state) => state.applySessionSnapshot);
+  const setSessionTreeNavigated = useAppStore((state) => state.setSessionTreeNavigated);
   const pushNotification = useAppStore((state) => state.pushNotification);
   const [nodes, setNodes] = useState<SerializableSessionTreeNode[] | null>(null);
   const [leafId, setLeafId] = useState<string | null>(null);
@@ -91,6 +96,24 @@ export function TreePanel({ visible }: { visible: boolean }) {
   const [navigating, setNavigating] = useState<string | null>(null);
   const [forking, setForking] = useState<string | null>(null);
   const [refreshSeq, setRefreshSeq] = useState(0);
+  // Width available to the text column drives the excerpt char budget so the
+  // displayed message length tracks the panel size.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [textWidth, setTextWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const element = panelRef.current;
+    if (!element) return;
+    const update = () => {
+      setTextWidth((width) =>
+        Math.abs((width ?? 0) - element.clientWidth) > 1 ? element.clientWidth : width,
+      );
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const hostInstanceId = useAppStore((state) => state.host?.hostInstanceId);
   const workspaceId = useAppStore((state) => state.workspace?.id);
@@ -135,7 +158,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? t("dockTreeLoadFailed"));
+          setError(localizeHostError(res.error, t));
           return;
         }
         setNodes(res.result.tree);
@@ -168,6 +191,13 @@ export function TreePanel({ visible }: { visible: boolean }) {
     setForking(null);
   }, [sessionId]);
 
+  // Prefer positioning the transcript at the clicked message; only rewire the
+  // session leaf when the message isn't rendered on the current path (off-branch).
+  function onRowActivate(targetId: string) {
+    if (requestTranscriptScroll({ sourceId: targetId })) return;
+    void navigate(targetId);
+  }
+
   async function navigate(targetId: string) {
     const current = useAppStore.getState();
     if (!current.host || !current.workspace || !current.session) return;
@@ -191,7 +221,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? t("dockTreeSwitchFailed"), "error");
+        pushNotification(localizeHostError(res.error, t), "error");
         return;
       }
       if (res.result.cancelled) {
@@ -199,10 +229,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
         return;
       }
       applySessionSnapshot(res.result.session);
-      if (res.result.editorText !== undefined) {
-        const target = draftTargetFor(current.workspace, res.result.session);
-        if (target) editDraft(target, res.result.editorText);
-      }
+      setSessionTreeNavigated(true);
       setRefreshSeq((seq) => seq + 1);
     } catch (err) {
       pushNotification(err instanceof Error ? err.message : t("dockTreeSwitchFailed"), "error");
@@ -210,6 +237,12 @@ export function TreePanel({ visible }: { visible: boolean }) {
       setNavigating(null);
     }
   }
+
+  const { rows, laneCount } = useMemo(() => {
+    if (!nodes) return { rows: [], laneCount: 1 };
+    const maxChars = textWidth !== null ? Math.max(12, Math.floor(textWidth / CHAR_W)) : undefined;
+    return flattenSessionTree(nodes, leafId, maxChars);
+  }, [nodes, leafId, textWidth]);
 
   if (!session) {
     return (
@@ -219,12 +252,10 @@ export function TreePanel({ visible }: { visible: boolean }) {
     );
   }
 
-  const { rows, laneCount } = nodes
-    ? flattenSessionTree(nodes, leafId)
-    : { rows: [], laneCount: 1 };
+  const firstUserId = rows.find((row) => row.kind === "user")?.id;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={panelRef} className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
       <div className="interface-density-nav-row flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <GitBranch size={13} className="shrink-0 text-muted" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted">
@@ -255,26 +286,26 @@ export function TreePanel({ visible }: { visible: boolean }) {
             return (
               <div
                 key={row.id}
-                className={`group flex h-7 items-stretch pl-2 ${
+                className={`group flex min-w-0 max-w-full h-7 items-stretch overflow-hidden pl-2 ${
                   row.isCurrent ? "bg-surface-overlay/60" : "hover:bg-surface-overlay/40"
                 }`}
               >
                 <RowRail row={row} laneCount={laneCount} />
                 <button
                   type="button"
-                  disabled={actionLocked || row.isCurrent}
+                  disabled={actionLocked}
                   aria-current={row.isCurrent ? "true" : undefined}
                   title={row.excerpt}
-                  className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 text-left text-xs ${
+                  className={`flex min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden pl-1 text-left text-xs ${
                     row.onPath ? "text-foreground" : "text-muted"
                   } disabled:cursor-default`}
-                  onClick={() => void navigate(row.id)}
+                  onClick={() => void onRowActivate(row.id)}
                 >
                   {(navigating === row.id || forking === row.id) && (
                     <LoaderCircle size={12} className="shrink-0 animate-spin" />
                   )}
                   <span
-                    className={`min-w-0 flex-1 truncate ${
+                    className={`min-w-0 max-w-full flex-1 truncate overflow-hidden text-ellipsis whitespace-nowrap ${
                       row.kind === "user" ? "font-medium" : ""
                     }`}
                   >
@@ -286,18 +317,18 @@ export function TreePanel({ visible }: { visible: boolean }) {
                     </span>
                   )}
                   {row.isCurrent && (
-                    <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
+                    <span className="mx-[5px] shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
                       {t("dockTreeCurrent")}
                     </span>
                   )}
                 </button>
-                {row.kind === "user" && (
+                {row.kind === "user" && row.id !== firstUserId && (
                   <button
                     type="button"
                     disabled={actionLocked}
                     title={t("dockTreeFork")}
                     aria-label={t("dockTreeForkFrom", { excerpt: row.excerpt })}
-                    className="hidden shrink-0 items-center justify-center px-2 text-muted hover:text-foreground disabled:opacity-40 group-hover:flex"
+                    className="mx-[5px] flex shrink-0 items-center justify-center px-2 text-muted hover:text-foreground disabled:opacity-40"
                     onClick={() => {
                       setForking(row.id);
                       void requestFork(row.id).finally(() => setForking(null));

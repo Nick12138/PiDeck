@@ -12,7 +12,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { __resetDraftPersistenceForTests } from "../../lib/draft-persistence";
-import { draftKeyForTarget, draftTargetFor } from "../../lib/draft-target";
+import { subscribeTranscriptScroll } from "../../lib/transcript-navigation";
 import { useAppStore } from "../../lib/stores/app-store";
 import { TreePanel } from "./TreePanel";
 
@@ -211,7 +211,7 @@ describe("TreePanel", () => {
     // The actual leaf is a hidden tool result; the marker falls back to the
     // deepest visible row on its path.
     const current = screen.getByText("trunk follow-up").closest("button")!;
-    expect(current).toBeDisabled();
+    expect(current).not.toBeDisabled();
     expect(current).toHaveAttribute("aria-current", "true");
 
     await user.click(screen.getByText("abandoned attempt").closest("button")!);
@@ -222,9 +222,68 @@ describe("TreePanel", () => {
       }),
     );
     await waitFor(() => expect(useAppStore.getState().session?.thinkingLevel).toBe("high"));
-    const target = draftTargetFor(workspace(), session({ thinkingLevel: "high" }));
-    expect(target).not.toBeNull();
-    expect(useAppStore.getState().draftTexts[draftKeyForTarget(target!)]).toBe("abandoned attempt");
+    expect(useAppStore.getState().sessionTreeNavigated).toBe(true);
+  });
+
+  it("scrolls the transcript to an on-path message instead of rewiring the session", async () => {
+    const navigateSpy = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue(envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never);
+    const seen: string[] = [];
+    const unsubscribe = subscribeTranscriptScroll((request) => {
+      if (request.sourceId) seen.push(request.sourceId);
+      return true;
+    });
+    const user = userEvent.setup();
+    render(<TreePanel visible />);
+
+    await screen.findByText("abandoned attempt");
+    await user.click(screen.getByText("the answer").closest("button")!);
+
+    await waitFor(() => expect(seen).toContain("a1"));
+    expect(navigateSpy).not.toHaveBeenCalledWith("agent.navigateTree", expect.anything());
+    unsubscribe();
+  });
+
+  it("constrains tree message text so narrow panels can ellipsize it", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<TreePanel visible />);
+
+    const message = await screen.findByText("the answer");
+    const button = message.closest("button")!;
+
+    expect(button).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
+    expect(message).toHaveClass("min-w-0", "max-w-full", "overflow-hidden", "text-ellipsis");
+  });
+
+  it("adds five pixels of horizontal outer spacing to the current badge and fork button", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<TreePanel visible />);
+
+    await screen.findByText("abandoned attempt");
+
+    expect(screen.getByText("current")).toHaveClass("mx-[5px]");
+    expect(screen.getByRole("button", { name: "Fork from: abandoned attempt" })).toHaveClass(
+      "mx-[5px]",
+    );
+  });
+
+  it("hides the fork action for the first user message", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("session.getTree", { tree: TREE, leafId: "tr1" }) as never,
+    );
+    render(<TreePanel visible />);
+
+    await screen.findByText("first ask");
+
+    expect(screen.queryByRole("button", { name: "Fork from: first ask" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Fork from: abandoned attempt" }),
+    ).toBeInTheDocument();
   });
 
   it("disables navigation while the agent is busy", async () => {

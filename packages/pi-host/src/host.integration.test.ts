@@ -414,7 +414,12 @@ describe("Pi Host integration", () => {
           expectedSessionId: createResponse!.sessionId,
           expectedSessionRevision: createResponse!.sessionRevision,
         },
-        { sessionPath: createdSession.sessionPath },
+        {
+          sessionPath:
+            process.platform === "win32"
+              ? createdSession.sessionPath.replaceAll("\\", "/")
+              : createdSession.sessionPath,
+        },
       );
       expect(reopened.ok).toBe(true);
       expect(reopened.sessionId).toBe(createResponse!.sessionId);

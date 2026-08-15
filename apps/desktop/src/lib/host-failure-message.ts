@@ -1,3 +1,5 @@
+import { tCurrent } from "./i18n/use-t";
+
 const DEFAULT_MAX_LENGTH = 220;
 
 function firstSentence(value: string): string {
@@ -16,7 +18,9 @@ export function summarizeHostFailure(
   maxLength = DEFAULT_MAX_LENGTH,
 ): string {
   const exitMatch = message.match(/^Pi Host exited \(([^)]+)\)/);
-  const prefix = exitMatch ? `Pi Host exited (${exitMatch[1]})` : "Pi Host failed";
+  const prefix = exitMatch
+    ? tCurrent("hostFailureExited", { code: exitMatch[1] })
+    : tCurrent("hostFailureFailed");
   const stderrMarker = ". stderr: ";
   const stderr = message.includes(stderrMarker)
     ? message.slice(message.indexOf(stderrMarker) + stderrMarker.length)

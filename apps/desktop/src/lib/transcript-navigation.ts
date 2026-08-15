@@ -8,7 +8,9 @@
 
 export type TranscriptScrollRequest = {
   /** Stable transcript row key (TranscriptRow.key). */
-  rowKey: string;
+  rowKey?: string;
+  /** A session entry id (TranscriptRow.sourceId/sourceEndId) to bring into view. */
+  sourceId?: string;
 };
 
 type TranscriptScrollHandler = (request: TranscriptScrollRequest) => boolean;

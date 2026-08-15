@@ -324,7 +324,7 @@ export function SidebarLayout({
           data-sidebar-collapsed-toggle-slot
           data-tauri-drag-region
         >
-          <div className="translate-x-0.5 translate-y-0.5">
+<div className="translate-x-0.5 translate-y-[3px]">
             <SidebarBrandToggle collapsed onToggle={toggleSidebarCollapsed} />
           </div>
         </div>

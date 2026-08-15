@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import type { SessionStatsSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -66,7 +67,7 @@ export function SessionStatsModal({ open, onClose }: { open: boolean; onClose: (
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? t("statsLoadFailed"));
+          setError(localizeHostError(res.error, t));
           return;
         }
         setStats(res.result);

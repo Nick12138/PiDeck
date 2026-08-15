@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+} from "react";
 import {
   CircleAlert,
   CircleCheck,
@@ -6,7 +14,7 @@ import {
   FileText,
   LoaderCircle,
   MessageCircleQuestion,
-Paperclip,
+  Paperclip,
   Puzzle,
   RefreshCw,
   Send,
@@ -17,6 +25,7 @@ Paperclip,
 import { useAppStore } from "../../lib/stores/app-store";
 import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_IMAGE_BYTES,
@@ -50,6 +59,7 @@ import { requestTreePanel } from "../../lib/dock-tree";
 import { requestExport } from "../../lib/export-actions";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
+import type { MessageKey } from "../../lib/i18n";
 import {
   isDesktopRuntime,
   isDocumentPath,
@@ -124,6 +134,55 @@ function formatFileSize(bytes: number): string {
 
 function utf8ByteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength;
+}
+
+const WELCOME_MORNING: readonly MessageKey[] = [
+  "composerWelcomeMorning1",
+  "composerWelcomeMorning2",
+  "composerWelcomeMorning3",
+  "composerWelcomeMorning4",
+  "composerWelcomeMorning5",
+];
+const WELCOME_AFTERNOON: readonly MessageKey[] = [
+  "composerWelcomeAfternoon1",
+  "composerWelcomeAfternoon2",
+  "composerWelcomeAfternoon3",
+  "composerWelcomeAfternoon4",
+  "composerWelcomeAfternoon5",
+];
+const WELCOME_EVENING: readonly MessageKey[] = [
+  "composerWelcomeEvening1",
+  "composerWelcomeEvening2",
+  "composerWelcomeEvening3",
+  "composerWelcomeEvening4",
+  "composerWelcomeEvening5",
+];
+const WELCOME_NIGHT: readonly MessageKey[] = [
+  "composerWelcomeNight1",
+  "composerWelcomeNight2",
+  "composerWelcomeNight3",
+  "composerWelcomeNight4",
+  "composerWelcomeNight5",
+];
+const WELCOME_GENERAL: readonly MessageKey[] = [
+  "composerWelcomeGeneral1",
+  "composerWelcomeGeneral2",
+  "composerWelcomeGeneral3",
+  "composerWelcomeGeneral4",
+  "composerWelcomeGeneral5",
+];
+
+function pickWelcomeKey(): MessageKey {
+  const hour = new Date().getHours();
+  const pool: readonly MessageKey[] =
+    hour >= 6 && hour < 12
+      ? [...WELCOME_MORNING, ...WELCOME_GENERAL]
+      : hour >= 12 && hour < 18
+        ? [...WELCOME_AFTERNOON, ...WELCOME_GENERAL]
+        : hour >= 18 && hour < 21
+          ? [...WELCOME_EVENING, ...WELCOME_GENERAL]
+          : [...WELCOME_NIGHT, ...WELCOME_GENERAL];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function localizedDocumentError(message: string | undefined, t: Translate): string {
@@ -283,6 +342,12 @@ export function Composer({
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
+  // Re-pick a greeting whenever a new conversation (session) is opened.
+  const welcomeKey = useMemo(
+    () => (welcomeWorkspaceName ? pickWelcomeKey() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [welcomeWorkspaceName, session?.sessionId],
+  );
   const extensionUiRequest = useAppStore((s) => s.extensionUiRequest);
   const extensionDecisionGroups = useAppStore((s) => s.extensionDecisionGroups);
   const draftTarget = draftTargetFor(workspace, session);
@@ -748,7 +813,7 @@ export function Composer({
         { attachmentId: document.id },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? t("composerDocumentRemoveFailed"), "error");
+        pushNotification(localizeHostError(response.error, t), "error");
         return false;
       }
       updateDocuments((current) => current.filter((item) => item.id !== document.id));
@@ -1222,7 +1287,6 @@ export function Composer({
     // path) instead of a vanishing toast; anything else keeps the toast.
     const handleSendFailure = (
       error: { code: string; message: string; details?: JsonValue } | undefined,
-      fallback: string,
     ) => {
       if (error?.code === "AUTH_REQUIRED") {
         const details = error.details;
@@ -1235,7 +1299,7 @@ export function Composer({
               : null,
         });
       } else {
-        pushNotification(error?.message ?? fallback, "error");
+        pushNotification(localizeHostError(error, t), "error");
       }
       restoreDraft();
     };
@@ -1249,7 +1313,7 @@ export function Composer({
           ...attachmentParams,
         });
         if (!res.ok) {
-          handleSendFailure(res.error, t("composerSendFailed"));
+          handleSendFailure(res.error);
         } else {
           commitDraftSend(sendReceipt);
         }
@@ -1263,7 +1327,7 @@ export function Composer({
         null,
       );
       if (!res.ok) {
-        handleSendFailure(res.error, t("composerPromptFailed"));
+        handleSendFailure(res.error);
       } else {
         commitDraftSend(sendReceipt);
         // An accepted prompt means credentials resolved; drop any stale banner.
@@ -1291,7 +1355,7 @@ export function Composer({
       return;
     }
     if (!res.ok) {
-      pushNotification(res.error?.message ?? t("composerAbortFailed"), "error");
+      pushNotification(localizeHostError(res.error, t), "error");
       return;
     }
     setSession(res.result.session);
@@ -1313,13 +1377,13 @@ export function Composer({
           : "shrink-0 px-5 pb-5 pt-2"
       }
     >
-      {welcomeWorkspaceName && (
+      {welcomeWorkspaceName && welcomeKey && (
         <div className="conversation-content-width new-conversation-copy mx-auto mb-6 flex flex-col items-center text-center">
           <PiMark className="mb-4 size-20" />
           <h2 className="max-w-full truncate text-xl font-medium text-foreground">
-            {t("composerStartIn", { workspace: welcomeWorkspaceName })}
+            {t(welcomeKey)}
           </h2>
-          <p className="mt-2 text-sm text-muted">{t("composerQuestion")}</p>
+          <p className="h-4" aria-hidden />
         </div>
       )}
       <QueuePanel />
@@ -1689,10 +1753,7 @@ export function Composer({
             >
               <Paperclip size={16} />
             </button>
-            <ExtensionWidgetsButton
-              open={extensionWidgetsOpen}
-              onToggle={toggleExtensionWidgets}
-            />
+            <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
               <ContextUsageRing />
               <ModelControls />

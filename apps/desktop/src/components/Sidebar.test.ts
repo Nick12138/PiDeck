@@ -37,7 +37,7 @@ describe("Sidebar", () => {
     expect(html).toContain('data-sidebar-brand-toggle="true"');
     expect(html).toContain('data-sidebar-collapsed-toggle-slot="true"');
     expect(html).toContain("h-12 w-14 items-center justify-center");
-    expect(html).toContain("translate-x-0.5 translate-y-0.5");
+    expect(html).toContain("translate-x-0.5 translate-y-[3px]");
     expect(html).toContain("width:0");
     expect(html).toContain('data-sidebar-collapsed="true"');
     expect(html).not.toContain("New conversation");

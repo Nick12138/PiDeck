@@ -384,6 +384,35 @@ describe("executionTraceIsActive", () => {
 });
 
 describe("buildTranscriptRows", () => {
+  it("settles dangling tool calls when the restored session is idle", () => {
+    const messages: SerializableAgentMessage[] = [
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "toolCall", id: "stale-a", name: "bash", arguments: { command: "one" } },
+          { type: "toolCall", id: "stale-b", name: "bash", arguments: { command: "two" } },
+        ],
+      },
+    ];
+
+    const idleRows = buildTranscriptRows(messages, { turnActive: false });
+    const activeRows = buildTranscriptRows(messages, { turnActive: true });
+    const toolStatuses = (rows: ReturnType<typeof buildTranscriptRows>) =>
+      rows[0]?.blocks
+        .filter((block) => block.kind === "tool")
+        .map((block) => ({ status: block.tool.status, result: block.tool.result }));
+
+    expect(toolStatuses(idleRows)).toEqual([
+      { status: "aborted", result: "Operation aborted" },
+      { status: "aborted", result: "Operation aborted" },
+    ]);
+    expect(toolStatuses(activeRows)).toEqual([
+      { status: "waiting", result: undefined },
+      { status: "waiting", result: undefined },
+    ]);
+  });
+
   it("aggregates usage across assistant messages in one turn", () => {
     const baseUsage = {
       input: 10,

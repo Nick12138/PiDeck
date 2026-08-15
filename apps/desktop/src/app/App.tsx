@@ -227,7 +227,7 @@ export function handleHostEvent(
       const summary = summarizeHostFailure(message);
       console.error("[pi-host] fatal", message);
       store.settleHostFailure(summary);
-      store.pushNotification(`Host unavailable: ${summary}`, "error");
+      store.pushNotification(tCurrent("notifHostUnavailable", { summary }), "error");
       break;
     }
     case "workspace.changed":
@@ -475,7 +475,9 @@ export function handleHostEvent(
               ? event.payload.event.message
               : "Agent error";
         useAppStore.getState().setSessionRuntimeState(event.sessionId, "error", message);
-        useAppStore.getState().pushNotification(`Session failed: ${message}`, "error");
+        useAppStore
+          .getState()
+          .pushNotification(tCurrent("notifSessionFailed", { message }), "error");
       }
       break;
     }
@@ -522,6 +524,7 @@ export function handleHostEvent(
 }
 
 export function App() {
+  const t = useT();
   const windowControlsPlatform = resolveWindowControlsPlatform();
   const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
@@ -571,7 +574,7 @@ export function App() {
             if (snapshot.warning) {
               store.pushNotification(
                 snapshot.recoveredFrom
-                  ? `${snapshot.warning}. Backup: ${snapshot.recoveredFrom}`
+                  ? `${snapshot.warning}. ${tCurrent("notifBackupFrom", { path: snapshot.recoveredFrom })}`
                   : snapshot.warning,
                 "warning",
               );
@@ -594,7 +597,9 @@ export function App() {
             terminalProfile: "auto",
           });
           store.pushNotification(
-            `Desktop settings could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+            tCurrent("notifDesktopSettingsLoadFailed", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
             "error",
           );
         }
@@ -817,7 +822,9 @@ export function App() {
                       useAppStore
                         .getState()
                         .pushNotification(
-                          `Could not restore the last session: ${restored.error.message}`,
+                          tCurrent("notifRestoreSessionFailed", {
+                            message: restored.error.message,
+                          }),
                           "warning",
                         );
                     }
@@ -842,7 +849,7 @@ export function App() {
                 useAppStore.getState().settleHostFailure(message);
                 useAppStore
                   .getState()
-                  .pushNotification(`Host recovery failed: ${message}`, "error");
+                  .pushNotification(tCurrent("notifHostRecoveryFailed", { message }), "error");
               }
             }
           })().finally(() => {
@@ -884,7 +891,7 @@ export function App() {
               console.error("[pi-host] transport recovery failed", fullMessage);
               const latestStore = useAppStore.getState();
               latestStore.setHostFatal(message);
-              latestStore.pushNotification(`Host recovery failed: ${message}`, "error");
+              latestStore.pushNotification(tCurrent("notifHostRecoveryFailed", { message }), "error");
               latestStore.setConnecting(false);
             } finally {
               transportRepair = null;
@@ -919,7 +926,7 @@ export function App() {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err);
           store.setHostFatal(message);
-          store.pushNotification(`Desktop startup failed: ${message}`, "error");
+          store.pushNotification(tCurrent("notifDesktopStartupFailed", { message }), "error");
           store.setConnecting(false);
         }
       }
@@ -1047,12 +1054,9 @@ export function App() {
         <main className="relative flex min-w-0 flex-1 flex-col bg-surface">
           {hostFatal ? (
             <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
-              <h2 className="mb-2 font-semibold text-danger">Host unavailable</h2>
+              <h2 className="mb-2 font-semibold text-danger">{t("hostUnavailableTitle")}</h2>
               <p className="text-sm text-muted">{hostFatal}</p>
-              <p className="mt-2 text-xs text-muted">
-                Use Settings → Restart Host after fixing the problem. Packages and Settings remain
-                available when the host recovers.
-              </p>
+              <p className="mt-2 text-xs text-muted">{t("hostUnavailableBody")}</p>
             </div>
           ) : (
             <WorkspaceSwitchTransition>

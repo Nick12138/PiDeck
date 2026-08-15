@@ -32,6 +32,28 @@ function sessionStorageDirs(factory: WorkspaceGraphFactory, g: WorkspaceGraph) {
   return resolveSessionStorageDirs(factory.deps.agentDir, g.canonicalCwd);
 }
 
+/**
+ * Resolve the workspace recorded by an active, Host-managed session file.
+ * The directory listing check prevents an arbitrary JSONL file from causing
+ * a workspace switch merely by declaring a cwd in its header.
+ */
+export async function resolveManagedSessionWorkspace(
+  factory: WorkspaceGraphFactory,
+  sessionPath: string,
+): Promise<string | null> {
+  try {
+    const recordedCwd = SessionManager.open(sessionPath).getCwd();
+    const canonicalCwd = factory.canonicalizeCwd(recordedCwd);
+    const { activeDir } = resolveSessionStorageDirs(factory.deps.agentDir, canonicalCwd);
+    const sessions = await SessionManager.list(canonicalCwd, activeDir);
+    return sessions.some((session) => factory.sessionPathsEqual(session.path, sessionPath))
+      ? canonicalCwd
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 async function listSessionFiles(
   factory: WorkspaceGraphFactory,
   g: WorkspaceGraph,
@@ -802,9 +824,12 @@ export async function openSession(
       return g.sessionSnapshot!;
     }
 
-    // Ensure session belongs to current cwd
-    const listed = await SessionManager.list(g.canonicalCwd);
-    const match = listed.find((s) => s.path === sessionPath);
+    // Ensure the session belongs to the active workspace. Use PiDeck's
+    // configured storage root and normalized path identity: forked paths can
+    // use different separators than the SDK listing on Windows.
+    const { activeDir } = sessionStorageDirs(factory, g);
+    const listed = await SessionManager.list(g.canonicalCwd, activeDir);
+    const match = listed.find((s) => factory.sessionPathsEqual(s.path, sessionPath));
     if (!match) {
       return {
         error: createHostError(
@@ -832,7 +857,7 @@ export async function openSession(
 
     // Opening a session written before the upgrade is the case the migration
     // backup exists for, so record it once the SDK has accepted the file.
-    const sessionManager = SessionManager.open(sessionPath, undefined, g.canonicalCwd);
+    const sessionManager = SessionManager.open(sessionPath, activeDir, g.canonicalCwd);
     await factory.deps.recordMigrationMilestone?.("sessionOpened");
     markStep("sessionManager.open");
     let candidateSession: AgentSession | null = null;
@@ -1097,7 +1122,8 @@ export function prepareForkFile(args: {
         error: createHostError("INVALID_REQUEST", "Only user messages can be forked"),
       };
     }
-    if (!entry.parentId) {
+    const priorEntries = entry.parentId ? source.getBranch(entry.parentId) : [];
+    if (!priorEntries.some((item) => item.type === "message")) {
       return {
         error: createHostError(
           "INVALID_REQUEST",
@@ -1105,7 +1131,7 @@ export function prepareForkFile(args: {
         ),
       };
     }
-    targetLeafId = entry.parentId;
+    targetLeafId = entry.parentId!;
   }
   // Read the display name before branching: createBranchedSession switches
   // the manager to the forked file, and a name set after the branch point

@@ -7,7 +7,10 @@
 ## Session
 
 - Listed only for current workspace cwd (`session.list`).
-- `session.open` rejects paths not in that list (must switch workspace first).
+- `session.open` normally opens paths from that list. For an active session
+  owned by another workspace, Host verifies the file against its recorded
+  workspace, switches there, and then continues the original open request.
+  Archived or unmanaged session files remain rejected.
 - React owns a normalized, workspace-scoped Session Catalog. Page navigation does not clear it.
 - Active Pi snapshots project `running`, `queued`, `idle`, `error`, or `inactive` state into the Catalog.
 - Composer drafts are keyed by Session id, so switching pages or Sessions does not discard input.

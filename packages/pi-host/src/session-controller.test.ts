@@ -1,14 +1,135 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { validateSuccessResult } from "@pideck/protocol";
 import type { HandlerContext } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { IdentityState } from "./identity.js";
 import { TryMutex } from "./locks.js";
 import { createSessionHandlers } from "./session-controller.js";
+import { sessionStorageDirs } from "./session-storage.js";
 
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
 const ACTIVE_SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const BACKGROUND_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+
+describe("session.open", () => {
+  it("switches to the managed session workspace and continues opening it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-cross-workspace-open-"));
+    try {
+      const agentDir = join(root, "agent");
+      const currentCwd = resolve(join(root, "current"));
+      const targetCwd = resolve(join(root, "target"));
+      mkdirSync(currentCwd, { recursive: true });
+      mkdirSync(targetCwd, { recursive: true });
+      const { activeDir } = sessionStorageDirs(agentDir, targetCwd);
+      mkdirSync(activeDir, { recursive: true });
+      const sessionPath = join(activeDir, `${BACKGROUND_SESSION_ID}.jsonl`);
+      writeFileSync(
+        sessionPath,
+        `${JSON.stringify({
+          type: "session",
+          version: 3,
+          id: BACKGROUND_SESSION_ID,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          cwd: targetCwd,
+        })}\n`,
+      );
+
+      const graph = { canonicalCwd: currentCwd };
+      const openedSession = { sessionId: BACKGROUND_SESSION_ID, sessionPath };
+      const openSession = vi
+        .fn()
+        .mockResolvedValueOnce({
+          error: {
+            code: "SESSION_NOT_FOUND",
+            message: "Session is not in the current workspace; switch workspace first",
+          },
+        })
+        .mockResolvedValueOnce(openedSession);
+      const setCurrent = vi.fn(async (cwd: string) => {
+        graph.canonicalCwd = cwd;
+        return { workspace: { canonicalCwd: cwd } };
+      });
+      const factory = {
+        deps: { agentDir },
+        checkIdentity: () => null,
+        getGraph: () => graph,
+        canonicalizeCwd: (cwd: string) => resolve(cwd),
+        sessionPathsEqual: (left: string | undefined, right: string) =>
+          Boolean(left) && resolve(left!).toLowerCase() === resolve(right).toLowerCase(),
+        openSession,
+        setCurrent,
+      } as unknown as WorkspaceGraphFactory;
+
+      const response = await createSessionHandlers(factory)["session.open"]!({
+        id: "55555555-5555-4555-8555-555555555555",
+        method: "session.open",
+        params: { sessionPath },
+        context: {},
+      } as HandlerContext);
+
+      expect(setCurrent).toHaveBeenCalledWith(targetCwd, "55555555-5555-4555-8555-555555555555");
+      expect(openSession).toHaveBeenCalledTimes(2);
+      expect(response).toEqual({ result: openedSession });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not switch for an unmanaged session file", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-unmanaged-session-open-"));
+    try {
+      const agentDir = join(root, "agent");
+      const currentCwd = resolve(join(root, "current"));
+      const targetCwd = resolve(join(root, "target"));
+      mkdirSync(currentCwd, { recursive: true });
+      mkdirSync(targetCwd, { recursive: true });
+      const sessionPath = join(root, "unmanaged.jsonl");
+      writeFileSync(
+        sessionPath,
+        `${JSON.stringify({
+          type: "session",
+          version: 3,
+          id: BACKGROUND_SESSION_ID,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          cwd: targetCwd,
+        })}\n`,
+      );
+
+      const notFound = {
+        error: {
+          code: "SESSION_NOT_FOUND" as const,
+          message: "Session is not in the current workspace; switch workspace first",
+        },
+      };
+      const setCurrent = vi.fn();
+      const factory = {
+        deps: { agentDir },
+        checkIdentity: () => null,
+        getGraph: () => ({ canonicalCwd: currentCwd }),
+        canonicalizeCwd: (cwd: string) => resolve(cwd),
+        sessionPathsEqual: (left: string | undefined, right: string) =>
+          Boolean(left) && resolve(left!).toLowerCase() === resolve(right).toLowerCase(),
+        openSession: vi.fn().mockResolvedValue(notFound),
+        setCurrent,
+      } as unknown as WorkspaceGraphFactory;
+
+      const response = await createSessionHandlers(factory)["session.open"]!({
+        id: "55555555-5555-4555-8555-555555555556",
+        method: "session.open",
+        params: { sessionPath },
+        context: {},
+      } as HandlerContext);
+
+      expect(setCurrent).not.toHaveBeenCalled();
+      expect(response).toEqual(notFound);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("session.list runtime metadata", () => {
   it("includes the active and retained background Runtime states", async () => {

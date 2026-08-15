@@ -50,6 +50,49 @@ export function filterSessionItems(
   return items.filter((item) => (filter === "archived" ? item.archived : !item.archived));
 }
 
+export type SessionTimeGroup = "today" | "thisWeek" | "earlier";
+
+/** Millisecond start-of-day boundary. */
+function startOfDay(now: number): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Millisecond start-of-week boundary (Monday 00:00). */
+function startOfWeek(now: number): number {
+  const d = new Date(startOfDay(now));
+  const day = d.getDay();
+  const mondayOffset = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - mondayOffset);
+  return d.getTime();
+}
+
+export function sessionTimeGroup(updatedAt: number, now: number = Date.now()): SessionTimeGroup {
+  if (updatedAt >= startOfDay(now)) return "today";
+  if (updatedAt >= startOfWeek(now)) return "thisWeek";
+  return "earlier";
+}
+
+/** Split already-sorted (newest first) items into time buckets. */
+export function groupSessionItemsByTime(
+  items: SessionCatalogEntry[],
+  now: number = Date.now(),
+): { group: SessionTimeGroup; items: SessionCatalogEntry[] }[] {
+  const buckets: Record<SessionTimeGroup, SessionCatalogEntry[]> = {
+    today: [],
+    thisWeek: [],
+    earlier: [],
+  };
+  for (const item of items) {
+    buckets[sessionTimeGroup(item.updatedAt, now)].push(item);
+  }
+  return (["today", "thisWeek", "earlier"] as SessionTimeGroup[]).map((group) => ({
+    group,
+    items: buckets[group],
+  }));
+}
+
 export function canReloadSession(
   item: SessionCatalogEntry,
   session: SessionSnapshot | null,

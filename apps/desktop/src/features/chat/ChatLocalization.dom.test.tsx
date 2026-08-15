@@ -44,7 +44,9 @@ describe("Chinese chat localization", () => {
     expect(screen.getByText("读取")).toBeVisible();
     expect(screen.getByText("已完成")).toBeVisible();
     expect(screen.getByText("/workspace/src/app.ts")).toBeVisible();
-    expect(screen.getByText("从 Demo 开始")).toBeVisible();
+    expect(screen.queryByText("从 Demo 开始")).not.toBeInTheDocument();
+    expect(screen.queryByText("你想先处理什么？")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBeTruthy();
     expect(screen.queryByRole("button", { name: "了解代码库" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查找问题" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "运行测试" })).not.toBeInTheDocument();

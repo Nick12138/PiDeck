@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { GitFork, LoaderCircle, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -56,7 +57,7 @@ export function ForkModal({ open, onClose }: { open: boolean; onClose: () => voi
           return;
         }
         if (!res.ok) {
-          setError(res.error?.message ?? t("forkLoadFailed"));
+          setError(localizeHostError(res.error, t));
           return;
         }
         setItems(res.result.items);

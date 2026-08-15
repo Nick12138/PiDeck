@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   FolderTree,
@@ -152,7 +153,16 @@ export function RightDock() {
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const addMenuPanelRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
+  const [addMenuPosition, setAddMenuPosition] = useState<{ left: number; top: number } | null>(
+    null,
+  );
+  const overflowButtonRef = useRef<HTMLElement>(null);
+  const overflowPanelRef = useRef<HTMLDivElement>(null);
+  const [overflowPosition, setOverflowPosition] = useState<{ left: number; top: number } | null>(
+    null,
+  );
   const dockWidthRef = useRef(dockWidth);
   const visibleTabIdsRef = useRef<DockTabId[]>([]);
   dockWidthRef.current = dockWidth;
@@ -202,12 +212,18 @@ export function RightDock() {
   useEffect(() => {
     if (!addMenuOpen) return;
     const frame = window.requestAnimationFrame(() => {
-      addMenuRef.current
+      addMenuPanelRef.current
         ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
         ?.focus();
     });
     const closeOnPointer = (event: PointerEvent) => {
-      if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+      const target = event.target as Node;
+      if (
+        !addMenuRef.current?.contains(target) &&
+        !addMenuPanelRef.current?.contains(target)
+      ) {
+        setAddMenuOpen(false);
+      }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -222,6 +238,31 @@ export function RightDock() {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [addMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!addMenuOpen) return;
+    const button = addButtonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 176;
+    const left = tabOrder.length === 0 ? rect.left : rect.right - menuWidth;
+    setAddMenuPosition({
+      left: Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8)),
+      top: Math.min(rect.bottom + 8, window.innerHeight - 8),
+    });
+  }, [addMenuOpen, tabOrder.length]);
+
+  useLayoutEffect(() => {
+    if (!overflowMenuOpen) return;
+    const button = overflowButtonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 224;
+    setOverflowPosition({
+      left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+      top: Math.min(rect.bottom + 8, window.innerHeight - 8),
+    });
+  }, [overflowMenuOpen]);
 
   useEffect(() => {
     const tabBar = tabBarRef.current;
@@ -527,7 +568,9 @@ export function RightDock() {
             role="tablist"
             aria-label={t("dockPages")}
             data-dock-tab-list
-            className="flex min-w-0 items-end gap-1 self-stretch overflow-hidden pt-1.5"
+            className={`flex min-w-0 items-end gap-1 self-stretch overflow-hidden pt-1.5 ${
+              visibleTabIds.length === 0 ? "hidden" : ""
+            }`}
           >
             {visibleTabIds.map((tabId) => {
               const { label, Icon } = tabInfo(tabId);
@@ -608,13 +651,22 @@ export function RightDock() {
               }}
             >
               <summary
+                ref={overflowButtonRef}
                 title={t("dockMoreTabs")}
                 aria-label={t("dockMoreTabs")}
                 className="flex size-7 cursor-pointer list-none items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground [&::-webkit-details-marker]:hidden"
               >
                 <ChevronDown size={14} />
               </summary>
-              <div className="theme-floating-surface interface-density-compact-menu absolute right-0 top-8 z-50 w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg">
+            </details>
+          )}
+          {overflowMenuOpen && overflowPosition && overflowTabIds.length > 0 &&
+            createPortal(
+              <div
+                ref={overflowPanelRef}
+                style={{ left: overflowPosition.left, top: overflowPosition.top }}
+                className="theme-floating-surface interface-density-compact-menu fixed z-[100] w-56 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg"
+              >
                 {overflowTabIds.map((tabId) => {
                   const { label, Icon } = tabInfo(tabId);
                   return (
@@ -625,10 +677,9 @@ export function RightDock() {
                       <button
                         type="button"
                         className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:text-foreground"
-                        onClick={(event) => {
+                        onClick={() => {
                           setActiveTab(tabId);
                           setOverflowMenuOpen(false);
-                          event.currentTarget.closest("details")?.removeAttribute("open");
                         }}
                       >
                         <Icon size={13} className="shrink-0" />
@@ -646,9 +697,9 @@ export function RightDock() {
                     </div>
                   );
                 })}
-              </div>
-            </details>
-          )}
+              </div>,
+              document.body,
+            )}
 
           <div ref={addMenuRef} className="relative shrink-0">
             <button
@@ -666,85 +717,87 @@ export function RightDock() {
             >
               <Plus size={14} />
             </button>
-            {addMenuOpen && (
-              <div
-                role="menu"
-                className={`theme-floating-surface interface-density-menu absolute top-8 z-[70] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg ${
-                  tabOrder.length === 0 ? "left-0" : "right-0"
-                }`}
-                onKeyDown={(event) => {
-                  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-                    return;
-                  }
-                  const items = Array.from(
-                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                      '[role="menuitem"]:not(:disabled)',
-                    ),
-                  );
-                  if (items.length === 0) return;
-                  event.preventDefault();
-                  const current = items.indexOf(document.activeElement as HTMLButtonElement);
-                  const next =
-                    event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? items.length - 1
-                        : event.key === "ArrowDown"
-                          ? (current + 1 + items.length) % items.length
-                          : (current - 1 + items.length) % items.length;
-                  items[next]?.focus();
-                }}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                  onClick={createFiles}
+            {addMenuOpen && addMenuPosition &&
+              createPortal(
+                <div
+                  ref={addMenuPanelRef}
+                  role="menu"
+                  style={{ left: addMenuPosition.left, top: addMenuPosition.top }}
+                  className="theme-floating-surface interface-density-menu fixed z-[100] w-44 overflow-hidden rounded border border-border bg-surface-raised py-1 shadow-lg"
+                  onKeyDown={(event) => {
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                      return;
+                    }
+                    const items = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        '[role="menuitem"]:not(:disabled)',
+                      ),
+                    );
+                    if (items.length === 0) return;
+                    event.preventDefault();
+                    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+                    const next =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? items.length - 1
+                          : event.key === "ArrowDown"
+                            ? (current + 1 + items.length) % items.length
+                            : (current - 1 + items.length) % items.length;
+                    items[next]?.focus();
+                  }}
                 >
-                  <FolderTree size={14} />
-                  {t("dockFiles")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
-                  onClick={createTree}
-                >
-                  <GitBranch size={14} />
-                  {t("dockSessionTree")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!workspaceCwd}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
-                  onClick={createChanges}
-                >
-                  <GitCompareArrows size={14} />
-                  {t("gitChanges")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={browserTabs.length >= MAX_BROWSER_TABS}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
-                  onClick={createBrowser}
-                >
-                  <Globe2 size={14} />
-                  {t("dockBrowser")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!workspaceCwd}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
-                  onClick={createShell}
-                >
-                  <SquareTerminal size={14} />
-                  {t("dockTerminal")}
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
+                    onClick={createFiles}
+                  >
+                    <FolderTree size={14} />
+                    {t("dockFiles")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
+                    onClick={createTree}
+                  >
+                    <GitBranch size={14} />
+                    {t("dockSessionTree")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!workspaceCwd}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
+                    onClick={createChanges}
+                  >
+                    <GitCompareArrows size={14} />
+                    {t("gitChanges")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={browserTabs.length >= MAX_BROWSER_TABS}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
+                    onClick={createBrowser}
+                  >
+                    <Globe2 size={14} />
+                    {t("dockBrowser")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!workspaceCwd}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay disabled:opacity-40"
+                    onClick={createShell}
+                  >
+                    <SquareTerminal size={14} />
+                    {t("dockTerminal")}
+                  </button>
+                </div>,
+                document.body,
+              )}
           </div>
         </div>
       </div>
@@ -755,7 +808,7 @@ export function RightDock() {
             role="tabpanel"
             id="dock-panel-files"
             aria-labelledby="dock-tab-files"
-            className={`min-h-0 flex-1 ${activeTab === "files" ? "flex" : "hidden"}`}
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === "files" ? "flex" : "hidden"}`}
           >
             <FilesPanel visible={activeTab === "files" && dockOpen} />
           </div>
@@ -765,7 +818,7 @@ export function RightDock() {
             role="tabpanel"
             id="dock-panel-tree"
             aria-labelledby="dock-tab-tree"
-            className={`min-h-0 flex-1 ${activeTab === "tree" ? "flex" : "hidden"}`}
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === "tree" ? "flex" : "hidden"}`}
           >
             <TreePanel visible={activeTab === "tree" && dockOpen} />
           </div>
@@ -775,7 +828,7 @@ export function RightDock() {
             role="tabpanel"
             id="dock-panel-changes"
             aria-labelledby="dock-tab-changes"
-            className={`min-h-0 flex-1 ${activeTab === "changes" ? "flex" : "hidden"}`}
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === "changes" ? "flex" : "hidden"}`}
           >
             <ChangesPanel visible={activeTab === "changes" && dockOpen} />
           </div>
@@ -786,7 +839,7 @@ export function RightDock() {
             role="tabpanel"
             id={`dock-panel-${browserTabId(tab.id)}`}
             aria-labelledby={`dock-tab-${browserTabId(tab.id)}`}
-            className={`min-h-0 flex-1 ${activeTab === browserTabId(tab.id) ? "flex" : "hidden"}`}
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === browserTabId(tab.id) ? "flex" : "hidden"}`}
           >
             <BrowserPanel
               id={tab.id}

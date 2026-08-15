@@ -10,7 +10,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function createSessionFile(options: { name?: string; secondText?: string } = {}) {
+function createSessionFile(
+  options: { name?: string; secondText?: string; metadataBeforeFirst?: boolean } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "pideck-fork-"));
   roots.push(root);
   const cwd = resolve(join(root, "workspace"));
@@ -30,7 +32,25 @@ function createSessionFile(options: { name?: string; secondText?: string } = {})
         timestamp: stamp(0),
         cwd,
       }),
-      ...(options.name
+      ...(options.metadataBeforeFirst
+        ? [
+            JSON.stringify({
+              type: "model_change",
+              id: "model-1",
+              parentId: null,
+              timestamp: stamp(0),
+              provider: "test",
+              modelId: "test-model",
+            }),
+            JSON.stringify({
+              type: "session_info",
+              id: "info-1",
+              parentId: "model-1",
+              timestamp: stamp(0),
+              name: options.name ?? "First prompt",
+            }),
+          ]
+        : options.name
         ? [
             JSON.stringify({
               type: "session_info",
@@ -44,7 +64,7 @@ function createSessionFile(options: { name?: string; secondText?: string } = {})
       JSON.stringify({
         type: "message",
         id: "u1",
-        parentId: null,
+        parentId: options.metadataBeforeFirst ? "info-1" : null,
         timestamp: stamp(1),
         message: { role: "user", content: [{ type: "text", text: "first ask" }] },
       }),
@@ -157,6 +177,21 @@ describe("prepareForkFile", () => {
 
   it("rejects forking before the first message", () => {
     const { cwd, sessionPath } = createSessionFile();
+
+    const prepared = prepareForkFile({
+      sessionFile: sessionPath,
+      canonicalCwd: cwd,
+      entryId: "u1",
+    });
+
+    expect("error" in prepared && prepared.error.code).toBe("INVALID_REQUEST");
+  });
+
+  it("rejects a first-message fork when only metadata precedes the user entry", () => {
+    const { cwd, sessionPath } = createSessionFile({
+      name: "First prompt",
+      metadataBeforeFirst: true,
+    });
 
     const prepared = prepareForkFile({
       sessionFile: sessionPath,

@@ -110,4 +110,14 @@ describe("ChatPage conversation width", () => {
     expect(screen.getByRole("heading", { name: "New conversation" })).toBeVisible();
     expect(container.querySelector("[data-chat-status]")).toHaveTextContent("Ready");
   });
+
+  it("shows the transcript (not the welcome screen) for a session pinned via tree navigation", () => {
+    useAppStore.getState().applySessionSnapshot(session());
+    useAppStore.getState().setSessionTreeNavigated(true);
+
+    const { container } = render(<ChatPage />);
+
+    expect(screen.queryByText("Start in", { exact: false })).toBeNull();
+    expect(container.querySelector("[data-transcript-content]")).not.toBeNull();
+  });
 });

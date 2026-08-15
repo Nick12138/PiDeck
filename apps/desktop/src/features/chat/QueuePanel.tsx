@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, Pencil, Play, Trash2, ArrowUp, Check, Paperclip, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { activeSessionContext } from "../../lib/bridge/host-context";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import {
@@ -88,7 +89,7 @@ export function QueuePanel() {
         },
       );
       if (!res.ok) {
-        pushNotification(res.error?.message ?? t("queueUpdateFailed"), "error");
+        pushNotification(localizeHostError(res.error, t), "error");
       }
     } finally {
       setBusyOp(false);
@@ -112,7 +113,7 @@ export function QueuePanel() {
         },
       );
       if (!response.ok) {
-        pushNotification(response.error?.message ?? t("queueRunNowFailed"), "error");
+        pushNotification(localizeHostError(response.error, t), "error");
         return;
       }
       const current = useAppStore.getState().session;

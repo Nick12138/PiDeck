@@ -158,6 +158,28 @@ describe("ModelControls model menu width", () => {
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
   });
 
+  it("shows the Provider display name from the catalog on the current-model button", async () => {
+    const snapshotModel = { ...MODEL, providerName: undefined };
+    const catalogModel = { ...MODEL, providerName: "天机阁" };
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [catalogModel],
+        current: catalogModel,
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    // The model catalog is only fetched once the Host connection settles.
+    useAppStore.getState().setConnecting(false);
+    useAppStore.getState().applySessionSnapshot(session(snapshotModel));
+
+    render(<ModelControls />);
+
+    await screen.findByRole("button", { name: "天机阁/Grok 4.5" });
+    useAppStore.getState().setConnecting(true);
+  });
+
   it("floats the width to fit the widest model name in the list", async () => {
     // jsdom reports scrollWidth = 0 for the hidden measure span, so synthesise
     // measured widths so the auto-width effect has something to clamp. The

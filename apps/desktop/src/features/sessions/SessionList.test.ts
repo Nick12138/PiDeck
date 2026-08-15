@@ -7,6 +7,7 @@ import {
   canReloadSession,
   canRenameSession,
   filterSessionItems,
+  groupSessionItemsByTime,
   requestSessionRpcWithRetry,
   removedArchivedSessionIds,
   sessionDisplayName,
@@ -269,6 +270,60 @@ describe("filterSessionItems", () => {
   it("keeps archived Sessions out of the active view", () => {
     expect(filterSessionItems(items, "active")).toEqual(items.slice(0, 2));
     expect(filterSessionItems(items, "archived")).toEqual([items[2]]);
+  });
+});
+
+describe("groupSessionItemsByTime", () => {
+  const makeItem = (sessionId: string, updatedAt: number) => ({
+    sessionId,
+    sessionPath: `C:/sessions/${sessionId}.jsonl`,
+    cwd: "C:/workspace/alpha",
+    updatedAt,
+    runtimeState: "inactive" as const,
+  });
+
+  it("buckets items into today, this week, and earlier", () => {
+    // Wed 2024-05-15 12:00 local
+    const now = new Date(2024, 4, 15, 12, 0, 0).getTime();
+    const todayMs = new Date(2024, 4, 15, 9, 0, 0).getTime();
+    const thisWeekMs = new Date(2024, 4, 14, 9, 0, 0).getTime();
+    const lastWeekMs = new Date(2024, 4, 1, 9, 0, 0).getTime();
+
+    const result = groupSessionItemsByTime(
+      [makeItem("earlier", lastWeekMs), makeItem("today", todayMs), makeItem("week", thisWeekMs)],
+      now,
+    );
+
+    expect(result.map(({ group }) => group)).toEqual(["today", "thisWeek", "earlier"]);
+    expect(result[0].items.map((i) => i.sessionId)).toEqual(["today"]);
+    expect(result[1].items.map((i) => i.sessionId)).toEqual(["week"]);
+    expect(result[2].items.map((i) => i.sessionId)).toEqual(["earlier"]);
+  });
+
+  it("returns all buckets in stable order, including empty ones", () => {
+    const now = new Date(2024, 4, 15, 12, 0, 0).getTime();
+    const todayMs = new Date(2024, 4, 15, 9, 0, 0).getTime();
+    const result = groupSessionItemsByTime([makeItem("today", todayMs)], now);
+    expect(result.map(({ group }) => group)).toEqual(["today", "thisWeek", "earlier"]);
+    expect(result[1].items).toEqual([]);
+    expect(result[2].items).toEqual([]);
+  });
+
+  it("considers the start of the current week (Monday) as thisWeek boundary", () => {
+    // Friday 2024-05-17 12:00; Monday of this week is 05-13
+    const now = new Date(2024, 4, 17, 12, 0, 0).getTime();
+    const mondayMs = new Date(2024, 4, 13, 23, 59, 0).getTime();
+    const sundayPrevMs = new Date(2024, 4, 12, 23, 59, 0).getTime();
+    const result = groupSessionItemsByTime(
+      [makeItem("monday", mondayMs), makeItem("sunday", sundayPrevMs)],
+      now,
+    );
+    expect(result[0].group).toBe("today");
+    expect(result[0].items).toEqual([]);
+    expect(result[1].group).toBe("thisWeek");
+    expect(result[1].items.map((i) => i.sessionId)).toEqual(["monday"]);
+    expect(result[2].group).toBe("earlier");
+    expect(result[2].items.map((i) => i.sessionId)).toEqual(["sunday"]);
   });
 });
 

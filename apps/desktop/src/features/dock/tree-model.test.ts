@@ -76,10 +76,15 @@ describe("entryExcerpt", () => {
     expect(entryExcerpt(toolResultNode("t").entry).kind).toBe("other");
   });
 
-  it("truncates long first lines", () => {
-    const { excerpt } = entryExcerpt(userNode("u", "x".repeat(200)).entry);
+  it("truncates long first lines to the supplied limit", () => {
+    const { excerpt } = entryExcerpt(userNode("u", "x".repeat(200)).entry, 96);
     expect(excerpt.length).toBeLessThanOrEqual(96);
     expect(excerpt.endsWith("…")).toBe(true);
+  });
+
+  it("keeps text under the supplied limit without truncating", () => {
+    const { excerpt } = entryExcerpt(userNode("u", "short").entry, 200);
+    expect(excerpt).toBe("short");
   });
 });
 
@@ -270,5 +275,14 @@ describe("flattenSessionTree", () => {
   it("marks nothing without a leaf", () => {
     expect(currentPathIds(TREE, null).size).toBe(0);
     expect(flattenSessionTree(TREE, null).rows.some((row) => row.isCurrent)).toBe(false);
+  });
+
+  it("shortens excerpts as the maxChars budget shrinks", () => {
+    const long = userNode("u", "a".repeat(200), []);
+    const wide = flattenSessionTree([long], null, 200);
+    const narrow = flattenSessionTree([long], null, 20);
+    expect(wide.rows[0]!.excerpt.length).toBe(200);
+    expect(narrow.rows[0]!.excerpt.length).toBeLessThanOrEqual(20);
+    expect(narrow.rows[0]!.excerpt.endsWith("…")).toBe(true);
   });
 });

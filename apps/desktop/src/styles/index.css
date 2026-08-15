@@ -943,7 +943,6 @@ html[data-theme-family="apple"] [data-dock-tab-list] {
   align-items: stretch;
   gap: 2px;
   overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background-color: var(--color-surface-inset);
   padding: 3px;
@@ -1418,22 +1417,6 @@ textarea:focus-visible {
    native scroll anchoring would adjust a second time and cause jitter. */
 [data-transcript-scroll] {
   overflow-anchor: none;
-}
-
-/* Row highlight after a navigation jump (outline/find/search). Duration is
-   mirrored by JUMP_FLASH_MS in Transcript.tsx. */
-.transcript-row[data-jump-flash="true"] {
-  border-radius: 10px;
-  animation: transcript-jump-flash 1.4s ease-out;
-}
-
-@keyframes transcript-jump-flash {
-  0% {
-    background-color: color-mix(in srgb, var(--color-accent) 16%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
 }
 
 /* Keep the long-running trace indicator on WebKit's compositor while the

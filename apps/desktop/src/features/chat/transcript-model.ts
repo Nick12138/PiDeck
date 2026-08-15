@@ -115,6 +115,8 @@ export type BuildTranscriptOptions = {
   entries?: readonly SerializableSessionEntry[];
   leafId?: string | null;
   extensionMessageRenders?: Readonly<Record<string, ExtensionMessageRenderSnapshot>>;
+  /** Authoritative Host state used to settle tool calls left open by an interrupted run. */
+  turnActive?: boolean;
 };
 
 export function findStreamingAssistantKey(
@@ -1094,6 +1096,24 @@ export function buildTranscriptRows(
     // context boundary; this prevents unrelated assistant turns from merging.
     resetAssistant();
   });
+
+  if (input.turnActive === false) {
+    for (const row of rows) {
+      for (const block of row.blocks) {
+        if (
+          block.kind !== "tool" ||
+          (block.tool.status !== "waiting" && block.tool.status !== "running")
+        ) {
+          continue;
+        }
+        block.tool = {
+          ...block.tool,
+          status: "aborted",
+          ...(block.tool.result === undefined ? { result: "Operation aborted" } : {}),
+        };
+      }
+    }
+  }
 
   return rows.map(({ rounds, ...row }) => ({
     ...row,

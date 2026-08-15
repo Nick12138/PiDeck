@@ -360,6 +360,31 @@ describe("Transcript Session-open scrolling", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("shows dangling tool calls as stopped after an interrupted Session becomes idle", () => {
+    act(() =>
+      useAppStore.setState({
+        session: {
+          ...session(SESSION_A, "Interrupted Session"),
+          messages: [
+            {
+              role: "assistant",
+              stopReason: "toolUse",
+              content: [
+                { type: "toolCall", id: "stale-a", name: "bash", arguments: {} },
+                { type: "toolCall", id: "stale-b", name: "bash", arguments: {} },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<Transcript />);
+
+    expect(screen.getByText("Stopped after 2 actions")).toBeInTheDocument();
+    expect(screen.queryByText("Running 2 actions")).not.toBeInTheDocument();
+  });
+
   describe("progressive mounting", () => {
     /** Fake metrics, then release the tail pin with an upward history read. */
     function unfollow(scroll: HTMLElement) {
@@ -425,7 +450,7 @@ describe("Transcript Session-open scrolling", () => {
       expect(container.querySelectorAll(".transcript-row")).toHaveLength(150);
     });
 
-    it("jumps to an unmounted row, mounting and flashing it", () => {
+    it("jumps to an unmounted row, mounting it", () => {
       const longA = longSession(SESSION_A, 150);
       act(() => useAppStore.setState({ session: longA }));
       const { container } = render(<Transcript />);
@@ -440,9 +465,7 @@ describe("Transcript Session-open scrolling", () => {
       expect(handled).toBe(true);
       // hidden dropped to the target index minus context rows (5 - 3 = 2).
       expect(container.querySelectorAll(".transcript-row")).toHaveLength(148);
-      const flashed = container.querySelector('[data-jump-flash="true"]');
-      expect(flashed).not.toBeNull();
-      expect(flashed).toHaveAttribute("data-row-key", targetKey);
+      expect(container.querySelector(`[data-row-key="${CSS.escape(targetKey)}"]`)).not.toBeNull();
     });
 
     it("restores the reading position when switching back to a session", () => {

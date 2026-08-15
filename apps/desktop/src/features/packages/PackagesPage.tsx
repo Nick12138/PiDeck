@@ -29,6 +29,7 @@ import type {
   WorkspaceSnapshot,
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   captureRequestGeneration,
   captureWorkspaceAuthorization,
@@ -423,7 +424,7 @@ export function PackagesPage() {
       }
       const current = useAppStore.getState();
       if (!isCurrentRequest()) return;
-      if (!response.ok) throw new Error(response.error?.message ?? t("notifPackagesLoadFailed"));
+      if (!response.ok) throw new Error(localizeHostError(response.error, t));
       setPackages(response.result);
       const nextHost = current.host && mergeHostIdentity(current.host, response);
       if (nextHost) current.setHost(nextHost);
@@ -466,7 +467,7 @@ export function PackagesPage() {
       }
       if (!response.ok) {
         setMarketState("error");
-        setMarketError(response.error?.message ?? t("packagesMarketError"));
+        setMarketError(localizeHostError(response.error, t));
         return;
       }
       setMarketCatalog(response.result);
@@ -636,7 +637,7 @@ export function PackagesPage() {
       )
         return;
       if (!response.ok)
-        throw new Error(response.error?.message ?? t("notifPackagesOperationFailed"));
+        throw new Error(localizeHostError(response.error, t));
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -764,7 +765,7 @@ export function PackagesPage() {
       )
         return;
       if (!response.ok)
-        throw new Error(response.error?.message ?? t("notifPackagesUpdateCheckFailed"));
+        throw new Error(localizeHostError(response.error, t));
       const updateIds = new Set(response.result.updates.map((update) => update.packageId));
       if (current.packages?.workspaceId === workspace.id) {
         setPackages({

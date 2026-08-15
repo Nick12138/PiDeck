@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -109,7 +110,7 @@ export function WorkspacePicker() {
         return;
       }
       if (!res.ok) {
-        pushNotification(res.error?.message ?? t("notifSetWorkspaceFailed"), "error");
+        pushNotification(localizeHostError(res.error, t), "error");
         return;
       }
 

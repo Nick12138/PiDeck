@@ -1,5 +1,6 @@
 import { useAppStore, type ExtensionTerminalState } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import {
   clearExtensionTerminal,
@@ -33,7 +34,7 @@ export async function cancelExtensionTerminal(
       requestId: panel.requestId,
       data: "\u001b",
     });
-    return res.ok ? null : (res.error?.message ?? tCurrent("dockExtensionCloseFailed"));
+    return res.ok ? null : localizeHostError(res.error, tCurrent);
   } catch (error) {
     return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
   }
@@ -52,7 +53,7 @@ export async function forceCloseExtensionTerminal(
       requestId: panel.requestId,
       status: "cancelled",
     });
-    return res.ok ? null : (res.error?.message ?? tCurrent("dockExtensionCloseFailed"));
+    return res.ok ? null : localizeHostError(res.error, tCurrent);
   } catch (error) {
     return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
   }

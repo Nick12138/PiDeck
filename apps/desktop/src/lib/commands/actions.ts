@@ -1,4 +1,5 @@
 import { hostClient } from "../bridge/host-client";
+import { localizeHostError } from "../bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -59,7 +60,7 @@ export async function createNewSession(): Promise<boolean> {
     if (!response.ok) {
       useAppStore
         .getState()
-        .pushNotification(response.error?.message ?? tCurrent("notifCreateSessionFailed"), "error");
+        .pushNotification(localizeHostError(response.error, tCurrent), "error");
       return false;
     }
     const current = useAppStore.getState();
@@ -130,7 +131,7 @@ export async function abortCurrentAgent(): Promise<boolean> {
     if (!response.ok) {
       useAppStore
         .getState()
-        .pushNotification(response.error?.message ?? tCurrent("composerAbortFailed"), "error");
+        .pushNotification(localizeHostError(response.error, tCurrent), "error");
       return false;
     }
     useAppStore.getState().applySessionSnapshot(response.result.session);

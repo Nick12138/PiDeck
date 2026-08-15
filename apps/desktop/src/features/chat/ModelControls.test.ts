@@ -3,6 +3,7 @@ import type { ModelSummary } from "@pideck/protocol";
 import {
   canRequestModelList,
   clampModelMenuWidth,
+  currentModelLabel,
   includeCurrentModel,
   modelMenuMaxWidth,
   modelOptionLabel,
@@ -57,6 +58,22 @@ describe("modelOptionLabel", () => {
 
   it("falls back to the Provider ID when no display name is present", () => {
     expect(modelOptionLabel({ ...current, providerName: undefined })).toBe("muapi/Grok 4.5");
+  });
+});
+
+describe("currentModelLabel", () => {
+  it("prefers the Provider display name from the model catalog", () => {
+    const snapshotModel = { ...current, providerName: undefined };
+    const catalog = [{ ...current, providerName: "天机阁" }];
+    expect(currentModelLabel(snapshotModel, catalog, "")).toBe("天机阁/Grok 4.5");
+  });
+
+  it("falls back to the snapshot summary when the model is not in the catalog", () => {
+    expect(currentModelLabel(current, [], "")).toBe("muapi/Grok 4.5");
+  });
+
+  it("returns the fallback when there is no current model", () => {
+    expect(currentModelLabel(undefined, [current], "No model")).toBe("No model");
   });
 });
 

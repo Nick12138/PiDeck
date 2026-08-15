@@ -91,7 +91,22 @@ export function createSessionHandlers(
       });
       if (stale) return { error: stale };
       const params = ctx.params as { sessionPath: string };
-      const result = await factory.openSession(ctx.id, params.sessionPath);
+      let result = await factory.openSession(ctx.id, params.sessionPath);
+      if (
+        result &&
+        typeof result === "object" &&
+        "error" in result &&
+        result.error.code === "SESSION_NOT_FOUND"
+      ) {
+        const { resolveManagedSessionWorkspace } = await import("./session-lifecycle.js");
+        const targetCwd = await resolveManagedSessionWorkspace(factory, params.sessionPath);
+        const currentCwd = factory.getGraph()?.canonicalCwd;
+        if (targetCwd && !factory.sessionPathsEqual(currentCwd, targetCwd)) {
+          const switched = await factory.setCurrent(targetCwd, ctx.id);
+          if ("error" in switched) return { error: switched.error };
+          result = await factory.openSession(ctx.id, params.sessionPath);
+        }
+      }
       if (result && typeof result === "object" && "error" in result) {
         return { error: result.error };
       }

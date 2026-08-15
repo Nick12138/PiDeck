@@ -66,7 +66,10 @@ import {
   scheduleIdleMount,
   SCROLL_QUIET_MS,
 } from "./progressive-mount";
-import { subscribeTranscriptScroll } from "../../lib/transcript-navigation";
+import {
+  subscribeTranscriptScroll,
+  type TranscriptScrollRequest,
+} from "../../lib/transcript-navigation";
 import {
   forgetTranscriptScrollPosition,
   readTranscriptScrollPosition,
@@ -111,8 +114,6 @@ const INITIAL_VISIBLE_ROWS = 60;
 const SHOW_EARLIER_CHUNK = 120;
 /** Rows mounted above a jump target for reading context. */
 const JUMP_CONTEXT_ROWS = 3;
-/** Matches the transcript-jump-flash animation duration in index.css. */
-const JUMP_FLASH_MS = 1400;
 
 /** Reopen a session at its remembered reading position, else at the tail. */
 function initialHiddenFor(sessionId: string | null, rowCount: number): number {
@@ -136,9 +137,16 @@ export function Transcript() {
           entries: session?.entries,
           leafId: session?.leafId,
           extensionMessageRenders: session?.extensionMessageRenders,
+          turnActive: session?.isIdle === false,
         }),
       ),
-    [messages, session?.entries, session?.leafId, session?.extensionMessageRenders],
+    [
+      messages,
+      session?.entries,
+      session?.leafId,
+      session?.extensionMessageRenders,
+      session?.isIdle,
+    ],
   );
   prevRowsRef.current = rows;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -254,23 +262,6 @@ export function Transcript() {
   // transcript-navigation bus; unmounted targets mount synchronously first
   // and the centering runs from the layout effect once the row exists.
   const pendingJumpKeyRef = useRef<string | null>(null);
-  const [flashRowKey, setFlashRowKey] = useState<string | null>(null);
-  const flashTimerRef = useRef<number | null>(null);
-
-  const flashRow = useCallback((key: string) => {
-    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
-    setFlashRowKey(key);
-    flashTimerRef.current = window.setTimeout(() => {
-      flashTimerRef.current = null;
-      setFlashRowKey(null);
-    }, JUMP_FLASH_MS);
-  }, []);
-  useEffect(
-    () => () => {
-      if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
-    },
-    [],
-  );
 
   const centerRow = useCallback(
     (key: string): boolean => {
@@ -288,14 +279,21 @@ export function Transcript() {
         height: scroller.scrollHeight,
       };
       refreshReadingAnchor();
-      flashRow(key);
       return true;
     },
-    [flashRow, refreshReadingAnchor],
+    [refreshReadingAnchor],
   );
 
-  const scrollToRowRef = useRef<(key: string) => boolean>(() => false);
-  scrollToRowRef.current = (key) => {
+  const scrollToRowRef = useRef<(request: TranscriptScrollRequest) => boolean>(() => false);
+  scrollToRowRef.current = (request) => {
+    let key = request.rowKey;
+    if (key === undefined && request.sourceId) {
+      const match = rows.find(
+        (row) => row.sourceId === request.sourceId || row.sourceEndId === request.sourceId,
+      );
+      key = match?.key;
+    }
+    if (key === undefined) return false;
     const index = rows.findIndex((row) => row.key === key);
     if (index < 0) return false;
     stopFollowing();
@@ -310,7 +308,7 @@ export function Transcript() {
     return centerRow(key);
   };
   useEffect(
-    () => subscribeTranscriptScroll((request) => scrollToRowRef.current(request.rowKey)),
+    () => subscribeTranscriptScroll((request) => scrollToRowRef.current(request)),
     [],
   );
 
@@ -551,7 +549,6 @@ export function Transcript() {
               <div
                 className="transcript-row"
                 data-row-key={row.key}
-                data-jump-flash={row.key === flashRowKey || undefined}
                 key={`${session?.sessionId ?? "session"}:${row.key}`}
                 onContextMenu={(event) => {
                   if (shouldKeepNativeContextMenu(event.nativeEvent)) return;

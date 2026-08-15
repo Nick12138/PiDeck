@@ -30,13 +30,14 @@ export type TreeRow = {
 
 export type SessionTreeLayout = { rows: TreeRow[]; laneCount: number };
 
-const EXCERPT_LIMIT = 96;
+/** Hard ceiling (CSS ellipsis handles the precise width-based cutoff). */
+const EXCERPT_LIMIT = 512;
 const ASSISTANT_PLACEHOLDER = "(assistant message)";
 
-function firstTextLine(text: string): string {
+function firstTextLine(text: string, limit: number): string {
   const line = text.split("\n").find((candidate) => candidate.trim().length > 0) ?? "";
   const trimmed = line.trim();
-  return trimmed.length > EXCERPT_LIMIT ? `${trimmed.slice(0, EXCERPT_LIMIT - 1)}…` : trimmed;
+  return trimmed.length > limit ? `${trimmed.slice(0, limit - 1)}…` : trimmed;
 }
 
 function messageText(content: JsonValue | undefined): string {
@@ -56,7 +57,10 @@ function messageText(content: JsonValue | undefined): string {
   return "";
 }
 
-export function entryExcerpt(entry: { type: string; [key: string]: JsonValue | undefined }): {
+export function entryExcerpt(
+  entry: { type: string; [key: string]: JsonValue | undefined },
+  limit = EXCERPT_LIMIT,
+): {
   kind: TreeRowKind;
   excerpt: string;
 } {
@@ -64,7 +68,7 @@ export function entryExcerpt(entry: { type: string; [key: string]: JsonValue | u
     const message = entry.message;
     if (typeof message === "object" && message !== null && !Array.isArray(message)) {
       const role = message.role;
-      const text = firstTextLine(messageText(message.content));
+      const text = firstTextLine(messageText(message.content), limit);
       if (role === "user") return { kind: "user", excerpt: text || "(user message)" };
       if (role === "assistant") {
         return { kind: "assistant", excerpt: text || ASSISTANT_PLACEHOLDER };
@@ -130,9 +134,12 @@ type TurnNode = {
  * entries (tool-call segments) collapses into one node ending at the last
  * segment. Branch points break the run so every branch stays addressable.
  */
-function buildConversationTurns(nodes: SerializableSessionTreeNode[]): TurnNode[] {
+function buildConversationTurns(
+  nodes: SerializableSessionTreeNode[],
+  limit: number,
+): TurnNode[] {
   const toTurn = (node: SerializableSessionTreeNode): TurnNode => {
-    const { kind, excerpt } = entryExcerpt(node.entry);
+    const { kind, excerpt } = entryExcerpt(node.entry, limit);
     const ids = [node.entry.id];
     let turnExcerpt = excerpt;
     let label = node.label;
@@ -156,7 +163,7 @@ function buildConversationTurns(nodes: SerializableSessionTreeNode[]): TurnNode[
       children: tail.children.map(toTurn),
     };
   };
-  return filterConversationTree(nodes).map(toTurn);
+  return filterConversationTree(nodes).map((node) => toTurn(node));
 }
 
 /**
@@ -171,6 +178,7 @@ function buildConversationTurns(nodes: SerializableSessionTreeNode[]): TurnNode[
 export function flattenSessionTree(
   nodes: SerializableSessionTreeNode[],
   leafId: string | null,
+  maxChars = EXCERPT_LIMIT,
 ): SessionTreeLayout {
   const path = currentPathIds(nodes, leafId);
   const rows: TreeRow[] = [];
@@ -226,7 +234,7 @@ export function flattenSessionTree(
   };
 
   let rootMax = -1;
-  buildConversationTurns(nodes).forEach((turn, index) => {
+  buildConversationTurns(nodes, maxChars).forEach((turn, index) => {
     rootMax = Math.max(rootMax, visit(turn, index === 0 ? 0 : rootMax + 1, null, false));
   });
 
