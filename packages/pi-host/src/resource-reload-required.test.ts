@@ -253,12 +253,12 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     } as never);
 
     expect("error" in out).toBe(false);
-    expect(factory.setActiveSessionName).toHaveBeenCalledWith("修复 session 恢复问题");
+    expect(factory.setActiveSessionName).toHaveBeenCalledWith("🐛 修复 session 恢复问题");
     await vi.waitFor(() => {
       expect(factory.refineActiveSessionName).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: "s1",
-          provisionalTitle: "修复 session 恢复问题",
+          provisionalTitle: "🐛 修复 session 恢复问题",
           userPrompt: "修复 session 恢复问题。然后补测试",
         }),
       );

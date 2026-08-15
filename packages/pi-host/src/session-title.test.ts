@@ -16,14 +16,29 @@ import {
 describe("session titles", () => {
   it("creates a concise provisional title from the first sentence", () => {
     expect(createProvisionalSessionTitle("修复 session 恢复问题。然后补测试")).toBe(
-      "修复 session 恢复问题",
+      "🐛 修复 session 恢复问题",
     );
-    expect(createProvisionalSessionTitle("   ")).toBe("新会话");
+    expect(createProvisionalSessionTitle("   ")).toBe("💬 新会话");
   });
 
   it("cleans model labels, quotes, punctuation, and excessive length", () => {
-    expect(sanitizeSessionTitle('标题："修复桌面会话恢复。"')).toBe("修复桌面会话恢复");
-    expect(sanitizeSessionTitle("a".repeat(40))).toBe(`${"a".repeat(27)}…`);
+    expect(sanitizeSessionTitle('标题："修复桌面会话恢复。"')).toBe("🐛 修复桌面会话恢复");
+    expect(sanitizeSessionTitle("a".repeat(40))).toBe(`💬 ${"a".repeat(25)}…`);
+  });
+
+  it("keeps an existing leading emoji and avoids a duplicate emoji", () => {
+    expect(sanitizeSessionTitle("🌊 修复会话恢复。")).toBe("🌊 修复会话恢复");
+  });
+
+  it("picks a topic-related emoji when the title has none", () => {
+    expect(sanitizeSessionTitle("修复登录 bug")).toBe("🐛 修复登录 bug");
+    expect(sanitizeSessionTitle("配置部署流水线")).toBe("⚙️ 配置部署流水线");
+    expect(sanitizeSessionTitle("添加单元测试覆盖")).toBe("🧪 添加单元测试覆盖");
+    expect(sanitizeSessionTitle("优化数据库查询性能")).toBe("⚡ 优化数据库查询性能");
+  });
+
+  it("strips emoji embedded mid-title to keep exactly one", () => {
+    expect(sanitizeSessionTitle("修复 bug 🚀 发布")).toBe("🐛 修复 bug 发布");
   });
 
   it("extracts the latest assistant text blocks", () => {
@@ -67,8 +82,13 @@ describe("session titles", () => {
       complete,
     });
 
-    expect(title).toBe("Restore desktop sessions");
+    expect(title).toBe("💬 Restore desktop sessions");
     expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]?.[1]).toMatchObject({
+      systemPrompt: expect.stringContaining(
+        "Begin with exactly one emoji that matches the topic, and use no other emoji",
+      ),
+    });
     expect(complete.mock.calls[0]?.[2]).toMatchObject({
       apiKey: "test-key",
       maxTokens: 64,
