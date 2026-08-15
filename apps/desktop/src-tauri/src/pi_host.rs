@@ -1235,15 +1235,21 @@ impl PiHostManager {
         &self.route_id
     }
 
-    pub async fn replay_ready_event(&self) -> Result<(), String> {
-        let line = self
-            .last_ready_line
-            .lock()
-            .await
-            .clone()
-            .ok_or_else(|| "Host has not announced ready yet".to_string())?;
-        self.emit_stdout(line);
-        Ok(())
+    /// Replay the last `host.ready` line to a renderer that attached late (e.g.
+    /// after a window reload) and therefore missed the live event. Best-effort:
+    /// on a cold start the Host is still booting, so there is nothing to replay
+    /// yet — the live `host.ready` line arrives on the stdout stream shortly.
+    /// Only a process that is already gone is a hard failure worth surfacing.
+    pub async fn replay_ready_event(&mut self) -> Result<(), String> {
+        if let Some(line) = self.last_ready_line.lock().await.clone() {
+            self.emit_stdout(line);
+            return Ok(());
+        }
+        if self.is_running() {
+            Ok(())
+        } else {
+            Err("Host has not announced ready yet".to_string())
+        }
     }
 
     pub fn set_agent_dir(&mut self, dir: PathBuf) {

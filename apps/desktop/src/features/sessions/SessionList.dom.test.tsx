@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostStatusSnapshot, SessionSummary, WorkspaceSnapshot } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import { closeContextMenu } from "../../lib/context-menu";
+import { MenuHost } from "../../components/Menu";
 import { SessionList } from "./SessionList";
 
 const summary: SessionSummary = {
@@ -44,7 +46,7 @@ const workspace: WorkspaceSnapshot = {
   servicesReady: true,
 };
 
-describe("SessionList menu", () => {
+describe("SessionList actions", () => {
   beforeEach(() => {
     useAppStore.setState({
       host,
@@ -63,33 +65,34 @@ describe("SessionList menu", () => {
   });
 
   afterEach(() => {
+    closeContextMenu();
     cleanup();
     vi.restoreAllMocks();
   });
 
-  it("portals the fixed menu out of the transformed collapsible region", () => {
+  it("archives the session directly when the archive button is clicked", async () => {
     render(<SessionList />);
-    const trigger = screen.getByRole("button", { name: "Session actions" });
-    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
-      x: 186,
-      y: 118,
-      width: 22,
-      height: 22,
-      top: 118,
-      right: 208,
-      bottom: 140,
-      left: 186,
-      toJSON: () => ({}),
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(hostClient.request).toHaveBeenCalledWith(
+        "session.archive",
+        expect.anything(),
+        { sessionId: "session-1", sessionPath: "/sessions/session-1.jsonl" },
+      );
     });
+  });
 
-    fireEvent.click(trigger);
-
-    const menu = document.body.querySelector<HTMLElement>(
-      ".theme-floating-surface[data-session-menu]",
+  it("exposes reload and archive in the session context menu", async () => {
+    render(
+      <>
+        <MenuHost />
+        <SessionList />
+      </>,
     );
-    expect(menu).not.toBeNull();
-    expect(trigger.closest(".collapsible-region__content")).not.toBeNull();
-    expect(menu?.closest(".collapsible-region__content")).toBeNull();
-    expect(menu).toHaveStyle({ left: "64px", top: "144px" });
+    fireEvent.contextMenu(screen.getByText("Position the menu"));
+
+    expect(await screen.findByRole("menuitem", { name: "Reload" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument();
   });
 });

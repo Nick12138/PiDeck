@@ -556,7 +556,11 @@ export function RightDock() {
       )}
 
       <div
-        data-tauri-drag-region
+        // The single flex-1 child fills the whole strip, so a bare drag region
+        // would only be reachable through the pr-[180px] padding. "deep" makes
+        // every non-clickable part of the strip drag the window, while tabs and
+        // buttons still block drag and stay interactive.
+        data-tauri-drag-region="deep"
         data-dock-header
         className="flex h-11 shrink-0 items-center border-b border-border pl-2 pr-[180px]"
       >

@@ -467,7 +467,6 @@ export function ProvidersSettings() {
             }
           : current,
       );
-      pushNotification(t("notifFoundModels", { count: response.result.models.length }));
     } catch (error) {
       pushNotification(
         error instanceof Error ? error.message : t("notifFetchModelsFailed"),

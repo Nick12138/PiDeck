@@ -481,7 +481,7 @@ describe("ProvidersSettings in-flight guards", () => {
     const user = userEvent.setup();
     const second = { ...model(), id: "a0", name: "A Zero" };
     const provider = { ...providerA(), models: [model(), second] };
-    await renderLoaded(
+    const spy = await renderLoaded(
       mockRequests({
         "provider.list": () => envelope("provider.list", { providers: [provider, providerB()] }),
         "provider.save": () => envelope("provider.save", { provider }),
@@ -497,11 +497,11 @@ describe("ProvidersSettings in-flight guards", () => {
     );
 
     await user.click(screen.getByTitle("Save the Provider and fetch its model list"));
-    await waitFor(() =>
-      expect(
-        useAppStore.getState().notifications.some((item) => item.message === "Found 2 models"),
-      ).toBe(true),
-    );
+    await waitFor(() => expect(callsFor(spy, "provider.fetchModels")).toHaveLength(1));
+    // A successful fetch pushes no toast.
+    expect(
+      useAppStore.getState().notifications.some((item) => item.message === "Found 2 models"),
+    ).toBe(false);
 
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });

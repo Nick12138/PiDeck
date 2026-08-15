@@ -8,7 +8,6 @@ import {
   FileOutput,
   FolderOpen,
   MessageCircleQuestion,
-  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -101,8 +100,6 @@ export function SessionList({
   const [filter, setFilter] = useState<SessionFilter>("active");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
-  const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [confirmAction, setConfirmAction] = useState<SessionConfirmAction | null>(null);
   const [extensionUiExpiryTick, setExtensionUiExpiryTick] = useState(0);
   const ime = useImeComposition();
@@ -207,30 +204,7 @@ export function SessionList({
     setPinnedSessionIds(readPinnedSessionIds(workspace?.id));
     setEditingSessionId(null);
     setNameDraft("");
-    setMenuSessionId(null);
-    setMenuPosition(null);
   }, [workspace?.id]);
-
-  useEffect(() => {
-    if (!menuSessionId) return;
-    const closeSessionMenu = () => {
-      setMenuSessionId(null);
-      setMenuPosition(null);
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest("[data-session-menu]")) {
-        closeSessionMenu();
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("resize", closeSessionMenu);
-    window.addEventListener("scroll", closeSessionMenu, true);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("resize", closeSessionMenu);
-      window.removeEventListener("scroll", closeSessionMenu, true);
-    };
-  }, [menuSessionId]);
 
   useEffect(() => {
     const now = Date.now();
@@ -403,7 +377,6 @@ export function SessionList({
 
   function beginRename(item: SessionCatalogEntry) {
     if (!canRenameSession(item, session) || sessionMutationBlocked) return;
-    setMenuSessionId(null);
     setEditingSessionId(item.sessionId);
     setNameDraft(sessionDisplayName(item, t("sessionsUntitled")));
   }
@@ -464,7 +437,6 @@ export function SessionList({
       writePinnedSessionIds(workspace.id, next);
       return next;
     });
-    setMenuSessionId(null);
   }
 
   function removePinnedSessions(sessionIds: readonly string[]) {
@@ -485,12 +457,10 @@ export function SessionList({
     const currentSession = useAppStore.getState().session;
     if (method === "session.archive" && !canArchiveSession(item, currentSession)) {
       pushNotification(t("sessionsArchiveWait"), "warning");
-      setMenuSessionId(null);
       return;
     }
     const request = ++mutationRequest.current;
     setSessionMutationPending(true);
-    setMenuSessionId(null);
     try {
       if (
         method === "session.archive" &&
@@ -527,10 +497,9 @@ export function SessionList({
         }
       }
       await refresh();
-      pushNotification(
-        method === "session.archive" ? t("notifSessionArchived") : t("notifSessionRestored"),
-        "success",
-      );
+      if (method !== "session.archive") {
+        pushNotification(t("notifSessionRestored"), "success");
+      }
     } catch (error) {
       pushNotification(
         error instanceof Error ? error.message : t("notifSessionFileOpFailed"),
@@ -552,7 +521,6 @@ export function SessionList({
 
     const request = ++mutationRequest.current;
     setSessionMutationPending(true);
-    setMenuSessionId(null);
     try {
       if (
         !item.archived &&
@@ -681,7 +649,6 @@ export function SessionList({
     const request = ++mutationRequest.current;
     const generation = captureRequestGeneration(host);
     setSessionMutationPending(true);
-    setMenuSessionId(null);
     try {
       const res = await hostClient.request(
         "session.reload",
@@ -821,7 +788,6 @@ export function SessionList({
                     {items.map((item) => {
                       const active = !item.archived && session?.sessionId === item.sessionId;
                       const editing = editingSessionId === item.sessionId;
-                      const menuOpen = menuSessionId === item.sessionId;
                       const pinned = pinnedSessionIds.includes(item.sessionId);
                       const canRename = canRenameSession(item, session);
                       const canDelete = canDeleteSession(item, session);
@@ -861,8 +827,6 @@ export function SessionList({
                             }
                             event.preventDefault();
                             event.stopPropagation();
-                            setMenuSessionId(null);
-                            setMenuPosition(null);
                             openContextMenu({
                               x: event.clientX,
                               y: event.clientY,
@@ -890,6 +854,13 @@ export function SessionList({
                                   label: pinned ? t("sessionsUnpin") : t("sessionsPin"),
                                   icon: pinned ? PinOff : Pin,
                                   onSelect: () => togglePinnedSession(item),
+                                },
+                                {
+                                  id: "session.reload",
+                                  label: t("sessionsReload"),
+                                  icon: RefreshCw,
+                                  disabled: !canReload,
+                                  onSelect: () => void reloadSessionFromDisk(),
                                 },
                                 {
                                   id: item.archived ? "session.restore" : "session.archive",
@@ -1058,156 +1029,42 @@ export function SessionList({
                                   ) : null}
                                 </div>
                               </button>
-                              <div
-                                className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center"
-                                data-session-menu
-                              >
+                              <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
                                 {statusDot && (
                                   <span
                                     aria-label={sessionRuntimeLabel(item.runtimeState)}
-                                    className={`pointer-events-none absolute flex size-1.5 transition-opacity ${
-                                      menuOpen
-                                        ? "opacity-0"
-                                        : "opacity-100 group-hover:opacity-0 group-focus-within:opacity-0"
-                                    }`}
+                                    className="pointer-events-none absolute flex size-1.5 opacity-100 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
                                   >
                                     <span className={`size-1.5 rounded-full ${statusDot}`} />
                                   </span>
                                 )}
                                 <button
                                   type="button"
-                                  title={t("sessionsActionsTitle")}
-                                  aria-label={t("sessionsActionsTitle")}
-                                  aria-expanded={menuOpen}
-                                  onClick={(event) => {
-                                    if (menuOpen) {
-                                      setMenuSessionId(null);
-                                      setMenuPosition(null);
-                                      return;
-                                    }
-                                    const rect = event.currentTarget.getBoundingClientRect();
-                                    const menuWidth = 144;
-                                    const menuHeight = 166;
-                                    const viewportPadding = 8;
-                                    const below = rect.bottom + 4;
-                                    setMenuPosition({
-                                      left: Math.max(
-                                        viewportPadding,
-                                        Math.min(
-                                          rect.right - menuWidth,
-                                          window.innerWidth - menuWidth - viewportPadding,
-                                        ),
-                                      ),
-                                      top:
-                                        below + menuHeight <= window.innerHeight - viewportPadding
-                                          ? below
-                                          : Math.max(viewportPadding, rect.top - menuHeight - 4),
-                                    });
-                                    setMenuSessionId(item.sessionId);
-                                  }}
-                                  disabled={sessionMutationBlocked}
-                                  className={`rounded p-1 text-muted transition-opacity hover:bg-surface hover:text-foreground ${
-                                    menuOpen
-                                      ? "opacity-100 disabled:opacity-30"
-                                      : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
-                                  }`}
+                                  title={
+                                    item.archived
+                                      ? t("sessionsRestoreTitle")
+                                      : canArchive
+                                        ? t("sessionsArchiveTitle")
+                                        : t("sessionsArchiveWait")
+                                  }
+                                  aria-label={
+                                    item.archived ? t("sessionsRestore") : t("sessionsArchive")
+                                  }
+                                  onClick={() =>
+                                    void runSessionFileAction(
+                                      item.archived ? "session.restore" : "session.archive",
+                                      item,
+                                    )
+                                  }
+                                  disabled={sessionMutationBlocked || (!item.archived && !canArchive)}
+                                  className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
                                 >
-                                  <MoreHorizontal size={14} />
-                                </button>
-                                {menuOpen &&
-                                  menuPosition &&
-                                  createPortal(
-                                    <div
-                                      className="theme-floating-surface fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
-                                      style={menuPosition}
-                                      data-session-menu
-                                    >
-                                      <button
-                                        type="button"
-                                        title={
-                                          canRename
-                                            ? t("sessionsRenameTitle")
-                                            : t("sessionsRenameWait")
-                                        }
-                                        disabled={!canRename}
-                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                                        onClick={() => beginRename(item)}
-                                      >
-                                        <Pencil size={13} />
-                                        {t("sessionsRename")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay"
-                                        onClick={() => togglePinnedSession(item)}
-                                      >
-                                        {pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                                        {pinned ? t("sessionsUnpin") : t("sessionsPin")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title={
-                                          canReload
-                                            ? t("sessionsReloadTitle")
-                                            : active
-                                              ? t("sessionsReloadWait")
-                                              : t("sessionsReloadOnlyActive")
-                                        }
-                                        disabled={!canReload}
-                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                                        onClick={() => void reloadSessionFromDisk()}
-                                      >
-                                        <RefreshCw size={13} />
-                                        {t("sessionsReload")}
-                                      </button>
-                                      <div className="my-1 border-t border-border" />
-                                      <button
-                                        type="button"
-                                        title={
-                                          item.archived
-                                            ? t("sessionsRestoreTitle")
-                                            : canArchive
-                                              ? t("sessionsArchiveTitle")
-                                              : t("sessionsArchiveWait")
-                                        }
-                                        disabled={!item.archived && !canArchive}
-                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                                        onClick={() =>
-                                          void runSessionFileAction(
-                                            item.archived ? "session.restore" : "session.archive",
-                                            item,
-                                          )
-                                        }
-                                      >
-                                        {item.archived ? (
-                                          <ArchiveRestore size={13} />
-                                        ) : (
-                                          <Archive size={13} />
-                                        )}
-                                        {item.archived
-                                          ? t("sessionsRestore")
-                                          : t("sessionsArchive")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title={
-                                          canDelete
-                                            ? t("sessionsDeleteTitle")
-                                            : t("sessionsDeleteWait")
-                                        }
-                                        disabled={!canDelete}
-                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-danger hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
-                                        onClick={() => {
-                                          setMenuSessionId(null);
-                                          setConfirmAction({ kind: "delete", item });
-                                        }}
-                                      >
-                                        <Trash2 size={13} />
-                                        {t("commonDelete")}
-                                      </button>
-                                    </div>,
-                                    document.body,
+                                  {item.archived ? (
+                                    <ArchiveRestore size={14} />
+                                  ) : (
+                                    <Archive size={14} />
                                   )}
+                                </button>
                               </div>
                             </>
                           )}

@@ -32,12 +32,24 @@ export async function rebindActiveWorkspaceHost(cwd: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Re-sync a renderer that attached after the Host already announced ready
+ * (window reload / HMR). Best-effort: on a cold start the Host is still
+ * booting and has no ready line to replay — the live `host.ready` stdout
+ * event (subscribed in `createTauriTransport`) delivers it instead, so a
+ * miss here must never be treated as a startup failure.
+ */
 export async function replayActiveHostReady(): Promise<boolean> {
   const { invoke, isTauri } = await import("@tauri-apps/api/core");
   if (!isTauri()) return false;
   if (!activeRouteId) throw new Error("No active Host route");
-  await invoke("pi_host_replay_ready", { routeId: activeRouteId });
-  return true;
+  try {
+    await invoke("pi_host_replay_ready", { routeId: activeRouteId });
+    return true;
+  } catch (err) {
+    console.debug("[pi-host] ready replay unavailable (Host still booting?)", err);
+    return false;
+  }
 }
 
 /**

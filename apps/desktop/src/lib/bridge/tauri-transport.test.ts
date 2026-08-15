@@ -112,4 +112,11 @@ describe("createTauriTransport", () => {
 
     expect(mocks.invoke).toHaveBeenCalledWith("pi_host_replay_ready", { routeId: "route-b" });
   });
+
+  it("treats a replay miss during cold start as a no-op, not a failure", async () => {
+    mocks.isTauri.mockReturnValue(true);
+    mocks.invoke.mockRejectedValue(new Error("Host has not announced ready yet"));
+
+    await expect(replayActiveHostReady()).resolves.toBe(false);
+  });
 });

@@ -75,6 +75,23 @@ async function openAddMenu(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("RightDock pages", () => {
+  it("keeps the whole header strip draggable while tabs stay interactive", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<RightDock />);
+    const header = container.querySelector<HTMLElement>("[data-dock-header]")!;
+
+    // The strip's flex-1 child covers the entire header, so the drag region
+    // must be "deep" for empty space to move the window.
+    expect(header).toHaveAttribute("data-tauri-drag-region", "deep");
+    expect(header.querySelector("[data-dock-tab-list]")).not.toHaveAttribute(
+      "data-tauri-drag-region",
+    );
+
+    // Tabs still receive clicks rather than being swallowed by the drag region.
+    await user.click(screen.getByRole("button", { name: "Open Files" }));
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("starts without an active page", () => {
     render(<RightDock />);
 

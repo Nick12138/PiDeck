@@ -21,7 +21,7 @@ describe("WorkspaceSwitchTransition", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("hides the stale content behind a named skeleton while switching", () => {
+  it("keeps the conversation fully visible during a quick switch", async () => {
     render(
       <WorkspaceSwitchTransition>
         <p>conversation</p>
@@ -29,9 +29,31 @@ describe("WorkspaceSwitchTransition", () => {
     );
     act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiDeck"));
 
-    const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Opening PiDeck…");
-    expect(screen.getByText("conversation").closest("[aria-hidden]")).not.toBeNull();
+    // Within the grace period the stale content stays visible and interactive —
+    // the skeleton is mounted but stays transparent, so a fast switch never flashes.
+    expect(screen.getByText("conversation")).toBeVisible();
+    expect(screen.getByText("conversation").closest("[aria-hidden]")).toBeNull();
+
+    // The switch settles quickly: still no transition, and the skeleton unmounts.
+    act(() => useAppStore.getState().setWorkspaceSwitchTarget(null));
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(screen.getByText("conversation")).toBeVisible();
+    expect(screen.getByText("conversation").closest("[aria-hidden]")).toBeNull();
+  });
+
+  it("fades the stale content into a named skeleton once the switch runs long", async () => {
+    render(
+      <WorkspaceSwitchTransition>
+        <p>conversation</p>
+      </WorkspaceSwitchTransition>,
+    );
+    act(() => useAppStore.getState().setWorkspaceSwitchTarget("/Users/me/Projects/PiDeck"));
+
+    // Once the grace period elapses the skeleton fades in and the content hides.
+    await waitFor(() => {
+      expect(screen.getByText("conversation").closest("[aria-hidden]")).not.toBeNull();
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Opening PiDeck…");
   });
 
   it("removes the skeleton after the switch settles", async () => {
@@ -41,7 +63,9 @@ describe("WorkspaceSwitchTransition", () => {
       </WorkspaceSwitchTransition>,
     );
     act(() => useAppStore.getState().setWorkspaceSwitchTarget("/tmp/other"));
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("conversation").closest("[aria-hidden]")).not.toBeNull();
+    });
 
     act(() => useAppStore.getState().setWorkspaceSwitchTarget(null));
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());

@@ -3,6 +3,8 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { workspaceDisplayName } from "./WorkspacePicker";
 
+/** 切换启动后先等这么久再显示骨架屏；快速切换期间旧对话保持原样，不闪骨架。 */
+const SKELETON_SHOW_DELAY_MS = 200;
 const SKELETON_UNMOUNT_DELAY_MS = 200;
 
 function SkeletonBlock({ className }: { className: string }) {
@@ -14,23 +16,30 @@ function SkeletonBlock({ className }: { className: string }) {
 }
 
 /**
- * Native-feeling workspace switch: the stale conversation fades out into a
- * chat-shaped skeleton, and the new workspace fades back in once ready.
+ * Native-feeling workspace switch: the stale conversation stays fully visible
+ * for a short grace period while the switch resolves, so a fast switch never
+ * flashes the skeleton. Only a switch that outlasts that grace period fades
+ * into a chat-shaped skeleton; once the new workspace is ready it fades back.
  */
 export function WorkspaceSwitchTransition({ children }: { children: ReactNode }) {
   const target = useAppStore((s) => s.workspaceSwitchTarget);
   const t = useT();
   const switching = target !== null;
-  const [skeletonPresent, setSkeletonPresent] = useState(switching);
+  // The visual transition (fade-out + skeleton) only starts once the switch has
+  // been in flight past SKELETON_SHOW_DELAY_MS, so quick switches are seamless.
+  const [transitioning, setTransitioning] = useState(switching);
+  const [skeletonMounted, setSkeletonMounted] = useState(switching);
   const [lastTarget, setLastTarget] = useState(target);
   if (target !== null && target !== lastTarget) setLastTarget(target);
 
   useEffect(() => {
     if (switching) {
-      setSkeletonPresent(true);
-      return;
+      setSkeletonMounted(true);
+      const timer = window.setTimeout(() => setTransitioning(true), SKELETON_SHOW_DELAY_MS);
+      return () => window.clearTimeout(timer);
     }
-    const timer = window.setTimeout(() => setSkeletonPresent(false), SKELETON_UNMOUNT_DELAY_MS);
+    setTransitioning(false);
+    const timer = window.setTimeout(() => setSkeletonMounted(false), SKELETON_UNMOUNT_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [switching]);
 
@@ -38,19 +47,19 @@ export function WorkspaceSwitchTransition({ children }: { children: ReactNode })
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         className={`flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-150 ease-out motion-reduce:transition-none ${
-          switching ? "pointer-events-none opacity-0" : "opacity-100"
+          transitioning ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
-        aria-hidden={switching || undefined}
-        inert={switching || undefined}
+        aria-hidden={transitioning || undefined}
+        inert={transitioning || undefined}
       >
         {children}
       </div>
-      {skeletonPresent && (
+      {skeletonMounted && (
         <div
           role="status"
           aria-live="polite"
           className={`workspace-switch-skeleton absolute inset-0 z-30 flex flex-col bg-surface transition-opacity duration-150 ease-out motion-reduce:transition-none ${
-            switching ? "opacity-100" : "pointer-events-none opacity-0"
+            transitioning ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">

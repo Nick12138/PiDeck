@@ -30,8 +30,8 @@ describe("resolveLocale", () => {
 
 describe("translate", () => {
   it("returns the locale string and interpolates params", () => {
-    expect(translate("en", "notifFoundModels", { count: 3 })).toBe("Found 3 models");
-    expect(translate("zh", "notifFoundModels", { count: 3 })).toBe("发现 3 个模型");
+    expect(translate("en", "notifProviderResponded", { ms: 3 })).toBe("Provider responded in 3 ms");
+    expect(translate("zh", "notifProviderResponded", { ms: 3 })).toBe("服务在 3 ms 内响应");
     expect(translate("zh", "navGeneral")).toBe("通用");
   });
 
