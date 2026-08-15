@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PiDeck",
   "version": "0.1.9",
-  "identifier": "com.skitre.pideck",
+  "identifier": "com.nick12138.pideck",
   "build": {
     "beforeDevCommand": "pnpm --filter @pideck/desktop dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -56,8 +56,8 @@
       "open": "https?://\\S+"
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwNDBCMzlBNzRBRDYwQzUKUldURllLMTBtck5Ba0JIQ0tWdlFSUThaZGxvZlAvZ09KeWMyUnZONnV3amM2UVZVNTl3S2tUejAK",
-      "endpoints": ["https://github.com/Skitre/PiDeck/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5QUY3NEMzOUY2NzkzRgpSV1EvZWZZNVRQZWFEaEw1NitSOHFJSFN0Q2ZpT25VQmI2ek5sWlRmZnNoTG1IaFMvMVRxL2V1ZAo=",
+      "endpoints": ["https://github.com/Nick12138/PiDeck/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
       }

@@ -6,8 +6,8 @@
 
 Chat with your coding agent, watch its tools work, manage sessions, models, and packages — in one visual workspace.
 
-[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
-[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![CI](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Nick12138/PiDeck?include_prereleases)](https://github.com/Nick12138/PiDeck/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#download)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
@@ -34,7 +34,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 
 ## Download
 
-Grab the installer for your platform from the [latest release](https://github.com/Skitre/PiDeck/releases):
+Grab the installer for your platform from the [latest release](https://github.com/Nick12138/PiDeck/releases):
 
 | Platform | File |
 |---|---|

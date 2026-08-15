@@ -307,7 +307,7 @@ function readArg(args, name) {
 function main() {
   const args = process.argv.slice(2);
   const tag = readArg(args, "--tag") ?? fail("--tag is required (e.g. --tag v0.1.1)");
-  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Skitre/PiDeck";
+  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Nick12138/PiDeck";
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   if (args.includes("--stage-platform")) {
     const outputDir =

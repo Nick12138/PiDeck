@@ -6,8 +6,8 @@
 
 与你的编码智能体对话、实时查看工具调用、管理会话/模型/Packages —— 全部在一个可视化工作空间里。
 
-[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
-[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![CI](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Nick12138/PiDeck/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Nick12138/PiDeck?include_prereleases)](https://github.com/Nick12138/PiDeck/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#下载安装)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
@@ -34,7 +34,7 @@
 
 ## 下载安装
 
-从[最新 Release](https://github.com/Skitre/PiDeck/releases) 下载对应平台的安装包:
+从[最新 Release](https://github.com/Nick12138/PiDeck/releases) 下载对应平台的安装包:
 
 | 平台 | 文件 |
 |---|---|
