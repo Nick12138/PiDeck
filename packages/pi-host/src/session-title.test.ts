@@ -37,6 +37,21 @@ describe("session titles", () => {
     expect(sanitizeSessionTitle("优化数据库查询性能")).toBe("⚡ 优化数据库查询性能");
   });
 
+  it("matches more development categories by keyword", () => {
+    expect(sanitizeSessionTitle("调试日志输出")).toBe("🧩 调试日志输出");
+    expect(sanitizeSessionTitle("Docker 容器编排")).toBe("🐳 Docker 容器编排");
+    expect(sanitizeSessionTitle("实现国际化翻译")).toBe("🌍 实现国际化翻译");
+    expect(sanitizeSessionTitle("创建桌面托盘")).toBe("🖥️ 创建桌面托盘");
+    expect(sanitizeSessionTitle("绑定快捷键")).toBe("⌨️ 绑定快捷键");
+    expect(sanitizeSessionTitle("实现截图功能")).toBe("📸 实现截图功能");
+    expect(sanitizeSessionTitle("添加定时调度任务")).toBe("⏰ 添加定时调度任务");
+    expect(sanitizeSessionTitle("多工作区管理")).toBe("💼 多工作区管理");
+    expect(sanitizeSessionTitle("邮箱验证码")).toBe("🔒 邮箱验证码");
+    expect(sanitizeSessionTitle("监控状态指标")).toBe("📊 监控状态指标");
+    expect(sanitizeSessionTitle("删除卸载插件")).toBe("🔌 删除卸载插件");
+    expect(sanitizeSessionTitle("压缩解压 zip 包")).toBe("🗜️ 压缩解压 zip 包");
+  });
+
   it("strips emoji embedded mid-title to keep exactly one", () => {
     expect(sanitizeSessionTitle("修复 bug 🚀 发布")).toBe("🐛 修复 bug 发布");
   });

@@ -1198,4 +1198,39 @@ export const en = {
   notifLevelInformation: "Information",
 } as const;
 
+/**
+ * Playful "Pi is working" statuses, shown one at a time (picked at random
+ * per request) while a request is being processed.
+ */
+export const piWorkingVariants = [
+  "Brewing (˘･_･˘)",
+  "Waking up (－_－) zzZ",
+  "Daydreaming （￣︶￣）",
+  "Musing (｡•́︿•̀｡)",
+  "Spinning in circles (@_@)",
+  "Zoned out (⊙_⊙)",
+  "Taking my sweet time (￣▽￣;)",
+  "Faking busy ⌨(￣▽￣)⌨",
+  "Recharging (1% battery) 🔋(×_×)",
+  "Reflecting (；￣д￣)",
+  "Deep in thought (´･_･)`",
+  "Daydreaming （￣︶￣）",
+  "Analyzing ( •̀ ω •́ )✧",
+  "Loading …(｡•́︿•̀｡)…",
+  "Brain overheating (×_×)💨",
+  "Brain spinning (@_@)",
+  "Digging through memory (；￣Д￣)",
+  "Chasing inspiration ☆⌒(≧▽° )",
+  "Praying to the CPU 🙏(×_×)🙏",
+  "Buffering (￣～￣)",
+  "Pretending to know （￣▽￣）ゞ",
+  "Finding the words ...φ(￣ー￣ )",
+  "Soul left the body 👻(￣▽￣)",
+  "Sneaky research (￢_￢)📖",
+  "Making it up… I mean, thinking (￣▽￣；)",
+  "Mind wandering ～(￣▽￣～)",
+  "Under construction 🚧(ง •̀_•́)ง",
+  "Getting in the zone (´▽｀)ノ",
+] as const;
+
 export type MessageKey = keyof typeof en;

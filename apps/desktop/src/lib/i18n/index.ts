@@ -1,11 +1,20 @@
-import { en, type MessageKey } from "./en";
-import { zh } from "./zh";
+import {
+  en,
+  piWorkingVariants as enPiWorkingVariants,
+  type MessageKey,
+} from "./en";
+import { zh, piWorkingVariants as zhPiWorkingVariants } from "./zh";
 
 export type { MessageKey } from "./en";
 export type AppLanguage = "system" | "en" | "zh";
 export type Locale = "en" | "zh";
 
 const DICTIONARIES: Record<Locale, Record<MessageKey, string>> = { en, zh };
+
+/** Playful "Pi is working" statuses; the UI shows one at random per request. */
+export function piWorkingVariants(locale: Locale): readonly string[] {
+  return locale === "zh" ? zhPiWorkingVariants : enPiWorkingVariants;
+}
 
 export function resolveLocale(language: AppLanguage | undefined): Locale {
   if (language === "en" || language === "zh") return language;

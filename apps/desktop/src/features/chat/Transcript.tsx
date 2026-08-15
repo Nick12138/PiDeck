@@ -43,7 +43,8 @@ import { isSafeExternalUrl, sanitizeAgentText } from "./markdown-utils";
 import { ToolView } from "./ToolView";
 import { formatDuration } from "./ToolCard";
 import { formatTokenCount } from "../../lib/format-token-count";
-import { useT, type Translate } from "../../lib/i18n/use-t";
+import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
+import { piWorkingVariants } from "../../lib/i18n";
 import { PiMark } from "../../components/PiMark";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
@@ -126,8 +127,31 @@ function initialHiddenFor(sessionId: string | null, rowCount: number): number {
 
 export function Transcript() {
   const t = useT();
+  const locale = useLocale();
   const session = useAppStore((state) => state.session);
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
+  // The "Pi 正在处理…" placeholder shows a playful random status per request.
+  // A status is picked when a working phase begins and kept until the session
+  // goes idle again. A phase begins when the session flips from idle, when the
+  // session changes while working, or when this component first mounts into an
+  // already-working session — a fresh conversation only mounts the Transcript
+  // after its first message is already in flight (see ChatPage), so the
+  // idle->working flip is never observed there. Render-phase setState (the
+  // same pattern as hiddenState below) avoids a one-frame flash of the static
+  // fallback on the first working frame.
+  const isWorking = session?.isIdle === false;
+  const [workingText, setWorkingText] = useState<string | null>(null);
+  const workingPhaseRef = useRef<string | null>(null);
+  const workingPhaseKey = session ? `${session.sessionId}:${locale}` : null;
+  if (isWorking && workingPhaseKey !== workingPhaseRef.current) {
+    const variants = piWorkingVariants(locale);
+    setWorkingText(variants[Math.floor(Math.random() * variants.length)] ?? null);
+    workingPhaseRef.current = workingPhaseKey;
+  } else if (!isWorking && workingText !== null) {
+    setWorkingText(null);
+    workingPhaseRef.current = null;
+  }
+  const workingLabel = workingText ?? t("transcriptPiWorking");
   const prevRowsRef = useRef<TranscriptRow[] | null>(null);
   const rows = useMemo(
     () =>
@@ -620,6 +644,7 @@ export function Transcript() {
                   mode={streaming ? "streaming" : "static"}
                   showCaret={Boolean(streaming)}
                   working={row.key === workingHeaderKey}
+                  workingLabel={row.key === workingHeaderKey ? workingLabel : undefined}
                 />
               </div>
             );
@@ -631,7 +656,7 @@ export function Transcript() {
             !hasRunningTool && (
               <div className="flex items-center gap-3 text-xs text-muted">
                 <AssistantAvatar />
-                <span>{t("transcriptPiWorking")}</span>
+                <span>{workingLabel}</span>
               </div>
             )}
           <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />
@@ -691,11 +716,13 @@ const TranscriptRowView = memo(function TranscriptRowView({
   mode,
   showCaret,
   working,
+  workingLabel,
 }: {
   row: TranscriptRow;
   mode: "streaming" | "static";
   showCaret: boolean;
   working: boolean;
+  workingLabel?: string;
 }) {
   const t = useT();
   if (row.role === "user") {
@@ -801,7 +828,9 @@ const TranscriptRowView = memo(function TranscriptRowView({
     <div className="group/assistant relative w-full">
       <div className="flex h-7 items-center gap-2">
         <AssistantAvatar />
-        {working && <span className="text-[11px] text-muted">{t("transcriptPiWorking")}</span>}
+        {working && (
+          <span className="text-[11px] text-muted">{workingLabel ?? t("transcriptPiWorking")}</span>
+        )}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
         <AssistantOrderedContent

@@ -7,6 +7,7 @@ import type { SessionSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
+import { piWorkingVariants } from "../../lib/i18n";
 import { PROGRESSIVE_BATCH_ROWS } from "./progressive-mount";
 import { requestTranscriptScroll } from "../../lib/transcript-navigation";
 import { clearTranscriptScrollPositions } from "./transcript-scroll-memory";
@@ -503,6 +504,79 @@ describe("Transcript Session-open scrolling", () => {
       expect(container.querySelectorAll(".transcript-row")).toHaveLength(
         60 + PROGRESSIVE_BATCH_ROWS,
       );
+    });
+  });
+
+  describe("working status placeholder", () => {
+    function workingSession() {
+      return { ...session(SESSION_A, "First Session"), isStreaming: true, isIdle: false };
+    }
+
+    const enVariants = piWorkingVariants("en");
+    /** Matches the playful status span (never the static "Pi is working..." fallback). */
+    function statusSpan(element: Element | null): element is HTMLSpanElement {
+      return element?.tagName === "SPAN" && enVariants.includes(element.textContent ?? "");
+    }
+    function currentStatus(): string {
+      const span = screen
+        .getAllByText((content, element) => statusSpan(element))
+        .at(-1)!;
+      return span.textContent!;
+    }
+
+    it("picks a random status when the Transcript mounts into an already-working Session", () => {
+      act(() => useAppStore.setState({ session: workingSession() }));
+      render(<Transcript />);
+
+      expect(enVariants).toContain(currentStatus());
+      expect(screen.queryByText("Pi is working...")).not.toBeInTheDocument();
+    });
+
+    it("picks a random status when an idle Session starts working", () => {
+      render(<Transcript />);
+      act(() => useAppStore.setState({ session: workingSession() }));
+
+      expect(enVariants).toContain(currentStatus());
+      expect(screen.queryByText("Pi is working...")).not.toBeInTheDocument();
+    });
+
+    it("keeps the status stable across snapshot updates within one request", () => {
+      act(() => useAppStore.setState({ session: workingSession() }));
+      render(<Transcript />);
+
+      const first = currentStatus();
+      act(() =>
+        useAppStore.setState({
+          session: { ...workingSession(), revision: 2, isIdle: false },
+        }),
+      );
+      expect(currentStatus()).toBe(first);
+    });
+
+    it("clears the status once the Session goes idle again", () => {
+      act(() => useAppStore.setState({ session: workingSession() }));
+      render(<Transcript />);
+      expect(enVariants).toContain(currentStatus());
+
+      act(() => useAppStore.setState({ session: session(SESSION_A, "First Session") }));
+      expect(screen.queryByText((content, element) => statusSpan(element))).not.toBeInTheDocument();
+    });
+
+    it("picks a fresh random status for the next request in the same Session", () => {
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        act(() => useAppStore.setState({ session: workingSession() }));
+        render(<Transcript />);
+        expect(currentStatus()).toBe(enVariants[0]);
+
+        random.mockReturnValue(0.5);
+        act(() => useAppStore.setState({ session: session(SESSION_A, "First Session") }));
+        act(() => useAppStore.setState({ session: workingSession() }));
+
+        expect(currentStatus()).toBe(enVariants[Math.floor(0.5 * enVariants.length)]);
+      } finally {
+        random.mockRestore();
+      }
     });
   });
 });
