@@ -16,7 +16,7 @@ type RuntimeModel = NonNullable<ReturnType<ModelRuntime["getModels"]>>[number];
  * protocol that serializes a reasoning_effort string; anthropic/gemini/mistral
  * paths are untouched.
  */
-export const OPENAI_REASONING_FALLBACK_MAP = {
+const OPENAI_REASONING_FALLBACK_MAP = {
   off: "none",
   minimal: "low",
   low: "low",
