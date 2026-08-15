@@ -36,9 +36,9 @@ describe("localizeHostError", () => {
   });
 
   it("passes through unknown error messages", () => {
-    expect(
-      localizeHostError({ code: "INTERNAL_ERROR", message: "Some detail" }, t),
-    ).toBe("Some detail");
+    expect(localizeHostError({ code: "INTERNAL_ERROR", message: "Some detail" }, t)).toBe(
+      "Some detail",
+    );
   });
 
   it("falls back when the error is missing", () => {

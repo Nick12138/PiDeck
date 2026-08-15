@@ -10,9 +10,7 @@ describe("Sidebar", () => {
   it.each<NavPage>(["chat", "packages", "settings"])(
     "keeps the conversation workspace mounted on the %s page",
     (page) => {
-      const html = renderToStaticMarkup(
-        createElement(SidebarLayout, { page, setPage: vi.fn() }),
-      );
+      const html = renderToStaticMarkup(createElement(SidebarLayout, { page, setPage: vi.fn() }));
 
       expect(html).toContain("New conversation");
       expect(html).toContain("Workspaces");
@@ -46,8 +44,7 @@ describe("Sidebar", () => {
 
   it("renders the PI sidebar toggle instead of an edge handle when expanded", () => {
     vi.stubGlobal("localStorage", {
-      getItem: (key: string) =>
-        key === "pideck.sidebar.width.v1" ? "300" : null,
+      getItem: (key: string) => (key === "pideck.sidebar.width.v1" ? "300" : null),
       setItem: vi.fn(),
     });
 

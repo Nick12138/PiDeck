@@ -43,6 +43,7 @@ import { AttachmentStore } from "./attachment-store.js";
 import { createAttachmentHandlers } from "./attachment-controller.js";
 import { createGitHandlers } from "./git-controller.js";
 import { GitService } from "./git-service.js";
+import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -258,7 +259,7 @@ async function main(): Promise<void> {
     handlers,
     getRehydrateState: () => {
       const graph = graphFactory.getGraph();
-      const session = graph?.sessionSnapshot ?? null;
+      const session = graph ? refreshActiveSessionSnapshot(graph) : null;
       return {
         workspace: graph ? graphFactory.buildWorkspaceSnapshot(graph) : null,
         session,

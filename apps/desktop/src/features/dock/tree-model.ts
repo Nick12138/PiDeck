@@ -134,10 +134,7 @@ type TurnNode = {
  * entries (tool-call segments) collapses into one node ending at the last
  * segment. Branch points break the run so every branch stays addressable.
  */
-function buildConversationTurns(
-  nodes: SerializableSessionTreeNode[],
-  limit: number,
-): TurnNode[] {
+function buildConversationTurns(nodes: SerializableSessionTreeNode[], limit: number): TurnNode[] {
   const toTurn = (node: SerializableSessionTreeNode): TurnNode => {
     const { kind, excerpt } = entryExcerpt(node.entry, limit);
     const ids = [node.entry.id];

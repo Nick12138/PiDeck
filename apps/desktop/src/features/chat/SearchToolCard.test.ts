@@ -15,9 +15,7 @@ describe("search tool renderer", () => {
     expect(isWebSearchTool("Google Search")).toBe(true);
     expect(isWebSearchTool("find")).toBe(false);
     expect(isWebSearchTool("file_search")).toBe(false);
-    expect(
-      selectToolRenderer({ name: "brave_search", status: "done" })?.id,
-    ).toBe("web-search");
+    expect(selectToolRenderer({ name: "brave_search", status: "done" })?.id).toBe("web-search");
   });
 
   it("extracts structured and nested search results", () => {

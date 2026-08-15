@@ -79,7 +79,8 @@ export function inspectWindowsInstaller(path) {
 
   const probe = buffer.subarray(0, Math.min(buffer.length, PROBE_BYTES));
   const nsis = findText(probe, NSIS_MARKER);
-  const nsisMarkerOffset = [nsis.ascii, nsis.utf16le].filter((value) => value >= 0).sort((a, b) => a - b)[0] ?? -1;
+  const nsisMarkerOffset =
+    [nsis.ascii, nsis.utf16le].filter((value) => value >= 0).sort((a, b) => a - b)[0] ?? -1;
   if (nsisMarkerOffset < 0) {
     errors.push("outer PE does not contain the NSIS executable-head marker");
   } else if (nsisMarkerOffset > MAX_NSIS_MARKER_OFFSET) {
@@ -96,7 +97,9 @@ export function inspectWindowsInstaller(path) {
     }
   }
   if (iocMatches.length > 0) {
-    errors.push(`installer contains rejected indicators: ${iocMatches.map((match) => match.indicator).join(", ")}`);
+    errors.push(
+      `installer contains rejected indicators: ${iocMatches.map((match) => match.indicator).join(", ")}`,
+    );
   }
 
   const version = readVersionInfo(path);
@@ -104,7 +107,9 @@ export function inspectWindowsInstaller(path) {
     errors.push(`could not inspect outer PE VersionInfo: ${version.error}`);
   } else {
     if (version.value.ProductName !== EXPECTED_PRODUCT) {
-      errors.push(`outer PE ProductName is ${JSON.stringify(version.value.ProductName)}, expected ${JSON.stringify(EXPECTED_PRODUCT)}`);
+      errors.push(
+        `outer PE ProductName is ${JSON.stringify(version.value.ProductName)}, expected ${JSON.stringify(EXPECTED_PRODUCT)}`,
+      );
     }
     if (version.value.FileDescription !== EXPECTED_PRODUCT) {
       errors.push(

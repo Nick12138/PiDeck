@@ -99,10 +99,7 @@ describe("BrowserPanel native lifecycle", () => {
     render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
 
     await waitFor(() =>
-      expect(mocks.invoke).toHaveBeenCalledWith(
-        "browser_surface_create",
-        expect.anything(),
-      ),
+      expect(mocks.invoke).toHaveBeenCalledWith("browser_surface_create", expect.anything()),
     );
     expect(screen.getByRole("region", { name: "浏览器" })).toBeVisible();
     expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
@@ -168,13 +165,8 @@ describe("BrowserPanel native lifecycle", () => {
   it("creates lazily, hides behind overlays, navigates, and closes", async () => {
     const user = userEvent.setup();
     const onTitle = vi.fn();
-    const view = render(
-      <BrowserPanel id={7} visible={false} blocked={false} onTitle={onTitle} />,
-    );
-    expect(mocks.invoke).not.toHaveBeenCalledWith(
-      "browser_surface_create",
-      expect.anything(),
-    );
+    const view = render(<BrowserPanel id={7} visible={false} blocked={false} onTitle={onTitle} />);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("browser_surface_create", expect.anything());
 
     view.rerender(<BrowserPanel id={7} visible blocked={false} onTitle={onTitle} />);
     await waitFor(() =>
@@ -224,17 +216,11 @@ describe("BrowserPanel native lifecycle", () => {
     });
     render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
     await waitFor(() =>
-      expect(mocks.invoke).toHaveBeenCalledWith(
-        "browser_surface_create",
-        expect.anything(),
-      ),
+      expect(mocks.invoke).toHaveBeenCalledWith("browser_surface_create", expect.anything()),
     );
     await waitFor(() => expect(mocks.listeners).toHaveLength(1));
 
-    await user.type(
-      screen.getByRole("textbox", { name: "Browser address" }),
-      "example.com{Enter}",
-    );
+    await user.type(screen.getByRole("textbox", { name: "Browser address" }), "example.com{Enter}");
     await waitFor(() =>
       expect(mocks.invoke).toHaveBeenCalledWith("browser_surface_navigate", {
         surfaceId: "dock-browser-7",
@@ -282,16 +268,10 @@ describe("BrowserPanel native lifecycle", () => {
     });
     render(<BrowserPanel id={7} visible blocked={false} onTitle={vi.fn()} />);
     await waitFor(() =>
-      expect(mocks.invoke).toHaveBeenCalledWith(
-        "browser_surface_create",
-        expect.anything(),
-      ),
+      expect(mocks.invoke).toHaveBeenCalledWith("browser_surface_create", expect.anything()),
     );
 
-    await user.type(
-      screen.getByRole("textbox", { name: "Browser address" }),
-      "example.com{Enter}",
-    );
+    await user.type(screen.getByRole("textbox", { name: "Browser address" }), "example.com{Enter}");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Stop loading" })).toBeInTheDocument(),
     );

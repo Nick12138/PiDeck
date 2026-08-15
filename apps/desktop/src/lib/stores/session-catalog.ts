@@ -1,8 +1,4 @@
-import type {
-  SessionRuntimeState,
-  SessionSnapshot,
-  SessionSummary,
-} from "@pideck/protocol";
+import type { SessionRuntimeState, SessionSnapshot, SessionSummary } from "@pideck/protocol";
 
 export type { SessionRuntimeState } from "@pideck/protocol";
 
@@ -156,12 +152,7 @@ export function runtimeStateFromSnapshot(
     "isIdle" | "isStreaming" | "isCompacting" | "isRetrying" | "pending"
   >,
 ): SessionRuntimeState {
-  if (
-    snapshot.isStreaming ||
-    snapshot.isCompacting ||
-    snapshot.isRetrying ||
-    !snapshot.isIdle
-  ) {
+  if (snapshot.isStreaming || snapshot.isCompacting || snapshot.isRetrying || !snapshot.isIdle) {
     return "running";
   }
   if (snapshot.pending.steering.length > 0 || snapshot.pending.followUp.length > 0) {

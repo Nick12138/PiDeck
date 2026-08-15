@@ -6,7 +6,8 @@
 
 ## Session
 
-- Listed only for current workspace cwd (`session.list`).
+- Listed only for the active workspace Host cwd (`session.list`). Other workspace
+  Hosts and their Sessions continue running while their route is inactive.
 - `session.open` normally opens paths from that list. For an active session
   owned by another workspace, Host verifies the file against its recorded
   workspace, switches there, and then continues the original open request.

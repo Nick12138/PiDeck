@@ -2,6 +2,12 @@ import { Archive, Folder, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SessionSearchReport, SessionSearchResultItem } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import {
+  activateWorkspaceHost,
+  prepareWorkspaceHost,
+  rebindActiveWorkspaceHost,
+  replayActiveHostReady,
+} from "../../lib/bridge/tauri-transport";
 import { hostContext, mergeHostIdentity, workspaceContext } from "../../lib/bridge/host-context";
 import {
   requestSessionOpenWithRetry,
@@ -12,6 +18,11 @@ import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
+import {
+  isWorkspaceSwitchBusyError,
+  waitForWorkspaceActivation,
+  workspaceHasActiveAgent,
+} from "../workspaces/workspace-switch-policy";
 import {
   groupResultsByWorkspace,
   highlightSegments,
@@ -128,51 +139,70 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
     setOpening(true);
     try {
       if (state.workspace?.canonicalCwd !== item.cwd) {
-        useAppStore.getState().setWorkspaceSwitchTarget(item.cwd);
-        let switched;
-        try {
-          switched = await hostClient.request(
-            "workspace.setCurrent",
-            workspaceContext(host, state.workspace),
-            { cwd: item.cwd },
-            60_000,
-          );
-        } finally {
-          useAppStore.getState().setWorkspaceSwitchTarget(null);
-        }
-        if (!switched.ok) {
-          state.pushNotification(localizeHostError(switched.error, t), "error");
-          return;
-        }
-        // workspace.changed / session.snapshot events usually land before this
-        // response resolves; apply only what the event stream has not.
-        const result = switched.result;
-        const appliedWorkspace = useAppStore.getState().workspace;
-        if (
-          appliedWorkspace === null ||
-          appliedWorkspace.id !== result.workspace.id ||
-          appliedWorkspace.revision !== result.workspace.revision
-        ) {
-          useAppStore.getState().setWorkspace(result.workspace);
-        }
-        if (result.session) {
-          const appliedSession = useAppStore.getState().session;
-          if (
-            appliedSession === null ||
-            appliedSession.sessionId !== result.session.sessionId ||
-            appliedSession.revision !== result.session.revision
-          ) {
-            useAppStore.getState().setSession(result.session);
+        const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
+          const activated = force
+            ? await activateWorkspaceHost(item.cwd)
+            : await prepareWorkspaceHost(item.cwd, workspaceHasActiveAgent(useAppStore.getState()));
+          if (!activated) return false;
+          hostClient.prepareForHostSwitch();
+          useAppStore.getState().setConnecting(true);
+          await replayActiveHostReady();
+          await waitForWorkspaceActivation(host.hostInstanceId);
+          return true;
+        };
+        if (!(await connectDedicatedHost(false))) {
+          useAppStore.getState().setWorkspaceSwitchTarget(item.cwd);
+          let switched;
+          try {
+            switched = await hostClient.request(
+              "workspace.setCurrent",
+              workspaceContext(host, state.workspace),
+              { cwd: item.cwd },
+              60_000,
+            );
+          } finally {
+            useAppStore.getState().setWorkspaceSwitchTarget(null);
+          }
+          if (!switched.ok) {
+            if (isWorkspaceSwitchBusyError(switched.error) && (await connectDedicatedHost(true))) {
+              // The Host became busy after the initial decision; isolation completed.
+            } else {
+              state.pushNotification(localizeHostError(switched.error, t), "error");
+              return;
+            }
+          } else {
+            const result = switched.result;
+            await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
+            // workspace.changed / session.snapshot events usually land before this
+            // response resolves; apply only what the event stream has not.
+            const appliedWorkspace = useAppStore.getState().workspace;
+            if (
+              appliedWorkspace === null ||
+              appliedWorkspace.id !== result.workspace.id ||
+              appliedWorkspace.revision !== result.workspace.revision
+            ) {
+              useAppStore.getState().setWorkspace(result.workspace);
+            }
+            if (result.session) {
+              const appliedSession = useAppStore.getState().session;
+              if (
+                appliedSession === null ||
+                appliedSession.sessionId !== result.session.sessionId ||
+                appliedSession.revision !== result.session.revision
+              ) {
+                useAppStore.getState().setSession(result.session);
+              }
+            }
+            useAppStore.getState().setHost({
+              ...host,
+              workspaceId: switched.workspaceId,
+              workspaceRevision: switched.workspaceRevision,
+              sessionId: switched.sessionId,
+              sessionRevision: switched.sessionRevision,
+              packageRevision: switched.packageRevision,
+            });
           }
         }
-        useAppStore.getState().setHost({
-          ...host,
-          workspaceId: switched.workspaceId,
-          workspaceRevision: switched.workspaceRevision,
-          sessionId: switched.sessionId,
-          sessionRevision: switched.sessionRevision,
-          packageRevision: switched.packageRevision,
-        });
       }
 
       if (item.archived) {
@@ -205,9 +235,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
       });
       if (!res) return;
       if (!res.ok) {
-        useAppStore
-          .getState()
-          .pushNotification(localizeHostError(res.error, t), "error");
+        useAppStore.getState().pushNotification(localizeHostError(res.error, t), "error");
         return;
       }
       const appliedSession = useAppStore.getState().session;

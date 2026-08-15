@@ -32,14 +32,12 @@ type MermaidFence = {
 };
 
 function scanMermaidFences(value: string): MermaidFence[] {
-  let current:
-    | {
-        blockStart: number;
-        infoStart: number;
-        infoEnd: number;
-        fenceCount: number;
-      }
-    | null = null;
+  let current: {
+    blockStart: number;
+    infoStart: number;
+    infoEnd: number;
+    fenceCount: number;
+  } | null = null;
   const fences: MermaidFence[] = [];
 
   let events: MicromarkEvent[];
@@ -228,10 +226,7 @@ export function sanitizeMermaidSvg(value: string): string {
     if (!element.isConnected) continue;
     if (element.hasAttribute("data-pideck-mermaid-href")) continue;
     for (const attribute of Array.from(element.attributes)) {
-      if (
-        attribute.localName.toLowerCase() === "href" &&
-        !isSafeSvgFragment(attribute.value)
-      ) {
+      if (attribute.localName.toLowerCase() === "href" && !isSafeSvgFragment(attribute.value)) {
         element.removeAttributeNode(attribute);
       }
     }

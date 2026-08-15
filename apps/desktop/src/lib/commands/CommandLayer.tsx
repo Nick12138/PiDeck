@@ -17,9 +17,7 @@ export function CommandLayer() {
   const t = useT();
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const isMac = resolveWindowControlsPlatform() === "macos";
-  const shortcutOverrides = useAppStore(
-    (state) => state.desktopSettings?.shortcutOverrides,
-  );
+  const shortcutOverrides = useAppStore((state) => state.desktopSettings?.shortcutOverrides);
   const commands = useMemo(
     () => resolveCommandBindings(appCommands, shortcutOverrides),
     [shortcutOverrides],
@@ -32,9 +30,7 @@ export function CommandLayer() {
       const command = findMatchingCommand(event, commands, {
         isMac,
         hasOverlay: Boolean(
-          document.querySelector(
-            '[role="dialog"], [role="menu"], [data-composer-completion]',
-          ),
+          document.querySelector('[role="dialog"], [role="menu"], [data-composer-completion]'),
         ),
       });
       if (!command || command.enabled?.(useAppStore.getState()) === false) return;

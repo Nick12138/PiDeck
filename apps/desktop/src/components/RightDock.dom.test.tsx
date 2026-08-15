@@ -210,7 +210,7 @@ describe("RightDock pages", () => {
     expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
   });
 
-it("limits Browser pages to eight", async () => {
+  it("limits Browser pages to eight", async () => {
     const user = userEvent.setup();
     render(<RightDock />);
 

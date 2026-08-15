@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "apps", "desktop", "src-tauri");
-const desktopExe = join(tauriDir, "target", "debug", "pideck.exe");
+const devFastTargetDir = join(tauriDir, "target", "dev-fast");
+const desktopExe = join(devFastTargetDir, "debug", "pideck.exe");
 const devUrl = "http://localhost:1420/";
 const hostSrc = join(root, "packages", "pi-host", "src");
 const hostDist = join(root, "packages", "pi-host", "dist");
@@ -16,6 +17,7 @@ const protocolEntry = join(protocolDist, "index.js");
 const protocolPackage = join(root, "packages", "protocol", "package.json");
 const tauriHostResources = join(tauriDir, "resources", "pi-host");
 const debugHostResources = join(tauriDir, "target", "debug", "resources", "pi-host");
+const devFastHostResources = join(devFastTargetDir, "debug", "resources", "pi-host");
 
 let vite = null;
 let desktop = null;
@@ -45,6 +47,14 @@ function runPnpmSync(args) {
       ? { executable: process.execPath, args: [npmExecPath, ...args] }
       : { executable: process.platform === "win32" ? "pnpm.cmd" : "pnpm", args };
   return spawnSync(command.executable, command.args, {
+    cwd: root,
+    stdio: "inherit",
+    windowsHide: true,
+  });
+}
+
+function runCargoSync(args) {
+  return spawnSync(process.platform === "win32" ? "cargo.exe" : "cargo", args, {
     cwd: root,
     stdio: "inherit",
     windowsHide: true,
@@ -134,7 +144,32 @@ function prepareDevHostResources() {
   });
   syncHostResources(tauriHostResources);
   syncHostResources(debugHostResources);
+  syncHostResources(devFastHostResources);
   console.log("[dev:fast] Pi Host resources are up to date");
+}
+
+function ensureDesktopBuild() {
+  const rustSourceMtime = Math.max(
+    latestMtimeMs(join(tauriDir, "src"), (path) => path.endsWith(".rs")),
+    ...["build.rs", "Cargo.toml", "Cargo.lock", "tauri.conf.json"].map((name) => {
+      const path = join(tauriDir, name);
+      return existsSync(path) ? statSync(path).mtimeMs : 0;
+    }),
+  );
+  const builtMtime = existsSync(desktopExe) ? statSync(desktopExe).mtimeMs : 0;
+  if (builtMtime >= rustSourceMtime) return;
+
+  console.log("[dev:fast] Building changed Rust desktop sources...");
+  const result = runCargoSync([
+    "build",
+    "--manifest-path",
+    join(tauriDir, "Cargo.toml"),
+    "--target-dir",
+    devFastTargetDir,
+  ]);
+  if (result.status !== 0) {
+    throw new Error(`Rust desktop build failed (code ${result.status ?? "unknown"})`);
+  }
 }
 
 async function isDesktopViteReady() {
@@ -184,13 +219,8 @@ async function main() {
   if (process.platform !== "win32") {
     throw new Error("dev:fast currently supports Windows only");
   }
-  if (!existsSync(desktopExe)) {
-    throw new Error(
-      `Debug executable not found: ${desktopExe}\nRun "pnpm --filter @pideck/desktop run tauri:dev" once to compile it.`,
-    );
-  }
-
   prepareDevHostResources();
+  ensureDesktopBuild();
 
   if (await isDesktopViteReady()) {
     console.log(`[dev:fast] Reusing Vite at ${devUrl}`);

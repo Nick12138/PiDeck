@@ -321,7 +321,14 @@ export function AppearanceSettings() {
                         setting: t("generalConversationMaxWidth"),
                       })}
                       onClick={() =>
-                        setConversationMaxDraft(String(Math.max(HARD_MIN_CONVERSATION_WIDTH, Math.floor(Number(conversationMaxDraft)) - 1)))
+                        setConversationMaxDraft(
+                          String(
+                            Math.max(
+                              HARD_MIN_CONVERSATION_WIDTH,
+                              Math.floor(Number(conversationMaxDraft)) - 1,
+                            ),
+                          ),
+                        )
                       }
                     >
                       <Minus size={13} />
@@ -357,7 +364,14 @@ export function AppearanceSettings() {
                         setting: t("generalConversationMaxWidth"),
                       })}
                       onClick={() =>
-                        setConversationMaxDraft(String(Math.min(HARD_MAX_CONVERSATION_WIDTH, Math.floor(Number(conversationMaxDraft)) + 1)))
+                        setConversationMaxDraft(
+                          String(
+                            Math.min(
+                              HARD_MAX_CONVERSATION_WIDTH,
+                              Math.floor(Number(conversationMaxDraft)) + 1,
+                            ),
+                          ),
+                        )
                       }
                     >
                       <Plus size={13} />
@@ -396,7 +410,14 @@ export function AppearanceSettings() {
                         setting: t("generalConversationMinWidth"),
                       })}
                       onClick={() =>
-                        setConversationMinDraft(String(Math.max(HARD_MIN_CONVERSATION_WIDTH, Math.floor(Number(conversationMinDraft)) - 1)))
+                        setConversationMinDraft(
+                          String(
+                            Math.max(
+                              HARD_MIN_CONVERSATION_WIDTH,
+                              Math.floor(Number(conversationMinDraft)) - 1,
+                            ),
+                          ),
+                        )
                       }
                     >
                       <Minus size={13} />
@@ -432,7 +453,14 @@ export function AppearanceSettings() {
                         setting: t("generalConversationMinWidth"),
                       })}
                       onClick={() =>
-                        setConversationMinDraft(String(Math.min(HARD_MAX_CONVERSATION_WIDTH, Math.floor(Number(conversationMinDraft)) + 1)))
+                        setConversationMinDraft(
+                          String(
+                            Math.min(
+                              HARD_MAX_CONVERSATION_WIDTH,
+                              Math.floor(Number(conversationMinDraft)) + 1,
+                            ),
+                          ),
+                        )
                       }
                     >
                       <Plus size={13} />

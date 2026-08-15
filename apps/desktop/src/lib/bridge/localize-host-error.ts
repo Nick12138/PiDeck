@@ -2,7 +2,28 @@ import type { Translate } from "../i18n/use-t";
 
 type HostErrorLike = { code?: string; message?: string };
 
-const CODE_TO_KEY: Record<string, "hostErrAgentBusy" | "hostErrAgentNotReady" | "hostErrNoActiveSession" | "hostErrWorkspaceServicesNotReady" | "hostErrServiceBusy" | "hostErrNoWorkspace" | "hostErrPackageMutationBusy" | "hostErrPackageNotFound" | "hostErrModelNotFound" | "hostErrSessionSwitchFailed" | "hostErrWorkspaceSwitchFailed" | "hostErrWorkspaceDirMissing" | "hostErrSessionArchived" | "hostErrHostShuttingDown" | "hostErrInvalidRequest" | "hostErrAuthRequired" | "hostErrSessionNotFound" | "hostErrSessionNotInWorkspace" | "hostErrUnknown"> = {
+const CODE_TO_KEY: Record<
+  string,
+  | "hostErrAgentBusy"
+  | "hostErrAgentNotReady"
+  | "hostErrNoActiveSession"
+  | "hostErrWorkspaceServicesNotReady"
+  | "hostErrServiceBusy"
+  | "hostErrNoWorkspace"
+  | "hostErrPackageMutationBusy"
+  | "hostErrPackageNotFound"
+  | "hostErrModelNotFound"
+  | "hostErrSessionSwitchFailed"
+  | "hostErrWorkspaceSwitchFailed"
+  | "hostErrWorkspaceDirMissing"
+  | "hostErrSessionArchived"
+  | "hostErrHostShuttingDown"
+  | "hostErrInvalidRequest"
+  | "hostErrAuthRequired"
+  | "hostErrSessionNotFound"
+  | "hostErrSessionNotInWorkspace"
+  | "hostErrUnknown"
+> = {
   AGENT_BUSY: "hostErrAgentBusy",
   AGENT_NOT_READY: "hostErrAgentNotReady",
   SERVICE_GRAPH_BUSY: "hostErrServiceBusy",
@@ -24,10 +45,7 @@ const CODE_TO_KEY: Record<string, "hostErrAgentBusy" | "hostErrAgentNotReady" | 
  * Falls back to the raw message when the code is unknown or carries detail
  * (e.g. a path or provider id) that a generic translation would discard.
  */
-export function localizeHostError(
-  error: HostErrorLike | null | undefined,
-  t: Translate,
-): string {
+export function localizeHostError(error: HostErrorLike | null | undefined, t: Translate): string {
   if (!error) return t("hostErrUnknown");
   const code = error.code ?? "";
   if (code === "SESSION_NOT_FOUND" && error.message) {

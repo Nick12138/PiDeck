@@ -26,13 +26,7 @@ const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
 
-function SidebarBrandToggle({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
+function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const t = useT();
   const label = collapsed ? t("sidebarExpand") : t("sidebarCollapse");
   const PanelIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
@@ -57,7 +51,10 @@ function SidebarBrandToggle({
 }
 
 function clampSidebarWidth(width: number, viewportWidth = 1280): number {
-  const responsiveMax = Math.max(DEFAULT_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360));
+  const responsiveMax = Math.max(
+    DEFAULT_SIDEBAR_WIDTH,
+    Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360),
+  );
   if (!Number.isFinite(width)) return Math.min(DEFAULT_SIDEBAR_WIDTH, responsiveMax);
   return Math.min(responsiveMax, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
 }
@@ -170,152 +167,153 @@ export function SidebarLayout({
 
   return (
     <Fragment>
-    <aside
-      style={{
-        width: sidebarCollapsed ? 0 : sidebarWidth,
-      }}
-      data-sidebar
-      data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
-      className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar ${
-        resizing
-          ? "transition-none"
-          : "transition-[width] duration-200 ease-out"
-      }`}
-    >
-      {!sidebarCollapsed && (
-        <div
-          role="separator"
-          tabIndex={0}
-          aria-label={t("sidebarResize")}
-          aria-orientation="vertical"
-          aria-valuemin={MIN_SIDEBAR_WIDTH}
-          aria-valuemax={MAX_SIDEBAR_WIDTH}
-          aria-valuenow={sidebarWidth}
-          className="absolute -right-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            resizeStart.current = {
-              pointerId: event.pointerId,
-              x: event.clientX,
-              width: sidebarWidth,
-            };
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setResizing(true);
-          }}
-          onPointerMove={(event) => {
-            const start = resizeStart.current;
-            if (!start || start.pointerId !== event.pointerId) return;
-            // sidebar is on the left edge: dragging right (clientX grows) widens it
-            resizeSidebar(start.width + (event.clientX - start.x));
-          }}
-          onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
-          onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
-          onLostPointerCapture={() => {
-            resizeStart.current = null;
-            setResizing(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            const next = clampSidebarWidth(
-              sidebarWidth + (event.key === "ArrowRight" ? 20 : -20),
-              window.innerWidth,
-            );
-            sidebarWidthRef.current = next;
-            setSidebarWidth(next);
-            try {
-              globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next));
-            } catch {
-              /* ignore unavailable localStorage */
-            }
-          }}
-        />
-      )}
-
-      {sidebarCollapsed ? null : (
-        <>
+      <aside
+        style={{
+          width: sidebarCollapsed ? 0 : sidebarWidth,
+        }}
+        data-sidebar
+        data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
+        className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar ${
+          resizing ? "transition-none" : "transition-[width] duration-200 ease-out"
+        }`}
+      >
+        {!sidebarCollapsed && (
           <div
-            className="flex h-16 shrink-0 items-center gap-3 px-4"
-            data-sidebar-header
-            data-tauri-drag-region
-          >
-            <SidebarBrandToggle collapsed={false} onToggle={toggleSidebarCollapsed} />
-            <span className="text-[15px] font-semibold" data-sidebar-brand>
-              Pi Agent
-            </span>
-            <div className="ml-auto flex items-center gap-0.5">
+            role="separator"
+            tabIndex={0}
+            aria-label={t("sidebarResize")}
+            aria-orientation="vertical"
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={MAX_SIDEBAR_WIDTH}
+            aria-valuenow={sidebarWidth}
+            className="absolute -right-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              resizeStart.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+                width: sidebarWidth,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setResizing(true);
+            }}
+            onPointerMove={(event) => {
+              const start = resizeStart.current;
+              if (!start || start.pointerId !== event.pointerId) return;
+              // sidebar is on the left edge: dragging right (clientX grows) widens it
+              resizeSidebar(start.width + (event.clientX - start.x));
+            }}
+            onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
+            onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
+            onLostPointerCapture={() => {
+              resizeStart.current = null;
+              setResizing(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const next = clampSidebarWidth(
+                sidebarWidth + (event.key === "ArrowRight" ? 20 : -20),
+                window.innerWidth,
+              );
+              sidebarWidthRef.current = next;
+              setSidebarWidth(next);
+              try {
+                globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next));
+              } catch {
+                /* ignore unavailable localStorage */
+              }
+            }}
+          />
+        )}
+
+        {sidebarCollapsed ? null : (
+          <>
+            <div
+              className="flex h-16 shrink-0 items-center gap-3 px-4"
+              data-sidebar-header
+              data-tauri-drag-region
+            >
+              <SidebarBrandToggle collapsed={false} onToggle={toggleSidebarCollapsed} />
+              <span className="text-[15px] font-semibold" data-sidebar-brand>
+                Pi Agent
+              </span>
+              <div className="ml-auto flex items-center gap-0.5">
+                <button
+                  type="button"
+                  title={t("commandGlobalSearch")}
+                  aria-label={t("commandGlobalSearch")}
+                  disabled={!host}
+                  className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+                  onClick={requestGlobalSearchOpen}
+                >
+                  <Search size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-2 pb-3 pt-2">
+              <NewSessionButton />
+            </div>
+
+            <div className="border-t border-border px-2 py-3">
+              <WorkspacePicker />
+            </div>
+
+            {/* Collapsed or not, the header row stays in place below Workspaces. */}
+            <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+              <SessionList
+                showCreateAction={false}
+                collapsed={sessionsCollapsed}
+                onToggleCollapsed={toggleSessionsCollapsed}
+              />
+            </div>
+
+            <div className="shrink-0 flex items-center gap-1 px-2 pb-2">
               <button
                 type="button"
-                title={t("commandGlobalSearch")}
-                aria-label={t("commandGlobalSearch")}
-                disabled={!host}
-                className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-                onClick={requestGlobalSearchOpen}
-              >
-                <Search size={15} />
-              </button>
-            </div>
-          </div>
-
-          <div className="px-2 pb-3 pt-2">
-            <NewSessionButton />
-          </div>
-
-          <div className="border-t border-border px-2 py-3">
-            <WorkspacePicker />
-          </div>
-
-          {/* Collapsed or not, the header row stays in place below Workspaces. */}
-          <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            <SessionList
-              showCreateAction={false}
-              collapsed={sessionsCollapsed}
-              onToggleCollapsed={toggleSessionsCollapsed}
-            />
-          </div>
-
-          <div className="shrink-0 flex items-center gap-1 px-2 pb-2">
-            <button
-              type="button"
-              onClick={() => setPage(page === "chat" ? "settings" : "chat")}
-              data-ui="nav-item"
-              data-state={page !== "chat" ? "active" : "inactive"}
-              title={t("settingsTitle")}
-              aria-label={t("settingsTitle")}
-              aria-pressed={page !== "chat"}
-              className={`flex size-9 shrink-0 items-center justify-center rounded-md transition-colors ${
-                page !== "chat"
-                  ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                  : "text-foreground hover:bg-surface-overlay"
-              }`}
-            >
-              <Settings size={17} />
-            </button>
-            {connectionPending ? (
-              <span className="flex size-4 shrink-0 items-center justify-center" title={connectionTitle}>
-                <LoaderCircle size={14} className="animate-spin text-muted" />
-              </span>
-            ) : (
-              <span
-                className={`size-1.5 shrink-0 rounded-full ${
-                  hostFatal
-                    ? "bg-danger"
-                    : hostReady
-                      ? "bg-success"
-                      : host
-                        ? "bg-warning"
-                        : "bg-muted"
+                onClick={() => setPage(page === "chat" ? "settings" : "chat")}
+                data-ui="nav-item"
+                data-state={page !== "chat" ? "active" : "inactive"}
+                title={t("settingsTitle")}
+                aria-label={t("settingsTitle")}
+                aria-pressed={page !== "chat"}
+                className={`flex size-9 shrink-0 items-center justify-center rounded-md transition-colors ${
+                  page !== "chat"
+                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                    : "text-foreground hover:bg-surface-overlay"
                 }`}
-                title={connectionTitle}
-              />
-            )}
-            <div className="ml-auto">
-              <NotificationCenter />
+              >
+                <Settings size={17} />
+              </button>
+              {connectionPending ? (
+                <span
+                  className="flex size-4 shrink-0 items-center justify-center"
+                  title={connectionTitle}
+                >
+                  <LoaderCircle size={14} className="animate-spin text-muted" />
+                </span>
+              ) : (
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${
+                    hostFatal
+                      ? "bg-danger"
+                      : hostReady
+                        ? "bg-success"
+                        : host
+                          ? "bg-warning"
+                          : "bg-muted"
+                  }`}
+                  title={connectionTitle}
+                />
+              )}
+              <div className="ml-auto">
+                <NotificationCenter />
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
       </aside>
 
       {sidebarCollapsed && (
@@ -324,7 +322,7 @@ export function SidebarLayout({
           data-sidebar-collapsed-toggle-slot
           data-tauri-drag-region
         >
-<div className="translate-x-0.5 translate-y-[3px]">
+          <div className="translate-x-0.5 translate-y-[3px]">
             <SidebarBrandToggle collapsed onToggle={toggleSidebarCollapsed} />
           </div>
         </div>

@@ -224,9 +224,7 @@ describe("HostSettings", () => {
     expect(
       useAppStore
         .getState()
-        .notifications.some((item) =>
-          item.message.includes("restart Pi Host to apply"),
-        ),
+        .notifications.some((item) => item.message.includes("restart Pi Host to apply")),
     ).toBe(true);
   });
 });

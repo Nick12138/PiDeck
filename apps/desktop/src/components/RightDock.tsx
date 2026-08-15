@@ -218,10 +218,7 @@ export function RightDock() {
     });
     const closeOnPointer = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (
-        !addMenuRef.current?.contains(target) &&
-        !addMenuPanelRef.current?.contains(target)
-      ) {
+      if (!addMenuRef.current?.contains(target) && !addMenuPanelRef.current?.contains(target)) {
         setAddMenuOpen(false);
       }
     };
@@ -660,7 +657,9 @@ export function RightDock() {
               </summary>
             </details>
           )}
-          {overflowMenuOpen && overflowPosition && overflowTabIds.length > 0 &&
+          {overflowMenuOpen &&
+            overflowPosition &&
+            overflowTabIds.length > 0 &&
             createPortal(
               <div
                 ref={overflowPanelRef}
@@ -717,7 +716,8 @@ export function RightDock() {
             >
               <Plus size={14} />
             </button>
-            {addMenuOpen && addMenuPosition &&
+            {addMenuOpen &&
+              addMenuPosition &&
               createPortal(
                 <div
                   ref={addMenuPanelRef}

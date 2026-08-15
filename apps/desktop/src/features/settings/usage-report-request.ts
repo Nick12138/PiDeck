@@ -1,11 +1,7 @@
 type RetryableUsageReportResponse =
-  | { ok: true }
-  | { ok: false; error: { code?: string; retryable?: boolean } };
+  { ok: true } | { ok: false; error: { code?: string; retryable?: boolean } };
 
-export function shouldRetryUsageReport(error: {
-  code?: string;
-  retryable?: boolean;
-}): boolean {
+export function shouldRetryUsageReport(error: { code?: string; retryable?: boolean }): boolean {
   return error.code === "SERVICE_GRAPH_BUSY" && error.retryable === true;
 }
 

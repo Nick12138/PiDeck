@@ -15,10 +15,7 @@ export function exportFileName(
   sessionId: string,
   format: ExportFormat,
 ): string {
-  const base = (name?.trim() || `session-${sessionId.slice(0, 8)}`).replace(
-    /[\\/:*?"<>|]/g,
-    "-",
-  );
+  const base = (name?.trim() || `session-${sessionId.slice(0, 8)}`).replace(/[\\/:*?"<>|]/g, "-");
   return `${base}.${format}`;
 }
 
@@ -80,7 +77,10 @@ export async function requestExport(format: ExportFormat): Promise<boolean> {
     void revealExportedFile(res.result.path);
     return true;
   } catch (error) {
-    pushNotification(error instanceof Error ? error.message : tCurrent("notifExportFailed"), "error");
+    pushNotification(
+      error instanceof Error ? error.message : tCurrent("notifExportFailed"),
+      "error",
+    );
     return false;
   }
 }

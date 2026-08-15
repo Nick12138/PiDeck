@@ -25,9 +25,7 @@ export function terminalClipboardKeyHandler(args: {
   clipboard?: Pick<Clipboard, "readText" | "writeText">;
 }): (event: KeyboardEvent) => boolean {
   const { terminal, isMac } = args;
-  const readText = args.clipboard
-    ? () => args.clipboard!.readText()
-    : readClipboardText;
+  const readText = args.clipboard ? () => args.clipboard!.readText() : readClipboardText;
   const writeText = args.clipboard
     ? (text: string) => args.clipboard!.writeText(text)
     : (text: string) => navigator.clipboard.writeText(text);

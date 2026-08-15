@@ -18,10 +18,7 @@ describe("known workspace list", () => {
   });
 
   it("removes only the exact canonical path", () => {
-    const list = removeKnownWorkspace(
-      ["/repos/Alpha", "/repos/alpha"],
-      "/repos/Alpha",
-    );
+    const list = removeKnownWorkspace(["/repos/Alpha", "/repos/alpha"], "/repos/Alpha");
     expect(list).toEqual(["/repos/alpha"]);
   });
 

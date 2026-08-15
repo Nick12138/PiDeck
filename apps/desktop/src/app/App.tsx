@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppStore, type SettingsSection } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
-import { createTauriTransport } from "../lib/bridge/tauri-transport";
+import { createTauriTransport, replayActiveHostReady } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
@@ -819,14 +819,12 @@ export function App() {
                       );
                       continue;
                     } else {
-                      useAppStore
-                        .getState()
-                        .pushNotification(
-                          tCurrent("notifRestoreSessionFailed", {
-                            message: restored.error.message,
-                          }),
-                          "warning",
-                        );
+                      useAppStore.getState().pushNotification(
+                        tCurrent("notifRestoreSessionFailed", {
+                          message: restored.error.message,
+                        }),
+                        "warning",
+                      );
                     }
                   }
                   useAppStore.getState().setHostFatal(null);
@@ -891,7 +889,10 @@ export function App() {
               console.error("[pi-host] transport recovery failed", fullMessage);
               const latestStore = useAppStore.getState();
               latestStore.setHostFatal(message);
-              latestStore.pushNotification(tCurrent("notifHostRecoveryFailed", { message }), "error");
+              latestStore.pushNotification(
+                tCurrent("notifHostRecoveryFailed", { message }),
+                "error",
+              );
               latestStore.setConnecting(false);
             } finally {
               transportRepair = null;
@@ -916,6 +917,7 @@ export function App() {
         });
         unsubTransportError = hostClient.onTransportError(repairTransport);
         hostClient.attach(transport);
+        await replayActiveHostReady();
 
         window.setTimeout(() => {
           if (!hostClient.getHostInstanceId()) {

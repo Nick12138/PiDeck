@@ -23,14 +23,16 @@ describe("ChangesPanel helpers", () => {
       behind: 0,
       indexGeneration: "b".repeat(64),
       warnings: [],
-      files: [{
-        path: "src/app.ts",
-        staged: "modified",
-        unstaged: "modified",
-        conflict: false,
-        submodule: false,
-        pathSupported: true,
-      }],
+      files: [
+        {
+          path: "src/app.ts",
+          staged: "modified",
+          unstaged: "modified",
+          conflict: false,
+          submodule: false,
+          pathSupported: true,
+        },
+      ],
     };
     const rows = buildGitListRows(status);
     expect(rows.filter((row) => row.kind === "file")).toEqual([
@@ -40,7 +42,9 @@ describe("ChangesPanel helpers", () => {
   });
 
   it("tracks old and new line numbers across hunks", () => {
-    const lines = parseUnifiedDiffLines("@@ -2,2 +2,2 @@\n old\n-removed\n+added\n\\ No newline at end of file");
+    const lines = parseUnifiedDiffLines(
+      "@@ -2,2 +2,2 @@\n old\n-removed\n+added\n\\ No newline at end of file",
+    );
     expect(lines).toEqual([
       expect.objectContaining({ kind: "hunk", oldLine: null, newLine: null }),
       expect.objectContaining({ kind: "context", oldLine: 2, newLine: 2 }),
@@ -51,18 +55,20 @@ describe("ChangesPanel helpers", () => {
   });
 
   it("resets line numbering between files in a commit diff", () => {
-    const lines = parseUnifiedDiffLines([
-      "diff --git a/one.ts b/one.ts",
-      "@@ -1 +1 @@",
-      "-old",
-      "+new",
-      "diff --git a/two.ts b/two.ts",
-      "index 1111111..2222222 100644",
-      "--- a/two.ts",
-      "+++ b/two.ts",
-      "@@ -8 +8 @@",
-      " second",
-    ].join("\n"));
+    const lines = parseUnifiedDiffLines(
+      [
+        "diff --git a/one.ts b/one.ts",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "diff --git a/two.ts b/two.ts",
+        "index 1111111..2222222 100644",
+        "--- a/two.ts",
+        "+++ b/two.ts",
+        "@@ -8 +8 @@",
+        " second",
+      ].join("\n"),
+    );
     expect(lines[4]).toMatchObject({ kind: "meta", oldLine: null, newLine: null });
     expect(lines[5]).toMatchObject({ kind: "meta", oldLine: null, newLine: null });
     expect(lines[9]).toMatchObject({ kind: "context", oldLine: 8, newLine: 8 });

@@ -64,9 +64,7 @@ describe("GeneralSettings advanced block", () => {
 
     expect(screen.getByText("More settings")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open settings.json" })).toBeEnabled();
-    expect(
-      screen.getByText("Changes take effect after restarting the Host."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Changes take effect after restarting the Host.")).toBeInTheDocument();
   });
 
   it("reveals the global settings.json via the desktop_open_path command", async () => {

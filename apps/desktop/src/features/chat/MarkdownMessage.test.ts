@@ -11,17 +11,14 @@ import {
 describe("sanitizeAgentText", () => {
   it("removes ANSI decoration and internal dcp markers", () => {
     expect(
-      sanitizeAgentText(
-        "\u001b[38;5;38mThinking:\u001b[39m Inspect this\n<dcp-id>m004</dcp-id>",
-      ),
+      sanitizeAgentText("\u001b[38;5;38mThinking:\u001b[39m Inspect this\n<dcp-id>m004</dcp-id>"),
     ).toBe("Inspect this\n");
   });
 });
 
 describe("safe markdown URLs", () => {
-  it.each(["https://example.com/path", "http://localhost:1420/"])(
-    "allows %s",
-    (url) => expect(isSafeExternalUrl(url)).toBe(true),
+  it.each(["https://example.com/path", "http://localhost:1420/"])("allows %s", (url) =>
+    expect(isSafeExternalUrl(url)).toBe(true),
   );
 
   it.each(["javascript:alert(1)", "file:///C:/secret", "../relative.md", "mailto:a@b.com"])(
@@ -54,21 +51,15 @@ describe("deferIncompleteMermaid", () => {
 
   it("preserves fence metadata while deferring the Mermaid language", () => {
     const source = '```mermaid title="Flow"\nflowchart TD\n  A --> B';
-    expect(deferIncompleteMermaid(source)).toBe(
-      '```text title="Flow"\nflowchart TD\n  A --> B',
-    );
+    expect(deferIncompleteMermaid(source)).toBe('```text title="Flow"\nflowchart TD\n  A --> B');
   });
 
   it("normalizes a closed uppercase fence and scans blockquotes", () => {
     const closed = "> ```MERMAID\n> flowchart TD\n>   A --> B\n> ```";
-    expect(deferIncompleteMermaid(closed)).toBe(
-      "> ```mermaid\n> flowchart TD\n>   A --> B\n> ```",
-    );
+    expect(deferIncompleteMermaid(closed)).toBe("> ```mermaid\n> flowchart TD\n>   A --> B\n> ```");
 
     const open = "> ```mermaid\n> flowchart TD\n>   A --> B";
-    expect(deferIncompleteMermaid(open)).toBe(
-      "> ```text\n> flowchart TD\n>   A --> B",
-    );
+    expect(deferIncompleteMermaid(open)).toBe("> ```text\n> flowchart TD\n>   A --> B");
   });
 
   it("defers a list-continuation Mermaid fence", () => {
@@ -80,30 +71,20 @@ describe("deferIncompleteMermaid", () => {
 
   it("defers every unfinished fence when sibling containers split code blocks", () => {
     const listSource = "- ```mermaid\nA\n- ```mermaid\nB";
-    expect(deferIncompleteMermaid(listSource)).toBe(
-      "- ```text\nA\n- ```text\nB",
-    );
+    expect(deferIncompleteMermaid(listSource)).toBe("- ```text\nA\n- ```text\nB");
 
     const quoteSource = "> ```mermaid\n> A\n\noutside\n\n> ```";
-    expect(deferIncompleteMermaid(quoteSource)).toBe(
-      "> ```text\n> A\n\noutside\n\n> ```",
-    );
+    expect(deferIncompleteMermaid(quoteSource)).toBe("> ```text\n> A\n\noutside\n\n> ```");
   });
 
   it("follows CommonMark container order for nested lists and blockquotes", () => {
-    expect(deferIncompleteMermaid("- > ```mermaid\n  > A")).toBe(
-      "- > ```text\n  > A",
-    );
-    expect(deferIncompleteMermaid("- - ```mermaid\n    A")).toBe(
-      "- - ```text\n    A",
-    );
+    expect(deferIncompleteMermaid("- > ```mermaid\n  > A")).toBe("- > ```text\n  > A");
+    expect(deferIncompleteMermaid("- - ```mermaid\n    A")).toBe("- - ```text\n    A");
   });
 
   it("preserves tabs and CRLF while replacing only the language token", () => {
     const source = "> \t```MERMAID\r\n> \tflowchart TD\r\n> \t  A --> B";
-    expect(deferIncompleteMermaid(source)).toBe(
-      "> \t```text\r\n> \tflowchart TD\r\n> \t  A --> B",
-    );
+    expect(deferIncompleteMermaid(source)).toBe("> \t```text\r\n> \tflowchart TD\r\n> \t  A --> B");
   });
 
   it("does not rewrite Mermaid-like text that is not a fenced code block", () => {

@@ -80,5 +80,9 @@ export async function createHostAgentSession(
   options: HostAgentSessionOptions,
 ): Promise<CreateAgentSessionResult> {
   const initialModel = await resolveInitialModelOption(options);
-  return createAgentSession({ ...options, ...initialModel });
+  // SDK accepts `model?: Model<any>` but not `null`; coerce null → omit.
+  return createAgentSession({
+    ...options,
+    ...(initialModel.model !== null ? { model: initialModel.model as Model<any> } : {}),
+  });
 }

@@ -25,9 +25,7 @@ const NAMED_KEYS = new Set([
 ]);
 
 function hasOwn(overrides: ShortcutOverrides | undefined, commandId: string): boolean {
-  return Boolean(
-    overrides && Object.prototype.hasOwnProperty.call(overrides, commandId),
-  );
+  return Boolean(overrides && Object.prototype.hasOwnProperty.call(overrides, commandId));
 }
 
 function keyToken(key: string): string | null {
@@ -70,7 +68,7 @@ export function resolveCommandChord(
   overrides: ShortcutOverrides | undefined,
 ): string | undefined {
   const defaultChord = command.chord
-    ? normalizeShortcutChord(command.chord) ?? undefined
+    ? (normalizeShortcutChord(command.chord) ?? undefined)
     : undefined;
   if (!defaultChord || !hasOwn(overrides, command.id)) return defaultChord;
   const override = overrides![command.id];
@@ -135,8 +133,7 @@ export function findShortcutConflict(
   return (
     commands.find(
       (command) =>
-        command.id !== commandId &&
-        resolveCommandChord(command, overrides) === normalized,
+        command.id !== commandId && resolveCommandChord(command, overrides) === normalized,
     ) ?? null
   );
 }
@@ -152,13 +149,7 @@ export type ShortcutCaptureResult =
 export function captureShortcutChord(
   event: Pick<
     KeyboardEvent,
-    | "key"
-    | "metaKey"
-    | "ctrlKey"
-    | "shiftKey"
-    | "altKey"
-    | "isComposing"
-    | "repeat"
+    "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "isComposing" | "repeat"
   >,
   isMac: boolean,
 ): ShortcutCaptureResult {
@@ -196,7 +187,5 @@ export function captureShortcutChord(
       key,
     ].join("+"),
   );
-  return chord
-    ? { kind: "chord", chord }
-    : { kind: "invalid", reason: "unsupported" };
+  return chord ? { kind: "chord", chord } : { kind: "invalid", reason: "unsupported" };
 }

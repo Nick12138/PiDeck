@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureRoot = join(repoRoot, "test-fixtures/pi-agent");
 const safeCredentialPattern = /^pideck-fixture-[a-z0-9-]+-never-real$/i;
-const sensitiveFieldPattern = /^(?:key|apiKey|access|accessToken|refresh|refreshToken|token|secret|password|authorization)$/i;
+const sensitiveFieldPattern =
+  /^(?:key|apiKey|access|accessToken|refresh|refreshToken|token|secret|password|authorization)$/i;
 const forbiddenTokenPatterns = [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
@@ -63,7 +64,8 @@ if (files.length === 0) throw new Error(`No Pi agent fixtures found under ${fixt
 for (const file of files) {
   const content = readFileSync(file, "utf8");
   for (const pattern of forbiddenTokenPatterns) {
-    if (pattern.test(content)) throw new Error(`${file}: matched forbidden secret pattern ${pattern}`);
+    if (pattern.test(content))
+      throw new Error(`${file}: matched forbidden secret pattern ${pattern}`);
   }
   for (const value of parseStructuredFixture(file, content)) {
     inspectSensitiveFields(value, file);

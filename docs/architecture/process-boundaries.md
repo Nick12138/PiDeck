@@ -5,7 +5,7 @@
 **Owns**
 
 - Window and desktop settings lifecycle.
-- Spawning, monitoring, restarting, and shutting down the Node Pi Host.
+- Spawning, routing, monitoring, restarting, and shutting down the per-workspace Node Pi Hosts.
 - Platform process-tree containment for the Host and its ordinary descendants.
 - The JSONL stdin/stdout bridge and bounded stderr forwarding.
 - Native path opening and folder selection.
@@ -29,15 +29,34 @@
 - Mix logs into stdout.
 - Add a second workspace trust state machine outside the selected-workspace policy.
 
+## Workspace Host pool
+
+Rust owns a `PiHostPool` keyed by canonical workspace path. Startup creates one
+Host. When its Agent is idle, selecting an unallocated workspace keeps the
+legacy `workspace.setCurrent` flow and rebinds that Host to the selected path.
+When the active Host has a running Agent, selecting another workspace allocates
+an independent Node Host with its own protocol identity, service graph,
+provider runtime, and lock set. Returning to an already allocated workspace
+reuses its process and replays its saved `host.ready` frame so React performs a
+normal authoritative rehydrate.
+
+Only frames for the active route reach the renderer `HostClient`. Inactive
+Hosts continue consuming model streams, running tools, and maintaining their
+same-workspace background Sessions. Unexpected restart and fatal events retain
+the route id, so one workspace cannot replace another workspace's UI epoch.
+An inactive Host is retained while busy. After all of its Agents settle, it is
+retained for 30 minutes and then reclaimed by the desktop's periodic cleanup.
+The active Host is never reclaimed by this idle cleanup.
+
 ## Host process-tree lifecycle
 
-Rust owns the complete Pi Host process tree, not only the direct Node process.
+Rust owns every complete Pi Host process tree, not only each direct Node process.
 On Windows, the Host is assigned to a kill-on-close Job Object. On macOS and
 Linux, Rust calls `setsid()` before exec so the Host leads an isolated Unix
 session and process group; subprocesses inherit that group by default.
 
-Normal app exit first sends the typed `system.shutdown` request and preserves
-the Host's bounded graph-disposal window. After the direct Host exits or that
+Normal app exit sends the typed `system.shutdown` request to every pooled Host
+and preserves each Host's bounded graph-disposal window. After a direct Host exits or that
 window expires, Rust sends `SIGTERM` to the group, waits 500 ms, and escalates
 to group `SIGKILL`. Startup rollback, forced cleanup, unexpected Host exit, and
 the manager's Drop fallback use immediate group `SIGKILL`. A shared one-owner

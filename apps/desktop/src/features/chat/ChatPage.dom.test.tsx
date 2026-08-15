@@ -101,9 +101,9 @@ describe("ChatPage conversation width", () => {
   });
 
   it("shows the default session heading once the conversation has data", () => {
-    useAppStore.getState().applySessionSnapshot(
-      session([{ role: "user", content: "Hello", timestamp: 1 }]),
-    );
+    useAppStore
+      .getState()
+      .applySessionSnapshot(session([{ role: "user", content: "Hello", timestamp: 1 }]));
 
     const { container } = render(<ChatPage />);
 

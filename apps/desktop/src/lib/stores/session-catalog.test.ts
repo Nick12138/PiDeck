@@ -50,9 +50,7 @@ describe("session catalog", () => {
     expect(sessionCatalogItems(catalog)).toEqual([]);
 
     catalog = upsertSessionSnapshot(catalog, "w1", snapshot(), 20);
-    expect(sessionCatalogItems(catalog)).toMatchObject([
-      { sessionId: "s1", messageCount: 1 },
-    ]);
+    expect(sessionCatalogItems(catalog)).toMatchObject([{ sessionId: "s1", messageCount: 1 }]);
   });
 
   it("replaces persisted summaries without discarding live runtime state", () => {
@@ -102,9 +100,7 @@ describe("session catalog", () => {
   it("optimistically keeps a live snapshot missing from session.list", () => {
     let catalog = upsertSessionSnapshot(emptySessionCatalog(), "w1", snapshot(), 10);
     catalog = replaceSessionCatalog(catalog, "w1", []);
-    expect(sessionCatalogItems(catalog)).toMatchObject([
-      { sessionId: "s1", runtimeState: "idle" },
-    ]);
+    expect(sessionCatalogItems(catalog)).toMatchObject([{ sessionId: "s1", runtimeState: "idle" }]);
   });
 
   it("drops stale error entries missing from session.list", () => {

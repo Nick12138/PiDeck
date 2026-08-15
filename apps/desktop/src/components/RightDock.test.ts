@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  clampDockWidth,
-  partitionDockTabs,
-  visibleDockTabLimit,
-} from "./RightDock";
+import { clampDockWidth, partitionDockTabs, visibleDockTabLimit } from "./RightDock";
 
 describe("clampDockWidth", () => {
   it("uses the configured desktop limits", () => {

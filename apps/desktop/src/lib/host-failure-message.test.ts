@@ -10,7 +10,8 @@ describe("summarizeHostFailure", () => {
         level: "error",
         message: "Uncaught exception in Pi Host",
         meta: {
-          error: "This extension ctx is stale after session replacement or reload. Do not reuse it.",
+          error:
+            "This extension ctx is stale after session replacement or reload. Do not reuse it.",
           stack: "very long stack",
         },
       }),

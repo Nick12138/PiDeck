@@ -105,10 +105,7 @@ describe("filterConversationTree", () => {
     const visible = filterConversationTree(TREE);
     expect(visible.map((node) => node.entry.id)).toEqual(["u1"]);
     expect(visible[0]!.children.map((node) => node.entry.id)).toEqual(["a1"]);
-    expect(visible[0]!.children[0]!.children.map((node) => node.entry.id)).toEqual([
-      "u2",
-      "u3",
-    ]);
+    expect(visible[0]!.children[0]!.children.map((node) => node.entry.id)).toEqual(["u2", "u3"]);
     expect(visible[0]!.children[0]!.children[0]!.children).toEqual([]);
   });
 
@@ -120,9 +117,9 @@ describe("filterConversationTree", () => {
   });
 
   it("drops hidden subtrees without visible descendants", () => {
-    expect(
-      filterConversationTree([otherNode("m", "model_change", [], "orphan-label")]),
-    ).toEqual([]);
+    expect(filterConversationTree([otherNode("m", "model_change", [], "orphan-label")])).toEqual(
+      [],
+    );
   });
 });
 
@@ -167,10 +164,7 @@ describe("assistant turn merging", () => {
 
   it("does not merge across branch points", () => {
     const tree = [
-      assistantNode("a1", "root", [
-        assistantNode("a2", "left"),
-        assistantNode("a3", "right"),
-      ]),
+      assistantNode("a1", "root", [assistantNode("a2", "left"), assistantNode("a3", "right")]),
     ];
     const { rows, laneCount } = flattenSessionTree(tree, null);
     expect(rows.map(({ id, lane }) => [id, lane])).toEqual([
@@ -229,9 +223,7 @@ describe("rail layout", () => {
     ]);
     expect(laneCount).toBe(3);
     // c3's connector must pass c2's row on its own lane.
-    expect(rows.find((row) => row.id === "c2")!.passes).toEqual([
-      { lane: 2, accent: false },
-    ]);
+    expect(rows.find((row) => row.id === "c2")!.passes).toEqual([{ lane: 2, accent: false }]);
     expect(rows.find((row) => row.id === "p")!.forks).toEqual([
       { lane: 1, accent: false },
       { lane: 2, accent: false },
@@ -254,21 +246,13 @@ describe("flattenSessionTree", () => {
 
   it("marks the current path and puts the marker on the deepest visible row", () => {
     const { rows } = flattenSessionTree(TREE, "tr1");
-    expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
-      "u1",
-      "a1",
-      "u2",
-    ]);
+    expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual(["u1", "a1", "u2"]);
     expect(rows.filter((row) => row.isCurrent).map((row) => row.id)).toEqual(["u2"]);
   });
 
   it("follows the marker when the leaf moves to another branch", () => {
     const { rows } = flattenSessionTree(TREE, "u3");
-    expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual([
-      "u1",
-      "a1",
-      "u3",
-    ]);
+    expect(rows.filter((row) => row.onPath).map((row) => row.id)).toEqual(["u1", "a1", "u3"]);
     expect(rows.find((row) => row.id === "u3")?.isCurrent).toBe(true);
   });
 

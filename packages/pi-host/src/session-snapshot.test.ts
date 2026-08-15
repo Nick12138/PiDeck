@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { validateSuccessResult } from "@pideck/protocol";
-import { buildSessionSnapshot } from "./session-snapshot.js";
+import type { WorkspaceGraph } from "./workspace-graph-types.js";
+import { buildSessionSnapshot, refreshActiveSessionSnapshot } from "./session-snapshot.js";
 
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -102,6 +103,34 @@ describe("buildSessionSnapshot message projection", () => {
 
     expect(snapshot.messages[0]).toHaveProperty("content", content);
     expect(validateSuccessResult("session.getSnapshot", snapshot)).toMatchObject({ ok: false });
+  });
+});
+
+describe("refreshActiveSessionSnapshot", () => {
+  it("includes assistant progress produced while the Host route was inactive", () => {
+    const cached = snapshotFixture([{ role: "user", content: "Start" }]);
+    const streamingMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Latest partial reply" }],
+    };
+    const graph = {
+      workspaceId: WORKSPACE_ID,
+      canonicalCwd: "C:/workspace",
+      agentSession: sessionFixture([{ role: "user", content: "Start" }], {
+        isIdle: false,
+        agent: { state: { streamingMessage } },
+      }),
+      sessionManager: {} as SessionManager,
+      sessionSnapshot: cached,
+      toolRevision: 1,
+    } as WorkspaceGraph;
+
+    const refreshed = refreshActiveSessionSnapshot(graph);
+
+    expect(refreshed?.messages).toHaveLength(2);
+    expect(refreshed?.messages[1]).toEqual(streamingMessage);
+    expect(refreshed?.isStreaming).toBe(true);
+    expect(graph.sessionSnapshot).toBe(refreshed);
   });
 });
 

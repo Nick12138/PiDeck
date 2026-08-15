@@ -41,9 +41,7 @@ export class RecoveryEventBuffer {
     watermark: number,
   ): { events: HostEventEnvelope[]; overflowed: boolean } {
     const sameHost = this.hostInstanceId === hostInstanceId;
-    const events = sameHost
-      ? this.events.filter((event) => event.sequence > watermark)
-      : [];
+    const events = sameHost ? this.events.filter((event) => event.sequence > watermark) : [];
     const overflowed = !sameHost || this.overflowed;
     this.cancel();
     return { events, overflowed };
@@ -63,9 +61,7 @@ export function resolveRehydrateHostInstanceId(
   return expectedHostInstanceId ?? observedHostInstanceId;
 }
 
-export async function fullRehydrate(
-  expectedHostInstanceId?: string,
-): Promise<RehydrateResult> {
+export async function fullRehydrate(expectedHostInstanceId?: string): Promise<RehydrateResult> {
   const hostId = resolveRehydrateHostInstanceId(
     expectedHostInstanceId,
     hostClient.getHostInstanceId(),

@@ -1,11 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import type { AppCommand } from "./registry";
-import {
-  findMatchingCommand,
-  formatCommandChord,
-  matchesCommandChord,
-} from "./keymap";
+import { findMatchingCommand, formatCommandChord, matchesCommandChord } from "./keymap";
 import { appCommands } from "./registry";
 import type { AppState } from "../stores/app-store";
 
@@ -33,9 +29,9 @@ describe("command keymap", () => {
   it("resolves mod by platform and rejects extra primary modifiers", () => {
     expect(matchesCommandChord(event("n", { metaKey: true }), "mod+n", true)).toBe(true);
     expect(matchesCommandChord(event("n", { ctrlKey: true }), "mod+n", false)).toBe(true);
-    expect(
-      matchesCommandChord(event("n", { ctrlKey: true, metaKey: true }), "mod+n", false),
-    ).toBe(false);
+    expect(matchesCommandChord(event("n", { ctrlKey: true, metaKey: true }), "mod+n", false)).toBe(
+      false,
+    );
   });
 
   it("passes composing input and terminal-owned chords through", () => {
@@ -72,11 +68,9 @@ describe("command keymap", () => {
 
     const input = document.createElement("input");
     expect(
-      findMatchingCommand(
-        event("n", { altKey: true }, input),
-        [command({ chord: "alt+n" })],
-        { isMac: false },
-      )?.id,
+      findMatchingCommand(event("n", { altKey: true }, input), [command({ chord: "alt+n" })], {
+        isMac: false,
+      })?.id,
     ).toBe("test");
   });
 
@@ -89,12 +83,10 @@ describe("command keymap", () => {
     const rename = document.createElement("input");
     const composer = document.createElement("textarea");
     composer.className = "chat-composer-input";
-    expect(
-      findMatchingCommand(event("Escape", {}, rename), [stop], { isMac: false }),
-    ).toBeNull();
-    expect(
-      findMatchingCommand(event("Escape", {}, composer), [stop], { isMac: false })?.id,
-    ).toBe("test");
+    expect(findMatchingCommand(event("Escape", {}, rename), [stop], { isMac: false })).toBeNull();
+    expect(findMatchingCommand(event("Escape", {}, composer), [stop], { isMac: false })?.id).toBe(
+      "test",
+    );
     expect(
       findMatchingCommand(event("Escape", {}, composer), [stop], {
         isMac: false,
@@ -113,7 +105,9 @@ describe("command keymap", () => {
 
   it("does not bypass dirty Provider navigation from inside Settings", () => {
     const openSettings = appCommands.find((candidate) => candidate.id === "app.openSettings")!;
-    expect(openSettings.enabled?.({ page: "settings", providersDirty: true } as AppState)).toBe(false);
+    expect(openSettings.enabled?.({ page: "settings", providersDirty: true } as AppState)).toBe(
+      false,
+    );
     expect(openSettings.enabled?.({ page: "chat", providersDirty: true } as AppState)).toBe(true);
   });
 });

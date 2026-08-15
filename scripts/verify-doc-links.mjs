@@ -7,11 +7,7 @@ import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const mdRoots = [
-  join(root, "docs"),
-  join(root, "README.md"),
-  join(root, "THIRD_PARTY_NOTICES.md"),
-];
+const mdRoots = [join(root, "docs"), join(root, "README.md"), join(root, "THIRD_PARTY_NOTICES.md")];
 
 const linkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
 const errors = [];
@@ -33,7 +29,12 @@ function checkFile(file) {
   let m;
   while ((m = linkRe.exec(text))) {
     const href = m[2].trim();
-    if (!href || href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:")) {
+    if (
+      !href ||
+      href.startsWith("http://") ||
+      href.startsWith("https://") ||
+      href.startsWith("mailto:")
+    ) {
       continue;
     }
     if (href.startsWith("#")) continue;
@@ -105,7 +106,9 @@ for (const f of statusFiles) {
   for (const re of forbiddenComplete) {
     if (re.test(text) && !/not\s+complete|P0\s+Not\s+Complete/i.test(text)) {
       if (!p0GatePassed) {
-        errors.push(`${f}: forbidden completion claim matching ${re} (P0 claimStatus is not complete)`);
+        errors.push(
+          `${f}: forbidden completion claim matching ${re} (P0 claimStatus is not complete)`,
+        );
       }
     }
   }

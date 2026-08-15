@@ -371,11 +371,7 @@ export function SessionList({
       if (!res.ok) {
         if (isSuperseded()) return;
         if (target && res.error?.retryable !== true) {
-          setSessionRuntimeState(
-            target.sessionId,
-            "error",
-            localizeHostError(res.error, t),
-          );
+          setSessionRuntimeState(target.sessionId, "error", localizeHostError(res.error, t));
         }
         pushNotification(
           localizeHostError(res.error, t),

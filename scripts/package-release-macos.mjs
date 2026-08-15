@@ -18,7 +18,9 @@ import { writeReleaseResourceManifest } from "./release-resource-manifest.mjs";
 import { updaterPlatformKey } from "./release-runtime-target.mjs";
 
 if (process.platform !== "darwin" || !["arm64", "x64"].includes(process.arch)) {
-  throw new Error(`macOS release packaging requires darwin arm64/x64, got ${process.platform}-${process.arch}`);
+  throw new Error(
+    `macOS release packaging requires darwin arm64/x64, got ${process.platform}-${process.arch}`,
+  );
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -111,18 +113,22 @@ function capture(command, args, options = {}) {
 
 function newestFile(directory, accepts) {
   if (!existsSync(directory)) return null;
-  return readdirSync(directory)
-    .map((name) => join(directory, name))
-    .filter((path) => statSync(path).isFile() && accepts(basename(path)))
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
+  return (
+    readdirSync(directory)
+      .map((name) => join(directory, name))
+      .filter((path) => statSync(path).isFile() && accepts(basename(path)))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null
+  );
 }
 
 function newestDirectory(directory, accepts) {
   if (!existsSync(directory)) return null;
-  return readdirSync(directory)
-    .map((name) => join(directory, name))
-    .filter((path) => statSync(path).isDirectory() && accepts(basename(path)))
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
+  return (
+    readdirSync(directory)
+      .map((name) => join(directory, name))
+      .filter((path) => statSync(path).isDirectory() && accepts(basename(path)))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null
+  );
 }
 
 function validatePackagedResources(appBundle, expectedManifest) {
@@ -162,9 +168,7 @@ function validatePackagedResources(appBundle, expectedManifest) {
 }
 
 timed("build JavaScript packages", () => run("pnpm", ["build"]));
-timed("stage controlled sidecar runtime", () =>
-  run("pnpm", ["package:sidecar:with-node"]),
-);
+timed("stage controlled sidecar runtime", () => run("pnpm", ["package:sidecar:with-node"]));
 timed("validate staged resources", () => run("pnpm", ["validate:resources"]));
 timed("smoke staged Host", () => run("pnpm", ["smoke:staged-host"]));
 

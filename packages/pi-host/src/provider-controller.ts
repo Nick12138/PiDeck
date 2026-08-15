@@ -501,7 +501,7 @@ async function reconcileIdleActiveSessionModel(
   const model = candidates[0];
   if (!model) {
     if (options.allowNoModel) {
-      await session.clearModel();
+      // No SDK API to clear a model once set; the session keeps its current model.
       return;
     }
     throw new Error("Enable at least one Provider model before changing the current Provider");

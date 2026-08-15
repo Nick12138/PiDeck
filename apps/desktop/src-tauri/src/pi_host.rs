@@ -1,9 +1,11 @@
 use crate::desktop_settings::DesktopSettingsStore;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
@@ -14,6 +16,14 @@ use tokio::task::JoinHandle;
 
 pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 pub(crate) const APP_EXIT_HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
+pub(crate) const IDLE_HOST_RETENTION: Duration = Duration::from_secs(30 * 60);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostTransportFrame {
+    pub route_id: String,
+    pub line: String,
+}
 
 #[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::CommandExt};
@@ -453,6 +463,7 @@ async fn wait_for_unix_child_exit_without_reaping(
 /// Rust owns process lifecycle only — no Pi business logic.
 pub struct PiHostManager {
     app: AppHandle,
+    route_id: String,
     child: Option<Child>,
     stdin: Option<Arc<Mutex<ChildStdin>>>,
     agent_dir: PathBuf,
@@ -464,6 +475,8 @@ pub struct PiHostManager {
     auto_restart_once: bool,
     shutting_down: Arc<AtomicBool>,
     last_stderr: Arc<Mutex<Vec<String>>>,
+    last_ready_line: Arc<Mutex<Option<String>>>,
+    activity: Arc<StdMutex<HostActivity>>,
     /// Real hostInstanceId from host.ready / hello — never use "*" for shutdown.
     host_instance_id: Option<String>,
     /// When true, unexpected exit may auto-restart once this epoch.
@@ -476,6 +489,398 @@ pub struct PiHostManager {
     windows_job: Option<WindowsHostJob>,
     #[cfg(unix)]
     unix_process_group: Option<UnixHostProcessGroup>,
+}
+
+struct HostPoolEntry {
+    route_id: String,
+    manager: Arc<Mutex<PiHostManager>>,
+    activity: Arc<StdMutex<HostActivity>>,
+}
+
+struct HostActivity {
+    busy_sessions: HashSet<String>,
+    idle_since: Instant,
+}
+
+impl Default for HostActivity {
+    fn default() -> Self {
+        Self {
+            busy_sessions: HashSet::new(),
+            idle_since: Instant::now(),
+        }
+    }
+}
+
+pub struct WorkspaceHostActivation {
+    pub route_id: String,
+    pub manager: Arc<Mutex<PiHostManager>>,
+    pub created: bool,
+}
+
+pub struct WorkspaceHostRebind {
+    pub manager: Arc<Mutex<PiHostManager>>,
+    pub canonical_workspace: PathBuf,
+    pub retired: Vec<Arc<Mutex<PiHostManager>>>,
+}
+
+/// Owns one isolated Node Host per canonical workspace. Switching the active
+/// route changes only renderer IPC routing; inactive Hosts keep running.
+pub struct PiHostPool {
+    app: AppHandle,
+    entries: HashMap<String, HostPoolEntry>,
+    route_to_key: HashMap<String, String>,
+    active_key: String,
+}
+
+impl PiHostPool {
+    pub fn new(app: AppHandle, settings: &DesktopSettingsStore) -> Self {
+        let initial = PiHostManager::initial_workspace_from(settings)
+            .and_then(|path| path.canonicalize().ok())
+            .map(strip_verbatim_prefix);
+        let key = initial
+            .as_ref()
+            .map(|path| workspace_pool_key(path))
+            .unwrap_or_else(|| "__bootstrap__".to_string());
+        let route_id = uuid::Uuid::new_v4().to_string();
+        let manager = PiHostManager::new_routed(app.clone(), settings, route_id.clone(), initial);
+        let activity = Arc::clone(&manager.activity);
+        let manager = Arc::new(Mutex::new(manager));
+        let mut entries = HashMap::new();
+        entries.insert(
+            key.clone(),
+            HostPoolEntry {
+                route_id: route_id.clone(),
+                manager,
+                activity,
+            },
+        );
+        let mut route_to_key = HashMap::new();
+        route_to_key.insert(route_id, key.clone());
+        Self {
+            app,
+            entries,
+            route_to_key,
+            active_key: key,
+        }
+    }
+
+    pub fn active_manager(&self) -> Arc<Mutex<PiHostManager>> {
+        Arc::clone(
+            &self
+                .entries
+                .get(&self.active_key)
+                .expect("active HostPool entry must exist")
+                .manager,
+        )
+    }
+
+    pub fn active_route_id(&self) -> String {
+        self.entries
+            .get(&self.active_key)
+            .expect("active HostPool entry must exist")
+            .route_id
+            .clone()
+    }
+
+    pub fn manager_for_route(&self, route_id: &str) -> Option<Arc<Mutex<PiHostManager>>> {
+        let key = self.route_to_key.get(route_id)?;
+        self.entries
+            .get(key)
+            .map(|entry| Arc::clone(&entry.manager))
+    }
+
+    pub fn activate_workspace(
+        &mut self,
+        cwd: &Path,
+        settings: &DesktopSettingsStore,
+    ) -> Result<(String, Arc<Mutex<PiHostManager>>, bool), String> {
+        let canonical = strip_verbatim_prefix(
+            cwd.canonicalize()
+                .map_err(|error| format!("workspace does not exist: {error}"))?,
+        );
+        if !canonical.is_dir() {
+            return Err("workspace path is not a directory".into());
+        }
+        let key = workspace_pool_key(&canonical);
+        if let Some(entry) = self.entries.get(&key) {
+            let manager = Arc::clone(&entry.manager);
+            return Ok((entry.route_id.clone(), manager, false));
+        }
+
+        let route_id = uuid::Uuid::new_v4().to_string();
+        let manager = PiHostManager::new_routed(
+            self.app.clone(),
+            settings,
+            route_id.clone(),
+            Some(canonical),
+        );
+        let activity = Arc::clone(&manager.activity);
+        let manager = Arc::new(Mutex::new(manager));
+        self.route_to_key.insert(route_id.clone(), key.clone());
+        self.entries.insert(
+            key.clone(),
+            HostPoolEntry {
+                route_id: route_id.clone(),
+                manager: Arc::clone(&manager),
+                activity,
+            },
+        );
+        Ok((route_id, manager, true))
+    }
+
+    pub fn prepare_workspace_switch(
+        &mut self,
+        cwd: &Path,
+        renderer_reports_busy: bool,
+        settings: &DesktopSettingsStore,
+    ) -> Result<Option<WorkspaceHostActivation>, String> {
+        let canonical = canonical_workspace(cwd)?;
+        let target_key = workspace_pool_key(&canonical);
+        if target_key == self.active_key {
+            return Ok(None);
+        }
+
+        if let Some(entry) = self.entries.get(&target_key) {
+            return Ok(Some(WorkspaceHostActivation {
+                route_id: entry.route_id.clone(),
+                manager: Arc::clone(&entry.manager),
+                created: false,
+            }));
+        }
+
+        let active_busy = renderer_reports_busy
+            || host_activity_busy(
+                &self
+                    .entries
+                    .get(&self.active_key)
+                    .expect("active HostPool entry must exist")
+                    .activity,
+            );
+        if !should_activate_workspace_host(active_busy, false) {
+            return Ok(None);
+        }
+
+        let (route_id, manager, created) = self.activate_workspace(&canonical, settings)?;
+        Ok(Some(WorkspaceHostActivation {
+            route_id,
+            manager,
+            created,
+        }))
+    }
+
+    pub fn rebind_active_workspace(&mut self, cwd: &Path) -> Result<WorkspaceHostRebind, String> {
+        let canonical = canonical_workspace(cwd)?;
+        let target_key = workspace_pool_key(&canonical);
+        if target_key == self.active_key {
+            return Ok(WorkspaceHostRebind {
+                manager: self.active_manager(),
+                canonical_workspace: canonical,
+                retired: Vec::new(),
+            });
+        }
+        if self.entries.contains_key(&target_key) {
+            return Err("target workspace already has a Host route".to_string());
+        }
+
+        let old_active_key = self.active_key.clone();
+        let active_entry = self
+            .entries
+            .remove(&old_active_key)
+            .expect("active HostPool entry must exist");
+        self.route_to_key.remove(&active_entry.route_id);
+
+        let active_manager = Arc::clone(&active_entry.manager);
+        self.route_to_key
+            .insert(active_entry.route_id.clone(), target_key.clone());
+        self.entries.insert(target_key.clone(), active_entry);
+        self.active_key = target_key;
+        Ok(WorkspaceHostRebind {
+            manager: active_manager,
+            canonical_workspace: canonical,
+            retired: Vec::new(),
+        })
+    }
+
+    pub fn take_expired_idle_hosts(&mut self) -> Vec<Arc<Mutex<PiHostManager>>> {
+        let expired_keys = self
+            .entries
+            .iter()
+            .filter_map(|(key, entry)| {
+                (key != &self.active_key && host_activity_expired(&entry.activity))
+                    .then_some(key.clone())
+            })
+            .collect::<Vec<_>>();
+        let mut retired = Vec::with_capacity(expired_keys.len());
+        for key in expired_keys {
+            if let Some(entry) = self.entries.remove(&key) {
+                self.route_to_key.remove(&entry.route_id);
+                retired.push(entry.manager);
+            }
+        }
+        retired
+    }
+
+    pub fn set_active_route(&mut self, route_id: &str) -> Result<(), String> {
+        let key = self
+            .route_to_key
+            .get(route_id)
+            .cloned()
+            .ok_or_else(|| "unknown Host route".to_string())?;
+        self.active_key = key;
+        Ok(())
+    }
+
+    pub async fn update_settings(&self, settings: &DesktopSettingsStore) {
+        for entry in self.entries.values() {
+            let mut manager = entry.manager.lock().await;
+            manager.set_agent_dir(settings.resolved_agent_dir());
+            manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
+        }
+    }
+
+    pub async fn shutdown_all(&self, app_exit: bool) {
+        let managers = self
+            .entries
+            .values()
+            .map(|entry| Arc::clone(&entry.manager))
+            .collect::<Vec<_>>();
+        for manager in managers {
+            let mut manager = manager.lock().await;
+            if app_exit {
+                manager.shutdown_for_app_exit().await;
+            } else {
+                manager.shutdown().await;
+            }
+        }
+    }
+}
+
+fn workspace_pool_key(path: &Path) -> String {
+    let value = path.to_string_lossy().to_string();
+    if cfg!(windows) {
+        value.to_lowercase()
+    } else {
+        value
+    }
+}
+
+fn canonical_workspace(cwd: &Path) -> Result<PathBuf, String> {
+    let canonical = strip_verbatim_prefix(
+        cwd.canonicalize()
+            .map_err(|error| format!("workspace does not exist: {error}"))?,
+    );
+    if !canonical.is_dir() {
+        return Err("workspace path is not a directory".into());
+    }
+    Ok(canonical)
+}
+
+fn host_activity_busy(activity: &StdMutex<HostActivity>) -> bool {
+    !activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .busy_sessions
+        .is_empty()
+}
+
+fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
+    let activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    activity.busy_sessions.is_empty() && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
+}
+
+fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) {
+    let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    if message.get("event").and_then(|value| value.as_str()) != Some("session.runtimeChanged") {
+        return;
+    }
+    let Some(session_id) = message
+        .get("payload")
+        .and_then(|payload| payload.get("sessionId"))
+        .and_then(|value| value.as_str())
+    else {
+        return;
+    };
+    let Some(state) = message
+        .get("payload")
+        .and_then(|payload| payload.get("state"))
+        .and_then(|value| value.as_str())
+    else {
+        return;
+    };
+    let mut activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let was_busy = !activity.busy_sessions.is_empty();
+    if matches!(state, "starting" | "running" | "queued") {
+        activity.busy_sessions.insert(session_id.to_string());
+    } else {
+        activity.busy_sessions.remove(session_id);
+    }
+    if was_busy && activity.busy_sessions.is_empty() {
+        activity.idle_since = Instant::now();
+    }
+}
+
+pub(crate) fn should_activate_workspace_host(active_busy: bool, target_exists: bool) -> bool {
+    active_busy || target_exists
+}
+
+#[cfg(test)]
+mod host_activity_tests {
+    use super::*;
+
+    fn runtime_line(session_id: &str, state: &str) -> String {
+        serde_json::json!({
+            "event": "session.runtimeChanged",
+            "payload": { "sessionId": session_id, "state": state }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn tracks_concurrent_sessions_until_the_last_one_settles() {
+        let activity = StdMutex::new(HostActivity::default());
+        observe_host_activity(&activity, &runtime_line("a", "running"));
+        observe_host_activity(&activity, &runtime_line("b", "queued"));
+        observe_host_activity(&activity, &runtime_line("a", "idle"));
+        assert!(host_activity_busy(&activity));
+        observe_host_activity(&activity, &runtime_line("b", "error"));
+        assert!(!host_activity_busy(&activity));
+    }
+
+    #[test]
+    fn expires_only_after_thirty_idle_minutes() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(!host_activity_expired(&activity));
+        activity.lock().expect("activity lock").idle_since =
+            Instant::now() - (IDLE_HOST_RETENTION - Duration::from_secs(1));
+        assert!(!host_activity_expired(&activity));
+        activity.lock().expect("activity lock").idle_since = Instant::now() - IDLE_HOST_RETENTION;
+        assert!(host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn activates_only_for_busy_or_already_allocated_workspaces() {
+        assert!(!should_activate_workspace_host(false, false));
+        assert!(should_activate_workspace_host(true, false));
+        assert!(should_activate_workspace_host(false, true));
+    }
+}
+
+impl PiHostManager {
+    fn emit_stdout(&self, line: String) {
+        let _ = self.app.emit(
+            "pi-host-stdout",
+            HostTransportFrame {
+                route_id: self.route_id.clone(),
+                line,
+            },
+        );
+    }
 }
 
 /// Pure policy for one-shot auto-restart (unit-testable without Tauri).
@@ -792,16 +1197,28 @@ impl Drop for HostChildSession {
 
 impl PiHostManager {
     pub fn new(app: AppHandle, settings: &DesktopSettingsStore) -> Self {
+        Self::new_routed(app, settings, "primary".into(), None)
+    }
+
+    pub fn new_routed(
+        app: AppHandle,
+        settings: &DesktopSettingsStore,
+        route_id: String,
+        initial_workspace: Option<PathBuf>,
+    ) -> Self {
         Self {
             app,
+            route_id,
             child: None,
             stdin: None,
             agent_dir: settings.resolved_agent_dir(),
-            initial_workspace: Self::initial_workspace_from(settings),
+            initial_workspace: initial_workspace.or_else(|| Self::initial_workspace_from(settings)),
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
             shutting_down: Arc::new(AtomicBool::new(false)),
             last_stderr: Arc::new(Mutex::new(Vec::new())),
+            last_ready_line: Arc::new(Mutex::new(None)),
+            activity: Arc::new(StdMutex::new(HostActivity::default())),
             host_instance_id: None,
             auto_restart_armed: Arc::new(AtomicBool::new(true)),
             child_generation: Arc::new(AtomicU32::new(0)),
@@ -814,8 +1231,27 @@ impl PiHostManager {
         }
     }
 
+    pub fn route_id(&self) -> &str {
+        &self.route_id
+    }
+
+    pub async fn replay_ready_event(&self) -> Result<(), String> {
+        let line = self
+            .last_ready_line
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| "Host has not announced ready yet".to_string())?;
+        self.emit_stdout(line);
+        Ok(())
+    }
+
     pub fn set_agent_dir(&mut self, dir: PathBuf) {
         self.agent_dir = dir;
+    }
+
+    pub fn set_initial_workspace_path(&mut self, path: PathBuf) {
+        self.initial_workspace = Some(path);
     }
 
     fn initial_workspace_from(settings: &DesktopSettingsStore) -> Option<PathBuf> {
@@ -976,6 +1412,10 @@ impl PiHostManager {
 
         let child_generation = self.child_generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.shutting_down.store(false, Ordering::SeqCst);
+        *self
+            .activity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = HostActivity::default();
         {
             let mut logs = self.last_stderr.lock().await;
             logs.clear();
@@ -1123,6 +1563,7 @@ impl PiHostManager {
 
         let stderr_buf = Arc::clone(&self.last_stderr);
         let app_err = self.app.clone();
+        let stderr_route_id = self.route_id.clone();
         let stderr_generation = Arc::clone(&self.child_generation);
         self.stderr_task = Some(tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
@@ -1145,7 +1586,13 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, trimmed.clone(), 50);
                         }
                         eprintln!("[pi-host] {trimmed}");
-                        let _ = app_err.emit("pi-host-stderr", trimmed);
+                        let _ = app_err.emit(
+                            "pi-host-stderr",
+                            HostTransportFrame {
+                                route_id: stderr_route_id.clone(),
+                                line: trimmed,
+                            },
+                        );
                     }
                     Err(error) if is_host_line_too_long(&error) => {
                         let message = format!("Pi Host stderr line truncated: {error}");
@@ -1154,7 +1601,13 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
                         eprintln!("[pideck] {message}");
-                        let _ = app_err.emit("pi-host-stderr", message);
+                        let _ = app_err.emit(
+                            "pi-host-stderr",
+                            HostTransportFrame {
+                                route_id: stderr_route_id.clone(),
+                                line: message,
+                            },
+                        );
                         continue;
                     }
                     Err(error) => {
@@ -1164,7 +1617,13 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
                         eprintln!("[pideck] {message}");
-                        let _ = app_err.emit("pi-host-stderr", message);
+                        let _ = app_err.emit(
+                            "pi-host-stderr",
+                            HostTransportFrame {
+                                route_id: stderr_route_id.clone(),
+                                line: message,
+                            },
+                        );
                         break;
                     }
                 }
@@ -1176,6 +1635,9 @@ impl PiHostManager {
             tokio::sync::oneshot::channel::<Result<Option<String>, String>>();
         let ready_tx = Arc::new(Mutex::new(Some(ready_tx)));
         let app_out = self.app.clone();
+        let stdout_route_id = self.route_id.clone();
+        let last_ready_line = Arc::clone(&self.last_ready_line);
+        let activity = Arc::clone(&self.activity);
         let stderr_for_exit = Arc::clone(&self.last_stderr);
         let shutting_down = Arc::clone(&self.shutting_down);
         let restart_count = Arc::clone(&self.restart_count);
@@ -1205,16 +1667,24 @@ impl PiHostManager {
                                 break;
                             }
                             let payload = line.trim_end_matches(['\r', '\n']).to_string();
+                            observe_host_activity(&activity, &payload);
                             if payload.contains("\"event\":\"host.ready\"")
                                 || payload.contains("\"event\": \"host.ready\"")
                             {
+                                *last_ready_line.lock().await = Some(payload.clone());
                                 let hid = extract_host_instance_id(&payload);
                                 if let Some(tx) = ready_tx.lock().await.take() {
                                     let _ = tx.send(Ok(hid));
                                 }
                             }
                             let is_hello_response = payload.contains("\"method\":\"system.hello\"");
-                            let emitted = app_out.emit("pi-host-stdout", payload);
+                            let emitted = app_out.emit(
+                                "pi-host-stdout",
+                                HostTransportFrame {
+                                    route_id: stdout_route_id.clone(),
+                                    line: payload,
+                                },
+                            );
                             if is_hello_response {
                                 eprintln!(
                                     "[pideck] system.hello response emitted to WebView: {}",
@@ -1225,7 +1695,13 @@ impl PiHostManager {
                         Err(error) if is_host_line_too_long(&error) => {
                             let message = format!("Pi Host stdout frame dropped: {error}");
                             eprintln!("[pideck] {message}");
-                            let _ = app_out.emit("pi-host-stderr", message);
+                            let _ = app_out.emit(
+                                "pi-host-stderr",
+                                HostTransportFrame {
+                                    route_id: stdout_route_id.clone(),
+                                    line: message,
+                                },
+                            );
                             continue;
                         }
                         Err(error) => {
@@ -1278,7 +1754,9 @@ impl PiHostManager {
 
                     let _ = app_out.emit(
                         "pi-host-stdout",
-                        serde_json::json!({
+                        HostTransportFrame {
+                            route_id: stdout_route_id.clone(),
+                            line: serde_json::json!({
                             "protocolVersion": 1,
                             "event": "host.fatal",
                             "sequence": 1,
@@ -1296,13 +1774,15 @@ impl PiHostManager {
                                     "retryable": will_restart
                                 }
                             }
-                        })
-                        .to_string(),
+                            })
+                            .to_string(),
+                        },
                     );
 
                     if will_restart {
                         // Request app-level restart via event (lib.rs listens)
-                        let _ = app_for_restart.emit("pi-host-auto-restart", "once");
+                        let _ =
+                            app_for_restart.emit("pi-host-auto-restart", stdout_route_id.clone());
                     }
                 }
             }));

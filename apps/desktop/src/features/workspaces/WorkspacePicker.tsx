@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
+import {
+  activateWorkspaceHost,
+  prepareWorkspaceHost,
+  rebindActiveWorkspaceHost,
+  replayActiveHostReady,
+} from "../../lib/bridge/tauri-transport";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -10,11 +16,12 @@ import {
 } from "../../lib/desktop-settings";
 import { sidebarPref, setSidebarPref } from "../../lib/sidebar-prefs";
 import { useT } from "../../lib/i18n/use-t";
+import { workspaceContext } from "../../lib/bridge/host-context";
 import {
-  captureRequestGeneration,
-  isCurrentRequestGeneration,
-  workspaceContext,
-} from "../../lib/bridge/host-context";
+  isWorkspaceSwitchBusyError,
+  waitForWorkspaceActivation,
+  workspaceHasActiveAgent,
+} from "./workspace-switch-policy";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -92,10 +99,24 @@ export function WorkspacePicker() {
     if (currentCwd && samePath(currentCwd, cwd)) return;
 
     const request = ++requestRef.current;
-    const generation = captureRequestGeneration(host);
     setPending(true);
     useAppStore.getState().setWorkspaceSwitchTarget(cwd);
     try {
+      const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
+        const activated = force
+          ? await activateWorkspaceHost(cwd)
+          : await prepareWorkspaceHost(cwd, workspaceHasActiveAgent(useAppStore.getState()));
+        if (!activated) return false;
+        hostClient.prepareForHostSwitch();
+        useAppStore.getState().setConnecting(true);
+        await replayActiveHostReady();
+        await waitForWorkspaceActivation(host.hostInstanceId);
+        return true;
+      };
+      if (await connectDedicatedHost(false)) {
+        return;
+      }
+
       const res = await hostClient.request(
         "workspace.setCurrent",
         workspaceContext(host, workspace),
@@ -103,18 +124,15 @@ export function WorkspacePicker() {
         60_000,
       );
 
-      if (
-        request !== requestRef.current ||
-        !isCurrentRequestGeneration(useAppStore.getState().host, generation)
-      ) {
-        return;
-      }
+      if (request !== requestRef.current) return;
       if (!res.ok) {
+        if (isWorkspaceSwitchBusyError(res.error) && (await connectDedicatedHost(true))) return;
         pushNotification(localizeHostError(res.error, t), "error");
         return;
       }
 
       const result = res.result;
+      await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
       // workspace.changed / session.snapshot events land before this response
       // resolves; re-applying identical snapshots re-renders the chat and
       // sidebar a second time. Apply only what the event stream has not.

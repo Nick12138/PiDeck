@@ -33,34 +33,26 @@ function capture(
 
 describe("shortcut bindings", () => {
   it("normalizes modifier order and rejects malformed chords", () => {
-    expect(normalizeShortcutChord(" ALT + MOD + Shift + N ")).toBe(
-      "mod+shift+alt+n",
-    );
+    expect(normalizeShortcutChord(" ALT + MOD + Shift + N ")).toBe("mod+shift+alt+n");
     expect(normalizeShortcutChord("mod+mod+n")).toBeNull();
     expect(normalizeShortcutChord("mod+unknown+n")).toBeNull();
   });
 
   it("resolves string, disabled, invalid, and default bindings", () => {
     expect(resolveCommandChord(commands[0], undefined)).toBe("mod+n");
-    expect(resolveCommandChord(commands[0], { one: "mod+shift+n" })).toBe(
-      "mod+shift+n",
-    );
+    expect(resolveCommandChord(commands[0], { one: "mod+shift+n" })).toBe("mod+shift+n");
     expect(resolveCommandChord(commands[0], { one: null })).toBeUndefined();
     expect(resolveCommandChord(commands[0], { one: "not-a-chord" })).toBe("mod+n");
     expect(resolveCommandBindings(commands, { one: null })[0].chord).toBeUndefined();
   });
 
   it("stores only meaningful overrides and detects resolved conflicts", () => {
-    expect(updateShortcutOverride({ one: "mod+x" }, commands[0], "mod+n")).toEqual(
-      {},
-    );
+    expect(updateShortcutOverride({ one: "mod+x" }, commands[0], "mod+n")).toEqual({});
     expect(updateShortcutOverride(undefined, commands[0], null)).toEqual({ one: null });
     expect(resetShortcutOverride({ one: null, two: "mod+p" }, "one")).toEqual({
       two: "mod+p",
     });
-    expect(findShortcutConflict("one", "mod+,", commands, undefined)?.id).toBe(
-      "two",
-    );
+    expect(findShortcutConflict("one", "mod+,", commands, undefined)?.id).toBe("two");
     expect(findShortcutConflict("one", "mod+,", commands, { two: null })).toBeNull();
   });
 
@@ -69,9 +61,10 @@ describe("shortcut bindings", () => {
       kind: "chord",
       chord: "mod+n",
     });
-    expect(
-      captureShortcutChord(capture("N", { ctrlKey: true, shiftKey: true }), false),
-    ).toEqual({ kind: "chord", chord: "mod+shift+n" });
+    expect(captureShortcutChord(capture("N", { ctrlKey: true, shiftKey: true }), false)).toEqual({
+      kind: "chord",
+      chord: "mod+shift+n",
+    });
     expect(captureShortcutChord(capture("F2"), false)).toEqual({
       kind: "chord",
       chord: "f2",

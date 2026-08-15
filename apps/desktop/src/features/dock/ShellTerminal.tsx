@@ -53,10 +53,7 @@ export type ShellTerminalProps = {
   onWarning?: (message: string) => void;
 };
 
-type TerminalCommandInvoker = (
-  command: string,
-  args: Record<string, unknown>,
-) => Promise<unknown>;
+type TerminalCommandInvoker = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 
 export async function closeShellTerminal(
   terminalId: string | undefined,
@@ -199,9 +196,7 @@ export function ShellTerminal({
     <XtermSurface
       sessionKey={`shell:${generation}`}
       visible={visible}
-      connect={(terminal) =>
-        attachShell(terminal, cwd, profileId, t, onStatus, onWarning)
-      }
+      connect={(terminal) => attachShell(terminal, cwd, profileId, t, onStatus, onWarning)}
     />
   );
 }

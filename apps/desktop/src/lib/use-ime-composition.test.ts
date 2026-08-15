@@ -10,9 +10,7 @@ describe("isImeKeyEvent", () => {
 
   it("blocks keys while a composition is active", () => {
     expect(isImeKeyEvent({ timeStamp: 1000 }, { ...idle, composing: true })).toBe(true);
-    expect(
-      isImeKeyEvent({ timeStamp: 1000, nativeEvent: { isComposing: true } }, idle),
-    ).toBe(true);
+    expect(isImeKeyEvent({ timeStamp: 1000, nativeEvent: { isComposing: true } }, idle)).toBe(true);
     expect(isImeKeyEvent({ timeStamp: 1000, keyCode: 229 }, idle)).toBe(true);
   });
 

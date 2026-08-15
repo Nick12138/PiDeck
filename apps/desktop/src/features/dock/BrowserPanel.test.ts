@@ -3,9 +3,7 @@ import { normalizeBrowserInput } from "./BrowserPanel";
 
 describe("normalizeBrowserInput", () => {
   it("keeps explicit URLs for native validation", () => {
-    expect(normalizeBrowserInput("https://example.com/path")).toBe(
-      "https://example.com/path",
-    );
+    expect(normalizeBrowserInput("https://example.com/path")).toBe("https://example.com/path");
     expect(normalizeBrowserInput("file:///tmp/example")).toBe("file:///tmp/example");
   });
 

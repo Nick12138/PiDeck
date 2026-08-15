@@ -121,7 +121,10 @@ test("maps every supported runtime target to the matching updater platform", () 
   assert.equal(updaterPlatformKey("darwin", "arm64"), "darwin-aarch64");
   assert.equal(resolveReleaseRuntimeTarget(lock, "darwin", "x64").stagedNpmExecutable, "npm");
   assert.equal(updaterPlatformKey("darwin", "x64"), "darwin-x86_64");
-  assert.throws(() => releaseRuntimeTargetKey("linux", "x64"), /unsupported release runtime target/);
+  assert.throws(
+    () => releaseRuntimeTargetKey("linux", "x64"),
+    /unsupported release runtime target/,
+  );
 });
 
 test("probes Windows npm through staged Node instead of spawning npm.cmd", () => {
@@ -231,7 +234,10 @@ test("aggregates isolated platform artifacts without overwriting assets", () => 
       "0.1.1",
     );
     for (const fixture of fixtures) {
-      assert.equal(readFileSync(join(output, fixture.primaryName), "utf8"), `primary:${fixture.updaterPlatform}`);
+      assert.equal(
+        readFileSync(join(output, fixture.primaryName), "utf8"),
+        `primary:${fixture.updaterPlatform}`,
+      );
     }
   } finally {
     rmSync(root, { recursive: true, force: true });

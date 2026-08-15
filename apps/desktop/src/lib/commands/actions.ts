@@ -22,17 +22,12 @@ export function isCreateSessionPending(): boolean {
   return createPending;
 }
 
-export function subscribeCreateSessionPending(
-  listener: (pending: boolean) => void,
-): () => void {
+export function subscribeCreateSessionPending(listener: (pending: boolean) => void): () => void {
   createPendingListeners.add(listener);
   return () => createPendingListeners.delete(listener);
 }
 
-export type AbortMethod =
-  | "agent.abort"
-  | "agent.abortCompaction"
-  | "agent.abortRetry";
+export type AbortMethod = "agent.abort" | "agent.abortCompaction" | "agent.abortRetry";
 
 export function abortMethodForSession(session: {
   isCompacting?: boolean;
@@ -58,9 +53,7 @@ export async function createNewSession(): Promise<boolean> {
       return false;
     }
     if (!response.ok) {
-      useAppStore
-        .getState()
-        .pushNotification(localizeHostError(response.error, tCurrent), "error");
+      useAppStore.getState().pushNotification(localizeHostError(response.error, tCurrent), "error");
       return false;
     }
     const current = useAppStore.getState();
@@ -71,10 +64,12 @@ export async function createNewSession(): Promise<boolean> {
     }
     return true;
   } catch (error) {
-    useAppStore.getState().pushNotification(
-      error instanceof Error ? error.message : tCurrent("notifCreateSessionFailed"),
-      "error",
-    );
+    useAppStore
+      .getState()
+      .pushNotification(
+        error instanceof Error ? error.message : tCurrent("notifCreateSessionFailed"),
+        "error",
+      );
     return false;
   } finally {
     setCreatePending(false);
@@ -103,15 +98,17 @@ export async function abortCurrentAgent(): Promise<boolean> {
         return false;
       }
       if (!response.ok) {
-        useAppStore.getState().pushNotification(
-          response.error?.message ??
-            tCurrent(
-              method === "agent.abortCompaction"
-                ? "notifCompactStopFailed"
-                : "composerAbortFailed",
-            ),
-          "error",
-        );
+        useAppStore
+          .getState()
+          .pushNotification(
+            response.error?.message ??
+              tCurrent(
+                method === "agent.abortCompaction"
+                  ? "notifCompactStopFailed"
+                  : "composerAbortFailed",
+              ),
+            "error",
+          );
         return false;
       }
       return true;
@@ -129,9 +126,7 @@ export async function abortCurrentAgent(): Promise<boolean> {
       return false;
     }
     if (!response.ok) {
-      useAppStore
-        .getState()
-        .pushNotification(localizeHostError(response.error, tCurrent), "error");
+      useAppStore.getState().pushNotification(localizeHostError(response.error, tCurrent), "error");
       return false;
     }
     useAppStore.getState().applySessionSnapshot(response.result.session);
@@ -140,10 +135,12 @@ export async function abortCurrentAgent(): Promise<boolean> {
     }
     return true;
   } catch (error) {
-    useAppStore.getState().pushNotification(
-      error instanceof Error ? error.message : tCurrent("composerAbortFailed"),
-      "error",
-    );
+    useAppStore
+      .getState()
+      .pushNotification(
+        error instanceof Error ? error.message : tCurrent("composerAbortFailed"),
+        "error",
+      );
     return false;
   }
 }

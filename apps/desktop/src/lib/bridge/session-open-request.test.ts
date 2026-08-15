@@ -117,9 +117,7 @@ describe("requestSessionOpenWithRetry", () => {
       current = false;
     });
 
-    await expect(
-      requestSessionOpenWithRetry(request, wait, () => current),
-    ).resolves.toBeNull();
+    await expect(requestSessionOpenWithRetry(request, wait, () => current)).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(1);
   });
 

@@ -130,13 +130,7 @@ describe("HostClient Rust lifecycle epochs", () => {
 
     const replacementId = "20000000-0000-4000-8000-000000000001";
     wire.emit(ready(replacementId, 200));
-    wire.emit(
-      lifecycleFatal(
-        "00000000-0000-4000-8000-000000000002",
-        "stale process exit",
-        100,
-      ),
-    );
+    wire.emit(lifecycleFatal("00000000-0000-4000-8000-000000000002", "stale process exit", 100));
 
     expect(client.getHostInstanceId()).toBe(replacementId);
     expect(events).toEqual(["host.ready"]);

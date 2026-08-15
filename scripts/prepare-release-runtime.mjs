@@ -251,8 +251,10 @@ if (!sourceExecutable) {
   extractArchive(archivePath, extractRoot);
   sourceExecutable = findFile(extractRoot, archiveExecutable);
 }
-if (!sourceExecutable) die(`${archiveExecutable} not found after extracting ${nodeRuntime.archive}`);
-const sourceRoot = target.platform === "win32" ? dirname(sourceExecutable) : dirname(dirname(sourceExecutable));
+if (!sourceExecutable)
+  die(`${archiveExecutable} not found after extracting ${nodeRuntime.archive}`);
+const sourceRoot =
+  target.platform === "win32" ? dirname(sourceExecutable) : dirname(dirname(sourceExecutable));
 for (const expected of nodeRuntime.expectedFiles ?? []) {
   if (!existsSync(join(sourceRoot, expected))) {
     die(`Node archive missing expected file: ${expected}`);

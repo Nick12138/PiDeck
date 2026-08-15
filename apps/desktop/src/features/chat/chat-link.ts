@@ -13,10 +13,10 @@ export type ChatLinkActivation = {
 export function usesSystemBrowser(activation: ChatLinkActivation): boolean {
   return Boolean(
     activation.button === 1 ||
-      activation.altKey ||
-      activation.ctrlKey ||
-      activation.metaKey ||
-      activation.shiftKey,
+    activation.altKey ||
+    activation.ctrlKey ||
+    activation.metaKey ||
+    activation.shiftKey,
   );
 }
 

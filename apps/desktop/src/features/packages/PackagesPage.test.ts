@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { captureWorkspaceAuthorization } from "../../lib/bridge/host-context";
-import {
-  reconcileProjectGateAuthorization,
-  type PendingProjectMutation,
-} from "./PackagesPage";
+import { reconcileProjectGateAuthorization, type PendingProjectMutation } from "./PackagesPage";
 
 function host(overrides: Partial<HostStatusSnapshot> = {}): HostStatusSnapshot {
   return {

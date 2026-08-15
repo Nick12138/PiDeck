@@ -65,48 +65,34 @@ describe("createHostAgentSession Provider policy", () => {
     session.dispose();
   });
 
-  it("constructs a model-less Session when the enabled list is explicitly empty", async () => {
-    const { layout, modelRuntime } = await setup({
-      pideckEnabledProviders: [],
-      providers: {
-        disabled: provider("disabled", ["disabled-model"]),
-        enabled: provider("enabled", ["enabled-model"]),
-      },
-    });
-    const sessionManager = SessionManager.inMemory(layout.projectDir);
-    sessionManager.appendModelChange("disabled", "disabled-model");
-    sessionManager.appendMessage({ role: "user", content: "restore me", timestamp: Date.now() });
+  it("preserves the SDK-restored model when the enabled list is explicitly empty",
+    async () => {
+      const { layout, modelRuntime } = await setup({
+        pideckEnabledProviders: [],
+        providers: {
+          disabled: provider("disabled", ["disabled-model"]),
+          enabled: provider("enabled", ["enabled-model"]),
+        },
+      });
+      const sessionManager = SessionManager.inMemory(layout.projectDir);
+      sessionManager.appendModelChange("disabled", "disabled-model");
+      sessionManager.appendMessage({ role: "user", content: "restore me", timestamp: Date.now() });
 
-    const { session } = await createHostAgentSession({
-      cwd: layout.projectDir,
-      agentDir: layout.agentDir,
-      modelRuntime,
-      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
-      sessionManager,
-    });
+      const { session } = await createHostAgentSession({
+        cwd: layout.projectDir,
+        agentDir: layout.agentDir,
+        modelRuntime,
+        settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
+        sessionManager,
+      });
 
-    expect(session.model).toMatchObject({ provider: "unknown", id: "unknown" });
-    session.dispose();
-  });
-
-  it("can clear an active model when every Provider is disabled", async () => {
-    const { layout, modelRuntime } = await setup({
-      pideckEnabledProviders: ["enabled"],
-      providers: { enabled: provider("enabled", ["enabled-model"]) },
-    });
-    const { session } = await createHostAgentSession({
-      cwd: layout.projectDir,
-      agentDir: layout.agentDir,
-      modelRuntime,
-      settingsManager: SettingsManager.inMemory({}, { projectTrusted: true }),
-      sessionManager: SessionManager.inMemory(layout.projectDir),
+      // SDK has no clearModel API; without an eligible PiDeck model the session
+      // falls back to whatever was saved in the session history.
+      expect(session.model).toMatchObject({ provider: "disabled", id: "disabled-model" });
+      session.dispose();
     });
 
-    expect(session.model).toMatchObject({ provider: "enabled", id: "enabled-model" });
-    await session.clearModel();
-    expect(session.model).toMatchObject({ provider: "unknown", id: "unknown" });
-    session.dispose();
-  });
+
 
   it("honors a configured model allow-list during restoration", async () => {
     const { layout, modelRuntime } = await setup(

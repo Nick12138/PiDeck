@@ -1,6 +1,5 @@
 type RetryableSessionOpenResponse =
-  | { ok: true }
-  | { ok: false; error: { code?: string; retryable?: boolean } };
+  { ok: true } | { ok: false; error: { code?: string; retryable?: boolean } };
 
 const SESSION_OPEN_RETRY_DELAYS_MS = [80, 160, 240, 400, 600] as const;
 
@@ -21,10 +20,7 @@ export class LatestSessionOpenQueue {
   private idleWaiters = new Set<() => void>();
 
   constructor(
-    private readonly run: (
-      path: string,
-      isSuperseded: () => boolean,
-    ) => Promise<void>,
+    private readonly run: (path: string, isSuperseded: () => boolean) => Promise<void>,
     private readonly onRunningChange: (running: boolean) => void,
     private readonly onUnexpectedError: (error: unknown) => void,
   ) {}
@@ -77,10 +73,7 @@ export class LatestSessionOpenQueue {
   }
 }
 
-export function shouldRetrySessionOpen(error: {
-  code?: string;
-  retryable?: boolean;
-}): boolean {
+export function shouldRetrySessionOpen(error: { code?: string; retryable?: boolean }): boolean {
   return error.code === "SERVICE_GRAPH_BUSY" && error.retryable === true;
 }
 

@@ -508,9 +508,7 @@ export function ModelControls() {
             setMenuOpen((open) => !open);
           }}
         >
-          <span className="truncate">
-            {activeModelLabel || t("modelNone")}
-          </span>
+          <span className="truncate">{activeModelLabel || t("modelNone")}</span>
           <ChevronDown
             className={`shrink-0 transition-transform ${menuOpen ? "rotate-180" : ""}`}
             size={13}

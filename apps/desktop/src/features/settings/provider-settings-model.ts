@@ -104,14 +104,6 @@ export function stripProviderModelState(model: DiscoveredProviderModel): Provide
   return config;
 }
 
-export function compatibilityChoice(
-  value: boolean | null | undefined,
-): "auto" | "enabled" | "disabled" {
-  if (value === true) return "enabled";
-  if (value === false) return "disabled";
-  return "auto";
-}
-
 export function customThinkingMap(model: DiscoveredProviderModel): ThinkingLevelMap {
   return Object.fromEntries(
     THINKING_LEVELS.map((level) => {

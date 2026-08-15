@@ -10,7 +10,7 @@ export function shouldKeepNativeContextMenu(
 ): boolean {
   return Boolean(
     (dev && event.shiftKey) ||
-      (event.target instanceof Element && event.target.closest("[data-tauri-drag-region]")),
+    (event.target instanceof Element && event.target.closest("[data-tauri-drag-region]")),
   );
 }
 

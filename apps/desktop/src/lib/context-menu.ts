@@ -32,9 +32,7 @@ export function subscribeContextMenu(listener: Listener): () => void {
 }
 
 export function openContextMenu(request: ContextMenuInput): void {
-  current = request.items.length > 0
-    ? { ...request, requestId: nextRequestId++ }
-    : null;
+  current = request.items.length > 0 ? { ...request, requestId: nextRequestId++ } : null;
   for (const listener of listeners) listener(current);
 }
 

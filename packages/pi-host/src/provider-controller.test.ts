@@ -117,20 +117,6 @@ function runtimeSession(model: Model<Api>, isIdle: boolean) {
   const setModel = vi.fn(async (next: Model<Api>) => {
     state.model = next;
   });
-  const clearModel = vi.fn(async () => {
-    state.model = {
-      provider: "unknown",
-      id: "unknown",
-      name: "unknown",
-      api: "unknown",
-      baseUrl: "",
-      reasoning: false,
-      input: [],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 0,
-      maxTokens: 0,
-    } as Model<Api>;
-  });
   const session = {
     isIdle,
     get model() {
@@ -140,9 +126,8 @@ function runtimeSession(model: Model<Api>, isIdle: boolean) {
     thinkingLevel: "off",
     setThinkingLevel: vi.fn(),
     setModel,
-    clearModel,
   } as unknown as AgentSession;
-  return { session, setModel, clearModel, state };
+  return { session, setModel, state };
 }
 
 function attachRuntimeGraph(
@@ -1909,8 +1894,9 @@ describe("Provider login", () => {
     } as never);
 
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
-    expect(active.clearModel).toHaveBeenCalledOnce();
-    expect(active.state.model).toMatchObject({ provider: "unknown", id: "unknown" });
+    // SDK has no clearModel API; model stays on the previously-active provider.
+    expect(active.state.model?.provider).toBe("custom");
+    expect(active.state.model?.id).toBe("primary");
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.pideckEnabledProviders).toEqual([]);
   });

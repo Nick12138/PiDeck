@@ -10,7 +10,7 @@ mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
 use draft_store::DraftStore;
-use pi_host::PiHostManager;
+use pi_host::{HostTransportFrame, PiHostPool};
 use shell_terminal::ShellTerminalManager;
 use tauri::{Emitter, Listener, Manager};
 use tokio::sync::Mutex;
@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub settings: Mutex<DesktopSettingsStore>,
     pub drafts: Mutex<DraftStore>,
-    pub host: Mutex<PiHostManager>,
+    pub hosts: Mutex<PiHostPool>,
     pub terminals: Mutex<ShellTerminalManager>,
     pub browsers: Mutex<BrowserSurfaceManager>,
 }
@@ -37,11 +37,11 @@ pub fn run() {
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
             let drafts = DraftStore::load(app.handle());
-            let host = PiHostManager::new(app.handle().clone(), &settings);
+            let hosts = PiHostPool::new(app.handle().clone(), &settings);
             app.manage(AppState {
                 settings: Mutex::new(settings),
                 drafts: Mutex::new(drafts),
-                host: Mutex::new(host),
+                hosts: Mutex::new(hosts),
                 terminals: Mutex::new(ShellTerminalManager::new()),
                 browsers: Mutex::new(BrowserSurfaceManager::new()),
             });
@@ -49,16 +49,17 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
+                let host = state.hosts.lock().await.active_manager();
                 // start_unlocked never holds the host mutex across the ready-wait,
                 // so IPC commands and app exit stay responsive during startup.
-                if let Err(e) =
-                    pi_host::start_unlocked(&state.host, pi_host::StartKind::Fresh).await
-                {
+                if let Err(e) = pi_host::start_unlocked(&host, pi_host::StartKind::Fresh).await {
                     eprintln!("[pideck] failed to start host: {e}");
                     // Surface to UI as host.fatal so the banner shows the real cause
                     let _ = handle.emit(
                         "pi-host-stdout",
-                        serde_json::json!({
+                        HostTransportFrame {
+                            route_id: state.hosts.lock().await.active_route_id(),
+                            line: serde_json::json!({
                             "protocolVersion": 1,
                             "event": "host.fatal",
                             "sequence": 1,
@@ -76,29 +77,36 @@ pub fn run() {
                                     "retryable": true
                                 }
                             }
-                        })
-                        .to_string(),
+                            })
+                            .to_string(),
+                        },
                     );
                 }
             });
 
             // One-shot auto-restart after unexpected Host exit (R3)
             let handle_ar = app.handle().clone();
-            app.listen("pi-host-auto-restart", move |_event| {
+            app.listen("pi-host-auto-restart", move |event| {
                 let handle = handle_ar.clone();
+                let route_id = serde_json::from_str::<String>(event.payload())
+                    .unwrap_or_else(|_| event.payload().trim_matches('"').to_string());
                 tauri::async_runtime::spawn(async move {
                     let state = handle.state::<AppState>();
+                    let host = state.hosts.lock().await.manager_for_route(&route_id);
+                    let Some(host) = host else {
+                        return;
+                    };
                     eprintln!("[pideck] auto-restarting Host once after crash");
-                    if let Err(e) = pi_host::start_unlocked(
-                        &state.host,
-                        pi_host::StartKind::AutoRestartAfterCrash,
-                    )
-                    .await
+                    if let Err(e) =
+                        pi_host::start_unlocked(&host, pi_host::StartKind::AutoRestartAfterCrash)
+                            .await
                     {
                         eprintln!("[pideck] auto-restart failed: {e}");
                         let _ = handle.emit(
                             "pi-host-stdout",
-                            serde_json::json!({
+                            HostTransportFrame {
+                                route_id: route_id.clone(),
+                                line: serde_json::json!({
                                 "protocolVersion": 1,
                                 "event": "host.fatal",
                                 "sequence": 1,
@@ -116,11 +124,24 @@ pub fn run() {
                                         "retryable": false
                                     }
                                 }
-                            })
-                            .to_string(),
+                                })
+                                .to_string(),
+                            },
                         );
                     }
                 });
+            });
+
+            let handle_gc = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    let state = handle_gc.state::<AppState>();
+                    let retired = state.hosts.lock().await.take_expired_idle_hosts();
+                    for manager in retired {
+                        manager.lock().await.shutdown().await;
+                    }
+                }
             });
 
             Ok(())
@@ -133,6 +154,11 @@ pub fn run() {
             commands::desktop_open_path,
             commands::desktop_read_small_file,
             commands::pi_host_send,
+            commands::pi_host_activate,
+            commands::pi_host_prepare_switch,
+            commands::pi_host_rebind_active,
+            commands::pi_host_active_route,
+            commands::pi_host_replay_ready,
             commands::pi_host_restart,
             commands::pi_host_status,
             commands::shell_terminal_create,
@@ -172,8 +198,8 @@ pub fn run() {
                     let mut terminals = state.terminals.lock().await;
                     terminals.shutdown_all();
                     drop(terminals);
-                    let mut host = state.host.lock().await;
-                    host.shutdown_for_app_exit().await;
+                    let hosts = state.hosts.lock().await;
+                    hosts.shutdown_all(true).await;
                 });
             }
             _ => {}

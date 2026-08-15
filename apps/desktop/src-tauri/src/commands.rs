@@ -27,10 +27,8 @@ pub async fn desktop_settings_patch(
     let mut store = state.settings.lock().await;
     let next = store.patch(patch)?;
     // Propagate agentDir / autoRestart to host manager
-    let mut host = state.host.lock().await;
-    host.set_agent_dir(store.resolved_agent_dir());
-    host.set_auto_restart_once(store.settings.auto_restart_host_once);
-    host.set_initial_workspace(&store);
+    let hosts = state.hosts.lock().await;
+    hosts.update_settings(&store).await;
     Ok(next)
 }
 
@@ -176,19 +174,112 @@ fn looks_binary_text(text: &str) -> bool {
 
 #[tauri::command]
 pub async fn pi_host_send(state: State<'_, AppState>, line: String) -> Result<(), String> {
-    let mut host = state.host.lock().await;
+    let host = state.hosts.lock().await.active_manager();
+    let mut host = host.lock().await;
     host.send_line(line).await
+}
+
+#[tauri::command]
+pub async fn pi_host_activate(state: State<'_, AppState>, cwd: String) -> Result<String, String> {
+    let settings = state.settings.lock().await;
+    let (route_id, manager, created) = {
+        let mut hosts = state.hosts.lock().await;
+        hosts.activate_workspace(Path::new(&cwd), &settings)?
+    };
+    drop(settings);
+    let running = if created {
+        false
+    } else {
+        manager.lock().await.is_running()
+    };
+    if !running {
+        crate::pi_host::start_unlocked(&manager, crate::pi_host::StartKind::Fresh).await?;
+    }
+    state.hosts.lock().await.set_active_route(&route_id)?;
+    Ok(route_id)
+}
+
+#[tauri::command]
+pub async fn pi_host_prepare_switch(
+    state: State<'_, AppState>,
+    cwd: String,
+    active_busy: bool,
+) -> Result<Option<String>, String> {
+    let settings = state.settings.lock().await;
+    let activation = {
+        let mut hosts = state.hosts.lock().await;
+        hosts.prepare_workspace_switch(Path::new(&cwd), active_busy, &settings)?
+    };
+    drop(settings);
+    let Some(activation) = activation else {
+        return Ok(None);
+    };
+    let running = if activation.created {
+        false
+    } else {
+        activation.manager.lock().await.is_running()
+    };
+    if !running {
+        crate::pi_host::start_unlocked(&activation.manager, crate::pi_host::StartKind::Fresh)
+            .await?;
+    }
+    state
+        .hosts
+        .lock()
+        .await
+        .set_active_route(&activation.route_id)?;
+    Ok(Some(activation.route_id))
+}
+
+#[tauri::command]
+pub async fn pi_host_rebind_active(state: State<'_, AppState>, cwd: String) -> Result<(), String> {
+    let rebind = state
+        .hosts
+        .lock()
+        .await
+        .rebind_active_workspace(Path::new(&cwd))?;
+    rebind
+        .manager
+        .lock()
+        .await
+        .set_initial_workspace_path(rebind.canonical_workspace);
+    for manager in rebind.retired {
+        manager.lock().await.shutdown().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pi_host_active_route(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(state.hosts.lock().await.active_route_id())
+}
+
+#[tauri::command]
+pub async fn pi_host_replay_ready(
+    state: State<'_, AppState>,
+    route_id: String,
+) -> Result<(), String> {
+    let manager = state
+        .hosts
+        .lock()
+        .await
+        .manager_for_route(&route_id)
+        .ok_or_else(|| "unknown Host route".to_string())?;
+    let result = manager.lock().await.replay_ready_event().await;
+    result
 }
 
 #[tauri::command]
 pub async fn pi_host_restart(state: State<'_, AppState>) -> Result<(), String> {
     // Holds the host mutex only for spawn/commit, not across the ready-wait.
-    crate::pi_host::start_unlocked(&state.host, crate::pi_host::StartKind::ManualRestart).await
+    let host = state.hosts.lock().await.active_manager();
+    crate::pi_host::start_unlocked(&host, crate::pi_host::StartKind::ManualRestart).await
 }
 
 #[tauri::command]
 pub async fn pi_host_status(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut host = state.host.lock().await;
+    let host = state.hosts.lock().await.active_manager();
+    let mut host = host.lock().await;
     Ok(host.is_running())
 }
 

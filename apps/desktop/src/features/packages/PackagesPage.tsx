@@ -636,8 +636,7 @@ export function PackagesPage() {
         current.workspace?.revision !== workspace.revision
       )
         return;
-      if (!response.ok)
-        throw new Error(localizeHostError(response.error, t));
+      if (!response.ok) throw new Error(localizeHostError(response.error, t));
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -764,8 +763,7 @@ export function PackagesPage() {
         current.workspace?.revision !== workspace.revision
       )
         return;
-      if (!response.ok)
-        throw new Error(localizeHostError(response.error, t));
+      if (!response.ok) throw new Error(localizeHostError(response.error, t));
       const updateIds = new Set(response.result.updates.map((update) => update.packageId));
       if (current.packages?.workspaceId === workspace.id) {
         setPackages({

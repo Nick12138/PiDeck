@@ -29,10 +29,7 @@ export function pushExtensionTerminalFrame(requestId: string, data: string): voi
   );
 }
 
-export function subscribeExtensionTerminal(
-  requestId: string,
-  listener: FrameListener,
-): () => void {
+export function subscribeExtensionTerminal(requestId: string, listener: FrameListener): () => void {
   const buffered = buffers.get(requestId);
   buffers.delete(requestId);
   if (buffered) listener(buffered);

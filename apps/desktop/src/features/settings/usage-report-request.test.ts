@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  requestUsageReportWithRetry,
-  shouldRetryUsageReport,
-} from "./usage-report-request";
+import { requestUsageReportWithRetry, shouldRetryUsageReport } from "./usage-report-request";
 
 describe("usage report request retry", () => {
   it("retries transient service graph contention", async () => {

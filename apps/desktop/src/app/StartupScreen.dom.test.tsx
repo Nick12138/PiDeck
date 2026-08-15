@@ -5,11 +5,7 @@ import { join } from "node:path";
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
-import {
-  StartupScreen,
-  resolveStartupStage,
-  useInitialStartupScreen,
-} from "./StartupScreen";
+import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
 
 beforeEach(() => {
   useAppStore.getState().setDesktopSettings({
@@ -40,12 +36,8 @@ describe("startup stage", () => {
     };
     expect(resolveStartupStage({ ...base, settingsReady: false })).toBe("preparing");
     expect(resolveStartupStage({ ...base, hostReady: false })).toBe("starting-host");
-    expect(resolveStartupStage({ ...base, workspaceReady: false })).toBe(
-      "restoring-workspace",
-    );
-    expect(resolveStartupStage({ ...base, rehydrating: true })).toBe(
-      "restoring-session",
-    );
+    expect(resolveStartupStage({ ...base, workspaceReady: false })).toBe("restoring-workspace");
+    expect(resolveStartupStage({ ...base, rehydrating: true })).toBe("restoring-session");
     expect(resolveStartupStage({ ...base, desynchronized: true })).toBe("reconnecting");
     expect(resolveStartupStage({ ...base, connecting: false })).toBe("ready");
   });

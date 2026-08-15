@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AssistantOrderedContent, DurationLabel, ExecutionTrace, ExtensionMessageRow } from "./Transcript";
+import {
+  AssistantOrderedContent,
+  DurationLabel,
+  ExecutionTrace,
+  ExtensionMessageRow,
+} from "./Transcript";
 import type { TranscriptBlock, TranscriptRow } from "./transcript-model";
 
 function toolBlock(id: string, status: "running" | "done"): TranscriptBlock {

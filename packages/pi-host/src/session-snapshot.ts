@@ -12,6 +12,7 @@ import { buildContextUsageBreakdown } from "./context-usage-breakdown.js";
 import { renderExtensionMessageEntries } from "./extension-message-renderer.js";
 import { getQueueSnapshot } from "./queue-state.js";
 import { logger } from "./logger.js";
+import type { WorkspaceGraph } from "./workspace-graph-types.js";
 
 const MAX_SESSION_SNAPSHOT_BYTES = 12 * 1024 * 1024;
 const OMITTED_IMAGE_TEXT = "[Image omitted from desktop snapshot: size limit]";
@@ -171,6 +172,7 @@ export function buildSessionSnapshot(args: {
   workspaceId: string;
   toolRevision: number;
   maxSnapshotBytes?: number;
+  includeStreamingMessage?: boolean;
 }): SessionSnapshot {
   const { session } = args;
   const model = session.model;
@@ -183,7 +185,13 @@ export function buildSessionSnapshot(args: {
       }
     : undefined;
 
-  const messages = session.messages.map(serializeAgentMessage);
+  const streamingMessage = args.includeStreamingMessage
+    ? session.agent.state.streamingMessage
+    : undefined;
+  const messages = [
+    ...session.messages,
+    ...(streamingMessage === undefined ? [] : [streamingMessage]),
+  ].map(serializeAgentMessage);
   const contextUsage = session.getContextUsage?.();
   const contextBreakdown = contextUsage
     ? buildContextUsageBreakdown({
@@ -280,4 +288,27 @@ export function buildSessionSnapshot(args: {
   if (snapshotByteLength(recentMessages) <= maxSnapshotBytes) return recentMessages;
 
   return minimalSessionSnapshot(recentMessages);
+}
+
+/**
+ * Rehydrate must project the live AgentSession. The cached graph snapshot is
+ * intentionally rebuilt only at lifecycle boundaries, so it can lag behind a
+ * streaming assistant turn while this Host route is inactive.
+ */
+export function refreshActiveSessionSnapshot(graph: WorkspaceGraph): SessionSnapshot | null {
+  const cached = graph.sessionSnapshot;
+  if (!graph.agentSession || !graph.sessionManager || !cached) return cached;
+
+  const snapshot = buildSessionSnapshot({
+    session: graph.agentSession,
+    sessionManager: graph.sessionManager,
+    cwd: graph.canonicalCwd,
+    sessionId: cached.sessionId,
+    revision: cached.revision,
+    workspaceId: graph.workspaceId,
+    toolRevision: graph.toolRevision,
+    includeStreamingMessage: true,
+  });
+  graph.sessionSnapshot = snapshot;
+  return snapshot;
 }

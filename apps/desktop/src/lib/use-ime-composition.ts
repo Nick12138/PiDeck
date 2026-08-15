@@ -18,10 +18,7 @@ export type ImeKeyEventLike = {
   nativeEvent?: { isComposing?: boolean };
 };
 
-export function isImeKeyEvent(
-  event: ImeKeyEventLike,
-  state: ImeCompositionState,
-): boolean {
+export function isImeKeyEvent(event: ImeKeyEventLike, state: ImeCompositionState): boolean {
   return (
     state.composing ||
     event.nativeEvent?.isComposing === true ||
@@ -48,9 +45,6 @@ export function useImeComposition() {
     state.current.composing = false;
     state.current.endedAt = event.timeStamp;
   }, []);
-  const isImeKey = useCallback(
-    (event: ImeKeyEventLike) => isImeKeyEvent(event, state.current),
-    [],
-  );
+  const isImeKey = useCallback((event: ImeKeyEventLike) => isImeKeyEvent(event, state.current), []);
   return { onCompositionStart, onCompositionEnd, isImeKey };
 }

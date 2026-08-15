@@ -43,8 +43,7 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
     const { tokensBefore } = res.result.result;
     // The SDK reports estimatedTokensAfter; the protocol type also allows an
     // exact tokensAfter.
-    const tokensAfter =
-      res.result.result.tokensAfter ?? res.result.result.estimatedTokensAfter;
+    const tokensAfter = res.result.result.tokensAfter ?? res.result.result.estimatedTokensAfter;
     pushNotification(
       typeof tokensBefore === "number" && typeof tokensAfter === "number"
         ? tCurrent("notifCompacted", {
@@ -97,10 +96,7 @@ export async function setAutoCompaction(enabled: boolean): Promise<void> {
     return;
   }
   if (!res.ok) {
-    pushNotification(
-      res.error?.message ?? tCurrent("notifAutoCompactionFailed"),
-      "error",
-    );
+    pushNotification(res.error?.message ?? tCurrent("notifAutoCompactionFailed"), "error");
     return;
   }
   applySessionSnapshot(res.result);

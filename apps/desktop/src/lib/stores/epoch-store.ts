@@ -32,10 +32,7 @@ export function emptyEpoch(): EpochState {
   };
 }
 
-export function beginHostEpoch(
-  _prev: EpochState,
-  status: HostStatusSnapshot,
-): EpochState {
+export function beginHostEpoch(_prev: EpochState, status: HostStatusSnapshot): EpochState {
   return {
     ...emptyEpoch(),
     host: status,

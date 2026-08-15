@@ -20,9 +20,7 @@ describe("workspaceAbsolutePath", () => {
     expect(workspaceAbsolutePath("/Users/me/project/", "src/App.tsx")).toBe(
       "/Users/me/project/src/App.tsx",
     );
-    expect(workspaceAbsolutePath("C:\\repo\\", "src/App.tsx")).toBe(
-      "C:\\repo\\src\\App.tsx",
-    );
+    expect(workspaceAbsolutePath("C:\\repo\\", "src/App.tsx")).toBe("C:\\repo\\src\\App.tsx");
   });
 });
 
@@ -39,10 +37,7 @@ describe("flattenVisibleFiles", () => {
       "README.md",
     ]);
     expect(
-      flattenVisibleFiles(directories, new Set(["src"])).map((row) => [
-        row.entry.path,
-        row.depth,
-      ]),
+      flattenVisibleFiles(directories, new Set(["src"])).map((row) => [row.entry.path, row.depth]),
     ).toEqual([
       ["src", 0],
       ["src/components", 1],

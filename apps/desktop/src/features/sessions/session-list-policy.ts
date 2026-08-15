@@ -68,7 +68,7 @@ function startOfWeek(now: number): number {
   return d.getTime();
 }
 
-export function sessionTimeGroup(updatedAt: number, now: number = Date.now()): SessionTimeGroup {
+function sessionTimeGroup(updatedAt: number, now: number = Date.now()): SessionTimeGroup {
   if (updatedAt >= startOfDay(now)) return "today";
   if (updatedAt >= startOfWeek(now)) return "thisWeek";
   return "earlier";

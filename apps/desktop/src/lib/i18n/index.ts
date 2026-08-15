@@ -9,8 +9,7 @@ const DICTIONARIES: Record<Locale, Record<MessageKey, string>> = { en, zh };
 
 export function resolveLocale(language: AppLanguage | undefined): Locale {
   if (language === "en" || language === "zh") return language;
-  const system =
-    typeof navigator !== "undefined" ? navigator.language ?? "" : "";
+  const system = typeof navigator !== "undefined" ? (navigator.language ?? "") : "";
   return system.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 

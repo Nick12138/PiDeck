@@ -9,7 +9,7 @@ for a genuinely empty first-run configuration. It creates
 Workspace configuration always wins, and standalone Host processes retain the
 `waitingForWorkspace` state until given an explicit cwd.
 
-1. Desktop supplies a startup cwd, or the user picks one through `workspace.setCurrent`.
+1. Desktop supplies a startup cwd, rebinds an idle Host, or activates an isolated Host when another workspace is busy.
 2. Host canonicalizes the path and builds services with explicit `projectTrusted: true`.
 3. Project extensions, skills, prompts, and themes become available immediately.
 
@@ -19,7 +19,8 @@ graph identity: Linux and macOS preserve case, while Windows normalizes path
 separators and compares without case. A retained graph is rechecked against the
 requested canonical identity before reactivation.
 
-The desktop persists the Host-returned `canonicalCwd` and uses exact string
+The native Host pool canonicalizes its process key (case-insensitively on
+Windows). The desktop persists the Host-returned `canonicalCwd` and uses exact string
 identity for recent Workspace entries. It does not infer platform path
 semantics or lowercase paths in React.
 

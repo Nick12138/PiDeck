@@ -10,7 +10,11 @@ describe("native context-menu exceptions", () => {
     dragRegion.append(child);
     expect(shouldKeepNativeContextMenu({ target: child, shiftKey: false }, false)).toBe(true);
     expect(shouldKeepNativeContextMenu({ target: document.body, shiftKey: true }, true)).toBe(true);
-    expect(shouldKeepNativeContextMenu({ target: document.body, shiftKey: true }, false)).toBe(false);
-    expect(shouldKeepNativeContextMenu({ target: document.body, shiftKey: false }, true)).toBe(false);
+    expect(shouldKeepNativeContextMenu({ target: document.body, shiftKey: true }, false)).toBe(
+      false,
+    );
+    expect(shouldKeepNativeContextMenu({ target: document.body, shiftKey: false }, true)).toBe(
+      false,
+    );
   });
 });

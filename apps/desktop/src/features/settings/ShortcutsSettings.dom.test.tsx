@@ -1,13 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -62,9 +55,9 @@ describe("ShortcutsSettings", () => {
     fireEvent.keyDown(recorder, { key: "N", ctrlKey: true, shiftKey: true });
 
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.shortcutOverrides,
-      ).toEqual({ "session.new": "mod+shift+n" }),
+      expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toEqual({
+        "session.new": "mod+shift+n",
+      }),
     );
     expect(screen.getByText("Ctrl+Shift+N")).toBeInTheDocument();
   });
@@ -84,26 +77,20 @@ describe("ShortcutsSettings", () => {
     expect(recorder).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.keyDown(recorder, { key: "n" });
-    expect(
-      screen.getByText("Include Ctrl or Alt, or use F1-F12."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Include Ctrl or Alt, or use F1-F12.")).toBeInTheDocument();
     expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toBeUndefined();
   });
 
   it("clears, restores one default, and cancels recording with Escape", async () => {
     const user = userEvent.setup();
-    useAppStore
-      .getState()
-      .setDesktopSettings(settings({ "session.new": "mod+shift+n" }));
+    useAppStore.getState().setDesktopSettings(settings({ "session.new": "mod+shift+n" }));
     render(<ShortcutsSettings />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Clear shortcut for New session" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Clear shortcut for New session" }));
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.shortcutOverrides,
-      ).toEqual({ "session.new": null }),
+      expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toEqual({
+        "session.new": null,
+      }),
     );
     expect(screen.getByText("Unassigned")).toBeInTheDocument();
 
@@ -113,9 +100,7 @@ describe("ShortcutsSettings", () => {
       }),
     );
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.shortcutOverrides,
-      ).toEqual({}),
+      expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toEqual({}),
     );
     expect(screen.getByText("Ctrl+N")).toBeInTheDocument();
 
@@ -141,14 +126,10 @@ describe("ShortcutsSettings", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Restore all default shortcuts?",
     });
-    await user.click(
-      within(dialog).getByRole("button", { name: "Restore defaults" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Restore defaults" }));
 
     await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.shortcutOverrides,
-      ).toEqual({}),
+      expect(useAppStore.getState().desktopSettings?.shortcutOverrides).toEqual({}),
     );
     expect(screen.getByText("Ctrl+N")).toBeInTheDocument();
     expect(screen.getByText("Esc")).toBeInTheDocument();

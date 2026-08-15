@@ -13,10 +13,7 @@ function isDesktopRuntime(): boolean {
 function isSafeBrowserUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      url.hostname.length > 0
-    );
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.length > 0;
   } catch {
     return false;
   }

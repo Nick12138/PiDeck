@@ -307,10 +307,7 @@ export function Transcript() {
     }
     return centerRow(key);
   };
-  useEffect(
-    () => subscribeTranscriptScroll((request) => scrollToRowRef.current(request)),
-    [],
-  );
+  useEffect(() => subscribeTranscriptScroll((request) => scrollToRowRef.current(request)), []);
 
   // Save the reading position when the transcript unmounts (e.g. workspace
   // switches); session switches are handled by the render-phase reset above.

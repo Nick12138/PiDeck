@@ -1,5 +1,45 @@
 import type { HostTransport } from "./host-client";
 
+type RoutedHostFrame = { routeId: string; line: string };
+
+let activeRouteId: string | null = null;
+
+function routedLine(payload: string | RoutedHostFrame): string | null {
+  if (typeof payload === "string") return payload;
+  return payload.routeId === activeRouteId ? payload.line : null;
+}
+
+export async function activateWorkspaceHost(cwd: string): Promise<boolean> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return false;
+  activeRouteId = await invoke<string>("pi_host_activate", { cwd });
+  return true;
+}
+
+export async function prepareWorkspaceHost(cwd: string, activeBusy: boolean): Promise<boolean> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return false;
+  const routeId = await invoke<string | null>("pi_host_prepare_switch", { cwd, activeBusy });
+  if (routeId === null) return false;
+  activeRouteId = routeId;
+  return true;
+}
+
+export async function rebindActiveWorkspaceHost(cwd: string): Promise<boolean> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return false;
+  await invoke("pi_host_rebind_active", { cwd });
+  return true;
+}
+
+export async function replayActiveHostReady(): Promise<boolean> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return false;
+  if (!activeRouteId) throw new Error("No active Host route");
+  await invoke("pi_host_replay_ready", { routeId: activeRouteId });
+  return true;
+}
+
 /**
  * Tauri IPC transport. Falls back to a mock for browser-only Vite dev
  * when Tauri APIs are unavailable.
@@ -11,13 +51,18 @@ export async function createTauriTransport(): Promise<HostTransport> {
   const { listen } = await import("@tauri-apps/api/event");
   const handlers = new Set<(line: string) => void>();
 
-  const unlistenStdout = await listen<string>("pi-host-stdout", (event) => {
-    for (const h of handlers) h(event.payload);
+  const unlistenStdout = await listen<string | RoutedHostFrame>("pi-host-stdout", (event) => {
+    const line = routedLine(event.payload);
+    if (line === null) return;
+    for (const h of handlers) h(line);
   });
 
-  const unlistenStderr = await listen<string>("pi-host-stderr", (event) => {
-    console.debug("[pi-host]", event.payload);
+  const unlistenStderr = await listen<string | RoutedHostFrame>("pi-host-stderr", (event) => {
+    const line = routedLine(event.payload);
+    if (line !== null) console.debug("[pi-host]", line);
   });
+
+  activeRouteId = await invoke<string>("pi_host_active_route");
 
   return {
     send: async (line: string) => {

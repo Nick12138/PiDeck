@@ -11,9 +11,7 @@ export function ShortcutReference({
   isMac?: boolean;
 }) {
   const t = useT();
-  const shortcutOverrides = useAppStore(
-    (state) => state.desktopSettings?.shortcutOverrides,
-  );
+  const shortcutOverrides = useAppStore((state) => state.desktopSettings?.shortcutOverrides);
 
   return (
     <dl>
