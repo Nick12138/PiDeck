@@ -306,26 +306,62 @@ export function AppearanceSettings() {
                   </span>
                 </span>
                 <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
-                  <span className="interface-density-control flex h-8 w-24 items-center rounded-md border border-border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus">
-                    <input
-                      id="conversation-max-width"
-                      type="number"
-                      min={HARD_MIN_CONVERSATION_WIDTH}
-                      max={HARD_MAX_CONVERSATION_WIDTH}
-                      step={1}
-                      inputMode="numeric"
-                      className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
-                      value={conversationMaxDraft}
-                      aria-describedby="conversation-max-width-description"
-                      onChange={(event) => setConversationMaxDraft(event.target.value)}
-                      onBlur={commitConversationMax}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        commitConversationMax();
-                      }}
-                    />
-                    <span className="ml-1 text-[11px] text-muted">px</span>
+                  <span
+                    className="interface-density-control flex h-8 shrink-0 overflow-hidden rounded-md border border-border bg-surface"
+                    role="group"
+                    aria-label={t("generalConversationMaxWidth")}
+                  >
+                    <button
+                      type="button"
+                      className="flex h-full w-8 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title={t("appearanceDecrease", {
+                        setting: t("generalConversationMaxWidth"),
+                      })}
+                      aria-label={t("appearanceDecrease", {
+                        setting: t("generalConversationMaxWidth"),
+                      })}
+                      onClick={() =>
+                        setConversationMaxDraft(String(Math.max(HARD_MIN_CONVERSATION_WIDTH, Math.floor(Number(conversationMaxDraft)) - 1)))
+                      }
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <span className="flex h-full min-w-8 items-center gap-0.5 border-x border-border px-1.5 text-xs">
+                      <input
+                        id="conversation-max-width"
+                        type="number"
+                        min={HARD_MIN_CONVERSATION_WIDTH}
+                        max={HARD_MAX_CONVERSATION_WIDTH}
+                        step={1}
+                        inputMode="numeric"
+                        className="w-8 bg-transparent text-center text-xs tabular-nums text-foreground outline-none"
+                        value={conversationMaxDraft}
+                        aria-describedby="conversation-max-width-description"
+                        onChange={(event) => setConversationMaxDraft(event.target.value)}
+                        onBlur={commitConversationMax}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          commitConversationMax();
+                        }}
+                      />
+                      <span className="shrink-0 text-muted">px</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="flex h-full w-8 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title={t("appearanceIncrease", {
+                        setting: t("generalConversationMaxWidth"),
+                      })}
+                      aria-label={t("appearanceIncrease", {
+                        setting: t("generalConversationMaxWidth"),
+                      })}
+                      onClick={() =>
+                        setConversationMaxDraft(String(Math.min(HARD_MAX_CONVERSATION_WIDTH, Math.floor(Number(conversationMaxDraft)) + 1)))
+                      }
+                    >
+                      <Plus size={13} />
+                    </button>
                   </span>
                 </span>
               </div>
@@ -345,26 +381,62 @@ export function AppearanceSettings() {
                   </span>
                 </span>
                 <span className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
-                  <span className="interface-density-control flex h-8 w-24 items-center rounded-md border border-border bg-surface px-2 focus-within:ring-2 focus-within:ring-focus">
-                    <input
-                      id="conversation-min-width"
-                      type="number"
-                      min={HARD_MIN_CONVERSATION_WIDTH}
-                      max={HARD_MAX_CONVERSATION_WIDTH}
-                      step={1}
-                      inputMode="numeric"
-                      className="min-w-0 flex-1 bg-transparent text-right text-xs text-foreground outline-none"
-                      value={conversationMinDraft}
-                      aria-describedby="conversation-min-width-description"
-                      onChange={(event) => setConversationMinDraft(event.target.value)}
-                      onBlur={commitConversationMin}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        commitConversationMin();
-                      }}
-                    />
-                    <span className="ml-1 text-[11px] text-muted">px</span>
+                  <span
+                    className="interface-density-control flex h-8 shrink-0 overflow-hidden rounded-md border border-border bg-surface"
+                    role="group"
+                    aria-label={t("generalConversationMinWidth")}
+                  >
+                    <button
+                      type="button"
+                      className="flex h-full w-8 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title={t("appearanceDecrease", {
+                        setting: t("generalConversationMinWidth"),
+                      })}
+                      aria-label={t("appearanceDecrease", {
+                        setting: t("generalConversationMinWidth"),
+                      })}
+                      onClick={() =>
+                        setConversationMinDraft(String(Math.max(HARD_MIN_CONVERSATION_WIDTH, Math.floor(Number(conversationMinDraft)) - 1)))
+                      }
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <span className="flex h-full min-w-8 items-center gap-0.5 border-x border-border px-1.5 text-xs">
+                      <input
+                        id="conversation-min-width"
+                        type="number"
+                        min={HARD_MIN_CONVERSATION_WIDTH}
+                        max={HARD_MAX_CONVERSATION_WIDTH}
+                        step={1}
+                        inputMode="numeric"
+                        className="w-8 bg-transparent text-center text-xs tabular-nums text-foreground outline-none"
+                        value={conversationMinDraft}
+                        aria-describedby="conversation-min-width-description"
+                        onChange={(event) => setConversationMinDraft(event.target.value)}
+                        onBlur={commitConversationMin}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          commitConversationMin();
+                        }}
+                      />
+                      <span className="shrink-0 text-muted">px</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="flex h-full w-8 items-center justify-center text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title={t("appearanceIncrease", {
+                        setting: t("generalConversationMinWidth"),
+                      })}
+                      aria-label={t("appearanceIncrease", {
+                        setting: t("generalConversationMinWidth"),
+                      })}
+                      onClick={() =>
+                        setConversationMinDraft(String(Math.min(HARD_MAX_CONVERSATION_WIDTH, Math.floor(Number(conversationMinDraft)) + 1)))
+                      }
+                    >
+                      <Plus size={13} />
+                    </button>
                   </span>
                 </span>
               </div>

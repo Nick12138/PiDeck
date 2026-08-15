@@ -745,6 +745,40 @@ html[data-theme-family="apple"] .chat-composer-input {
   box-shadow: none;
 }
 
+#conversation-max-width {
+  background-color: transparent;
+  box-shadow: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+#conversation-max-width::-webkit-outer-spin-button,
+#conversation-max-width::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#conversation-max-width:focus-visible {
+  outline: none;
+}
+
+#conversation-min-width {
+  background-color: transparent;
+  box-shadow: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+#conversation-min-width::-webkit-outer-spin-button,
+#conversation-min-width::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#conversation-min-width:focus-visible {
+  outline: none;
+}
+
 html[data-theme-family="apple"] .chat-composer-surface {
   border-color: var(--color-border-subtle);
   border-radius: var(--radius-2xl);
