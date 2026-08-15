@@ -197,6 +197,13 @@ export type GitCommitResult = GitMutationResult & {
   commitSha: string | null;
 };
 
+export type GitCommitMessageResult = {
+  /** Suggested commit message written by the model. */
+  message: string;
+  /** True when the staged diff was truncated before it reached the model. */
+  truncated?: boolean;
+};
+
 export type SessionSummary = {
   sessionId: string;
   sessionPath: string;

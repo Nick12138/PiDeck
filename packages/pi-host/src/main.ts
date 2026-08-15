@@ -188,7 +188,9 @@ async function main(): Promise<void> {
   // the first workspace graph read the registry.
   await refreshModelsLocal(modelRuntime);
   await migrationBackup?.recordMilestone("localRefresh");
-  providerOwnership.runNeutral(() => applyKnownThinkingProfiles(modelRegistry));
+  await providerOwnership.runNeutral(() =>
+    applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
+  );
   // Degraded outranks a parse check and is sticky: the Host cannot re-derive
   // whether the configuration became coherent, so it stops claiming health
   // until a restart finds no journal.
@@ -223,7 +225,9 @@ async function main(): Promise<void> {
       await refreshModelsLocal(modelRuntime, { signal });
       // Neutral: the profile pass re-registers existing providers and must
       // not become a co-owner that pins another workspace's provider alive.
-      providerOwnership.runNeutral(() => applyKnownThinkingProfiles(modelRegistry));
+      await providerOwnership.runNeutral(() =>
+        applyKnownThinkingProfiles(modelRegistry, modelRuntime, join(agentDir, "models.json")),
+      );
       modelConfigHealth = resolveModelConfigHealth();
       return modelConfigHealth;
     },

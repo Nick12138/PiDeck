@@ -1141,8 +1141,8 @@ export const en = {
   gitCommitting: "Committing...",
   gitCommitCreated: "Commit created",
   gitCommitSuccess: "Committed {sha}",
-  gitGenerateCommitMessage: "Generate commit message",
-  gitGeneratingCommitMessage: "Generating commit message...",
+  gitGenerateCommitMessage: "Generate",
+  gitGeneratingCommitMessage: "Generating...",
   gitGenerateCommitMessageFailed: "Failed to generate a commit message",
   gitGenerateCommitMessageTruncated:
     "The diff is large; the message was generated from truncated changes.",

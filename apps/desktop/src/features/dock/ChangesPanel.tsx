@@ -27,6 +27,7 @@ import {
   History,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -200,6 +201,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const [diffLoading, setDiffLoading] = useState(false);
   const [operation, setOperation] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
+  const [generatingMessage, setGeneratingMessage] = useState(false);
   const [commitSha, setCommitSha] = useState<string | null>(null);
   const [discardTarget, setDiscardTarget] = useState<GitFileChange | null>(null);
   const [hunkDiscardTarget, setHunkDiscardTarget] = useState<GitDiffHunk | null>(null);
@@ -245,6 +247,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     setDiffLoading(false);
     setOperation(null);
     setCommitMessage("");
+    setGeneratingMessage(false);
     setCommitSha(null);
     setDiscardTarget(null);
     setHunkDiscardTarget(null);
@@ -694,8 +697,48 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const stagedCount = ready?.files.filter((file) => file.staged !== null).length ?? 0;
   const hasConflicts = ready?.files.some((file) => file.conflict) ?? false;
   const canCommit = Boolean(
-    ready && stagedCount > 0 && !hasConflicts && commitMessage.trim() && !operation,
+    ready &&
+    stagedCount > 0 &&
+    !hasConflicts &&
+    commitMessage.trim() &&
+    !operation &&
+    !generatingMessage,
   );
+
+  const generateCommitMessage = async () => {
+    if (!host || !workspace || !ready || generatingMessage || stagedCount === 0) return;
+    const requestGeneration = generation.current;
+    setGeneratingMessage(true);
+    setError(null);
+    try {
+      const response = await hostClient.request(
+        "git.generateCommitMessage",
+        workspaceContext(host, workspace),
+        { expectedIndexGeneration: ready.indexGeneration },
+        60_000,
+      );
+      if (requestGeneration !== generation.current) return;
+      if (!response.ok) {
+        setError(errorMessage(response.error, t("gitGenerateCommitMessageFailed"), t));
+        if (response.error?.code === "STALE_REVISION") void refresh();
+        return;
+      }
+      setCommitMessage(response.result.message);
+      if (response.result.truncated) {
+        pushNotification(t("gitGenerateCommitMessageTruncated"), "warning");
+      }
+    } catch (requestError) {
+      if (requestGeneration === generation.current) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : t("gitGenerateCommitMessageFailed"),
+        );
+      }
+    } finally {
+      if (requestGeneration === generation.current) setGeneratingMessage(false);
+    }
+  };
 
   const commit = async () => {
     if (!host || !workspace || !ready || !canCommit) return;
@@ -1052,22 +1095,42 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                   {t("gitCommitSuccess", { sha: commitSha })}
                 </p>
               )}
-              <label
-                htmlFor="git-commit-message"
-                className="mb-1.5 block text-[11px] font-medium text-muted"
-              >
-                {t("gitCommitMessage")}
-              </label>
+              <div className="mb-1.5 flex items-center gap-2">
+                <label
+                  htmlFor="git-commit-message"
+                  className="block text-[11px] font-medium text-muted"
+                >
+                  {t("gitCommitMessage")}
+                </label>
+                <button
+                  type="button"
+                  title={t("gitGenerateCommitMessage")}
+                  disabled={
+                    stagedCount === 0 || hasConflicts || Boolean(operation) || generatingMessage
+                  }
+                  className="ml-auto flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => void generateCommitMessage()}
+                >
+                  {generatingMessage ? (
+                    <LoaderCircle size={12} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={12} />
+                  )}
+                  {generatingMessage
+                    ? t("gitGeneratingCommitMessage")
+                    : t("gitGenerateCommitMessage")}
+                </button>
+              </div>
               <textarea
                 id="git-commit-message"
                 value={commitMessage}
                 maxLength={16 * 1024}
                 rows={3}
-                disabled={Boolean(operation)}
+                disabled={Boolean(operation) || generatingMessage}
                 placeholder={
                   stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")
                 }
-                className="w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-focus disabled:opacity-50"
+                className="commit-message-input w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-focus disabled:opacity-50"
                 onChange={(event) => setCommitMessage(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

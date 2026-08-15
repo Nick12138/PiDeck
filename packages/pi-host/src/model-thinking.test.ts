@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AgentSession, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -48,7 +51,7 @@ describe("applyKnownThinkingProfiles", () => {
       ],
     });
 
-    expect(applyKnownThinkingProfiles(registry)).toBeGreaterThanOrEqual(1);
+    expect(await applyKnownThinkingProfiles(registry)).toBeGreaterThanOrEqual(1);
     expect(registry.find("test-profile", "grok-4.5")?.thinkingLevelMap).toMatchObject({
       off: null,
       minimal: null,
@@ -68,6 +71,163 @@ describe("applyKnownThinkingProfiles", () => {
       xhigh: null,
       max: "max",
     });
+  });
+
+  it("folds unknown OpenAI-compatible reasoning models to common effort levels", async () => {
+    const registry = new ModelRegistry(
+      await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath: null,
+        allowModelNetwork: false,
+      }),
+    );
+    registry.registerProvider("test-sglang", {
+      baseUrl: "http://localhost:30000/v1",
+      apiKey: "test",
+      api: "openai-completions",
+      models: [
+        {
+          id: "my-sglang-model",
+          name: "SGLang server model",
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 16384,
+        },
+      ],
+    });
+
+    expect(await applyKnownThinkingProfiles(registry)).toBeGreaterThanOrEqual(1);
+    expect(registry.find("test-sglang", "my-sglang-model")?.thinkingLevelMap).toEqual({
+      off: "none",
+      minimal: "low",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "high",
+      max: "max",
+    });
+  });
+
+  it("folds a models.json reasoning model like agnes-2.5-flash", async () => {
+    const registry = new ModelRegistry(
+      await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath: null,
+        allowModelNetwork: false,
+      }),
+    );
+    registry.registerProvider("agnes", {
+      baseUrl: "https://apihub.agnes-ai.com/v1",
+      apiKey: "test",
+      authHeader: true,
+      api: "openai-completions",
+      models: [
+        {
+          id: "agnes-2.5-flash",
+          name: "agnes-2.5-flash",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 272000,
+          maxTokens: 65536,
+        },
+      ],
+    });
+
+    expect(await applyKnownThinkingProfiles(registry)).toBe(1);
+    expect(registry.find("agnes", "agnes-2.5-flash")?.thinkingLevelMap).toEqual({
+      off: "none",
+      minimal: "low",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "high",
+      max: "max",
+    });
+  });
+
+  it("folds models.json providers surfaced through the runtime", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pideck-thinking-"));
+    const modelsPath = join(agentDir, "models.json");
+    const modelsStorePath = join(agentDir, "models-store.json");
+    writeFileSync(
+      modelsPath,
+      JSON.stringify({
+        providers: {
+          agn: {
+            name: "agn",
+            baseUrl: "https://apihub.agnes-ai.com/v1",
+            apiKey: "test",
+            authHeader: true,
+            api: "openai-completions",
+            models: [
+              {
+                id: "agnes-2.5-flash",
+                name: "agnes-2.5-flash",
+                reasoning: true,
+                input: ["text", "image"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 272000,
+                maxTokens: 65536,
+              },
+            ],
+          },
+        },
+      }),
+    );
+    try {
+      const runtime = await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath,
+        modelsStorePath,
+        allowModelNetwork: false,
+      });
+      const registry = new ModelRegistry(runtime);
+
+      expect(await applyKnownThinkingProfiles(registry, runtime, modelsPath)).toBe(1);
+      expect(runtime.getModel("agn", "agnes-2.5-flash")?.thinkingLevelMap).toEqual({
+        off: "none",
+        minimal: "low",
+        low: "low",
+        medium: "medium",
+        high: "high",
+        xhigh: "high",
+        max: "max",
+      });
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves unknown non-OpenAI reasoning models without a fallback map", async () => {
+    const registry = new ModelRegistry(
+      await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(),
+        modelsPath: null,
+        allowModelNetwork: false,
+      }),
+    );
+    registry.registerProvider("test-native", {
+      baseUrl: "https://api.example.com",
+      apiKey: "test",
+      api: "anthropic-messages",
+      models: [
+        {
+          id: "claude-custom-unknown",
+          name: "Custom Claude",
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: 32000,
+        },
+      ],
+    });
+
+    expect(await applyKnownThinkingProfiles(registry)).toBe(0);
+    expect(registry.find("test-native", "claude-custom-unknown")?.thinkingLevelMap).toBeUndefined();
   });
 
   it("rebinds a live session to the refreshed registry model", () => {

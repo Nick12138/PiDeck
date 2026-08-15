@@ -218,6 +218,31 @@ describe("ChangesPanel", () => {
     expect(screen.getByText("No changes")).toBeVisible();
   });
 
+  it("fills the composer from a generated commit message", async () => {
+    request.mockImplementation(async (method) => {
+      if (method === "git.setWatching")
+        return success(method, { watching: true, snapshot: status() }) as never;
+      if (method === "git.generateCommitMessage")
+        return success(method, { message: "feat: update app" }) as never;
+      throw new Error(`Unexpected method ${method}`);
+    });
+    const user = userEvent.setup();
+    render(<ChangesPanel visible />);
+
+    await user.click(await screen.findByRole("button", { name: "Generate" }));
+
+    const message = screen.getByRole("textbox", { name: "Commit message" });
+    await waitFor(() => expect(message).toHaveValue("feat: update app"));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "git.generateCommitMessage",
+        expect.any(Object),
+        { expectedIndexGeneration: status().indexGeneration },
+        60_000,
+      ),
+    );
+  });
+
   it("stages and unstages all changes from the group headers", async () => {
     const unstagedOnly = status({
       files: [{ ...status().files[0]!, staged: null }],

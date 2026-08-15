@@ -63,6 +63,7 @@ import type {
   GitCommitDiffSnapshot,
   GitMutationResult,
   GitCommitResult,
+  GitCommitMessageResult,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -90,6 +91,7 @@ export type HostContextMap = {
   "git.switchBranch": WorkspaceContext;
   "git.listHistory": WorkspaceContext;
   "git.getCommitDiff": WorkspaceContext;
+  "git.generateCommitMessage": WorkspaceContext;
   "attachment.create": ActiveSessionContext;
   "attachment.createText": ActiveSessionContext;
   "attachment.get": ActiveSessionContext;
@@ -199,6 +201,7 @@ export type HostRequestParams = {
   "git.switchBranch": { name: string; expectedRevision: number };
   "git.listHistory": { limit: number; cursor?: string };
   "git.getCommitDiff": { commitSha: string };
+  "git.generateCommitMessage": { expectedIndexGeneration: string };
   "attachment.create": { path: string };
   "attachment.createText": { text: string };
   "attachment.get": { attachmentId: string };
@@ -328,6 +331,7 @@ export type HostResultMap = {
   "git.switchBranch": GitMutationResult;
   "git.listHistory": GitHistoryResult;
   "git.getCommitDiff": GitCommitDiffSnapshot;
+  "git.generateCommitMessage": GitCommitMessageResult;
   "attachment.create": AttachmentSnapshot;
   "attachment.createText": AttachmentSnapshot;
   "attachment.get": AttachmentSnapshot;

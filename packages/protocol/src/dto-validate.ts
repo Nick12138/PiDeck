@@ -1738,6 +1738,14 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isGitMutationResult(result, false) ? null : `invalid ${method} result`;
     case "git.commit":
       return isGitMutationResult(result, true) ? null : "invalid git.commit result";
+    case "git.generateCommitMessage":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["message"], ["truncated"]) &&
+        isString(result.message) &&
+        result.message.trim().length > 0 &&
+        (result.truncated === undefined || isBoolean(result.truncated))
+        ? null
+        : "invalid git.generateCommitMessage result";
     case "session.getCommands":
       return isPlainObject(result) &&
         hasExactKeys(result, ["commands"]) &&

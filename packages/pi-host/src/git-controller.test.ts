@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHostError, type GitStatusSnapshot, type HostIdentity } from "@pideck/protocol";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import { TryMutex } from "./locks.js";
@@ -6,6 +6,9 @@ import type { HandlerContext } from "./server.js";
 import { createGitHandlers } from "./git-controller.js";
 import type { GitService } from "./git-service.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
+
+vi.mock("@earendil-works/pi-ai/compat", () => ({ completeSimple: vi.fn() }));
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 
 const identity: HostIdentity = {
   hostInstanceId: "00000000-0000-4000-8000-000000000101",
@@ -29,14 +32,16 @@ const ready: Extract<GitStatusSnapshot, { state: "ready" }> = {
   ahead: 0,
   behind: 0,
   indexGeneration: "b".repeat(64),
-  files: [{
-    path: "src/app.ts",
-    staged: null,
-    unstaged: "modified",
-    conflict: false,
-    submodule: false,
-    pathSupported: true,
-  }],
+  files: [
+    {
+      path: "src/app.ts",
+      staged: null,
+      unstaged: "modified",
+      conflict: false,
+      submodule: false,
+      pathSupported: true,
+    },
+  ],
   warnings: [],
 };
 
@@ -45,6 +50,7 @@ function fixture() {
     canonicalCwd: "/repo/apps/desktop",
     workspaceId: identity.workspaceId,
     revision: identity.workspaceRevision,
+    agentSession: null,
   };
   const server = {
     graphOperations: new GraphOperationRegistry(),
@@ -57,6 +63,7 @@ function fixture() {
     getGraph: () => graph,
     getServer: () => server,
     checkIdentity: vi.fn(() => null),
+    deps: {},
   } as unknown as WorkspaceGraphFactory;
   const service = {
     getStatus: vi.fn(async () => ready),
@@ -82,6 +89,7 @@ function fixture() {
     unstageAll: vi.fn(),
     discard: vi.fn(),
     commit: vi.fn(),
+    getStagedPatch: vi.fn(),
     createBranch: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
     switchBranch: vi.fn(async () => ({ applied: true as const, snapshot: ready })),
   } as unknown as GitService;
@@ -102,6 +110,10 @@ function context(method: string, params: unknown): HandlerContext {
 }
 
 describe("Git controller", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("reads status for the active canonical workspace", async () => {
     const state = fixture();
     const result = await createGitHandlers(state.factory, state.service)["git.getStatus"]!(
@@ -170,14 +182,16 @@ describe("Git controller", () => {
   it("routes hunk and branch mutations through the lock and emits refreshed status", async () => {
     const state = fixture();
     const handlers = createGitHandlers(state.factory, state.service);
-    await handlers["git.mutateHunk"]!(context("git.mutateHunk", {
-      path: "src/app.ts",
-      area: "unstaged",
-      hunkId: "a".repeat(64),
-      operation: "stage",
-      expectedRevision: 4,
-      expectedContentGeneration: "b".repeat(64),
-    }));
+    await handlers["git.mutateHunk"]!(
+      context("git.mutateHunk", {
+        path: "src/app.ts",
+        area: "unstaged",
+        hunkId: "a".repeat(64),
+        operation: "stage",
+        expectedRevision: 4,
+        expectedContentGeneration: "b".repeat(64),
+      }),
+    );
     expect(state.service.mutateHunk).toHaveBeenCalledWith(
       "/repo/apps/desktop",
       "src/app.ts",
@@ -189,19 +203,29 @@ describe("Git controller", () => {
       expect.any(AbortSignal),
     );
 
-    await handlers["git.createBranch"]!(context("git.createBranch", {
-      name: "feature/git",
-      expectedRevision: 4,
-    }));
-    await handlers["git.switchBranch"]!(context("git.switchBranch", {
-      name: "main",
-      expectedRevision: 4,
-    }));
+    await handlers["git.createBranch"]!(
+      context("git.createBranch", {
+        name: "feature/git",
+        expectedRevision: 4,
+      }),
+    );
+    await handlers["git.switchBranch"]!(
+      context("git.switchBranch", {
+        name: "main",
+        expectedRevision: 4,
+      }),
+    );
     expect(state.service.createBranch).toHaveBeenCalledWith(
-      "/repo/apps/desktop", "feature/git", 4, expect.any(AbortSignal),
+      "/repo/apps/desktop",
+      "feature/git",
+      4,
+      expect.any(AbortSignal),
     );
     expect(state.service.switchBranch).toHaveBeenCalledWith(
-      "/repo/apps/desktop", "main", 4, expect.any(AbortSignal),
+      "/repo/apps/desktop",
+      "main",
+      4,
+      expect.any(AbortSignal),
     );
     expect(state.server.emit).toHaveBeenCalledTimes(3);
   });
@@ -210,10 +234,18 @@ describe("Git controller", () => {
     const state = fixture();
     const handlers = createGitHandlers(state.factory, state.service);
     await handlers["git.listBranches"]!(context("git.listBranches", null));
-    await handlers["git.listHistory"]!(context("git.listHistory", { limit: 25, cursor: "a".repeat(40) }));
-    await handlers["git.getCommitDiff"]!(context("git.getCommitDiff", { commitSha: "b".repeat(40) }));
+    await handlers["git.listHistory"]!(
+      context("git.listHistory", { limit: 25, cursor: "a".repeat(40) }),
+    );
+    await handlers["git.getCommitDiff"]!(
+      context("git.getCommitDiff", { commitSha: "b".repeat(40) }),
+    );
     expect(state.service.listBranches).toHaveBeenCalledWith("/repo/apps/desktop");
-    expect(state.service.listHistory).toHaveBeenCalledWith("/repo/apps/desktop", 25, "a".repeat(40));
+    expect(state.service.listHistory).toHaveBeenCalledWith(
+      "/repo/apps/desktop",
+      25,
+      "a".repeat(40),
+    );
     expect(state.service.getCommitDiff).toHaveBeenCalledWith("/repo/apps/desktop", "b".repeat(40));
     expect(state.server.serviceGraphLock.getOwner()).toBeNull();
   });
@@ -225,7 +257,9 @@ describe("Git controller", () => {
       context("git.setWatching", { enabled: true }),
     );
     expect(result).toEqual({ result: { watching: true, snapshot: ready } });
-    expect(state.server.emitForIdentity).toHaveBeenCalledWith(identity, "git.changed", { snapshot: ready });
+    expect(state.server.emitForIdentity).toHaveBeenCalledWith(identity, "git.changed", {
+      snapshot: ready,
+    });
 
     state.server.emitForIdentity.mockClear();
     state.graph.revision += 1;
@@ -240,5 +274,113 @@ describe("Git controller", () => {
       context("git.setWatching", { enabled: false }),
     );
     expect(stale).toMatchObject({ error: { code: "STALE_REVISION" } });
+  });
+
+  it("generates a commit message from the active session model", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts\n+line",
+      truncated: false,
+    });
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      content: [{ type: "text", text: "feat: 更新应用" }],
+      stopReason: "end_turn",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(state.service.getStagedPatch).toHaveBeenCalledWith("/repo/apps/desktop", "b".repeat(64));
+    expect(completeSimple).toHaveBeenCalledWith(
+      { provider: "anthropic", id: "claude-sonnet-4-5" },
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("Simplified Chinese"),
+      }),
+      expect.objectContaining({
+        apiKey: "key",
+        maxTokens: 300,
+        reasoning: "minimal",
+        maxRetries: 0,
+      }),
+    );
+    expect(result).toEqual({ result: { message: "feat: 更新应用" } });
+  });
+
+  it("reports truncated staged diffs in the result", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts",
+      truncated: true,
+    });
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      content: [{ type: "text", text: "feat: 更新应用" }],
+      stopReason: "end_turn",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(result).toEqual({ result: { message: "feat: 更新应用", truncated: true } });
+  });
+
+  it("rejects generation without an active session model", async () => {
+    const state = fixture();
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+    expect(result).toMatchObject({ error: { code: "AGENT_NOT_READY" } });
+    expect(state.service.getStagedPatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty staged diff before calling the model", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "",
+      truncated: false,
+    });
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+    expect(result).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+    expect(completeSimple).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a missing-credential error from the model registry", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({
+        ok: false as const,
+        error: "Provider is not configured",
+      })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts\n+line",
+      truncated: false,
+    });
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+    expect(result).toMatchObject({ error: { code: "AUTH_REQUIRED" } });
+    expect(completeSimple).not.toHaveBeenCalled();
   });
 });

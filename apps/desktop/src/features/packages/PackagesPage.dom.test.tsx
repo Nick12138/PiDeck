@@ -278,8 +278,10 @@ describe("PackagesPage DOM workflows", () => {
     ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Search installed packages"), "workspace");
-    await user.selectOptions(screen.getByLabelText("Package scope"), "project");
-    await user.selectOptions(screen.getByLabelText("Contained resource type"), "theme");
+    await user.click(screen.getByLabelText("Package scope"));
+    await user.click(await screen.findByRole("option", { name: "Project" }));
+    await user.click(screen.getByLabelText("Contained resource type"));
+    await user.click(await screen.findByRole("option", { name: "Contains theme" }));
 
     expect(screen.getByRole("button", { name: /Workspace theme.*Project/ })).toBeInTheDocument();
     expect(
@@ -313,8 +315,12 @@ describe("PackagesPage DOM workflows", () => {
     for (const name of ["All", "Extensions", "Skills", "Prompts", "Themes"]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
-    expect(screen.getByLabelText("Resource source")).toHaveTextContent("Standalone");
-    expect(screen.getByLabelText("Resource source")).toHaveTextContent("Runtime");
+    const resourceSource = screen.getByLabelText("Resource source");
+    expect(resourceSource).toHaveTextContent("All");
+    await user.click(resourceSource);
+    expect(await screen.findByRole("option", { name: "Standalone" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Runtime" })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "All" }));
     expect(screen.getByRole("heading", { name: /Packages \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Runtime \(1\)/ })).toBeInTheDocument();
 
@@ -598,11 +604,11 @@ describe("PackagesPage DOM workflows", () => {
     await user.click(await screen.findByRole("button", { name: /Tools.*User/ }));
     await user.click(screen.getByRole("button", { name: "Manage resources" }));
 
-    expect(screen.getByLabelText("Resource owner")).toHaveValue("package:user:tools");
+    expect(screen.getByLabelText("Resource owner")).toHaveTextContent("Tools (User)");
     const clearOwner = screen.getByRole("button", { name: "Clear owner filter" });
     expect(clearOwner).toBeVisible();
     await user.click(clearOwner);
-    expect(screen.getByLabelText("Resource owner")).toHaveValue("");
+    expect(screen.getByLabelText("Resource owner")).toHaveTextContent("All owners");
   });
 
   it("opens a replaced user package's resources in User mode", async () => {
@@ -613,7 +619,7 @@ describe("PackagesPage DOM workflows", () => {
     );
     await user.click(screen.getByRole("button", { name: "Manage resources" }));
 
-    expect(screen.getByLabelText("Resource owner")).toHaveValue("package:user:legacy-theme");
+    expect(screen.getByLabelText("Resource owner")).toHaveTextContent("Legacy theme (User)");
     expect(screen.getByRole("button", { name: "user" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "project" })).toHaveAttribute(
       "aria-pressed",

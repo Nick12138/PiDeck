@@ -108,6 +108,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "git.switchBranch": { name: "main", expectedRevision: 1 },
   "git.listHistory": { limit: 50 },
   "git.getCommitDiff": { commitSha: "d".repeat(40) },
+  "git.generateCommitMessage": { expectedIndexGeneration: "a".repeat(64) },
   "attachment.create": { path: "/tmp/report.pdf" },
   "attachment.createText": { text: "pasted text" },
   "attachment.get": { attachmentId: RUN_ID },
@@ -307,6 +308,8 @@ function invalidParams(method: HostMethod): unknown {
       return { limit: 0 };
     case "git.getCommitDiff":
       return { commitSha: "main" };
+    case "git.generateCommitMessage":
+      return { expectedIndexGeneration: "nope" };
     case "attachment.create":
       return { path: "" };
     case "attachment.createText":

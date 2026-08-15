@@ -428,6 +428,12 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["commitSha"]) && isGitSha(params.commitSha)
         ? ok(params)
         : fail("invalid git.getCommitDiff params", { method });
+    case "git.generateCommitMessage":
+      return exactObject(params, ["expectedIndexGeneration"]) &&
+        typeof params.expectedIndexGeneration === "string" &&
+        /^[0-9a-f]{64}$/.test(params.expectedIndexGeneration)
+        ? ok(params)
+        : fail("invalid git.generateCommitMessage params", { method });
     case "attachment.create":
       return exactObject(params, ["path"]) && isNonEmptyString(params.path)
         ? ok(params)

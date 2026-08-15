@@ -24,6 +24,7 @@ export const HOST_METHODS = [
   "git.switchBranch",
   "git.listHistory",
   "git.getCommitDiff",
+  "git.generateCommitMessage",
   "attachment.create",
   "attachment.createText",
   "attachment.get",
@@ -179,6 +180,7 @@ export type WorkspaceOnlyMethod =
   | "git.switchBranch"
   | "git.listHistory"
   | "git.getCommitDiff"
+  | "git.generateCommitMessage"
   | "session.list"
   | "session.archive"
   | "session.restore"
@@ -290,6 +292,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "git.switchBranch": "workspace",
   "git.listHistory": "workspace",
   "git.getCommitDiff": "workspace",
+  "git.generateCommitMessage": "workspace",
   "attachment.create": "activeSession",
   "attachment.createText": "activeSession",
   "attachment.get": "activeSession",
