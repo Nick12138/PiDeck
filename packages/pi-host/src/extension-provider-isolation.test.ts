@@ -168,9 +168,7 @@ describe("ExtensionProviderOwnership", () => {
     const b = ownership.createOwner("ws-b");
 
     ownership.runAsOwner(a, () => registry.registerProvider("shared", providerConfig()));
-    ownership.runAsOwner(b, () =>
-      registry.registerProvider("shared", { name: "Shared from B" }),
-    );
+    ownership.runAsOwner(b, () => registry.registerProvider("shared", { name: "Shared from B" }));
     expect([...ownership.ownersOf("shared")].sort()).toEqual(["ws-a", "ws-b"]);
 
     // A parks; B still needs the provider.
@@ -200,8 +198,8 @@ describe("ExtensionProviderOwnership", () => {
 
     // The thinking-profile pass re-registers every provider it touches; it
     // must not become a co-owner, or retention could never unregister.
-    ownership.runNeutral(() => {
-      expect(applyKnownThinkingProfiles(registry)).toBeGreaterThanOrEqual(1);
+    await ownership.runNeutral(async () => {
+      expect(await applyKnownThinkingProfiles(registry)).toBeGreaterThanOrEqual(1);
     });
     expect(ownership.ownersOf("profiled")).toEqual(["ws-a"]);
 
