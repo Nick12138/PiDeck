@@ -1288,3 +1288,48 @@ export function reuseStableRows(
   });
   return reusedAll ? previous : merged;
 }
+
+/** The assistant/error row a user row failed into, when a retry is offered. */
+export type RetryableTurn = { assistantKey: string };
+
+const EMPTY_SKIPPED: ReadonlySet<string> = new Set();
+
+/**
+ * Which user rows can be retried. A user row is retryable when its answer did
+ * not complete: the next non-decorative row (skipping event/summary/custom/
+ * bash rows, which can interleave between a user prompt and its response) is
+ * either an assistant row that errored or was aborted, or a standalone error
+ * row. A user row followed by another user row never got an answer, so it is
+ * not retryable. Rows in `skipped` (e.g. a failed bubble already hidden by a
+ * previous retry) are treated as absent so a second failure on the same turn
+ * stays retryable.
+ */
+export function computeRetryableTurns(
+  rows: readonly TranscriptRow[],
+  skipped: ReadonlySet<string> = EMPTY_SKIPPED,
+): Map<string, RetryableTurn> {
+  const retryable = new Map<string, RetryableTurn>();
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row || row.role !== "user") continue;
+    for (let next = index + 1; next < rows.length; next += 1) {
+      const candidate = rows[next];
+      if (!candidate || skipped.has(candidate.key)) continue;
+      if (candidate.role === "custom" || candidate.role === "bash" || candidate.role === "event") {
+        continue;
+      }
+      if (candidate.role === "summary") continue;
+      if (candidate.role === "user") break;
+      if (
+        candidate.role === "assistant" &&
+        (candidate.outcome?.status === "error" || candidate.outcome?.status === "aborted")
+      ) {
+        retryable.set(row.key, { assistantKey: candidate.key });
+      } else if (candidate.role === "error") {
+        retryable.set(row.key, { assistantKey: candidate.key });
+      }
+      break;
+    }
+  }
+  return retryable;
+}

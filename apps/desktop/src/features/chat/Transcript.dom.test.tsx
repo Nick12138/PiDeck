@@ -3,8 +3,9 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionSnapshot } from "@pideck/protocol";
+import type { HostStatusSnapshot, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
+import { hostClient } from "../../lib/bridge/host-client";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
 import { piWorkingVariants } from "../../lib/i18n";
@@ -577,6 +578,97 @@ describe("Transcript Session-open scrolling", () => {
       } finally {
         random.mockRestore();
       }
+    });
+  });
+
+  describe("retry button", () => {
+    const HOST_ID = "11111111-1111-4111-8111-111111111111";
+
+    function host(): HostStatusSnapshot {
+      return {
+        protocolVersion: 1,
+        hostInstanceId: HOST_ID,
+        workspaceId: WORKSPACE_ID,
+        workspaceRevision: 1,
+        sessionId: SESSION_A,
+        sessionRevision: 1,
+        packageRevision: 1,
+        sdkVersion: "0.82.1",
+        nodeVersion: process.version,
+        agentDir: "/agent",
+        phase: "ready",
+        capabilities: {
+          packageUpdateCheck: true,
+          extensionUi: true,
+          sessionExport: true,
+        },
+        modelConfigHealth: { state: "ok", source: "ModelRegistry.getError" },
+      };
+    }
+
+    function workspace(): WorkspaceSnapshot {
+      return {
+        id: WORKSPACE_ID,
+        cwd: "/workspace",
+        canonicalCwd: "/workspace",
+        revision: 1,
+        servicesReady: true,
+      };
+    }
+
+    function sessionWithMessages(messages: SessionSnapshot["messages"]): SessionSnapshot {
+      return { ...session(SESSION_A, "First Session"), messages };
+    }
+
+    it("shows a retry button after a failed answer, re-sends it, and clears the failed bubble", async () => {
+      useAppStore.getState().setHost(host());
+      useAppStore.getState().setWorkspace(workspace());
+      useAppStore.getState().applySessionSnapshot(
+        sessionWithMessages([
+          { role: "user", content: "First Session" },
+          { role: "assistant", content: [], stopReason: "error", errorMessage: "Provider failed" },
+        ]),
+      );
+      const request = vi
+        .spyOn(hostClient, "request")
+        .mockResolvedValue({
+          ok: true,
+          result: { accepted: true, runId: "run-1" },
+        } as never);
+
+      const { container } = render(<Transcript />);
+      const user = userEvent.setup();
+      const retryButton = await screen.findByRole("button", { name: "Retry" });
+      await user.click(retryButton);
+
+      await waitFor(() =>
+        expect(request).toHaveBeenCalledWith(
+          "agent.prompt",
+          expect.objectContaining({
+            expectedHostInstanceId: HOST_ID,
+            expectedSessionId: SESSION_A,
+          }),
+          { text: "First Session" },
+          null,
+        ),
+      );
+      await waitFor(() =>
+        expect(container.querySelector('[data-row-key="assistant:1"]')).not.toBeInTheDocument(),
+      );
+      request.mockRestore();
+    });
+
+    it("hides the retry button once a complete answer exists", () => {
+      useAppStore.getState().setHost(host());
+      useAppStore.getState().setWorkspace(workspace());
+      useAppStore.getState().applySessionSnapshot(
+        sessionWithMessages([
+          { role: "user", content: "First Session" },
+          { role: "assistant", content: "ok" },
+        ]),
+      );
+      render(<Transcript />);
+      expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     });
   });
 });

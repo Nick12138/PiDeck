@@ -3,11 +3,13 @@ import { buildAttachmentReferenceBlock, type SerializableAgentMessage } from "@p
 import {
   buildAttachedFileBlock,
   buildTranscriptRows,
+  computeRetryableTurns,
   executionTraceIsActive,
   findStreamingAssistantKey,
   messageText,
   parseUserAttachments,
   reuseStableRows,
+  type TranscriptRow,
 } from "./transcript-model";
 
 describe("attached file blocks", () => {
@@ -1532,6 +1534,122 @@ describe("Pi extension and session entry messages", () => {
         expanded: ["Subagents doctor report", "Runtime: ok"],
         messageIndex: 1,
       },
+    });
+  });
+});
+
+describe("retryable turns", () => {
+  it("marks a user row retryable after an assistant error", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [], stopReason: "error", errorMessage: "Provider failed" },
+    ]);
+    expect(computeRetryableTurns(rows).get("user:0")).toEqual({ assistantKey: "assistant:1" });
+  });
+
+  it("marks a user row retryable after an aborted assistant", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [], stopReason: "aborted" },
+    ]);
+    expect(computeRetryableTurns(rows).get("user:0")).toEqual({ assistantKey: "assistant:1" });
+  });
+
+  it("marks a user row retryable after a standalone error row", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "hi" },
+      { role: "error", content: "Agent error" },
+    ]);
+    expect(computeRetryableTurns(rows).get("user:0")).toEqual({ assistantKey: "error:1" });
+  });
+
+  it("does not mark a user row retryable after a complete assistant", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "ok" },
+    ]);
+    expect(computeRetryableTurns(rows)).toEqual(new Map());
+  });
+
+  it("does not mark a user row retryable when the next user never got an answer", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "first" },
+      { role: "user", content: "second" },
+    ]);
+    expect(computeRetryableTurns(rows)).toEqual(new Map());
+  });
+
+  it("skips decorative rows between a user and its failed answer", () => {
+    const rows: TranscriptRow[] = [
+      {
+        key: "user:u1",
+        role: "user",
+        blocks: [{ kind: "text", text: "hi" }],
+        copyText: "hi",
+      },
+      {
+        key: "event:mc1",
+        role: "event",
+        blocks: [],
+        copyText: "",
+        event: { kind: "model", label: "Model: p/m" },
+      },
+      {
+        key: "summary:c1",
+        role: "summary",
+        blocks: [],
+        copyText: "",
+        summary: { kind: "compaction", text: "compacted" },
+      },
+      {
+        key: "assistant:a1",
+        role: "assistant",
+        blocks: [],
+        copyText: "",
+        outcome: { status: "aborted", stopReason: "aborted" },
+      },
+    ];
+    expect(computeRetryableTurns(rows).get("user:u1")).toEqual({ assistantKey: "assistant:a1" });
+  });
+
+  it("only links a user row to the failure it caused, not later turns", () => {
+    const rows = buildTranscriptRows([
+      { role: "user", content: "first" },
+      { role: "assistant", content: [], stopReason: "error", errorMessage: "boom" },
+      { role: "user", content: "second" },
+      { role: "assistant", content: "ok" },
+    ]);
+    const turns = computeRetryableTurns(rows);
+    expect(turns.get("user:0")).toEqual({ assistantKey: "assistant:1" });
+    expect(turns.has("user:2")).toBe(false);
+  });
+
+  it("keeps a turn retryable when an earlier failure has been skipped", () => {
+    const rows: TranscriptRow[] = [
+      {
+        key: "user:0",
+        role: "user",
+        blocks: [{ kind: "text", text: "hi" }],
+        copyText: "hi",
+      },
+      {
+        key: "assistant:1",
+        role: "assistant",
+        blocks: [],
+        copyText: "",
+        outcome: { status: "error", errorMessage: "boom" },
+      },
+      {
+        key: "assistant:2",
+        role: "assistant",
+        blocks: [],
+        copyText: "",
+        outcome: { status: "error", errorMessage: "boom again" },
+      },
+    ];
+    const skipped = new Set(["assistant:1"]);
+    expect(computeRetryableTurns(rows, skipped).get("user:0")).toEqual({
+      assistantKey: "assistant:2",
     });
   });
 });

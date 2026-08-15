@@ -33,6 +33,7 @@ import {
   MessageCircleQuestion,
   PanelRightOpen,
   Puzzle,
+  RotateCcw,
   Terminal,
 } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -50,14 +51,17 @@ import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import {
   buildTranscriptRows,
+  computeRetryableTurns,
   executionTraceIsActive,
   findStreamingAssistantKey,
   parseUserAttachments,
   reuseStableRows,
+  type RetryableTurn,
   type TranscriptContentBlock,
   type TranscriptBlock,
   type TranscriptRow,
 } from "./transcript-model";
+import { requestRetry } from "../../lib/retry-actions";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import {
@@ -173,6 +177,37 @@ export function Transcript() {
     ],
   );
   prevRowsRef.current = rows;
+  const sessionKey = session?.sessionId ?? null;
+
+  // Rows cleared by a retry stay hidden for the rest of this session view so
+  // the re-sent answer does not sit next to the failed one. The suppression
+  // is renderer-only — the append-only SDK session still records the failed
+  // entry and it reappears when the session is reopened.
+  const [suppressedKeys, setSuppressedKeys] = useState<ReadonlySet<string>>(new Set());
+  const suppressedSessionRef = useRef<string | null>(null);
+  if (suppressedSessionRef.current !== sessionKey) {
+    suppressedSessionRef.current = sessionKey;
+    if (suppressedKeys.size > 0) setSuppressedKeys(new Set());
+  }
+  const shownRows = suppressedKeys.size === 0 ? rows : rows.filter((row) => !suppressedKeys.has(row.key));
+  const retryableTurns = useMemo(() => computeRetryableTurns(rows, suppressedKeys), [rows, suppressedKeys]);
+
+  const handleRetry = useCallback(
+    (row: TranscriptRow): Promise<void> =>
+      requestRetry(row).then((accepted) => {
+        if (!accepted) return;
+        const turn = retryableTurns.get(row.key);
+        if (!turn) return;
+        setSuppressedKeys((current) => {
+          if (current.has(turn.assistantKey)) return current;
+          const next = new Set(current);
+          next.add(turn.assistantKey);
+          return next;
+        });
+      }),
+    [retryableTurns],
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -234,10 +269,9 @@ export function Transcript() {
   // Derived-during-render so a freshly opened long session only mounts its
   // tail on first paint; idle-time batches then converge toward a fully
   // mounted transcript (see progressive-mount.ts).
-  const sessionKey = session?.sessionId ?? null;
   const [hiddenState, setHiddenState] = useState<{ sessionId: string | null; hidden: number }>({
     sessionId: sessionKey,
-    hidden: initialHiddenFor(sessionKey, rows.length),
+    hidden: initialHiddenFor(sessionKey, shownRows.length),
   });
   if (hiddenState.sessionId !== sessionKey) {
     // Remember (or forget) the departing session's reading position before
@@ -255,14 +289,14 @@ export function Transcript() {
     }
     setHiddenState({
       sessionId: sessionKey,
-      hidden: initialHiddenFor(sessionKey, rows.length),
+      hidden: initialHiddenFor(sessionKey, shownRows.length),
     });
   }
   const hidden = Math.min(
     hiddenState.sessionId === sessionKey ? hiddenState.hidden : 0,
-    Math.max(0, rows.length - 1),
+    Math.max(0, shownRows.length - 1),
   );
-  const visibleRows = hidden > 0 ? rows.slice(hidden) : rows;
+  const visibleRows = hidden > 0 ? shownRows.slice(hidden) : shownRows;
   const expandAnchorRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
@@ -566,6 +600,10 @@ export function Transcript() {
           )}
           {visibleRows.map((row) => {
             const streaming = row.key === streamingAssistantKey;
+            const retryableTurn = retryableTurns.get(row.key);
+            const retryVisible = Boolean(
+              retryableTurn && !suppressedKeys.has(retryableTurn.assistantKey),
+            );
             return (
               <div
                 className="transcript-row"
@@ -645,6 +683,9 @@ export function Transcript() {
                   showCaret={Boolean(streaming)}
                   working={row.key === workingHeaderKey}
                   workingLabel={row.key === workingHeaderKey ? workingLabel : undefined}
+                  retryableTurn={retryableTurn}
+                  retryVisible={retryVisible}
+                  onRetry={handleRetry}
                 />
               </div>
             );
@@ -717,12 +758,18 @@ const TranscriptRowView = memo(function TranscriptRowView({
   showCaret,
   working,
   workingLabel,
+  retryableTurn,
+  retryVisible,
+  onRetry,
 }: {
   row: TranscriptRow;
   mode: "streaming" | "static";
   showCaret: boolean;
   working: boolean;
   workingLabel?: string;
+  retryableTurn?: RetryableTurn;
+  retryVisible: boolean;
+  onRetry: (row: TranscriptRow) => Promise<void>;
 }) {
   const t = useT();
   if (row.role === "user") {
@@ -787,6 +834,12 @@ const TranscriptRowView = memo(function TranscriptRowView({
           </div>
         )}
         <div className="mt-1 flex h-7 items-center justify-end">
+          {retryVisible && retryableTurn && (
+            <RetryMessageButton
+              className="opacity-0 group-hover:opacity-100"
+              onClick={() => onRetry(row)}
+            />
+          )}
           <CopyMessageButton
             text={stripAttachmentReferenceBlocks(row.copyText)}
             className="opacity-0 group-hover:opacity-100"
@@ -882,6 +935,42 @@ function ForkFromTurnButton({ entryId, className = "" }: { entryId: string; clas
       }}
     >
       {pending ? <LoaderCircle size={13} className="animate-spin" /> : <GitFork size={13} />}
+    </button>
+  );
+}
+
+/**
+ * Re-send a failed user message. Hidden while the retry is in flight; the
+ * button (and the failed bubble) disappear once the re-prompt is accepted.
+ */
+function RetryMessageButton({
+  onClick,
+  className = "",
+}: {
+  onClick: () => Promise<void>;
+  className?: string;
+}) {
+  const t = useT();
+  const [pending, setPending] = useState(false);
+  if (pending) return null;
+  return (
+    <button
+      type="button"
+      title={t("transcriptRetryMessage")}
+      aria-label={t("transcriptRetryMessage")}
+      className={`flex size-6 items-center justify-center rounded text-muted transition-opacity hover:bg-surface-overlay hover:text-foreground ${className}`}
+      onClick={() => {
+        setPending(true);
+        void (async () => {
+          try {
+            await onClick();
+          } finally {
+            setPending(false);
+          }
+        })();
+      }}
+    >
+      <RotateCcw size={13} />
     </button>
   );
 }
