@@ -824,6 +824,18 @@ export async function openSession(
       return g.sessionSnapshot!;
     }
 
+    // Check retained (background) sessions first — a newly created session may
+    // not yet be persisted to disk (no assistant message), so the disk listing
+    // below would fail to find it. If the session is still in memory, promote it
+    // directly without requiring a file on disk.
+    const retained = [...g.backgroundSessions.values()].find((runtime) =>
+      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
+    );
+    if (retained) {
+      operation.signal.throwIfAborted();
+      return await factory.promoteBackgroundRuntime(g, retained);
+    }
+
     // Ensure the session belongs to the active workspace. Use PiDeck's
     // configured storage root and normalized path identity: forked paths can
     // use different separators than the SDK listing on Windows.
@@ -837,14 +849,6 @@ export async function openSession(
           "Session is not in the current workspace; switch workspace first",
         ),
       };
-    }
-
-    const retained = [...g.backgroundSessions.values()].find((runtime) =>
-      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
-    );
-    if (retained) {
-      operation.signal.throwIfAborted();
-      return await factory.promoteBackgroundRuntime(g, retained);
     }
     const startedAt = Date.now();
     const stepTimings: Record<string, number> = {};

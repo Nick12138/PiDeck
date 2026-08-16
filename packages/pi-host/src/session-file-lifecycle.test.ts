@@ -274,6 +274,43 @@ describe("Session file lifecycle", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
+  it("promotes a background session when its file is not yet on disk", async () => {
+    const fixture = createFixture();
+    const sessionPath = join(fixture.activeDir, SESSION_ID + ".jsonl");
+
+    // Set up required graph properties that openSession checks at the start
+    fixture.graph.servicesReady = true;
+    fixture.graph.settingsManager = {} as never;
+    fixture.graph.resourceLoader = {} as never;
+
+    // Set up a background session entry (simulating a busy session that was
+    // retained when the user switched away before the first assistant message).
+    const mockSessionSnapshot = {
+      sessionId: SESSION_ID,
+      sessionPath,
+      sessionManager: {},
+      agentSession: { isIdle: false },
+    } as never;
+    fixture.graph.backgroundSessions.set(SESSION_ID, {
+      sessionId: SESSION_ID,
+      sessionSnapshot: mockSessionSnapshot,
+      agentSession: { isIdle: false },
+    } as never);
+
+    // Mock promoteBackgroundRuntime to return a successful result
+    const promoteMock = vi
+      .spyOn(fixture.factory, "promoteBackgroundRuntime")
+      .mockResolvedValue({ sessionId: SESSION_ID, sessionPath } as never);
+
+    // Ensure the session file does NOT exist on disk (simulating unpersisted session)
+    const result = await fixture.factory.openSession("promote-background", sessionPath);
+    expect(result).toMatchObject({
+      sessionId: SESSION_ID,
+    });
+
+    expect(promoteMock).toHaveBeenCalledOnce();
+  });
+
   it("cleans all archived Sessions and reports the count", async () => {
     const fixture = createFixture();
     const first = writeSession(fixture.activeDir, SESSION_ID, fixture.cwd);
