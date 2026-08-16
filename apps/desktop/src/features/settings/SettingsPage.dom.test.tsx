@@ -85,10 +85,6 @@ describe("SettingsPage navigation guard", () => {
     expect(sidebarHeader?.parentElement).toBe(sidebar);
     expect(content?.parentElement).toBe(shell);
     expect(
-      within(sidebarHeader as HTMLElement).getByLabelText("Back to conversation"),
-    ).toBeInTheDocument();
-    expect(sidebarHeader).toHaveTextContent("Back to conversation");
-    expect(
       within(sidebarHeader as HTMLElement).getByRole("heading", { name: "Settings" }),
     ).toBeInTheDocument();
     expect(
@@ -159,17 +155,17 @@ describe("SettingsPage navigation guard", () => {
 
     await user.click(screen.getByRole("button", { name: "Increase Conversation font size" }));
     await waitFor(() =>
-      expect(useAppStore.getState().desktopSettings?.conversationFontSize).toBe(15),
+      expect(useAppStore.getState().desktopSettings?.conversationFontSize).toBe(16),
     );
     expect(document.documentElement.style.getPropertyValue("--conversation-font-size")).toBe(
-      "15px",
+      "16px",
     );
 
     await user.click(screen.getByRole("button", { name: "Increase Code font size" }));
     await waitFor(() => expect(useAppStore.getState().desktopSettings?.codeFontSize).toBe(13));
     expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("13px");
     expect(screen.getByText("Readable conversation text with inline code.")).toBeInTheDocument();
-    expect(screen.getByText("15px")).toBeInTheDocument();
+    expect(screen.getByText("16px")).toBeInTheDocument();
     expect(screen.getByText("13px")).toBeInTheDocument();
   });
 
@@ -179,7 +175,7 @@ describe("SettingsPage navigation guard", () => {
 
     const maxWidth = screen.getByRole("spinbutton", { name: "Conversation max width" });
     const minWidth = screen.getByRole("spinbutton", { name: "Conversation min width" });
-    expect(maxWidth).toHaveValue(1100);
+    expect(maxWidth).toHaveValue(860);
     expect(minWidth).toHaveValue(350);
 
     await user.clear(maxWidth);
@@ -381,14 +377,20 @@ describe("SettingsPage navigation guard", () => {
     ).toBe(true);
   });
 
-  it("guards the close button while dirty and closes once confirmed via the overlay owner", async () => {
+  it("guards closing while dirty and forwards close once confirmed via the overlay owner", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<SettingsPage initialSection="providers" onClose={onClose} />);
     useAppStore.getState().setProvidersDirty(true);
 
-    // The overlay owner decides what "close" means; SettingsPage just forwards.
-    await user.click(screen.getByRole("button", { name: "Back to conversation" }));
+    // Dirty: Escape opens the discard confirmation instead of closing directly.
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("heading", { name: "Discard unsaved Provider changes?" }),
+    ).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 });

@@ -17,7 +17,7 @@ describe("appearance preferences", () => {
   it("resolves missing and stale values to bounded defaults", () => {
     expect(resolveInterfaceDensity(undefined)).toBe("standard");
     expect(resolveInterfaceDensity("dense")).toBe("standard");
-    expect(resolveConversationFontSize(undefined)).toBe(14);
+    expect(resolveConversationFontSize(undefined)).toBe(15);
     expect(resolveConversationFontSize(30)).toBe(18);
     expect(resolveCodeFontSize(4)).toBe(10);
   });
