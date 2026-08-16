@@ -294,6 +294,9 @@ export function ModelControls() {
   const [enabledProviders, setEnabledProviders] = useState<string[] | undefined>();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelMenuWidth, setModelMenuWidth] = useState(MODEL_MENU_MIN_WIDTH);
+  const [modelMenuAlignRight, setModelMenuAlignRight] = useState(false);
+  const modelMenuWidthRef = useRef(modelMenuWidth);
+  modelMenuWidthRef.current = modelMenuWidth;
   const listRequest = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelMenuMeasureRef = useRef<HTMLSpanElement>(null);
@@ -426,13 +429,25 @@ export function ModelControls() {
   }, [modelMenuMeasureKey, menuOpen]);
 
   // Keep the floated dropdown inside the viewport if its measured width would
-  // overflow the available space on the right.
+  // overflow the available space on the right. Also flips the dropdown to
+  // right-aligned when there is not enough room on the right side.
   useLayoutEffect(() => {
     if (!menuOpen) return;
     const clampToViewport = () => {
-      const menuLeft = modelMenuPanelRef.current?.getBoundingClientRect().left ?? 0;
-      const maxWidth = modelMenuMaxWidth(menuLeft, window.innerWidth);
-      setModelMenuWidth((current) => Math.min(current, maxWidth));
+      const parentEl = menuRef.current;
+      if (!parentEl) return;
+      const parentRect = parentEl.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const currentWidth = modelMenuWidthRef.current;
+      const spaceRight = viewportWidth - parentRect.left - MODEL_MENU_VIEWPORT_GUTTER;
+      const spaceLeft = parentRect.right - MODEL_MENU_VIEWPORT_GUTTER;
+      const shouldAlignRight = currentWidth > spaceRight && spaceLeft >= spaceRight;
+      setModelMenuAlignRight(shouldAlignRight);
+      const availableWidth = Math.max(
+        MODEL_MENU_MIN_WIDTH,
+        shouldAlignRight ? spaceLeft : spaceRight,
+      );
+      setModelMenuWidth((prev) => Math.min(prev, availableWidth));
     };
     clampToViewport();
     window.addEventListener("resize", clampToViewport);
@@ -516,7 +531,9 @@ export function ModelControls() {
         </button>
         {menuOpen && (
           <div
-            className="absolute bottom-full left-0 z-50 mb-2 min-w-[120px]"
+            className={`absolute bottom-full z-50 mb-2 min-w-[120px] ${
+              modelMenuAlignRight ? "right-0" : "left-0"
+            }`}
             style={{ width: modelMenuWidth }}
           >
             <div
