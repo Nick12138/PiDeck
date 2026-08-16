@@ -202,6 +202,7 @@ export function Transcript() {
           if (current.has(turn.assistantKey)) return current;
           const next = new Set(current);
           next.add(turn.assistantKey);
+          next.add(row.key);
           return next;
         });
       }),

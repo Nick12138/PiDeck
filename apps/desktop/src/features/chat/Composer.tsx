@@ -474,6 +474,12 @@ export function Composer({
     return () => window.cancelAnimationFrame(frame);
   }, [blockedSessionId, disabled, sessionId]);
 
+  // Auto-focus the textarea when switching to a new session (e.g. clicking "New Conversation")
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [sessionId]);
+
   useEffect(
     () =>
       subscribeComposerInsert((insert) => {
