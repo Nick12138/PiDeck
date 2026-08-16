@@ -154,6 +154,8 @@ export function WorkspacePicker() {
     const request = ++requestRef.current;
     setPending(true);
     useAppStore.getState().setWorkspaceSwitchTarget(cwd);
+    const currentPage = useAppStore.getState().page;
+    if (currentPage !== "chat") useAppStore.getState().setPage("chat");
     try {
       const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
         const activated = force

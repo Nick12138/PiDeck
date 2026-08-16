@@ -33,7 +33,11 @@ export function ensureGlobalSettingsFile(agentDir: string): void {
   const settingsPath = join(agentDir, "settings.json");
   if (existsSync(settingsPath)) return;
   try {
-    writeFileSync(settingsPath, "{}\n", "utf-8");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ retry: { maxRetries: 5 } }, null, 2) + "\n",
+      "utf-8",
+    );
   } catch (error) {
     logger.warn("Could not create global settings file", {
       path: settingsPath,

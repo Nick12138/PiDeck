@@ -77,7 +77,11 @@ function NewSessionButton() {
   return (
     <button
       type="button"
-      onClick={() => void createNewSession()}
+      onClick={() => {
+        // Creating a session from Settings/Packages should land on the chat page.
+        if (useAppStore.getState().page !== "chat") useAppStore.getState().setPage("chat");
+        void createNewSession();
+      }}
       disabled={!workspace?.servicesReady || pending}
       className="theme-sidebar-primary interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
@@ -241,6 +245,26 @@ export function SidebarLayout({
               <NewSessionButton />
             </div>
 
+            <div className="px-2 pb-3">
+              <button
+                type="button"
+                onClick={() => setPage(page === "chat" ? "settings" : "chat")}
+                data-ui="nav-item"
+                data-state={page !== "chat" ? "active" : "inactive"}
+                title={t("settingsTitle")}
+                aria-label={t("settingsTitle")}
+                aria-pressed={page !== "chat"}
+                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors ${
+                  page !== "chat"
+                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
+                    : "text-foreground hover:bg-surface-overlay"
+                }`}
+              >
+                <Settings size={18} className="shrink-0" />
+                <span>{t("settingsTitle")}</span>
+              </button>
+            </div>
+
             <div className="border-t border-border px-2 py-3">
               <WorkspacePicker />
             </div>
@@ -254,26 +278,8 @@ export function SidebarLayout({
               />
             </div>
 
-            <div className="shrink-0 flex items-center gap-1 px-2 pb-2">
-              <button
-                type="button"
-                onClick={() => setPage(page === "chat" ? "settings" : "chat")}
-                data-ui="nav-item"
-                data-state={page !== "chat" ? "active" : "inactive"}
-                title={t("settingsTitle")}
-                aria-label={t("settingsTitle")}
-                aria-pressed={page !== "chat"}
-                className={`flex size-9 shrink-0 items-center justify-center rounded-md transition-colors ${
-                  page !== "chat"
-                    ? "theme-nav-active bg-nav-active text-nav-active-foreground"
-                    : "text-foreground hover:bg-surface-overlay"
-                }`}
-              >
-                <Settings size={17} />
-              </button>
-              <div className="ml-auto">
-                <NotificationCenter />
-              </div>
+            <div className="shrink-0 flex items-center justify-end px-2 pb-2">
+              <NotificationCenter />
             </div>
           </>
         )}

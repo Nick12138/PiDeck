@@ -89,7 +89,7 @@
   --interface-table-padding-y: 0.75rem;
   --interface-card-gap: 1rem;
   --interface-section-gap: 2rem;
-  --conversation-font-size: 14px;
+  --conversation-font-size: 15px;
   --code-font-size: 12px;
   --theme-control-shadow: none;
   --theme-nav-shadow: none;
@@ -162,7 +162,7 @@ body,
 
 .conversation-content-width {
   width: 100%;
-  max-width: var(--conversation-max-width, 68rem);
+  max-width: var(--conversation-max-width, 860px);
   min-width: var(--conversation-min-width, 35rem);
 }
 
@@ -1513,7 +1513,7 @@ textarea:focus-visible {
 .chat-markdown h1,
 .chat-markdown [data-streamdown="heading-1"] {
   margin: 1.5rem 0 0.5rem;
-  font-size: 1.25em;
+  font-size: 1.35em;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -1521,7 +1521,7 @@ textarea:focus-visible {
 .chat-markdown h2,
 .chat-markdown [data-streamdown="heading-2"] {
   margin: 1.25rem 0 0.5rem;
-  font-size: 1.1em;
+  font-size: 1.15em;
   font-weight: 600;
   letter-spacing: 0;
 }

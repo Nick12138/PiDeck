@@ -51,12 +51,14 @@ describe("network-bootstrap", () => {
     writeFileSync(join(dir, "settings.json"), contents, "utf-8");
   }
 
-  it("creates an empty settings.json when missing and never overwrites an existing one", async () => {
+  it("creates a settings.json with default retry tuning when missing and never overwrites an existing one", async () => {
     const { ensureGlobalSettingsFile } = await load();
     const settingsPath = join(dir, "settings.json");
 
     ensureGlobalSettingsFile(dir);
-    expect(readFileSync(settingsPath, "utf-8")).toBe("{}\n");
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({
+      retry: { maxRetries: 5 },
+    });
 
     writeSettings('{"defaultModel":"keep-me"}');
     ensureGlobalSettingsFile(dir);

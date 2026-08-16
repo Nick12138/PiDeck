@@ -302,6 +302,7 @@ export function SessionList({
     if (!current.host || !current.workspace || sessionMutationPending || sessionOpenBlocked) {
       return;
     }
+    if (current.page !== "chat") current.setPage("chat");
     if (!sessionOpenQueue.current?.isRunning() && current.session?.sessionPath === path) {
       acknowledgeVisitedSession(current.session.sessionId);
       return;

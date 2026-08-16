@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import {
-  ArrowLeft,
   ChartColumn,
   Keyboard,
   KeyRound,
@@ -371,10 +370,25 @@ export function SettingsPage({
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const providersDirty = useAppStore((s) => s.providersDirty);
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   useEffect(() => {
     setSection(initialSection);
   }, [initialSection]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      // Dialogs inside Settings consume their own Escape before it reaches window.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (useAppStore.getState().providersDirty) {
+        setConfirmClose(true);
+        return;
+      }
+      onClose?.();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
 
   function requestSection(next: SettingsSection) {
     if (next === section) return;
@@ -397,16 +411,6 @@ export function SettingsPage({
           data-settings-sidebar-header
           data-tauri-drag-region
         >
-          <button
-            type="button"
-            onClick={onClose}
-            className="interface-density-control flex h-8 items-center gap-2 rounded-md text-[11px] text-muted transition-colors hover:text-foreground"
-            title={t("settingsBack")}
-            aria-label={t("settingsBack")}
-          >
-            <ArrowLeft size={14} />
-            <span className="whitespace-nowrap">{t("settingsBack")}</span>
-          </button>
           <div className="pointer-events-none mt-2 flex h-8 min-w-0 items-center gap-2.5">
             <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
               <Settings2 size={15} />
@@ -466,6 +470,20 @@ export function SettingsPage({
           }}
         >
           <p>{t("settingsDiscardNavBody")}</p>
+        </Dialog>
+      )}
+      {confirmClose && onClose && (
+        <Dialog
+          title={t("settingsDiscardTitle")}
+          confirmLabel={t("settingsDiscardConfirm")}
+          tone="warning"
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={() => {
+            setConfirmClose(false);
+            onClose();
+          }}
+        >
+          <p>{t("settingsDiscardCloseBody")}</p>
         </Dialog>
       )}
     </div>

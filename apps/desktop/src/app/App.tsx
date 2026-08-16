@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAppStore, type SettingsSection } from "../lib/stores/app-store";
+import { useAppStore } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
 import { createTauriTransport, replayActiveHostReady } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
@@ -12,7 +12,6 @@ import {
 } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { Dialog } from "../components/Dialog";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
 import { WorkspaceSwitchTransition } from "../features/workspaces/WorkspaceSwitchTransition";
@@ -53,65 +52,6 @@ import {
   resolveWindowFrameMode,
   type WindowFrameMode,
 } from "../lib/window-frame";
-
-function SettingsOverlay({ section }: { section: SettingsSection }) {
-  const t = useT();
-  const setPage = useAppStore((s) => s.setPage);
-  const [active, setActive] = useState(false);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-
-  useEffect(() => {
-    const firstFrame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setActive(true));
-    });
-    const closeOnEscape = (event: KeyboardEvent) => {
-      // Dialogs inside Settings consume their own Escape before it reaches window.
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (useAppStore.getState().providersDirty) {
-        setConfirmDiscard(true);
-        return;
-      }
-      setActive(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      cancelAnimationFrame(firstFrame);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, []);
-
-  const requestClose = () => {
-    if (useAppStore.getState().providersDirty) setConfirmDiscard(true);
-    else setActive(false);
-  };
-
-  return (
-    <div
-      className={`absolute inset-0 z-40 bg-surface transition-[opacity,transform] duration-300 ease-out ${
-        active ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-      }`}
-      onTransitionEnd={(event) => {
-        if (event.target === event.currentTarget && !active) setPage("chat");
-      }}
-    >
-      <SettingsPage initialSection={section} onClose={requestClose} />
-      {confirmDiscard && (
-        <Dialog
-          title={t("settingsDiscardTitle")}
-          confirmLabel={t("settingsDiscardConfirm")}
-          tone="warning"
-          onCancel={() => setConfirmDiscard(false)}
-          onConfirm={() => {
-            setConfirmDiscard(false);
-            setActive(false);
-          }}
-        >
-          <p>{t("settingsDiscardCloseBody")}</p>
-        </Dialog>
-      )}
-    </div>
-  );
-}
 
 export async function runFullRehydrate(
   expectedHostInstanceId: string,
@@ -529,8 +469,8 @@ export function App() {
   const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
   const page = useAppStore((s) => s.page);
+  const setPage = useAppStore((s) => s.setPage);
   const settingsSection = useAppStore((s) => s.settingsSection);
-  const settingsOverlayOpen = page !== "chat";
   const hostFatal = useAppStore((s) => s.hostFatal);
   const connecting = useAppStore((s) => s.connecting);
   const rehydrating = useAppStore((s) => s.rehydrating);
@@ -1045,7 +985,7 @@ export function App() {
       data-desynchronized={desynchronized ? "true" : "false"}
     >
       <DraftPersistenceController />
-      {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
+      {shouldRenderWindowControls(windowControlsPlatform, false) && (
         <WindowControls platform={windowControlsPlatform} />
       )}
       <div
@@ -1060,6 +1000,10 @@ export function App() {
               <p className="text-sm text-muted">{hostFatal}</p>
               <p className="mt-2 text-xs text-muted">{t("hostUnavailableBody")}</p>
             </div>
+          ) : page === "settings" ? (
+            <SettingsPage initialSection={settingsSection ?? "general"} onClose={() => setPage("chat")} />
+          ) : page === "packages" ? (
+            <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
           ) : (
             <WorkspaceSwitchTransition>
               <ChatPage />
@@ -1068,11 +1012,6 @@ export function App() {
         </main>
         <RightDock />
       </div>
-      {settingsOverlayOpen && (
-        <SettingsOverlay
-          section={page === "packages" ? "packages" : (settingsSection ?? "general")}
-        />
-      )}
       <ExtensionUiModal />
       <GlobalSearchHost />
       <CommandLayer />
