@@ -56,7 +56,7 @@
       "open": "https?://\\S+"
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5QUY3NEMzOUY2NzkzRgpSV1EvZWZZNVRQZWFEaEw1NitSOHFJSFN0Q2ZpT25VQmI2ek5sWlRmZnNoTG1IaFMvMVRxL2V1ZAo=",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDNkIwODFBOENBQkI3NTQKUldSVXQ2dU1HZ2hyM0FuN3MzWS9ud0VMT296M3VTTlIrNGFERmVmWVdiRTRTV29BeDQvSjdhSFEK",
       "endpoints": ["https://github.com/Nick12138/PiDeck/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
