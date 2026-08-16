@@ -20,9 +20,12 @@ describe("NotificationCenter", () => {
     cleanup();
   });
 
-  it("counts only unread notifications and clears the badge on open", async () => {
+  it("counts only unread persistent notifications and clears the badge on open", async () => {
     render(<NotificationCenter />);
-    push("first");
+    // Info-level notifications are transient (toast only) and do not show the bell.
+    push("transient info");
+    // Only warning/error level notifications are persistent and drive the bell badge.
+    push("first", "warning");
     push("second", "error");
 
     const bell = screen.getByRole("button", { name: /2/ });
@@ -53,12 +56,13 @@ describe("NotificationCenter", () => {
     expect(toasts[2]).toHaveTextContent("four");
   });
 
-  it("opens the panel and marks everything read when a toast is clicked", async () => {
+  it("opens the panel and marks everything read when a persistent toast is clicked", async () => {
     render(<NotificationCenter />);
-    push("install finished", "success");
+    // Only persistent (warning/error) toasts open the panel when clicked.
+    push("install failed", "error");
 
     const user = userEvent.setup();
-    await user.click(within(screen.getByRole("status")).getByText("install finished"));
+    await user.click(within(screen.getByRole("status")).getByText("install failed"));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -67,11 +71,12 @@ describe("NotificationCenter", () => {
 
   it("does not toast notifications that arrive while the panel is open", async () => {
     render(<NotificationCenter />);
-    push("before");
+    // Use a persistent notification so the bell button is rendered.
+    push("before", "error");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /1/ }));
 
-    push("while open");
+    push("while open", "error");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(useAppStore.getState().notifications.every((item) => item.read)).toBe(true);
   });

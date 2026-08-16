@@ -411,7 +411,7 @@ export function SettingsPage({
           data-settings-sidebar-header
           data-tauri-drag-region
         >
-          <div className="pointer-events-none mt-2 flex h-8 min-w-0 items-center gap-2.5">
+          <div className="pointer-events-none flex h-8 min-w-0 items-center justify-center gap-2.5">
             <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
               <Settings2 size={15} />
             </span>

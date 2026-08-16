@@ -67,7 +67,7 @@ export function ChatHeader({ hideSessionInfo = false }: { hideSessionInfo?: bool
         aria-expanded={dockOpen}
         aria-controls="right-dock"
         data-dock-toolbar-toggle
-        className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
         onClick={() => requestDockCommand({ kind: "toggle" })}
       >
         {dockOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}

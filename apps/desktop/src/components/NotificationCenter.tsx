@@ -61,7 +61,7 @@ export function NotificationPanel({
       role="dialog"
       aria-label={t("notifCenterTitle")}
       style={style}
-      className="theme-floating-surface fixed z-[70] flex max-h-[min(32rem,calc(100vh-4.25rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+      className="theme-floating-surface fixed z-[70] flex w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("notifCenterTitle")}</h2>
@@ -135,20 +135,26 @@ const PANEL_WIDTH_PX = 25 * 16;
 
 // The popover uses fixed positioning anchored to the bell button so it can
 // overflow the sidebar's overflow:hidden (the sidebar is only 220–420px wide,
-// a 25rem panel would be clipped by an absolute anchor). It opens above the
+// a 25rem panel would be clipped by an absolute anchor). It opens below the
 // button with its left edge aligned to the button's left edge, growing right.
-// The +0.5rem on `bottom` keeps the panel clear of the bell's hover bg.
+// The 4px gap keeps the panel clear of the bell's hover bg.
 function panelAnchorStyle(rootRef: RefObject<HTMLDivElement | null>): CSSProperties {
   const rect = rootRef.current?.getBoundingClientRect();
   if (!rect) return { visibility: "hidden" };
   const left = Math.min(rect.left, window.innerWidth - PANEL_WIDTH_PX - 8);
+  const maxHeight = Math.max(200, window.innerHeight - Math.round(rect.bottom) - 16);
   return {
     left: `${Math.max(8, Math.round(left))}px`,
-    bottom: `calc(100vh - ${Math.round(rect.top)}px + 0.5rem)`,
+    top: `${Math.round(rect.bottom) + 4}px`,
+    maxHeight: `${Math.min(32 * 16, maxHeight)}px`,
   };
 }
 
 type ActiveToast = { id: string; leaving: boolean };
+
+// Module-level: survives sidebar collapse/expand remounts so an already-seen
+// notification is not re-toasted on every re-mount.
+let previousLatestId: string | null = null;
 
 export function NotificationCenter() {
   const t = useT();
@@ -159,7 +165,6 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [toasts, setToasts] = useState<ActiveToast[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
-  const previousLatestId = useRef<string | null>(null);
   const toastTimers = useRef(new Map<string, number[]>());
   const latestId = notifications.at(-1)?.id ?? null;
 
@@ -177,8 +182,8 @@ export function NotificationCenter() {
   }
 
   useEffect(() => {
-    if (!latestId || latestId === previousLatestId.current) return;
-    previousLatestId.current = latestId;
+    if (!latestId || latestId === previousLatestId) return;
+    previousLatestId = latestId;
     // The open panel already shows (and marks read) incoming notifications.
     if (open) return;
     setToasts((current) =>
@@ -242,7 +247,14 @@ export function NotificationCenter() {
   // re-render dependency explicit.
   void anchorTick;
 
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
+  /** Only error/warning notifications are "persistent" — they appear in the center
+   *  and drive the bell badge. Info/success notifications are transient (toast only). */
+  const persistentNotifications = notifications.filter(
+    (n) => n.level === "error" || n.level === "warning",
+  );
+  const hasPersistentNotifications = persistentNotifications.length > 0;
+
+  const unreadCount = persistentNotifications.filter((n) => !n.read).length;
   const urgentUnread = notifications.some(
     (notification) =>
       !notification.read && (notification.level === "error" || notification.level === "warning"),
@@ -252,7 +264,20 @@ export function NotificationCenter() {
     if (open && unreadCount > 0) markNotificationsRead();
   }, [open, unreadCount, markNotificationsRead]);
 
+  // Close the panel when all persistent notifications have been dismissed.
+  useEffect(() => {
+    if (!hasPersistentNotifications && open) setOpen(false);
+  }, [hasPersistentNotifications, open]);
+
   function openPanel() {
+    const latest = useAppStore.getState();
+    const hasPersistent = latest.notifications.some(
+      (n) => n.level === "error" || n.level === "warning",
+    );
+    if (!hasPersistent) {
+      dismissAllToasts();
+      return;
+    }
     setOpen(true);
     markNotificationsRead();
     dismissAllToasts();
@@ -263,35 +288,37 @@ export function NotificationCenter() {
       {/* Bell and panel sit below the Settings overlay (z-40) and modals (z-50);
         the toast stack is a sibling so its own z-[70] layer stays on top of both. */}
       <div ref={rootRef} className="relative z-30">
-        <button
-          type="button"
-          title={t("notifCenterTitle")}
-          aria-label={t("notifCenterLabel", { count: unreadCount })}
-          aria-expanded={open}
-          onClick={() => {
-            if (open) {
-              setOpen(false);
-              return;
-            }
-            openPanel();
-          }}
-          className={`relative flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
-            urgentUnread ? "text-warning" : ""
-          }`}
-        >
-          <Bell size={15} />
-          {unreadCount > 0 && (
-            <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
-          )}
-        </button>
+        {hasPersistentNotifications && (
+          <button
+            type="button"
+            title={t("notifCenterTitle")}
+            aria-label={t("notifCenterLabel", { count: unreadCount })}
+            aria-expanded={open}
+            onClick={() => {
+              if (open) {
+                setOpen(false);
+                return;
+              }
+              openPanel();
+            }}
+            className={`relative flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground ${
+              urgentUnread ? "text-warning" : ""
+            }`}
+          >
+            <Bell size={15} />
+            {unreadCount > 0 && (
+              <span className="absolute right-1.5 top-1 flex min-h-3 min-w-3 items-center justify-center rounded-full bg-danger px-0.5 text-[9px] leading-3 text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {open && (
           <div>
             <NotificationPanel
               style={panelAnchorStyle(rootRef)}
-              notifications={notifications}
+              notifications={persistentNotifications}
               onDismiss={dismissNotification}
               onClear={clearNotifications}
             />

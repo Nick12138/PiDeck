@@ -37,12 +37,12 @@ function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean; onTog
       aria-label={label}
       aria-expanded={!collapsed}
       data-sidebar-brand-toggle
-      className="group relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      className="group relative flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       onClick={onToggle}
     >
-      <PiMark className="mac-sidebar-brand-mark size-8 transition-opacity group-hover:opacity-0 group-focus:opacity-0" />
+      <PiMark className="mac-sidebar-brand-mark size-7 transition-opacity group-hover:opacity-0 group-focus:opacity-0" />
       <PanelIcon
-        size={18}
+        size={15}
         className="absolute text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
       />
     </button>
@@ -238,6 +238,7 @@ export function SidebarLayout({
                 >
                   <Search size={15} />
                 </button>
+                <NotificationCenter />
               </div>
             </div>
 
@@ -278,9 +279,7 @@ export function SidebarLayout({
               />
             </div>
 
-            <div className="shrink-0 flex items-center justify-end px-2 pb-2">
-              <NotificationCenter />
-            </div>
+
           </>
         )}
       </aside>
