@@ -80,6 +80,9 @@ export function upsertSessionSnapshot(
     sessionPath: snapshot.sessionPath ?? previous?.sessionPath ?? "",
     name: snapshot.name,
     cwd: snapshot.cwd,
+    // Creation time is set once and never changes. For fresh entries use now
+    // as an approximation; the real value arrives from session.list.
+    createdAt: previous ? previous.createdAt : now,
     // Merely opening/rehydrating a session yields an idle snapshot and is not
     // activity: keep the listed timestamp so the entry does not jump to the
     // top of the recency sort and then snap back on the next session.list.
@@ -168,8 +171,12 @@ export function sessionCatalogItems(catalog: SessionCatalogState): SessionCatalo
   });
 }
 
+function sortTime(entry: SessionCatalogEntry): number {
+  return entry.createdAt ?? entry.updatedAt;
+}
+
 function sortSessionIds(entries: Record<string, SessionCatalogEntry>): string[] {
   return Object.values(entries)
-    .sort((a, b) => b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId))
+    .sort((a, b) => sortTime(b) - sortTime(a) || a.sessionId.localeCompare(b.sessionId))
     .map((entry) => entry.sessionId);
 }

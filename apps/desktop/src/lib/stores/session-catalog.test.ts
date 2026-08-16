@@ -110,7 +110,7 @@ describe("session catalog", () => {
     expect(sessionCatalogItems(catalog)).toEqual([]);
   });
 
-  it("sorts snapshots by latest activity and updates names", () => {
+  it("sorts snapshots by creation time and updates names", () => {
     let catalog = upsertSessionSnapshot(
       emptySessionCatalog(),
       "w1",
@@ -136,18 +136,30 @@ describe("session catalog", () => {
     ).toBe("queued");
   });
 
-  it("does not treat opening an existing idle session as activity", () => {
+  it("does not treat opening an existing idle session as activity — creation time is stable", () => {
     let catalog = replaceSessionCatalog(emptySessionCatalog(), "w1", [
-      { sessionId: "top", sessionPath: "C:/sessions/top.jsonl", cwd: "C:/w", updatedAt: 30 },
-      { sessionId: "s1", sessionPath: "C:/sessions/s1.jsonl", cwd: "C:/w", updatedAt: 10 },
+      {
+        sessionId: "top",
+        sessionPath: "C:/sessions/top.jsonl",
+        cwd: "C:/w",
+        createdAt: 30,
+        updatedAt: 30,
+      },
+      {
+        sessionId: "s1",
+        sessionPath: "C:/sessions/s1.jsonl",
+        cwd: "C:/w",
+        createdAt: 10,
+        updatedAt: 10,
+      },
     ]);
-    // session.open applies an idle snapshot — the entry must keep its listed
-    // timestamp instead of jumping to the top of the recency sort.
+    // session.open applies an idle snapshot — createdAt stays from the list.
     catalog = upsertSessionSnapshot(catalog, "w1", snapshot(), 40);
+    expect(catalog.entries.s1?.createdAt).toBe(10);
     expect(catalog.entries.s1?.updatedAt).toBe(10);
     expect(catalog.order).toEqual(["top", "s1"]);
 
-    // Real activity (streaming) still bumps recency.
+    // Real activity (streaming) bumps updatedAt but createdAt is stable.
     catalog = upsertSessionSnapshot(
       catalog,
       "w1",
@@ -155,23 +167,35 @@ describe("session catalog", () => {
       50,
     );
     expect(catalog.entries.s1?.updatedAt).toBe(50);
-    expect(catalog.order).toEqual(["s1", "top"]);
+    expect(catalog.entries.s1?.createdAt).toBe(10);
+    expect(catalog.order).toEqual(["top", "s1"]);
   });
 
-  it("reorders on runtime state changes only for genuine activity", () => {
+  it("does not reorder on runtime state changes — only creation time determines sort", () => {
     let catalog = replaceSessionCatalog(emptySessionCatalog(), "w1", [
-      { sessionId: "top", sessionPath: "C:/sessions/top.jsonl", cwd: "C:/w", updatedAt: 30 },
-      { sessionId: "s1", sessionPath: "C:/sessions/s1.jsonl", cwd: "C:/w", updatedAt: 10 },
+      {
+        sessionId: "top",
+        sessionPath: "C:/sessions/top.jsonl",
+        cwd: "C:/w",
+        createdAt: 30,
+        updatedAt: 30,
+      },
+      {
+        sessionId: "s1",
+        sessionPath: "C:/sessions/s1.jsonl",
+        cwd: "C:/w",
+        createdAt: 10,
+        updatedAt: 10,
+      },
     ]);
-    // Host stamps idle announcements with Date.now() after session.open —
-    // must not reorder. Local optimistic "starting" has no timestamp — same.
+    // CreatedAt is stable regardless of runtime state transitions.
     catalog = setSessionRuntimeState(catalog, "s1", "starting");
     catalog = setSessionRuntimeState(catalog, "s1", "idle", undefined, 99);
-    expect(catalog.entries.s1?.updatedAt).toBe(10);
+    expect(catalog.entries.s1?.createdAt).toBe(10);
     expect(catalog.order).toEqual(["top", "s1"]);
 
     catalog = setSessionRuntimeState(catalog, "s1", "running", undefined, 100);
-    expect(catalog.entries.s1?.updatedAt).toBe(100);
-    expect(catalog.order).toEqual(["s1", "top"]);
+    expect(catalog.entries.s1?.createdAt).toBe(10);
+    expect(catalog.order).toEqual(["top", "s1"]);
   });
 });

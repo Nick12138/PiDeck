@@ -73,7 +73,7 @@ export async function listSessions(factory: WorkspaceGraphFactory): Promise<Mana
     listSessionFiles(factory, g, true),
   ]);
   return [...active, ...archived].sort(
-    (left, right) => right.modified.getTime() - left.modified.getTime(),
+    (left, right) => right.created.getTime() - left.created.getTime(),
   );
 }
 

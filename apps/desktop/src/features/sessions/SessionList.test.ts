@@ -11,8 +11,8 @@ import {
   requestSessionRpcWithRetry,
   removedArchivedSessionIds,
   sessionDisplayName,
-  sessionRuntimeLabel,
   sessionStatusDotClass,
+  sessionStatusLabelKey,
   shouldRetrySessionRpc,
   shouldClearLastSessionPath,
 } from "./session-list-policy";
@@ -84,20 +84,55 @@ describe("sessionDisplayName", () => {
   });
 });
 
-describe("sessionRuntimeLabel", () => {
-  it("exposes the normalized runtime state", () => {
-    expect(sessionRuntimeLabel("running")).toBe("running");
-    expect(sessionRuntimeLabel("inactive")).toBe("inactive");
+describe("sessionStatusLabelKey", () => {
+  it("labels live states and unacknowledged terminal states", () => {
+    expect(sessionStatusLabelKey("running", undefined, false)).toBe("sessionsStatusRunning");
+    expect(sessionStatusLabelKey("queued", undefined, false)).toBe("sessionsStatusQueued");
+    expect(sessionStatusLabelKey("idle", { state: "done", acknowledged: false }, false)).toBe(
+      "sessionsStatusDone",
+    );
+    expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: false }, false)).toBe(
+      "sessionsStatusError",
+    );
+  });
+
+  it("hides terminal markers only once acknowledged", () => {
+    expect(sessionStatusLabelKey("idle", { state: "done", acknowledged: true }, false)).toBeNull();
+    expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: true }, false)).toBeNull();
+    // An unacknowledged terminal state still surfaces even for the focused session.
+    expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: false }, true)).toBe(
+      "sessionsStatusError",
+    );
+    expect(sessionStatusLabelKey("idle", undefined, false)).toBeNull();
   });
 });
 
 describe("sessionStatusDotClass", () => {
-  it("shows persistent activity states without flashing for session startup", () => {
-    expect(sessionStatusDotClass("running")).toContain("bg-success");
-    expect(sessionStatusDotClass("queued")).toBe("bg-warning");
-    expect(sessionStatusDotClass("error")).toBe("bg-danger");
-    expect(sessionStatusDotClass("starting")).toBeNull();
-    expect(sessionStatusDotClass("inactive")).toBeNull();
+  it("pulses every surfaced activity state", () => {
+    expect(sessionStatusDotClass("running", undefined, false)).toBe("bg-success status-dot-pulse");
+    expect(sessionStatusDotClass("queued", undefined, false)).toBe("bg-warning status-dot-pulse");
+    expect(sessionStatusDotClass("starting", undefined, false)).toBeNull();
+    expect(sessionStatusDotClass("inactive", undefined, false)).toBeNull();
+  });
+
+  it("shows pulsing terminal states until the session is reopened", () => {
+    expect(sessionStatusDotClass("idle", { state: "error", acknowledged: false }, false)).toBe(
+      "bg-danger status-dot-pulse",
+    );
+    expect(sessionStatusDotClass("idle", { state: "done", acknowledged: false }, false)).toBe(
+      "bg-muted status-dot-pulse",
+    );
+    // Even the focused session surfaces an unacknowledged terminal dot.
+    expect(sessionStatusDotClass("idle", { state: "error", acknowledged: false }, true)).toBe(
+      "bg-danger status-dot-pulse",
+    );
+    expect(sessionStatusDotClass("idle", { state: "done", acknowledged: true }, false)).toBeNull();
+    expect(sessionStatusDotClass("idle", undefined, false)).toBeNull();
+  });
+
+  it("falls back to a pulsing catalog error state when no marker exists", () => {
+    expect(sessionStatusDotClass("error", undefined, false)).toBe("bg-danger status-dot-pulse");
+    expect(sessionStatusDotClass("error", undefined, true)).toBe("bg-danger status-dot-pulse");
   });
 });
 
@@ -274,11 +309,12 @@ describe("filterSessionItems", () => {
 });
 
 describe("groupSessionItemsByTime", () => {
-  const makeItem = (sessionId: string, updatedAt: number) => ({
+  const makeItem = (sessionId: string, createdAt: number) => ({
     sessionId,
     sessionPath: `C:/sessions/${sessionId}.jsonl`,
     cwd: "C:/workspace/alpha",
-    updatedAt,
+    createdAt,
+    updatedAt: createdAt,
     runtimeState: "inactive" as const,
   });
 

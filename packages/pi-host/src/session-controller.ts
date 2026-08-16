@@ -57,6 +57,7 @@ export function createSessionHandlers(
                 sessionPath: s.path,
                 name: s.name,
                 cwd: s.cwd,
+                createdAt: s.created?.getTime?.() ?? s.modified?.getTime?.() ?? Date.now(),
                 updatedAt: s.modified?.getTime?.() ?? Date.now(),
                 messageCount: s.messageCount,
                 archived: s.archived,

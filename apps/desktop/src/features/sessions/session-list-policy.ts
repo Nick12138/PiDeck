@@ -1,5 +1,6 @@
 import type { SessionSnapshot, SessionSummary } from "@pideck/protocol";
 import type { SessionCatalogEntry, SessionRuntimeState } from "../../lib/stores/session-catalog";
+import type { SessionTerminalState } from "../../lib/session-terminal-states";
 
 export type SessionFilter = "active" | "archived";
 
@@ -25,22 +26,40 @@ export function sessionDisplayName(item: Pick<SessionSummary, "name">, fallback:
   return item.name?.trim() || fallback;
 }
 
-export function sessionRuntimeLabel(state: SessionRuntimeState): string {
-  return state;
+export type SessionStatusLabelKey =
+  "sessionsStatusRunning" | "sessionsStatusQueued" | "sessionsStatusError" | "sessionsStatusDone";
+
+export function sessionStatusLabelKey(
+  runtimeState: SessionRuntimeState,
+  terminal: SessionTerminalState | undefined,
+  _active: boolean,
+): SessionStatusLabelKey | null {
+  if (runtimeState === "running") return "sessionsStatusRunning";
+  if (runtimeState === "queued") return "sessionsStatusQueued";
+  if (terminal?.state === "error" && !terminal.acknowledged) return "sessionsStatusError";
+  if (runtimeState === "error" && !terminal) return "sessionsStatusError";
+  if (terminal?.state === "done" && !terminal.acknowledged) return "sessionsStatusDone";
+  return null;
 }
 
-/** Dot color class for states worth surfacing; quiet states render nothing. */
-export function sessionStatusDotClass(state: SessionRuntimeState): string | null {
-  switch (state) {
-    case "running":
-      return "bg-success animate-pulse";
-    case "queued":
-      return "bg-warning";
-    case "error":
-      return "bg-danger";
-    default:
-      return null;
-  }
+/**
+ * Dot color for states worth surfacing; quiet states render nothing. Live
+ * states (running/queued) always show. Terminal states (error/done) show for
+ * every session — including the one in focus — until the user returns to the
+ * session, which acknowledges the marker. All surfaced states pulse so
+ * ongoing/ended sessions read clearly at a glance.
+ */
+export function sessionStatusDotClass(
+  runtimeState: SessionRuntimeState,
+  terminal: SessionTerminalState | undefined,
+  _active: boolean,
+): string | null {
+  if (runtimeState === "running") return "bg-success status-dot-pulse";
+  if (runtimeState === "queued") return "bg-warning status-dot-pulse";
+  if (terminal?.state === "error" && !terminal.acknowledged) return "bg-danger status-dot-pulse";
+  if (runtimeState === "error" && !terminal) return "bg-danger status-dot-pulse";
+  if (terminal?.state === "done" && !terminal.acknowledged) return "bg-muted status-dot-pulse";
+  return null;
 }
 
 export function filterSessionItems(
@@ -68,9 +87,13 @@ function startOfWeek(now: number): number {
   return d.getTime();
 }
 
-function sessionTimeGroup(updatedAt: number, now: number = Date.now()): SessionTimeGroup {
-  if (updatedAt >= startOfDay(now)) return "today";
-  if (updatedAt >= startOfWeek(now)) return "thisWeek";
+function sessionSortTime(item: SessionCatalogEntry): number {
+  return item.createdAt ?? item.updatedAt;
+}
+
+function sessionTimeGroup(sortTime: number, now: number = Date.now()): SessionTimeGroup {
+  if (sortTime >= startOfDay(now)) return "today";
+  if (sortTime >= startOfWeek(now)) return "thisWeek";
   return "earlier";
 }
 
@@ -85,7 +108,7 @@ export function groupSessionItemsByTime(
     earlier: [],
   };
   for (const item of items) {
-    buckets[sessionTimeGroup(item.updatedAt, now)].push(item);
+    buckets[sessionTimeGroup(sessionSortTime(item), now)].push(item);
   }
   return (["today", "thisWeek", "earlier"] as SessionTimeGroup[]).map((group) => ({
     group,

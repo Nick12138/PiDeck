@@ -811,13 +811,14 @@ function isSessionSummary(value: unknown): boolean {
     hasExactKeys(
       value,
       ["sessionId", "sessionPath", "cwd", "updatedAt"],
-      ["name", "messageCount", "archived", "runtimeState", "sessionRevision"],
+      ["name", "messageCount", "archived", "runtimeState", "sessionRevision", "createdAt"],
     ) &&
     isUuid(value.sessionId) &&
     isString(value.sessionPath) &&
     isOptionalString(value.name) &&
     isString(value.cwd) &&
     isFiniteNumber(value.updatedAt) &&
+    (value.createdAt === undefined || isFiniteNumber(value.createdAt)) &&
     (value.messageCount === undefined || isSafeRevision(value.messageCount)) &&
     (value.archived === undefined || isBoolean(value.archived)) &&
     (value.runtimeState === undefined ||

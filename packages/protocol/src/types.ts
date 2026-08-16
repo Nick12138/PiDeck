@@ -209,6 +209,8 @@ export type SessionSummary = {
   sessionPath: string;
   name?: string;
   cwd: string;
+  /** Creation time in epoch milliseconds (from the session file's created date). */
+  createdAt?: number;
   updatedAt: number;
   messageCount?: number;
   archived?: boolean;
