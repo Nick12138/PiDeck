@@ -25,6 +25,30 @@ pub struct HostTransportFrame {
     pub line: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostActivitySnapshot {
+    pub cwd: String,
+    pub busy: bool,
+    pub has_been_busy: bool,
+    /// Unacknowledged failed sessions (red dot).
+    pub error_count: usize,
+    /// Unacknowledged completed sessions (gray dot).
+    pub done_count: usize,
+    /// Per-session terminal markers let the renderer rebuild the session dots
+    /// after returning to a workspace whose Host kept running in background.
+    pub terminal_sessions: HashMap<String, HostTerminalActivity>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostTerminalActivity {
+    pub state: String,
+    /// Monotonic within this Host. A later run of the same session gets a new
+    /// generation, so an acknowledgement for an older run cannot hide it.
+    pub generation: u64,
+}
+
 #[cfg(unix)]
 use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 #[cfg(windows)]
@@ -493,6 +517,7 @@ pub struct PiHostManager {
 
 struct HostPoolEntry {
     route_id: String,
+    canonical_cwd: PathBuf,
     manager: Arc<Mutex<PiHostManager>>,
     activity: Arc<StdMutex<HostActivity>>,
 }
@@ -500,6 +525,17 @@ struct HostPoolEntry {
 struct HostActivity {
     busy_sessions: HashSet<String>,
     idle_since: Instant,
+    /// True once any session has entered a busy state, so the workspace list
+    /// can distinguish "all sessions finished" from "no session ever ran".
+    has_been_busy: bool,
+    /// Unacknowledged terminal states (sessionId → "error" | "done").
+    /// Cleared when the renderer acknowledges by returning to the session.
+    terminal_sessions: HashMap<String, HostTerminalActivity>,
+    next_terminal_generation: u64,
+    /// Most recent announced state per session, used to tell a real
+    /// busy→idle completion from a plain idle announcement for a restored
+    /// session that never ran.
+    last_state: HashMap<String, String>,
 }
 
 impl Default for HostActivity {
@@ -507,6 +543,10 @@ impl Default for HostActivity {
         Self {
             busy_sessions: HashSet::new(),
             idle_since: Instant::now(),
+            has_been_busy: false,
+            terminal_sessions: HashMap::new(),
+            next_terminal_generation: 0,
+            last_state: HashMap::new(),
         }
     }
 }
@@ -542,6 +582,7 @@ impl PiHostPool {
             .map(|path| workspace_pool_key(path))
             .unwrap_or_else(|| "__bootstrap__".to_string());
         let route_id = uuid::Uuid::new_v4().to_string();
+        let canonical_cwd = initial.clone().unwrap_or_default();
         let manager = PiHostManager::new_routed(app.clone(), settings, route_id.clone(), initial);
         let activity = Arc::clone(&manager.activity);
         let manager = Arc::new(Mutex::new(manager));
@@ -550,6 +591,7 @@ impl PiHostPool {
             key.clone(),
             HostPoolEntry {
                 route_id: route_id.clone(),
+                canonical_cwd,
                 manager,
                 activity,
             },
@@ -582,6 +624,59 @@ impl PiHostPool {
             .clone()
     }
 
+    /// Live per-workspace activity for the renderer's workspace list. The
+    /// active workspace's Host streams events to the renderer, but background
+    /// Hosts do not — this snapshot is the only view the UI has into whether
+    /// another workspace still has sessions running.
+    pub fn activity_snapshot(&self) -> Vec<HostActivitySnapshot> {
+        self.entries
+            .values()
+            .filter_map(|entry| {
+                if entry.canonical_cwd.as_os_str().is_empty() {
+                    return None;
+                }
+                let activity = entry
+                    .activity
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                Some(HostActivitySnapshot {
+                    cwd: entry.canonical_cwd.to_string_lossy().to_string(),
+                    busy: !activity.busy_sessions.is_empty(),
+                    has_been_busy: activity.has_been_busy,
+                    error_count: activity
+                        .terminal_sessions
+                        .values()
+                        .filter(|terminal| terminal.state == "error")
+                        .count(),
+                    done_count: activity
+                        .terminal_sessions
+                        .values()
+                        .filter(|terminal| terminal.state == "done")
+                        .count(),
+                    terminal_sessions: activity.terminal_sessions.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// The renderer calls this when the user returns to a session, clearing
+    /// its unacknowledged terminal marker so the workspace dot downgrades.
+    pub fn acknowledge_session_terminal(&self, cwd: &Path, session_id: &str) -> bool {
+        let key = workspace_pool_key(cwd);
+        let Some(entry) = self.entries.get(&key) else {
+            return false;
+        };
+        let mut activity = entry
+            .activity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if activity.terminal_sessions.remove(session_id).is_none() {
+            return false;
+        }
+        let _ = self.app.emit("pi-host-activity", entry.route_id.clone());
+        true
+    }
+
     pub fn manager_for_route(&self, route_id: &str) -> Option<Arc<Mutex<PiHostManager>>> {
         let key = self.route_to_key.get(route_id)?;
         self.entries
@@ -608,6 +703,7 @@ impl PiHostPool {
         }
 
         let route_id = uuid::Uuid::new_v4().to_string();
+        let canonical_cwd = canonical.clone();
         let manager = PiHostManager::new_routed(
             self.app.clone(),
             settings,
@@ -621,6 +717,7 @@ impl PiHostPool {
             key.clone(),
             HostPoolEntry {
                 route_id: route_id.clone(),
+                canonical_cwd,
                 manager: Arc::clone(&manager),
                 activity,
             },
@@ -683,11 +780,12 @@ impl PiHostPool {
         }
 
         let old_active_key = self.active_key.clone();
-        let active_entry = self
+        let mut active_entry = self
             .entries
             .remove(&old_active_key)
             .expect("active HostPool entry must exist");
         self.route_to_key.remove(&active_entry.route_id);
+        active_entry.canonical_cwd = canonical.clone();
 
         let active_manager = Arc::clone(&active_entry.manager);
         self.route_to_key
@@ -790,39 +888,116 @@ fn host_activity_expired(activity: &StdMutex<HostActivity>) -> bool {
     activity.busy_sessions.is_empty() && activity.idle_since.elapsed() >= IDLE_HOST_RETENTION
 }
 
-fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) {
+fn observe_host_activity(activity: &StdMutex<HostActivity>, line: &str) -> bool {
     let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
-        return;
+        return false;
     };
     if message.get("event").and_then(|value| value.as_str()) != Some("session.runtimeChanged") {
-        return;
+        return false;
     }
     let Some(session_id) = message
         .get("payload")
         .and_then(|payload| payload.get("sessionId"))
         .and_then(|value| value.as_str())
     else {
-        return;
+        return false;
     };
     let Some(state) = message
         .get("payload")
         .and_then(|payload| payload.get("state"))
         .and_then(|value| value.as_str())
     else {
-        return;
+        return false;
     };
     let mut activity = activity
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let was_busy = !activity.busy_sessions.is_empty();
-    if matches!(state, "starting" | "running" | "queued") {
-        activity.busy_sessions.insert(session_id.to_string());
-    } else {
-        activity.busy_sessions.remove(session_id);
+    let mut changed = false;
+    match state {
+        "starting" | "running" | "queued" => {
+            changed = activity.busy_sessions.insert(session_id.to_string());
+            activity.has_been_busy = true;
+            // A new run supersedes any stale unacknowledged terminal marker.
+            changed |= activity.terminal_sessions.remove(session_id).is_some();
+            activity
+                .last_state
+                .insert(session_id.to_string(), state.to_string());
+        }
+        "error" => {
+            changed = activity.busy_sessions.remove(session_id);
+            let terminal_changed = activity
+                .terminal_sessions
+                .get(session_id)
+                .map(|terminal| terminal.state.as_str())
+                != Some("error");
+            if terminal_changed {
+                activity.next_terminal_generation += 1;
+                let generation = activity.next_terminal_generation;
+                activity.terminal_sessions.insert(
+                    session_id.to_string(),
+                    HostTerminalActivity {
+                        state: "error".to_string(),
+                        generation,
+                    },
+                );
+                changed = true;
+            }
+            activity
+                .last_state
+                .insert(session_id.to_string(), "error".to_string());
+        }
+        "idle" => {
+            changed = activity.busy_sessions.remove(session_id);
+            // Only a real busy→idle completion (a session that actually ran)
+            // creates the done marker; plain idle announcements for restored
+            // sessions never ran and must stay quiet.
+            let was_running = matches!(
+                activity
+                    .last_state
+                    .get(session_id)
+                    .map(|state| state.as_str()),
+                Some("starting" | "running" | "queued")
+            );
+            if was_running {
+                activity.next_terminal_generation += 1;
+                let generation = activity.next_terminal_generation;
+                activity.terminal_sessions.insert(
+                    session_id.to_string(),
+                    HostTerminalActivity {
+                        state: "done".to_string(),
+                        generation,
+                    },
+                );
+                changed = true;
+            }
+            activity
+                .last_state
+                .insert(session_id.to_string(), "idle".to_string());
+        }
+        _ => {}
     }
-    if was_busy && activity.busy_sessions.is_empty() {
+    let now_busy = !activity.busy_sessions.is_empty();
+    if was_busy && !now_busy {
         activity.idle_since = Instant::now();
     }
+    changed
+}
+
+/// Drop every busy marker when a Host process exits. Sessions the dead
+/// process reported as busy will never emit the settle event that would
+/// normally clear them, so without this the workspace list's green dot
+/// sticks forever after a crash or host restart. `has_been_busy` is kept
+/// so "all sessions finished" still reads as the muted dot.
+fn clear_host_activity(activity: &StdMutex<HostActivity>) -> bool {
+    let mut activity = activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if activity.busy_sessions.is_empty() {
+        return false;
+    }
+    activity.busy_sessions.clear();
+    true
 }
 
 pub(crate) fn should_activate_workspace_host(active_busy: bool, target_exists: bool) -> bool {
@@ -844,12 +1019,137 @@ mod host_activity_tests {
     #[test]
     fn tracks_concurrent_sessions_until_the_last_one_settles() {
         let activity = StdMutex::new(HostActivity::default());
-        observe_host_activity(&activity, &runtime_line("a", "running"));
-        observe_host_activity(&activity, &runtime_line("b", "queued"));
-        observe_host_activity(&activity, &runtime_line("a", "idle"));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "queued")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
         assert!(host_activity_busy(&activity));
-        observe_host_activity(&activity, &runtime_line("b", "error"));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "error")
+        ));
         assert!(!host_activity_busy(&activity));
+    }
+
+    #[test]
+    fn repeated_settle_reports_are_no_ops() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        // A second idle for the same session changes nothing.
+        assert!(!observe_host_activity(
+            &activity,
+            &runtime_line("a", "idle")
+        ));
+    }
+
+    #[test]
+    fn remembers_that_sessions_have_run_after_settling() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(!host_activity_busy(&activity));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        assert!(!host_activity_busy(&activity));
+        let seen = activity.lock().expect("activity lock");
+        assert!(seen.has_been_busy);
+    }
+
+    #[test]
+    fn never_busy_stays_unseen() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(!observe_host_activity(
+            &activity,
+            &runtime_line("a", "idle")
+        ));
+        let seen = activity.lock().expect("activity lock");
+        assert!(!seen.has_been_busy);
+    }
+
+    #[test]
+    fn idle_only_marks_sessions_that_actually_ran_as_done() {
+        let activity = StdMutex::new(HostActivity::default());
+        // A restored session that never ran announces idle → no marker.
+        assert!(!observe_host_activity(
+            &activity,
+            &runtime_line("a", "idle")
+        ));
+        // A session that ran then settled → done marker (gray dot).
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("b", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("b", "idle")));
+        let seen = activity.lock().expect("activity lock");
+        assert!(!seen.terminal_sessions.contains_key("a"));
+        assert_eq!(
+            seen.terminal_sessions
+                .get("b")
+                .map(|terminal| terminal.state.as_str()),
+            Some("done")
+        );
+    }
+
+    #[test]
+    fn a_new_run_clears_a_stale_terminal_marker() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        let first_generation = activity
+            .lock()
+            .expect("activity lock")
+            .terminal_sessions
+            .get("a")
+            .expect("done marker")
+            .generation;
+        // The session runs again — the previous done marker must go away.
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(!activity
+            .lock()
+            .expect("activity lock")
+            .terminal_sessions
+            .contains_key("a"));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        let seen = activity.lock().expect("activity lock");
+        assert!(seen.terminal_sessions["a"].generation > first_generation);
+    }
+
+    #[test]
+    fn error_marker_survives_a_following_idle_announcement() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "error")
+        ));
+        // The settle-to-idle transition keeps the red marker.
+        let _ = observe_host_activity(&activity, &runtime_line("a", "idle"));
+        let seen = activity.lock().expect("activity lock");
+        assert_eq!(
+            seen.terminal_sessions
+                .get("a")
+                .map(|terminal| terminal.state.as_str()),
+            Some("error")
+        );
     }
 
     #[test]
@@ -861,6 +1161,35 @@ mod host_activity_tests {
         assert!(!host_activity_expired(&activity));
         activity.lock().expect("activity lock").idle_since = Instant::now() - IDLE_HOST_RETENTION;
         assert!(host_activity_expired(&activity));
+    }
+
+    #[test]
+    fn process_exit_clears_stale_busy_markers() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(host_activity_busy(&activity));
+        // The Host died before "a" settled — its green dot must not stick.
+        assert!(clear_host_activity(&activity));
+        assert!(!host_activity_busy(&activity));
+        // has_been_busy survives so the workspace still shows the muted dot.
+        assert!(activity.lock().expect("activity lock").has_been_busy);
+        // Clearing an already-empty set is a no-op.
+        assert!(!clear_host_activity(&activity));
+    }
+
+    #[test]
+    fn process_exit_after_all_sessions_settled_changes_nothing() {
+        let activity = StdMutex::new(HostActivity::default());
+        assert!(observe_host_activity(
+            &activity,
+            &runtime_line("a", "running")
+        ));
+        assert!(observe_host_activity(&activity, &runtime_line("a", "idle")));
+        assert!(!clear_host_activity(&activity));
+        assert!(!host_activity_busy(&activity));
     }
 
     #[test]
@@ -1673,7 +2002,14 @@ impl PiHostManager {
                                 break;
                             }
                             let payload = line.trim_end_matches(['\r', '\n']).to_string();
-                            observe_host_activity(&activity, &payload);
+                            if observe_host_activity(&activity, &payload) {
+                                // Busy set changed (a session started or the last
+                                // one settled) — tell the renderer to re-read the
+                                // workspace activity snapshot. Background Hosts do
+                                // not route their stdout, so this is the only live
+                                // signal for other workspaces' status.
+                                let _ = app_out.emit("pi-host-activity", stdout_route_id.clone());
+                            }
                             if payload.contains("\"event\":\"host.ready\"")
                                 || payload.contains("\"event\": \"host.ready\"")
                             {
@@ -1717,6 +2053,14 @@ impl PiHostManager {
                             break;
                         }
                     }
+                }
+                // stdout closed — the Host process this task read is gone.
+                // Sessions it reported busy will never emit the settle event
+                // that would clear them, so drop the stale markers or the
+                // workspace list keeps a green dot forever. `has_been_busy`
+                // survives so finished workspaces still show the muted dot.
+                if clear_host_activity(&activity) {
+                    let _ = app_out.emit("pi-host-activity", stdout_route_id.clone());
                 }
                 // stdout closed — only the active child generation may trigger recovery.
                 if is_current_child_generation(

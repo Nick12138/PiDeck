@@ -91,6 +91,9 @@ describe("app-store epoch wiring", () => {
       thinkingLevels: [],
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
+      sessionRuntimeStates: {},
+      sessionTerminalStates: {},
+      workspaceActivities: {},
       draftTexts: {},
       draftTargets: {},
       draftEditVersions: {},
@@ -219,6 +222,7 @@ describe("app-store epoch wiring", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
     useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().setSessionRuntimeState("s1", "running");
     useAppStore.getState().applyPackageSnapshot({
       revision: 1,
       workspaceId: "w1",
@@ -236,6 +240,7 @@ describe("app-store epoch wiring", () => {
     expect(s.session).toBeNull();
     expect(s.packages).toBeNull();
     expect(s.tools).toBeNull();
+    expect(s.sessionRuntimeStates).toEqual({});
   });
 
   it("advances Host session identity with authoritative session snapshots", () => {
@@ -850,11 +855,222 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
 
     useAppStore.getState().applySessionSnapshot(session("s2"));
-    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("inactive");
+    // A still-busy previous session keeps its live state after switching away.
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
     expect(useAppStore.getState().sessionCatalog.entries.s2?.runtimeState).toBe("idle");
+
+    // An idle previous session is demoted to inactive on the next switch.
+    useAppStore.getState().applySessionSnapshot(session("s3"));
+    expect(useAppStore.getState().sessionCatalog.entries.s2?.runtimeState).toBe("inactive");
 
     useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 20);
     expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
+  });
+
+  it("keeps a still-busy previous session running when switching sessions", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // s1 starts a run; the user switches to s2 while s1 is still busy.
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+
+    // The switch must not demote s1 — its live dot stays visible.
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("running");
+    expect(useAppStore.getState().sessionCatalog.entries.s2?.runtimeState).toBe("idle");
+  });
+
+  it("records an unacknowledged done marker when a busy session settles after switching away", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // Real event order: s1 runs (active) → user switches to s2 while busy →
+    // the background run settles. The busy state must survive the switch so
+    // the settle creates the done marker for the session the user left.
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+    useAppStore.getState().setSessionRuntimeState("s1", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: false,
+    });
+  });
+
+  it("records an unacknowledged done marker for a background session that settles", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+
+    // s1 runs in the background, then settles — a real busy→idle completion.
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    useAppStore.getState().setSessionRuntimeState("s1", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: false,
+    });
+  });
+
+  it("records completion when the settled snapshot arrives before runtime idle", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    // agent_settled is rendered first and projects the active snapshot to idle.
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("idle");
+
+    // The explicit runtime edge arrives afterwards and must still remember that
+    // the previous explicit runtime state was busy.
+    useAppStore.getState().setSessionRuntimeState("s1", "idle", undefined, 20);
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: false,
+    });
+  });
+
+  it("does not mark a session that was never busy as done", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+
+    // A plain idle announcement for an idle restored session is not a completion.
+    useAppStore.getState().setSessionRuntimeState("s1", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toBeUndefined();
+  });
+
+  it("shows the done marker even for the session in focus until the user returns", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // s1 is active and completes → the done marker still shows until the user
+    // returns to the session (returning acknowledges it).
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    useAppStore.getState().setSessionRuntimeState("s1", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: false,
+    });
+
+    // A failure of a session that is no longer open stays unacknowledged (red dot).
+    useAppStore.getState().applySessionSnapshot(session("s3"));
+    useAppStore.getState().setSessionRuntimeState("s1", "error", "boom");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "error",
+      acknowledged: false,
+    });
+  });
+
+  it("keeps an unacknowledged error marker across the settle-to-idle transition", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    useAppStore.getState().setSessionRuntimeState("s2", "error", "boom");
+    useAppStore.getState().setSessionRuntimeState("s2", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s2).toEqual({
+      state: "error",
+      acknowledged: false,
+    });
+  });
+
+  it("acknowledgeSessionTerminalState is idempotent and persists", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+    useAppStore.getState().setSessionRuntimeState("s2", "error", "boom");
+
+    const store = useAppStore.getState();
+    store.acknowledgeSessionTerminalState("w1", "s2", "error");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s2).toEqual({
+      state: "error",
+      acknowledged: true,
+    });
+
+    const before = useAppStore.getState().sessionTerminalStates;
+    useAppStore.getState().acknowledgeSessionTerminalState("w1", "s2", "error");
+    expect(useAppStore.getState().sessionTerminalStates).toBe(before);
+  });
+
+  it("records an acknowledgement when only the catalog error state exists", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().replaceSessionCatalog("w1", [
+      {
+        sessionId: "s1",
+        sessionPath: "/sessions/s1.jsonl",
+        cwd: "/p/w1",
+        updatedAt: 1,
+        runtimeState: "error",
+      },
+    ]);
+
+    useAppStore.getState().acknowledgeSessionTerminalState("w1", "s1", "error");
+
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "error",
+      acknowledged: true,
+    });
+  });
+
+  it("merges cross-workspace terminal snapshots and reopens newer generations", () => {
+    useAppStore.getState().mergeSessionTerminalSnapshots("w1", {
+      s1: { state: "done", generation: 7 },
+    });
+    useAppStore.getState().acknowledgeSessionTerminalState("w1", "s1", "done");
+    useAppStore.getState().mergeSessionTerminalSnapshots("w1", {
+      s1: { state: "done", generation: 8 },
+    });
+
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: false,
+      generation: 8,
+    });
+  });
+
+  it("removes terminal states for deleted sessions", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+    useAppStore.getState().setSessionRuntimeState("s2", "error", "boom");
+
+    useAppStore.getState().removeSessionTerminalStates("w1", ["s2"]);
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s2).toBeUndefined();
+    expect(useAppStore.getState().sessionRuntimeStates.s2).toBeUndefined();
+  });
+
+  it("exposes workspace activity from the Host pool snapshot", () => {
+    useAppStore.getState().setWorkspaceActivities({
+      "/p/w1": {
+        busy: true,
+        hasBeenBusy: true,
+        errorCount: 1,
+        doneCount: 2,
+        terminalSessions: {
+          s1: { state: "error", generation: 1 },
+          s2: { state: "done", generation: 2 },
+        },
+      },
+    });
+    expect(useAppStore.getState().workspaceActivities["/p/w1"]).toEqual({
+      busy: true,
+      hasBeenBusy: true,
+      errorCount: 1,
+      doneCount: 2,
+      terminalSessions: {
+        s1: { state: "error", generation: 1 },
+        s2: { state: "done", generation: 2 },
+      },
+    });
   });
 
   it("clears the Session Catalog only when the workspace epoch changes", () => {

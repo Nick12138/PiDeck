@@ -1457,6 +1457,26 @@ textarea:focus-visible {
   }
 }
 
+/* Status dots (workspace + session sidebar): the built-in animate-pulse only
+   fades opacity; this also scales the dot so ongoing/ended states visibly
+   breathe (shrink while fading, grow back while brightening). */
+.status-dot-pulse {
+  animation: status-dot-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.8);
+  }
+}
+
 /* Conversation markdown */
 .chat-markdown {
   min-width: 0;

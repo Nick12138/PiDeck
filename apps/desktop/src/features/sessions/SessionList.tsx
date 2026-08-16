@@ -22,6 +22,7 @@ import { tCurrent, useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { deriveExtensionUiWaitingBySession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
+import { acknowledgeSessionTerminal } from "../../lib/bridge/tauri-transport";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import {
   prioritizePinnedSessions,
@@ -60,14 +61,30 @@ import {
   removedArchivedSessionIds,
   requestSessionRpcWithRetry,
   sessionDisplayName,
-  sessionRuntimeLabel,
   sessionStatusDotClass,
+  sessionStatusLabelKey,
   shouldClearLastSessionPath,
   type SessionFilter,
 } from "./session-list-policy";
 
 type SessionConfirmAction =
   { kind: "delete"; item: SessionCatalogEntry } | { kind: "cleanup"; count: number };
+
+function acknowledgeVisitedSession(sessionId: string): void {
+  const current = useAppStore.getState();
+  const workspaceId = current.workspace?.id;
+  const canonicalCwd = current.workspace?.canonicalCwd;
+  if (!workspaceId || !canonicalCwd) return;
+  const entry = current.sessionTerminalStates[workspaceId]?.[sessionId];
+  const state =
+    entry?.state ??
+    (current.sessionCatalog.entries[sessionId]?.runtimeState === "error" ? "error" : undefined);
+  if (state) current.acknowledgeSessionTerminalState(workspaceId, sessionId, state);
+  // The Host is authoritative for cross-workspace markers. This is safe even
+  // when no marker exists and covers a marker that has not reached the local
+  // activity snapshot yet.
+  void acknowledgeSessionTerminal(canonicalCwd, sessionId);
+}
 
 export function SessionList({
   showCreateAction = true,
@@ -95,6 +112,9 @@ export function SessionList({
   const setSessionRuntimeState = useAppStore((s) => s.setSessionRuntimeState);
   const updateSessionCatalogInfo = useAppStore((s) => s.updateSessionCatalogInfo);
   const pushNotification = useAppStore((s) => s.pushNotification);
+  const sessionTerminalStates = useAppStore((s) => s.sessionTerminalStates);
+  const acknowledgeSessionTerminalState = useAppStore((s) => s.acknowledgeSessionTerminalState);
+  const removeSessionTerminalStates = useAppStore((s) => s.removeSessionTerminalStates);
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [filter, setFilter] = useState<SessionFilter>("active");
@@ -206,6 +226,15 @@ export function SessionList({
     setNameDraft("");
   }, [workspace?.id]);
 
+  // Returning to a session acknowledges its terminal (done/error) marker so it
+  // stops showing in the sidebar. Error without a recorded marker (e.g. the app
+  // restarted while the Host kept the session in error) is acknowledged too.
+  // The Host pool is told as well so the workspace row's dot downgrades
+  // (red → green → gray → none) as the user works through the sessions.
+  useEffect(() => {
+    if (session?.sessionId) acknowledgeVisitedSession(session.sessionId);
+  }, [session?.sessionId, workspace?.id, acknowledgeSessionTerminalState]);
+
   useEffect(() => {
     const now = Date.now();
     const nextExpiry = [extensionUiRequest, ...extensionUiQueue]
@@ -274,6 +303,7 @@ export function SessionList({
       return;
     }
     if (!sessionOpenQueue.current?.isRunning() && current.session?.sessionPath === path) {
+      acknowledgeVisitedSession(current.session.sessionId);
       return;
     }
     sessionOpenQueue.current?.enqueue(path);
@@ -551,6 +581,7 @@ export function SessionList({
           deleteSessionDrafts(latestWorkspace.canonicalCwd, [item.sessionId]);
           await refresh();
           removePinnedSessions([item.sessionId]);
+          removeSessionTerminalStates(latestWorkspace.id, [item.sessionId]);
           setConfirmAction(null);
           pushNotification(t("notifSessionGone"), "warning");
           return;
@@ -567,6 +598,7 @@ export function SessionList({
       }
       await refresh();
       removePinnedSessions([item.sessionId]);
+      removeSessionTerminalStates(latestWorkspace.id, [item.sessionId]);
       setConfirmAction(null);
       pushNotification(t("notifSessionDeleted"), "success");
     } catch (error) {
@@ -625,6 +657,7 @@ export function SessionList({
       );
       deleteSessionDrafts(cleanupWorkspace.canonicalCwd, removedSessionIds);
       removePinnedSessions(removedSessionIds);
+      removeSessionTerminalStates(cleanupWorkspace.workspaceId, removedSessionIds);
       setConfirmAction(null);
       pushNotification(
         res.result.failedCount > 0
@@ -793,9 +826,16 @@ export function SessionList({
                       const canDelete = canDeleteSession(item, session);
                       const canReload = canReloadSession(item, session);
                       const canArchive = canArchiveSession(item, session);
+                      const terminalState = item.archived
+                        ? undefined
+                        : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
                       const statusDot = item.archived
                         ? null
-                        : sessionStatusDotClass(item.runtimeState);
+                        : sessionStatusDotClass(item.runtimeState, terminalState, active);
+                      const statusLabelKey = item.archived
+                        ? null
+                        : sessionStatusLabelKey(item.runtimeState, terminalState, active);
+                      const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
                       const decisionWaiting = item.archived
                         ? undefined
                         : extensionUiWaitingBySession[item.sessionId];
@@ -995,7 +1035,7 @@ export function SessionList({
                                     : sessionDisplayName(item, t("sessionsUntitled"))
                                 }
                               >
-                                <div className="flex min-w-0 items-center gap-1.5">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <span
                                     className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}
                                   >
@@ -1027,45 +1067,55 @@ export function SessionList({
                                       <span aria-hidden="true">{decisionWaiting.count}</span>
                                     </span>
                                   ) : null}
+                                  {statusDot && (
+                                    <span
+                                      className="flex size-[9.2px] shrink-0 items-center justify-center"
+                                      aria-label={statusLabel ?? undefined}
+                                      title={statusLabel ?? undefined}
+                                    >
+                                      <span className={`size-[8.2px] rounded-full ${statusDot}`} />
+                                    </span>
+                                  )}
                                 </div>
                               </button>
-                              <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
-                                {statusDot && (
-                                  <span
-                                    aria-label={sessionRuntimeLabel(item.runtimeState)}
-                                    className="pointer-events-none absolute flex size-1.5 opacity-100 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+                              {/* A session showing any status dot (live green/yellow or
+                                  unacknowledged terminal red/gray) is not archivable
+                                  right now — hide the action instead of offering a
+                                  disabled button. Archived entries have no dot and
+                                  keep their restore action. */}
+                              {statusDot ? null : (
+                                <div className="relative mr-1 flex size-[22px] shrink-0 items-center justify-center">
+                                  <button
+                                    type="button"
+                                    title={
+                                      item.archived
+                                        ? t("sessionsRestoreTitle")
+                                        : canArchive
+                                          ? t("sessionsArchiveTitle")
+                                          : t("sessionsArchiveWait")
+                                    }
+                                    aria-label={
+                                      item.archived ? t("sessionsRestore") : t("sessionsArchive")
+                                    }
+                                    onClick={() =>
+                                      void runSessionFileAction(
+                                        item.archived ? "session.restore" : "session.archive",
+                                        item,
+                                      )
+                                    }
+                                    disabled={
+                                      sessionMutationBlocked || (!item.archived && !canArchive)
+                                    }
+                                    className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
                                   >
-                                    <span className={`size-1.5 rounded-full ${statusDot}`} />
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  title={
-                                    item.archived
-                                      ? t("sessionsRestoreTitle")
-                                      : canArchive
-                                        ? t("sessionsArchiveTitle")
-                                        : t("sessionsArchiveWait")
-                                  }
-                                  aria-label={
-                                    item.archived ? t("sessionsRestore") : t("sessionsArchive")
-                                  }
-                                  onClick={() =>
-                                    void runSessionFileAction(
-                                      item.archived ? "session.restore" : "session.archive",
-                                      item,
-                                    )
-                                  }
-                                  disabled={sessionMutationBlocked || (!item.archived && !canArchive)}
-                                  className="pointer-events-none rounded p-1 text-muted opacity-0 transition-opacity hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30"
-                                >
-                                  {item.archived ? (
-                                    <ArchiveRestore size={14} />
-                                  ) : (
-                                    <Archive size={14} />
-                                  )}
-                                </button>
-                              </div>
+                                    {item.archived ? (
+                                      <ArchiveRestore size={14} />
+                                    ) : (
+                                      <Archive size={14} />
+                                    )}
+                                  </button>
+                                </div>
+                              )}
                             </>
                           )}
                         </li>

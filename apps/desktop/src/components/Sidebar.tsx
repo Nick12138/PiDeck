@@ -1,5 +1,4 @@
 import {
-  LoaderCircle,
   MessageCirclePlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -104,21 +103,6 @@ export function SidebarLayout({
 }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
-  const hostFatal = useAppStore((s) => s.hostFatal);
-  const connecting = useAppStore((s) => s.connecting);
-  const rehydrating = useAppStore((s) => s.rehydrating);
-  const desynchronized = useAppStore((s) => s.desynchronized);
-  const hostReady = host?.phase === "ready" || host?.phase === "waitingForWorkspace";
-  const connectionPending = !hostFatal && (connecting || rehydrating || desynchronized);
-  const connectionTitle = hostFatal
-    ? t("sidebarHostOffline")
-    : connecting
-      ? t("sidebarConnecting")
-      : desynchronized
-        ? t("sidebarResync")
-        : rehydrating
-          ? t("sidebarLoadingSnapshots")
-          : (host?.phase ?? t("sidebarHostOffline"));
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.sessionsCollapsed"),
   );
@@ -287,27 +271,6 @@ export function SidebarLayout({
               >
                 <Settings size={17} />
               </button>
-              {connectionPending ? (
-                <span
-                  className="flex size-4 shrink-0 items-center justify-center"
-                  title={connectionTitle}
-                >
-                  <LoaderCircle size={14} className="animate-spin text-muted" />
-                </span>
-              ) : (
-                <span
-                  className={`size-1.5 shrink-0 rounded-full ${
-                    hostFatal
-                      ? "bg-danger"
-                      : hostReady
-                        ? "bg-success"
-                        : host
-                          ? "bg-warning"
-                          : "bg-muted"
-                  }`}
-                  title={connectionTitle}
-                />
-              )}
               <div className="ml-auto">
                 <NotificationCenter />
               </div>

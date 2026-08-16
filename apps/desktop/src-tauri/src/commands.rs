@@ -284,6 +284,26 @@ pub async fn pi_host_status(state: State<'_, AppState>) -> Result<bool, String> 
 }
 
 #[tauri::command]
+pub async fn pi_host_activity(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::pi_host::HostActivitySnapshot>, String> {
+    Ok(state.hosts.lock().await.activity_snapshot())
+}
+
+#[tauri::command]
+pub async fn pi_host_acknowledge_terminal(
+    state: State<'_, AppState>,
+    cwd: String,
+    session_id: String,
+) -> Result<bool, String> {
+    Ok(state
+        .hosts
+        .lock()
+        .await
+        .acknowledge_session_terminal(Path::new(&cwd), &session_id))
+}
+
+#[tauri::command]
 pub async fn shell_terminal_create(
     state: State<'_, AppState>,
     cwd: String,

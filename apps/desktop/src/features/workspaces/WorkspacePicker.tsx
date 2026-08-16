@@ -5,9 +5,11 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
   activateWorkspaceHost,
+  fetchHostActivity,
   prepareWorkspaceHost,
   rebindActiveWorkspaceHost,
   replayActiveHostReady,
+  subscribeHostActivity,
 } from "../../lib/bridge/tauri-transport";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
@@ -30,6 +32,15 @@ export function workspaceDisplayName(path: string): string {
 /** Renderer path identity uses only Host-canonical strings. */
 function samePath(a: string, b: string): boolean {
   return a === b;
+}
+
+/**
+ * The Rust Host pool lowercases workspace keys on Windows, and the activity
+ * snapshot returns each entry's Rust-canonicalized cwd — which can differ from
+ * the renderer's casing. Normalize both sides the same way for lookups.
+ */
+function normalizedActivityKey(path: string): string {
+  return /^win/i.test(navigator.platform) ? path.toLowerCase() : path;
 }
 
 export function addKnownWorkspace(list: string[], path: string): string[] {
@@ -59,6 +70,8 @@ export function WorkspacePicker() {
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
+  const workspaceActivities = useAppStore((s) => s.workspaceActivities);
+  const setWorkspaceActivities = useAppStore((s) => s.setWorkspaceActivities);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setSession = useAppStore((s) => s.setSession);
   const pushNotification = useAppStore((s) => s.pushNotification);
@@ -93,6 +106,46 @@ export function WorkspacePicker() {
       knownWorkspaces: next,
     }).catch(notifyDesktopSettingsSaveFailure);
   }, [currentCwd, knownWorkspaces, requestedCwd]);
+
+  // Live activity for every workspace Host in the pool, including background
+  // ones whose stdout is not routed to the renderer. Refetch on mount, on
+  // workspace/host changes, and whenever a Host emits a busy-change signal.
+  useEffect(() => {
+    let alive = true;
+    let latestRefresh = 0;
+    const refresh = async () => {
+      const request = ++latestRefresh;
+      const list = await fetchHostActivity();
+      if (!alive || request !== latestRefresh) return;
+      const activities = Object.fromEntries(
+        list.map((entry) => [
+          normalizedActivityKey(entry.cwd),
+          {
+            busy: entry.busy,
+            hasBeenBusy: entry.hasBeenBusy,
+            errorCount: entry.errorCount,
+            doneCount: entry.doneCount,
+            terminalSessions: entry.terminalSessions ?? {},
+          },
+        ]),
+      );
+      const current = useAppStore.getState();
+      const currentWorkspace = current.workspace;
+      if (currentWorkspace) {
+        const active = activities[normalizedActivityKey(currentWorkspace.canonicalCwd)];
+        if (active) {
+          current.mergeSessionTerminalSnapshots(currentWorkspace.id, active.terminalSessions);
+        }
+      }
+      setWorkspaceActivities(activities);
+    };
+    void refresh();
+    const unsubscribe = subscribeHostActivity(() => void refresh());
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [setWorkspaceActivities, workspace?.id, host?.hostInstanceId]);
 
   async function switchTo(cwd: string) {
     if (!host || pending) return;
@@ -239,6 +292,20 @@ export function WorkspacePicker() {
           <ul className="flex flex-col gap-0.5">
             {listed.map((path) => {
               const active = Boolean(currentCwd && samePath(currentCwd, path));
+              const activity = workspaceActivities[normalizedActivityKey(path)];
+              // Priority: red (unacknowledged failure) > green (busy) > gray
+              // (unacknowledged completion) > none. Returning to the sessions
+              // acknowledges their markers, so the dot downgrades over time.
+              const statusDot =
+                activity && activity.errorCount > 0
+                  ? "bg-danger status-dot-pulse"
+                  : activity?.busy
+                    ? "bg-success status-dot-pulse"
+                    : activity && activity.doneCount > 0
+                      ? "bg-muted status-dot-pulse"
+                      : active && !workspace?.servicesReady
+                        ? "bg-warning status-dot-pulse"
+                        : null;
               return (
                 <li
                   key={path}
@@ -263,12 +330,8 @@ export function WorkspacePicker() {
                       />
                     )}
                     <span className="min-w-0 flex-1 truncate">{workspaceDisplayName(path)}</span>
-                    {active && (
-                      <span
-                        className={`size-1.5 shrink-0 rounded-full ${
-                          workspace?.servicesReady ? "bg-success" : "bg-warning"
-                        }`}
-                      />
+                    {statusDot && (
+                      <span className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`} />
                     )}
                   </button>
                   {!active && (

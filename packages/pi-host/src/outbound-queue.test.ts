@@ -89,12 +89,7 @@ describe("OutboundWriter", () => {
     await out.drain();
 
     const parsed = fake.parsed();
-    expect(parsed.map((message) => message.sequence ?? message.id)).toEqual([
-      1,
-      2,
-      "rehydrate",
-      3,
-    ]);
+    expect(parsed.map((message) => message.sequence ?? message.id)).toEqual([1, 2, "rehydrate", 3]);
     expect(parsed[2]!.watermark).toBe(2);
     expect((parsed[1]!.payload as { phase: string }).phase).toBe("agentBusy");
     expect((parsed[3]!.payload as { phase: string }).phase).toBe("ready");
@@ -304,9 +299,7 @@ describe("OutboundWriter", () => {
     const parsed = fake.parsed();
     // The oversized frame was shed; the response survived.
     expect(parsed.some((message) => message.id === "keep-me")).toBe(true);
-    expect(
-      parsed.some((message) => message.event === "extensionUi.customFrame"),
-    ).toBe(false);
+    expect(parsed.some((message) => message.event === "extensionUi.customFrame")).toBe(false);
     // A sequence number was burned to force client-side gap recovery.
     const written = parsed.filter((message) => typeof message.sequence === "number").length;
     expect(lastSequence()).toBeGreaterThan(written);
@@ -394,6 +387,37 @@ describe("OutboundWriter", () => {
     expect(fake.parsed().some((message) => message.event === "session.runtimeChanged")).toBe(false);
     const written = fake.parsed().filter((message) => typeof message.sequence === "number").length;
     expect(lastSequence()).toBeGreaterThan(written);
+  });
+
+  it("keeps runtime transition edges ordered above the soft watermark", async () => {
+    const fake = fakeStream({ stalled: true });
+    const { out } = writer(fake.stream, { softWatermark: 1 });
+
+    // Hold the pump so both runtime transitions are queued under pressure.
+    out.enqueueEvent(identity, "extensionUi.notification", { message: "hold", level: "info" });
+    await settle();
+    out.enqueueEvent(identity, "session.runtimeChanged", {
+      sessionId: identity.sessionId,
+      sessionRevision: identity.sessionRevision,
+      state: "running",
+      updatedAt: 1,
+    });
+    out.enqueueEvent(identity, "session.runtimeChanged", {
+      sessionId: identity.sessionId,
+      sessionRevision: identity.sessionRevision,
+      state: "idle",
+      updatedAt: 2,
+    });
+
+    fake.unstall();
+    await out.drain();
+
+    expect(
+      fake
+        .parsed()
+        .filter((message) => message.event === "session.runtimeChanged")
+        .map((message) => (message.payload as { state: string }).state),
+    ).toEqual(["running", "idle"]);
   });
 
   it("replaces an oversized response with a bounded correlated failure", async () => {

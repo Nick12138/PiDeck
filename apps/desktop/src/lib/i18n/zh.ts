@@ -566,10 +566,6 @@ export const zh: Record<MessageKey, string> = {
   sidebarExpand: "展开侧栏",
   sidebarCollapse: "收起侧栏",
   sidebarResize: "调整侧栏宽度",
-  sidebarHostOffline: "Host 离线",
-  sidebarConnecting: "正在连接 Pi Host",
-  sidebarResync: "正在与 Host 重新同步",
-  sidebarLoadingSnapshots: "正在加载 Host 快照",
   notifCreateSessionFailed: "创建会话失败",
 
   // Workspaces
@@ -602,6 +598,10 @@ export const zh: Record<MessageKey, string> = {
   sessionsSaveName: "保存名称",
   sessionsCancelRename: "取消重命名",
   sessionsPinned: "已置顶",
+  sessionsStatusRunning: "运行中",
+  sessionsStatusQueued: "排队中",
+  sessionsStatusError: "失败",
+  sessionsStatusDone: "已完成",
   sessionsDecisionWaiting: "待处理决策：{count}",
   sessionsDecisionWaitingHighRisk: "待处理决策：{count}，包含高影响操作",
   sessionsActionsTitle: "会话操作",

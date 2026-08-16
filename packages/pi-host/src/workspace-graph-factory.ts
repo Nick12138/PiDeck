@@ -114,6 +114,10 @@ export class WorkspaceGraphFactory {
     this.sessionRuntimeCache.clearSessionRunId(session);
   }
 
+  publishCurrentRuntimeState(session: AgentSession, identity: HostIdentity): void {
+    this.sessionRuntimeCache.publishCurrentRuntimeState(session, identity);
+  }
+
   hasBusySessions(): boolean {
     return this.sessionRuntimeCache.hasBusySessions();
   }

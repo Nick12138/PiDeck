@@ -13,7 +13,7 @@
  *
  * - Above the soft watermark, coalescible events collapse in place:
  *   customFrame data for the same panel concatenates (ANSI streams compose),
- *   and latest-wins snapshots (status/widget/runtime/progress/queue/host
+ *   and latest-wins snapshots (status/widget/progress/queue/host
  *   status) replace their queued predecessor.
  * - Above the hard cap, droppable events are discarded outright. Any shed
  *   deliberately skips one sequence number so the frontend resets from an
@@ -109,8 +109,11 @@ function coalesceKeyFor(
       return `widget-attention:${sessionScope(identity)}:${String(p?.runId ?? "")}`;
     case "extensionUi.messageRendered":
       return `message-renderer:${sessionScope(identity)}:${String(p?.entryId ?? "")}`;
+    // Runtime transitions are edges, not replaceable snapshots. In particular,
+    // collapsing running -> idle would make the Rust workspace activity tracker
+    // see only idle and lose the completed-session marker for background Hosts.
     case "session.runtimeChanged":
-      return `runtime:${String(p?.sessionId ?? "")}`;
+      return null;
     case "package.progress":
       return "package.progress";
     case "agent.queueChanged":

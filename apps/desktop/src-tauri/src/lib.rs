@@ -161,6 +161,8 @@ pub fn run() {
             commands::pi_host_replay_ready,
             commands::pi_host_restart,
             commands::pi_host_status,
+            commands::pi_host_activity,
+            commands::pi_host_acknowledge_terminal,
             commands::shell_terminal_create,
             commands::shell_terminal_profiles,
             commands::shell_terminal_write,

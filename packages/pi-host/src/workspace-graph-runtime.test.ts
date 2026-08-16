@@ -413,6 +413,218 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     expect(snapshots.at(-1)).toMatchObject({ isIdle: true, isStreaming: false });
   });
 
+  it("publishes runtimeChanged(idle) after the settled prompt lock is released", () => {
+    const events: Array<{ event: HostEventName; payload: unknown }> = [];
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      packageRevision: 1,
+    };
+    const server = {
+      getIdentity: () => identity,
+      emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+        events.push({ event, payload });
+      }),
+      setPhase: vi.fn(),
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    const activeSession = fakeSession(false, ACTIVE_SESSION_ID);
+    const graph = {
+      workspaceId: WORKSPACE_ID,
+      canonicalCwd: "C:/workspace",
+      agentSession: activeSession,
+      sessionManager: {},
+      sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 5, false),
+      toolRevision: 1,
+      backgroundSessions: new Map(),
+    } as unknown as WorkspaceGraph;
+    Reflect.set(factory, "graph", graph);
+    const operationLock = factory.getSessionOperationLock(activeSession);
+    expect(operationLock.tryAcquire("in-flight-prompt")).toBe(true);
+
+    const internal = factory as unknown as {
+      handleAgentEvent: (graph: WorkspaceGraph, session: AgentSession, event: unknown) => void;
+    };
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_start" });
+
+    const running = events.find((entry) => entry.event === "session.runtimeChanged");
+    expect(running?.payload).toMatchObject({ sessionId: ACTIVE_SESSION_ID, state: "running" });
+
+    Reflect.set(activeSession, "isIdle", true);
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_settled" });
+
+    // The SDK settles before agent.prompt resolves, so the Host operation lock
+    // still makes the session busy at this point. Releasing the lock must be
+    // followed by an explicit runtime publication from prompt cleanup.
+    let runtimeChanges = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(runtimeChanges.at(-1)?.payload).toMatchObject({ state: "running" });
+    operationLock.release("in-flight-prompt");
+    factory.publishCurrentRuntimeState(activeSession, identity);
+
+    runtimeChanges = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(runtimeChanges.at(-1)?.payload).toMatchObject({
+      sessionId: ACTIVE_SESSION_ID,
+      state: "idle",
+    });
+  });
+
+  it("publishes a final assistant failure as error after prompt cleanup", () => {
+    const events: Array<{ event: HostEventName; payload: unknown }> = [];
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      packageRevision: 1,
+    };
+    const server = {
+      getIdentity: () => identity,
+      emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+        events.push({ event, payload });
+      }),
+      setPhase: vi.fn(),
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    const activeSession = fakeSession(false, ACTIVE_SESSION_ID);
+    const graph = {
+      workspaceId: WORKSPACE_ID,
+      canonicalCwd: "C:/workspace",
+      agentSession: activeSession,
+      sessionManager: {},
+      sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 5, false),
+      toolRevision: 1,
+      backgroundSessions: new Map(),
+    } as unknown as WorkspaceGraph;
+    Reflect.set(factory, "graph", graph);
+    const operationLock = factory.getSessionOperationLock(activeSession);
+    expect(operationLock.tryAcquire("failed-prompt")).toBe(true);
+    const internal = factory as unknown as {
+      handleAgentEvent: (graph: WorkspaceGraph, session: AgentSession, event: unknown) => void;
+    };
+
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_start" });
+    internal.handleAgentEvent(graph, activeSession, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "Provider failed",
+      },
+    });
+    Reflect.set(activeSession, "isIdle", true);
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_settled" });
+
+    operationLock.release("failed-prompt");
+    factory.publishCurrentRuntimeState(activeSession, identity);
+
+    let runtimeChanges = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(runtimeChanges.at(-1)?.payload).toMatchObject({
+      sessionId: ACTIVE_SESSION_ID,
+      state: "error",
+      error: "Provider failed",
+    });
+
+    // A later successful retry/run must clear the pending failure and settle
+    // normally instead of leaving the Session permanently red.
+    Reflect.set(activeSession, "isIdle", false);
+    expect(operationLock.tryAcquire("successful-prompt")).toBe(true);
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_start" });
+    internal.handleAgentEvent(graph, activeSession, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Recovered" }],
+        stopReason: "stop",
+      },
+    });
+    Reflect.set(activeSession, "isIdle", true);
+    internal.handleAgentEvent(graph, activeSession, { type: "agent_settled" });
+    operationLock.release("successful-prompt");
+    factory.publishCurrentRuntimeState(activeSession, identity);
+
+    runtimeChanges = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(runtimeChanges.at(-1)?.payload).toMatchObject({
+      sessionId: ACTIVE_SESSION_ID,
+      state: "idle",
+    });
+  });
+
+  it("emits runtimeChanged(idle) for a background session that settles", () => {
+    const events: Array<{ event: HostEventName; payload: unknown }> = [];
+    const identity: HostIdentity = {
+      hostInstanceId: HOST_ID,
+      workspaceId: WORKSPACE_ID,
+      workspaceRevision: 1,
+      sessionId: ACTIVE_SESSION_ID,
+      sessionRevision: 5,
+      packageRevision: 1,
+    };
+    const server = {
+      getIdentity: () => identity,
+      getPhase: vi.fn(() => "agentBusy"),
+      emitForIdentity: vi.fn((_identity: HostIdentity, event: HostEventName, payload: unknown) => {
+        events.push({ event, payload });
+      }),
+      setPhase: vi.fn(),
+      serviceGraphLock: new TryMutex(),
+    } as unknown as PiHostServer;
+    const factory = new WorkspaceGraphFactory({} as GraphFactoryDeps);
+    factory.bindServer(server);
+    const activeSession = fakeSession(true, ACTIVE_SESSION_ID);
+    const backgroundSession = fakeSession(false, BACKGROUND_SESSION_ID);
+    const background = {
+      sessionId: BACKGROUND_SESSION_ID,
+      sessionRevision: 3,
+      agentSession: backgroundSession,
+      sessionManager: {},
+      resourceLoader: {},
+      extensionsResult: null,
+      toolRevision: 1,
+      sessionSnapshot: fakeSessionSnapshot(BACKGROUND_SESSION_ID, 3, false),
+      unsubscribeAgent: vi.fn(),
+      extensionUiActivate: null,
+      extensionUiCleanup: vi.fn(),
+      extensionUiUpdateIdentity: null,
+      extensionUiReplayState: null,
+    } as unknown as BackgroundSessionRuntime;
+    const graph = {
+      workspaceId: WORKSPACE_ID,
+      canonicalCwd: "C:/workspace",
+      agentSession: activeSession,
+      sessionManager: {},
+      sessionSnapshot: fakeSessionSnapshot(ACTIVE_SESSION_ID, 5, true),
+      toolRevision: 1,
+      backgroundSessions: new Map([[BACKGROUND_SESSION_ID, background]]),
+    } as unknown as WorkspaceGraph;
+    Reflect.set(factory, "graph", graph);
+
+    const internal = factory as unknown as {
+      handleAgentEvent: (graph: WorkspaceGraph, session: AgentSession, event: unknown) => void;
+    };
+    internal.handleAgentEvent(graph, backgroundSession, { type: "agent_start" });
+    const running = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(running.at(-1)?.payload).toMatchObject({
+      sessionId: BACKGROUND_SESSION_ID,
+      state: "running",
+    });
+
+    Reflect.set(backgroundSession, "isIdle", true);
+    internal.handleAgentEvent(graph, backgroundSession, { type: "agent_settled" });
+
+    const runtimeChanges = events.filter((entry) => entry.event === "session.runtimeChanged");
+    expect(runtimeChanges.at(-1)?.payload).toMatchObject({
+      sessionId: BACKGROUND_SESSION_ID,
+      state: "idle",
+    });
+  });
+
   it("disposes a background session only after agent_settled", async () => {
     vi.useFakeTimers();
     try {

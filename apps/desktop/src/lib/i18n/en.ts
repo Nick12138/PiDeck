@@ -591,10 +591,6 @@ export const en = {
   sidebarExpand: "Expand sidebar",
   sidebarCollapse: "Collapse sidebar",
   sidebarResize: "Resize sidebar",
-  sidebarHostOffline: "Host offline",
-  sidebarConnecting: "Connecting to Pi Host",
-  sidebarResync: "Resynchronizing with Host",
-  sidebarLoadingSnapshots: "Loading Host snapshots",
   notifCreateSessionFailed: "Create session failed",
 
   // Workspaces
@@ -627,6 +623,10 @@ export const en = {
   sessionsSaveName: "Save name",
   sessionsCancelRename: "Cancel rename",
   sessionsPinned: "Pinned",
+  sessionsStatusRunning: "Running",
+  sessionsStatusQueued: "Queued",
+  sessionsStatusError: "Failed",
+  sessionsStatusDone: "Done",
   sessionsDecisionWaiting: "Waiting decisions: {count}",
   sessionsDecisionWaitingHighRisk: "Waiting decisions: {count}, includes high impact",
   sessionsActionsTitle: "Session actions",

@@ -6,6 +6,7 @@ import {
   createHostError,
   stripAttachmentReferenceBlocks,
   type HostError,
+  type HostIdentity,
   type ModelSummary,
   type QueueSnapshot,
   type SerializableImage,
@@ -70,9 +71,16 @@ function startDetachedPrompt(args: {
 }): string {
   let runStatePublished = false;
   let detachedTaskStarted = false;
-  const cleanup = () => {
+  const cleanup = (settledIdentity?: HostIdentity) => {
     args.operationLock.release(args.requestId);
     if (runStatePublished) {
+      // agent_settled fires before AgentSession.prompt() resolves. Until this
+      // lock is released, isSessionBusy() still reports running and suppresses
+      // the idle edge. Publish once more after release so completion reaches
+      // the desktop and the cross-workspace activity tracker.
+      if (settledIdentity) {
+        args.factory.publishCurrentRuntimeState(args.session, settledIdentity);
+      }
       args.factory.clearSessionRunId(args.session);
       if (args.server.getPhase() === "agentBusy" && !args.factory.hasBusySessions()) {
         args.server.setPhase("ready");
@@ -133,7 +141,7 @@ function startDetachedPrompt(args: {
           error: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        cleanup();
+        cleanup(completed ? runIdentity : undefined);
       }
       if (completed && provisionalTitle && titleSessionId) {
         await args.factory.refineActiveSessionName({

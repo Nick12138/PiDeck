@@ -52,6 +52,62 @@ export async function replayActiveHostReady(): Promise<boolean> {
   }
 }
 
+export type HostActivitySummary = {
+  cwd: string;
+  busy: boolean;
+  hasBeenBusy: boolean;
+  errorCount: number;
+  doneCount: number;
+  terminalSessions: Record<string, { state: "error" | "done"; generation: number }>;
+};
+
+/**
+ * Live per-workspace session activity from the Host pool. Background Hosts do
+ * not route their stdout to the renderer, so this snapshot is the only view
+ * the UI has into whether another workspace still has sessions running.
+ */
+export async function fetchHostActivity(): Promise<HostActivitySummary[]> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return [];
+  try {
+    return await invoke<HostActivitySummary[]>("pi_host_activity");
+  } catch (err) {
+    console.debug("[pi-host] activity snapshot unavailable", err);
+    return [];
+  }
+}
+
+/**
+ * Tells the Host pool that the user returned to a session, clearing its
+ * unacknowledged terminal marker so the workspace dot downgrades (e.g. red →
+ * green while another session still runs, gray → none once all are viewed).
+ */
+export async function acknowledgeSessionTerminal(cwd: string, sessionId: string): Promise<void> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return;
+  try {
+    await invoke("pi_host_acknowledge_terminal", { cwd, sessionId });
+  } catch (err) {
+    console.debug("[pi-host] acknowledge terminal unavailable", err);
+  }
+}
+
+/** Re-invoked whenever any Host's busy set changes (a session started/settled). */
+export function subscribeHostActivity(onChange: () => void): () => void {
+  let unlisten: (() => void) | undefined;
+  void (async () => {
+    const { isTauri } = await import("@tauri-apps/api/core");
+    if (!isTauri()) return;
+    const { listen } = await import("@tauri-apps/api/event");
+    try {
+      unlisten = await listen("pi-host-activity", () => onChange());
+    } catch (err) {
+      console.debug("[pi-host] activity subscription unavailable", err);
+    }
+  })();
+  return () => unlisten?.();
+}
+
 /**
  * Tauri IPC transport. Falls back to a mock for browser-only Vite dev
  * when Tauri APIs are unavailable.

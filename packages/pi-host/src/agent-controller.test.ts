@@ -5,10 +5,7 @@ import { createAgentHandlers, summarizeModel } from "./agent-controller.js";
 import { AgentOperationLock, TryMutex } from "./locks.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
 import type { PiHostServer } from "./server.js";
-import type {
-  BackgroundSessionRuntime,
-  WorkspaceGraphFactory,
-} from "./workspace-graph-factory.js";
+import type { BackgroundSessionRuntime, WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { getActiveExtensionCommandOrigin } from "./extension-invocation-context.js";
 import {
   beginQueueTransaction,
@@ -68,9 +65,7 @@ describe("summarizeModel", () => {
         }),
       ).thinkingLevels,
     ).toEqual(["high", "max"]);
-    expect(summarizeModel(model({ id: "grok-composer-2.5-fast" })).thinkingLevels).toEqual([
-      "off",
-    ]);
+    expect(summarizeModel(model({ id: "grok-composer-2.5-fast" })).thinkingLevels).toEqual(["off"]);
   });
 });
 
@@ -158,35 +153,27 @@ function stableHandlerFixture(wait: Promise<void>) {
     getGraph: () => graph,
     getServer: () => server,
     getSessionOperationLock: () => sessionOperationLock,
-    isSessionBusy: (target: AgentSession) =>
-      !target.isIdle || sessionOperationLock.isHeld(),
+    isSessionBusy: (target: AgentSession) => !target.isIdle || sessionOperationLock.isHeld(),
     disposeSettledBackgroundRuntime: vi.fn(async () => {}),
     beginQueueTransaction,
     finishQueueTransaction: (target: AgentSession) => {
       const result = finishQueueTransaction(target);
       if (result.changed) {
-        server.emitForIdentity(
-          server.getIdentity(),
-          "agent.queueChanged",
-          result.queue,
-        );
+        server.emitForIdentity(server.getIdentity(), "agent.queueChanged", result.queue);
       }
       return result.queue;
     },
     syncQueueState: (target: AgentSession, force = false) => {
       const observed = observeQueueUpdate(target);
       if (!observed.suppressed && (observed.changed || force)) {
-        server.emitForIdentity(
-          server.getIdentity(),
-          "agent.queueChanged",
-          observed.queue,
-        );
+        server.emitForIdentity(server.getIdentity(), "agent.queueChanged", observed.queue);
       }
       return observed.queue;
     },
     hasBusySessions: () => false,
     setSessionRunId: vi.fn(),
     clearSessionRunId: vi.fn(),
+    publishCurrentRuntimeState: vi.fn(),
     setActiveSessionName: vi.fn(),
     refineActiveSessionName: vi.fn(async () => {}),
     currentRunId: null,
@@ -258,7 +245,7 @@ describe("session-bound agent handlers", () => {
 
     expect("error" in outcome).toBe(false);
     expect(fixture.session.followUp).toHaveBeenCalledWith(
-      expect.stringContaining("<pideck-attachments version=\"1\">"),
+      expect.stringContaining('<pideck-attachments version="1">'),
       undefined,
     );
     expect(fixture.session.followUp).toHaveBeenCalledWith(
@@ -275,6 +262,34 @@ describe("session-bound agent handlers", () => {
 });
 
 describe("agent.prompt startup", () => {
+  it("publishes the settled runtime only after releasing the prompt lock", async () => {
+    const gate = deferred();
+    const fixture = stableHandlerFixture(gate.promise);
+    const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
+
+    const outcome = await handler({
+      id: "prompt-runtime-settle",
+      context: {},
+      params: { text: "finish normally" },
+    } as never);
+
+    expect("result" in outcome).toBe(true);
+    await vi.waitFor(() => expect(fixture.session.prompt).toHaveBeenCalledOnce());
+    expect(fixture.sessionOperationLock.isHeld()).toBe(true);
+    expect(fixture.factory.publishCurrentRuntimeState).not.toHaveBeenCalled();
+
+    (fixture.session as unknown as { isIdle: boolean }).isIdle = true;
+    gate.resolve();
+
+    await vi.waitFor(() =>
+      expect(fixture.factory.publishCurrentRuntimeState).toHaveBeenCalledExactlyOnceWith(
+        fixture.session,
+        fixture.server.getIdentity(),
+      ),
+    );
+    expect(fixture.sessionOperationLock.isHeld()).toBe(false);
+  });
+
   it("releases operation state when provisional title persistence throws", async () => {
     const gate = deferred();
     gate.resolve();
@@ -294,9 +309,7 @@ describe("agent.prompt startup", () => {
     ).rejects.toThrow("session title persistence failed");
 
     expect(fixture.sessionOperationLock.isHeld()).toBe(false);
-    expect(fixture.factory.clearSessionRunId).toHaveBeenCalledExactlyOnceWith(
-      fixture.session,
-    );
+    expect(fixture.factory.clearSessionRunId).toHaveBeenCalledExactlyOnceWith(fixture.session);
     expect(fixture.factory.currentRunId).toBeNull();
     expect(fixture.server.getPhase()).toBe("ready");
     expect(fixture.session.prompt).not.toHaveBeenCalled();
@@ -389,22 +402,14 @@ describe("agent.prompt extension command provenance", () => {
             }
           : undefined,
     };
-    let duringPrompt:
-      | { runId: string; invocation: string }
-      | undefined;
-    let afterAwait:
-      | { runId: string; invocation: string }
-      | undefined;
+    let duringPrompt: { runId: string; invocation: string } | undefined;
+    let afterAwait: { runId: string; invocation: string } | undefined;
     session.prompt = vi.fn(async () => {
       const origin = getActiveExtensionCommandOrigin(fixture.session);
-      duringPrompt = origin
-        ? { runId: origin.runId, invocation: origin.invocation }
-        : undefined;
+      duringPrompt = origin ? { runId: origin.runId, invocation: origin.invocation } : undefined;
       await gate.promise;
       const resumed = getActiveExtensionCommandOrigin(fixture.session);
-      afterAwait = resumed
-        ? { runId: resumed.runId, invocation: resumed.invocation }
-        : undefined;
+      afterAwait = resumed ? { runId: resumed.runId, invocation: resumed.invocation } : undefined;
     });
 
     const handler = createAgentHandlers(fixture.factory)["agent.prompt"]!;
@@ -465,13 +470,7 @@ describe("agent.abort with queued messages", () => {
     expect("error" in outcome).toBe(false);
     // Queue must be cleared BEFORE abort (the SDK auto-runs the next queued
     // follow-up when a run ends) and re-added afterwards in original order.
-    expect(order).toEqual([
-      "clearQueue",
-      "abort",
-      "steer:s1",
-      "followUp:f1",
-      "followUp:f2",
-    ]);
+    expect(order).toEqual(["clearQueue", "abort", "steer:s1", "followUp:f1", "followUp:f2"]);
     expect(fixture.server.emitForIdentity).not.toHaveBeenCalled();
     expect(fixture.serviceGraphLock.isHeld()).toBe(false);
   });
@@ -800,12 +799,10 @@ describe("agent.compact concurrency", () => {
     const gate = deferred();
     const fixture = stableHandlerFixture(gate.promise);
     (fixture.session as unknown as { isIdle: boolean }).isIdle = isIdle;
-    (fixture.session as unknown as { compact: unknown }).compact = vi.fn(
-      async () => {
-        await compactWait;
-        return { tokensBefore: 10, tokensAfter: 5 };
-      },
-    );
+    (fixture.session as unknown as { compact: unknown }).compact = vi.fn(async () => {
+      await compactWait;
+      return { tokensBefore: 10, tokensAfter: 5 };
+    });
     return { ...fixture, gate };
   }
 
@@ -972,15 +969,15 @@ describe("agent.navigateTree", () => {
     const gate = deferred();
     const fixture = stableHandlerFixture(gate.promise);
     (fixture.session as unknown as { isIdle: boolean }).isIdle = isIdle;
-    (fixture.session as unknown as { navigateTree: unknown }).navigateTree = vi.fn(
-      async () => ({ cancelled: false, editorText: "picked user text" }),
-    );
+    (fixture.session as unknown as { navigateTree: unknown }).navigateTree = vi.fn(async () => ({
+      cancelled: false,
+      editorText: "picked user text",
+    }));
     return { ...fixture, gate };
   }
 
   function navigateMock(fixture: ReturnType<typeof navigateFixture>) {
-    return (fixture.session as unknown as { navigateTree: ReturnType<typeof vi.fn> })
-      .navigateTree;
+    return (fixture.session as unknown as { navigateTree: ReturnType<typeof vi.fn> }).navigateTree;
   }
 
   it("rejects while the session is busy", async () => {

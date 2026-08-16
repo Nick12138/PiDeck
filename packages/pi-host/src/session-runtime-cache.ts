@@ -140,6 +140,7 @@ export type SessionRuntimeCacheContext = {
 
 export class SessionRuntimeCache {
   private readonly runtimeStates = new WeakMap<AgentSession, SessionRuntimeState>();
+  private readonly pendingRuntimeErrors = new WeakMap<AgentSession, string>();
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
   private readonly disposedSessions = new WeakSet<AgentSession>();
@@ -165,6 +166,10 @@ export class SessionRuntimeCache {
 
   clearSessionRunId(session: AgentSession): void {
     this.runIds.delete(session);
+  }
+
+  publishCurrentRuntimeState(session: AgentSession, identity: HostIdentity): void {
+    this.publishRuntimeState(session, identity);
   }
 
   beginQueueTransaction(session: AgentSession): QueueSnapshot {
@@ -506,6 +511,7 @@ export class SessionRuntimeCache {
 
     const runId = this.runIds.get(sourceSession) ?? this.context.getCurrentRunId() ?? randomUUID();
     const serialized = normalizeAgentEvent(event);
+    this.observeRuntimeOutcome(sourceSession, eventType, serialized);
     if (active) {
       server.emitForIdentity(eventIdentity, "agent.event", { runId, event: serialized });
     }
@@ -567,7 +573,39 @@ export class SessionRuntimeCache {
     if (session.getSteeringMessages().length > 0 || session.getFollowUpMessages().length > 0) {
       return "queued";
     }
+    if (this.pendingRuntimeErrors.has(session)) return "error";
     return "idle";
+  }
+
+  private observeRuntimeOutcome(
+    session: AgentSession,
+    eventType: string,
+    serializedEvent: Record<string, unknown>,
+  ): void {
+    if (eventType === "agent_start") {
+      this.pendingRuntimeErrors.delete(session);
+      return;
+    }
+    if (eventType === "error") {
+      this.pendingRuntimeErrors.set(session, runtimeErrorMessage(serializedEvent));
+      return;
+    }
+    if (eventType === "auto_retry_end" && serializedEvent.success === false) {
+      this.pendingRuntimeErrors.set(session, runtimeErrorMessage(serializedEvent));
+      return;
+    }
+    if (eventType !== "message_end") return;
+    const message = recordValue(serializedEvent.message);
+    if (message?.role !== "assistant") return;
+    const stopReason = typeof message.stopReason === "string" ? message.stopReason : undefined;
+    const errorMessage = nonEmptyString(message.errorMessage);
+    if (stopReason !== "aborted" && (stopReason === "error" || errorMessage)) {
+      this.pendingRuntimeErrors.set(session, errorMessage ?? "Agent error");
+    } else {
+      // A successful retry emits another assistant message_end before the
+      // Session settles. It supersedes the earlier failed attempt.
+      this.pendingRuntimeErrors.delete(session);
+    }
   }
 
   private publishQueueSnapshot(session: AgentSession, queue: QueueSnapshot): void {
@@ -642,9 +680,10 @@ export class SessionRuntimeCache {
       eventType === "error" ? "error" : this.runtimeStateForSession(session);
     if (this.runtimeStates.get(session) === state && state !== "error") return;
     this.runtimeStates.set(session, state);
-    const rawError = serializedEvent.error ?? serializedEvent.message;
     const error =
-      state === "error" ? (typeof rawError === "string" ? rawError : "Agent error") : undefined;
+      state === "error"
+        ? (this.pendingRuntimeErrors.get(session) ?? runtimeErrorMessage(serializedEvent))
+        : undefined;
     server.emitForIdentity(identity, "session.runtimeChanged", {
       sessionId: identity.sessionId,
       sessionRevision: identity.sessionRevision,
@@ -653,4 +692,28 @@ export class SessionRuntimeCache {
       ...(error ? { error } : {}),
     });
   }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function runtimeErrorMessage(event: Record<string, unknown>): string {
+  const message = recordValue(event.message);
+  const nestedError = recordValue(event.error);
+  return (
+    nonEmptyString(event.finalError) ??
+    nonEmptyString(event.error) ??
+    nonEmptyString(event.message) ??
+    nonEmptyString(message?.errorMessage) ??
+    nonEmptyString(nestedError?.errorMessage) ??
+    nonEmptyString(nestedError?.message) ??
+    "Agent error"
+  );
 }

@@ -35,6 +35,15 @@ import {
   type SessionCatalogState,
   type SessionRuntimeState,
 } from "./session-catalog";
+import {
+  mergeTerminalSnapshots,
+  mergeTerminalState,
+  readTerminalStates,
+  removeTerminalStates,
+  type SessionTerminalSnapshot,
+  type SessionTerminalState,
+  type SessionTerminalStates,
+} from "../session-terminal-states";
 import { sidebarPref } from "../sidebar-prefs";
 import type { AppUpdate } from "../updater";
 import {
@@ -111,6 +120,19 @@ export type AppNotification = {
   read: boolean;
 };
 
+/**
+ * Aggregated session activity for one workspace, driving its status dot.
+ * Priority is red (unacknowledged failure) > green/yellow (busy) > gray
+ * (unacknowledged completion) > none.
+ */
+export type WorkspaceActivity = {
+  busy: boolean;
+  hasBeenBusy: boolean;
+  errorCount: number;
+  doneCount: number;
+  terminalSessions: Record<string, SessionTerminalSnapshot>;
+};
+
 type AppUpdatePhase =
   | { state: "idle" }
   | { state: "checking" }
@@ -179,6 +201,11 @@ export type AppState = EpochState & {
   thinkingLevels: string[];
   providerConfigRevision: number;
   sessionCatalog: SessionCatalogState;
+  /** Last explicit session.runtimeChanged state per session. Session snapshots
+   * may arrive first and must not erase the busy-to-terminal event edge. */
+  sessionRuntimeStates: Record<string, SessionRuntimeState>;
+  /** Unseen terminal (done/error) markers per session, keyed by workspace. */
+  sessionTerminalStates: SessionTerminalStates;
   /** True while the session is pinned to a tree-navigated position, so an empty
    *  transcript at the start of a branch is not mistaken for a new conversation. */
   sessionTreeNavigated: boolean;
@@ -245,6 +272,24 @@ export type AppState = EpochState & {
     error?: string,
     updatedAt?: number,
   ) => void;
+  /** Acknowledge a session's terminal (done/error) marker when the user returns to it. */
+  acknowledgeSessionTerminalState: (
+    workspaceId: string,
+    sessionId: string,
+    state: SessionTerminalState["state"],
+  ) => void;
+  mergeSessionTerminalSnapshots: (
+    workspaceId: string,
+    snapshots: Readonly<Record<string, SessionTerminalSnapshot>>,
+  ) => void;
+  /** Drop terminal markers for removed sessions (permanent delete / cleanup). */
+  removeSessionTerminalStates: (workspaceId: string, sessionIds: readonly string[]) => void;
+  /**
+   * Live per-workspace session activity (any session running/queued) from the
+   * Host pool, keyed by canonical cwd. Drives the workspace list status dots.
+   */
+  workspaceActivities: Record<string, WorkspaceActivity>;
+  setWorkspaceActivities: (activities: Record<string, WorkspaceActivity>) => void;
   setDraftTextLocal: (target: DraftTarget, text: string) => number;
   mergeHydratedDrafts: (
     canonicalCwd: string,
@@ -321,6 +366,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   thinkingLevels: [],
   providerConfigRevision: 0,
   sessionCatalog: emptySessionCatalog(),
+  sessionRuntimeStates: {},
+  sessionTerminalStates: readTerminalStates(),
+  workspaceActivities: {},
   sessionTreeNavigated: false,
   draftTexts: {},
   draftTargets: {},
@@ -442,6 +490,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       thinkingLevels: [],
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
+      sessionRuntimeStates: {},
       hostFatal: null,
       desynchronized: false,
       desyncReason: undefined,
@@ -527,8 +576,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     const current = get();
     const previousSession = current.session;
     const next = epochApplySession(epochSlice(current), session);
+    // Switching away must not clear a still-busy previous session's live dot:
+    // it keeps running in the background, so only a non-busy previous session
+    // (idle/error/inactive) is demoted to "inactive". Preserving the busy
+    // state also keeps the busy→idle transition that creates the terminal
+    // (done/error) marker when the background run eventually settles.
+    const previousEntry = previousSession
+      ? current.sessionCatalog.entries[previousSession.sessionId]
+      : undefined;
+    const previousBusy =
+      previousEntry?.runtimeState === "running" ||
+      previousEntry?.runtimeState === "queued" ||
+      previousEntry?.runtimeState === "starting";
     const baseCatalog =
-      previousSession && previousSession.sessionId !== session?.sessionId
+      previousSession && previousSession.sessionId !== session?.sessionId && !previousBusy
         ? setCatalogRuntimeState(current.sessionCatalog, previousSession.sessionId, "inactive")
         : current.sessionCatalog;
     const sessionCatalog =
@@ -898,15 +959,114 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessionCatalog: updateCatalogInfo(state.sessionCatalog, sessionId, name),
     })),
   setSessionRuntimeState: (sessionId, runtimeState, error, updatedAt) =>
-    set((state) => ({
-      sessionCatalog: setCatalogRuntimeState(
+    set((state) => {
+      // A plain idle announcement for a session that was never busy (freshly
+      // opened or restored) is not a completion — only a busy→idle transition
+      // creates the done marker, so idle restored sessions never get one.
+      const previousRuntime = state.sessionRuntimeStates[sessionId];
+      const sessionRuntimeStates = {
+        ...state.sessionRuntimeStates,
+        [sessionId]: runtimeState,
+      };
+      const sessionCatalog = setCatalogRuntimeState(
         state.sessionCatalog,
         sessionId,
         runtimeState,
         error,
         updatedAt,
-      ),
-    })),
+      );
+      const workspaceId = state.workspace?.id;
+      if (!workspaceId) return { sessionCatalog, sessionRuntimeStates };
+      let sessionTerminalStates = state.sessionTerminalStates;
+      const current = sessionTerminalStates[workspaceId]?.[sessionId];
+      if (runtimeState === "running" || runtimeState === "queued") {
+        // A new run supersedes any stale unacknowledged terminal marker so a
+        // re-run clears a previous failure/completion dot.
+        if (current && !current.acknowledged) {
+          sessionTerminalStates = mergeTerminalState(
+            sessionTerminalStates,
+            workspaceId,
+            sessionId,
+            { state: current.state, acknowledged: true },
+          );
+        }
+      } else if (runtimeState === "error") {
+        sessionTerminalStates = mergeTerminalState(sessionTerminalStates, workspaceId, sessionId, {
+          state: "error",
+          // Every failure shows its dot until the user returns to the session,
+          // even when the failing session is the one in focus.
+          acknowledged: false,
+        });
+      } else if (runtimeState === "idle") {
+        const wasBusy =
+          previousRuntime === "running" ||
+          previousRuntime === "queued" ||
+          previousRuntime === "starting";
+        // The idle event after an error is the run settling; keep the
+        // unacknowledged error marker so a failed session stays red.
+        if (current && current.state === "error" && !current.acknowledged) {
+          // keep the error marker
+        } else if (wasBusy) {
+          sessionTerminalStates = mergeTerminalState(
+            sessionTerminalStates,
+            workspaceId,
+            sessionId,
+            { state: "done", acknowledged: false },
+          );
+        }
+      }
+      return {
+        sessionCatalog,
+        sessionRuntimeStates,
+        ...(sessionTerminalStates !== state.sessionTerminalStates ? { sessionTerminalStates } : {}),
+      };
+    }),
+  acknowledgeSessionTerminalState: (workspaceId, sessionId, state) =>
+    set((current) => {
+      const entry = current.sessionTerminalStates[workspaceId]?.[sessionId];
+      if (entry?.acknowledged) return {};
+      return {
+        sessionTerminalStates: mergeTerminalState(
+          current.sessionTerminalStates,
+          workspaceId,
+          sessionId,
+          {
+            state,
+            acknowledged: true,
+            ...(entry?.generation ? { generation: entry.generation } : {}),
+          },
+        ),
+      };
+    }),
+  mergeSessionTerminalSnapshots: (workspaceId, snapshots) =>
+    set((state) => {
+      const sessionTerminalStates = mergeTerminalSnapshots(
+        state.sessionTerminalStates,
+        workspaceId,
+        snapshots,
+      );
+      return sessionTerminalStates === state.sessionTerminalStates ? {} : { sessionTerminalStates };
+    }),
+  removeSessionTerminalStates: (workspaceId, sessionIds) =>
+    set((state) => {
+      const sessionTerminalStates = removeTerminalStates(
+        state.sessionTerminalStates,
+        workspaceId,
+        sessionIds,
+      );
+      const sessionRuntimeStates = { ...state.sessionRuntimeStates };
+      let removedRuntime = false;
+      for (const sessionId of sessionIds) {
+        if (!(sessionId in sessionRuntimeStates)) continue;
+        delete sessionRuntimeStates[sessionId];
+        removedRuntime = true;
+      }
+      return {
+        ...(sessionTerminalStates !== state.sessionTerminalStates ? { sessionTerminalStates } : {}),
+        ...(removedRuntime ? { sessionRuntimeStates } : {}),
+      };
+    }),
+  setWorkspaceActivities: (workspaceActivities) => set({ workspaceActivities }),
   setDraftTextLocal: (target, text) => {
     const key = draftKeyForTarget(target);
     let version = 0;
@@ -1066,6 +1226,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       thinkingLevels: [],
       providerConfigRevision: 0,
       sessionCatalog: emptySessionCatalog(),
+      sessionRuntimeStates: {},
       hostFatal: reason,
       rehydrating: false,
     });

@@ -163,6 +163,7 @@ function mockFactory(opts: {
     hasBusySessions: () => opts.agentBusy === true || !g.agentSession.isIdle,
     setSessionRunId: () => {},
     clearSessionRunId: () => {},
+    publishCurrentRuntimeState: vi.fn(),
     invalidateRetainedRuntimeCaches: vi.fn(async () => {}),
     setActiveSessionName: vi.fn((name: string) => {
       g.agentSession.setSessionName(name);
