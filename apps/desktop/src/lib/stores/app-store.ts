@@ -125,7 +125,7 @@ export type AppNotification = {
  * Priority is red (unacknowledged failure) > green/yellow (busy) > gray
  * (unacknowledged completion) > none.
  */
-export type WorkspaceActivity = {
+type WorkspaceActivity = {
   busy: boolean;
   hasBeenBusy: boolean;
   errorCount: number;

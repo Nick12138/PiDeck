@@ -8,7 +8,7 @@
  * workspace so switching workspaces never loses another workspace's markers.
  */
 
-export type SessionTerminalNotice = "done" | "error";
+type SessionTerminalNotice = "done" | "error";
 
 export type SessionTerminalState = {
   state: SessionTerminalNotice;
@@ -63,7 +63,7 @@ export function readTerminalStates(): SessionTerminalStates {
   }
 }
 
-export function writeTerminalStates(states: SessionTerminalStates): void {
+function writeTerminalStates(states: SessionTerminalStates): void {
   try {
     globalThis.localStorage?.setItem(TERMINAL_STATES_KEY, JSON.stringify(states));
   } catch {
