@@ -1400,7 +1400,7 @@ export function Composer({
       >
         <ExtensionStatusStrip />
         <div
-          className={`chat-composer-surface rounded-xl border bg-surface-raised p-2 shadow-sm transition-colors ${
+          className={`chat-composer-surface rounded-xl border-[1.5px] bg-surface-raised p-2 shadow-sm transition-colors ${
             dragOver ? "border-accent" : "border-border"
           }`}
           onDragOver={(event) => {

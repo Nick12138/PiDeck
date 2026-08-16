@@ -789,7 +789,7 @@ html[data-theme-family="apple"] .chat-composer-surface {
 html[data-theme-family="apple"] .chat-composer-surface:focus-within {
   border-color: color-mix(in srgb, var(--color-focus) 40%, var(--color-border));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-focus) 8%, transparent),
+    0 0 0 1.5px color-mix(in srgb, var(--color-focus) 8%, transparent),
     var(--theme-composer-shadow);
 }
 
@@ -1284,8 +1284,21 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-focus) 72%, transparent);
+  outline: 1.5px solid color-mix(in srgb, var(--color-focus) 72%, transparent);
   outline-offset: 1px;
+}
+
+/* Settings fields: the global 2px outline reads as a thick blue edge;
+   reduce to 1.3px for a thinner but still visible indicator. */
+[data-settings-content]
+  :where(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+        [type="file"]
+      ):not([type="hidden"]),
+    select,
+    textarea
+  ):focus-visible {
+  outline-width: 1.5px;
 }
 
 .chat-composer-input:focus-visible {

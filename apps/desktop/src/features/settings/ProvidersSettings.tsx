@@ -101,7 +101,7 @@ function NumberField({
       <input
         type="number"
         min={1}
-        className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+        className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-focus"
         value={text}
         onChange={(event) => setText(event.target.value)}
         onBlur={() => {
@@ -1154,7 +1154,7 @@ export function ProvidersSettings() {
                             <label className="flex flex-col gap-1 text-[11px] text-muted">
                               {t("providersDisplayName")}
                               <input
-                                className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+                                className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-focus"
                                 value={model.name}
                                 onChange={(event) =>
                                   updateModel(model.id, { name: event.target.value })
@@ -1268,12 +1268,12 @@ export function ProvidersSettings() {
                   {Object.entries(draft.headers).map(([key, value]) => (
                     <div key={key} className="grid grid-cols-[1fr_1.5fr_32px] gap-2">
                       <input
-                        className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs"
+                        className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs outline-none focus:border-focus"
                         value={key}
                         onChange={(event) => updateHeader(key, event.target.value, value)}
                       />
                       <input
-                        className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs"
+                        className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-xs outline-none focus:border-focus"
                         value={value}
                         onChange={(event) => updateHeader(key, key, event.target.value)}
                       />
