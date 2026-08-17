@@ -300,6 +300,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "system.getStatus":
     case "system.rehydrate":
     case "system.shutdown":
+    case "piSettings.get":
     case "workspace.getCurrent":
     case "git.getStatus":
     case "git.listBranches":
@@ -622,6 +623,39 @@ export function validateRequestParams<M extends HostMethod>(
         isNonEmptyString(params.modelId)
         ? ok(params)
         : fail("invalid model.setCurrent params", { method });
+    case "piSettings.patch":
+      return exactObject(
+        params,
+        [],
+        [
+          "defaultProvider",
+          "defaultModel",
+          "defaultThinkingLevel",
+          "retryMaxRetries",
+          "defaultProjectTrust",
+          "steeringMode",
+          "followUpMode",
+        ],
+      ) &&
+        (params.defaultProvider === undefined || isNonEmptyString(params.defaultProvider)) &&
+        (params.defaultModel === undefined || isNonEmptyString(params.defaultModel)) &&
+        (params.defaultThinkingLevel === undefined ||
+          ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+            String(params.defaultThinkingLevel),
+          )) &&
+        (params.retryMaxRetries === undefined ||
+          (typeof params.retryMaxRetries === "number" &&
+            Number.isSafeInteger(params.retryMaxRetries) &&
+            params.retryMaxRetries >= 0 &&
+            params.retryMaxRetries <= 20)) &&
+        (params.defaultProjectTrust === undefined ||
+          ["ask", "always", "never"].includes(String(params.defaultProjectTrust))) &&
+        (params.steeringMode === undefined ||
+          ["all", "one-at-a-time"].includes(String(params.steeringMode))) &&
+        (params.followUpMode === undefined ||
+          ["all", "one-at-a-time"].includes(String(params.followUpMode)))
+        ? ok(params)
+        : fail("invalid piSettings.patch params", { method });
     case "model.setThinkingLevel":
       return exactObject(params, ["level"]) && isNonEmptyString(params.level)
         ? ok(params)

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { ExtensionDecisionPresentation, TerminalProfileId } from "@pideck/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
+import { DockToggleButton } from "../../components/DockToggleButton";
 import { SectionHeader } from "../../components/SectionHeader";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
@@ -28,6 +29,7 @@ import { PackagesPage } from "../packages/PackagesPage";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { PiSettings } from "./PiSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
 
@@ -186,6 +188,8 @@ function GeneralSettings() {
               </div>
             </div>
           </section>
+
+          <PiSettings />
 
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">
@@ -369,6 +373,7 @@ export function SettingsPage({
   const t = useT();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const providersDirty = useAppStore((s) => s.providersDirty);
+  const dockOpen = useAppStore((s) => s.dockOpen);
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -400,7 +405,15 @@ export function SettingsPage({
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-surface" data-settings-shell>
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-surface" data-settings-shell>
+      <div
+        className={`absolute top-[12.5px] z-30 transition-[right] duration-200 ease-out ${
+          dockOpen ? "right-2" : "right-[140px]"
+        }`}
+        data-settings-dock-toggle
+      >
+        <DockToggleButton />
+      </div>
       <aside
         className="flex w-52 shrink-0 flex-col border-r border-border bg-sidebar"
         data-settings-sidebar

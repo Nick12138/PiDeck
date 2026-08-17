@@ -1589,6 +1589,34 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isRehydrateSnapshot(result) ? null : "invalid RehydrateSnapshot";
     case "system.shutdown":
       return exactAccepted() ? null : "shutdown result must be { accepted: true }";
+    case "piSettings.get":
+    case "piSettings.patch":
+      return isPlainObject(result) &&
+        hasExactKeys(
+          result,
+          [
+            "defaultThinkingLevel",
+            "retryMaxRetries",
+            "defaultProjectTrust",
+            "steeringMode",
+            "followUpMode",
+            "models",
+          ],
+          ["defaultProvider", "defaultModel"],
+        ) &&
+        (result.defaultProvider === undefined || isString(result.defaultProvider)) &&
+        (result.defaultModel === undefined || isString(result.defaultModel)) &&
+        ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+          String(result.defaultThinkingLevel),
+        ) &&
+        isSafeRevision(result.retryMaxRetries) &&
+        ["ask", "always", "never"].includes(String(result.defaultProjectTrust)) &&
+        ["all", "one-at-a-time"].includes(String(result.steeringMode)) &&
+        ["all", "one-at-a-time"].includes(String(result.followUpMode)) &&
+        Array.isArray(result.models) &&
+        result.models.every(isModelSummary)
+        ? null
+        : "invalid Pi settings result";
     case "workspace.setCurrent":
       return isPlainObject(result) &&
         hasExactKeys(result, ["workspace"], ["session"]) &&

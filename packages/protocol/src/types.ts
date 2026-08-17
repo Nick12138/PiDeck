@@ -234,6 +234,29 @@ export type ProviderApi =
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+export type PiSettingsModel = ModelSummary;
+
+export type PiSettingsSnapshot = {
+  defaultProvider?: string;
+  defaultModel?: string;
+  defaultThinkingLevel: ThinkingLevel;
+  retryMaxRetries: number;
+  defaultProjectTrust: "ask" | "always" | "never";
+  steeringMode: "all" | "one-at-a-time";
+  followUpMode: "all" | "one-at-a-time";
+  models: PiSettingsModel[];
+};
+
+export type PiSettingsPatch = {
+  defaultProvider?: string;
+  defaultModel?: string;
+  defaultThinkingLevel?: ThinkingLevel;
+  retryMaxRetries?: number;
+  defaultProjectTrust?: "ask" | "always" | "never";
+  steeringMode?: "all" | "one-at-a-time";
+  followUpMode?: "all" | "one-at-a-time";
+};
+
 export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
 
 export type ProviderModelConfig = {

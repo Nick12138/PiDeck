@@ -4,6 +4,8 @@ export const HOST_METHODS = [
   "system.getStatus",
   "system.rehydrate",
   "system.shutdown",
+  "piSettings.get",
+  "piSettings.patch",
   "workspace.setCurrent",
   "workspace.getCurrent",
   "workspace.searchFiles",
@@ -145,6 +147,8 @@ export type HostOnlyMethod =
   | "system.getStatus"
   | "system.rehydrate"
   | "system.shutdown"
+  | "piSettings.get"
+  | "piSettings.patch"
   | "provider.list"
   | "provider.setEnabled"
   | "provider.save"
@@ -276,6 +280,8 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "system.getStatus": "host",
   "system.rehydrate": "host",
   "system.shutdown": "host",
+  "piSettings.get": "host",
+  "piSettings.patch": "host",
   "workspace.setCurrent": "workspace",
   "workspace.getCurrent": "workspace",
   "workspace.searchFiles": "workspace",

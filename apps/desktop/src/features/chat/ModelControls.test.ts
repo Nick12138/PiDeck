@@ -6,6 +6,7 @@ import {
   currentModelLabel,
   includeCurrentModel,
   modelMenuMaxWidth,
+  modelMenuPlacement,
   modelOptionLabel,
   requestModelListWithRetry,
   thinkingLevelLabel,
@@ -87,6 +88,18 @@ describe("model menu resize geometry", () => {
   it("caps the menu width at the viewport limit", () => {
     expect(modelMenuMaxWidth(100, 700)).toBe(588);
     expect(clampModelMenuWidth(600, 100, 700)).toBe(588);
+  });
+
+  it("uses the conversation boundary instead of the window boundary", () => {
+    expect(
+      modelMenuPlacement({
+        menuLeft: 500,
+        menuRight: 620,
+        boundaryLeft: 240,
+        boundaryRight: 800,
+        menuWidth: 400,
+      }),
+    ).toEqual({ alignRight: true, availableWidth: 368 });
   });
 });
 

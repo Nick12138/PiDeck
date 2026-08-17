@@ -64,6 +64,8 @@ import type {
   GitMutationResult,
   GitCommitResult,
   GitCommitMessageResult,
+  PiSettingsSnapshot,
+  PiSettingsPatch,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -71,6 +73,8 @@ export type HostContextMap = {
   "system.getStatus": HostContext;
   "system.rehydrate": HostContext;
   "system.shutdown": HostContext;
+  "piSettings.get": HostContext;
+  "piSettings.patch": HostContext;
   "workspace.setCurrent": WorkspaceContext;
   "workspace.getCurrent": WorkspaceContext;
   "workspace.searchFiles": WorkspaceContext;
@@ -176,6 +180,8 @@ export type HostRequestParams = {
   "system.getStatus": null;
   "system.rehydrate": null;
   "system.shutdown": null;
+  "piSettings.get": null;
+  "piSettings.patch": PiSettingsPatch;
   "workspace.setCurrent": { cwd: string };
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
@@ -306,6 +312,8 @@ export type HostResultMap = {
   "system.getStatus": HostStatusSnapshot;
   "system.rehydrate": RehydrateSnapshot;
   "system.shutdown": { accepted: true };
+  "piSettings.get": PiSettingsSnapshot;
+  "piSettings.patch": PiSettingsSnapshot;
   "workspace.setCurrent": {
     workspace: WorkspaceSnapshot;
     session?: SessionSnapshot;

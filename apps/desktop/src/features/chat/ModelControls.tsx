@@ -45,9 +45,25 @@ function estimatedContextTokens(breakdown: SessionContextBreakdown | undefined):
   return CONTEXT_BREAKDOWN_KEYS.reduce((sum, key) => sum + breakdown[key], 0);
 }
 
-export function modelMenuMaxWidth(menuLeft: number, viewportWidth: number): number {
-  const viewportLimit = viewportWidth - Math.max(0, menuLeft) - MODEL_MENU_VIEWPORT_GUTTER;
-  return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_MAX_WIDTH, viewportLimit));
+export function modelMenuMaxWidth(menuLeft: number, boundaryRight: number): number {
+  const boundaryLimit = boundaryRight - Math.max(0, menuLeft) - MODEL_MENU_VIEWPORT_GUTTER;
+  return Math.max(MODEL_MENU_MIN_WIDTH, Math.min(MODEL_MENU_MAX_WIDTH, boundaryLimit));
+}
+
+export function modelMenuPlacement(args: {
+  menuLeft: number;
+  menuRight: number;
+  boundaryLeft: number;
+  boundaryRight: number;
+  menuWidth: number;
+}): { alignRight: boolean; availableWidth: number } {
+  const spaceRight = args.boundaryRight - args.menuLeft - MODEL_MENU_VIEWPORT_GUTTER;
+  const spaceLeft = args.menuRight - args.boundaryLeft - MODEL_MENU_VIEWPORT_GUTTER;
+  const alignRight = args.menuWidth > spaceRight && spaceLeft >= spaceRight;
+  return {
+    alignRight,
+    availableWidth: Math.max(MODEL_MENU_MIN_WIDTH, alignRight ? spaceLeft : spaceRight),
+  };
 }
 
 export function clampModelMenuWidth(
@@ -428,31 +444,56 @@ export function ModelControls() {
     setModelMenuWidth((current) => (current === nextWidth ? current : nextWidth));
   }, [modelMenuMeasureKey, menuOpen]);
 
-  // Keep the floated dropdown inside the viewport if its measured width would
-  // overflow the available space on the right. Also flips the dropdown to
-  // right-aligned when there is not enough room on the right side.
+  // Keep the floated dropdown inside the conversation area. The right Dock is
+  // a sibling of the chat page, so the window width includes space the menu
+  // must not occupy while the Dock is open.
   useLayoutEffect(() => {
     if (!menuOpen) return;
-    const clampToViewport = () => {
+    const clampToConversation = () => {
       const parentEl = menuRef.current;
       if (!parentEl) return;
       const parentRect = parentEl.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const currentWidth = modelMenuWidthRef.current;
-      const spaceRight = viewportWidth - parentRect.left - MODEL_MENU_VIEWPORT_GUTTER;
-      const spaceLeft = parentRect.right - MODEL_MENU_VIEWPORT_GUTTER;
-      const shouldAlignRight = currentWidth > spaceRight && spaceLeft >= spaceRight;
-      setModelMenuAlignRight(shouldAlignRight);
-      const availableWidth = Math.max(
-        MODEL_MENU_MIN_WIDTH,
-        shouldAlignRight ? spaceLeft : spaceRight,
-      );
-      setModelMenuWidth((prev) => Math.min(prev, availableWidth));
+      const conversationEl = parentEl.closest<HTMLElement>("[data-chat-page]");
+      const conversationRect = conversationEl?.getBoundingClientRect();
+      const boundaryLeft = conversationRect?.left ?? 0;
+      const boundaryRight = conversationRect?.right ?? window.innerWidth;
+      const measuredContentWidth = modelMenuMeasureRef.current?.scrollWidth;
+      const naturalWidth =
+        measuredContentWidth === undefined
+          ? modelMenuWidthRef.current
+          : Math.min(
+              MODEL_MENU_DEFAULT_MAX_WIDTH,
+              Math.max(
+                MODEL_MENU_MIN_WIDTH,
+                Math.ceil(measuredContentWidth) + MODEL_MENU_ROW_CONTROLS_WIDTH,
+              ),
+            );
+      const placement = modelMenuPlacement({
+        menuLeft: parentRect.left,
+        menuRight: parentRect.right,
+        boundaryLeft,
+        boundaryRight,
+        menuWidth: naturalWidth,
+      });
+      setModelMenuAlignRight(placement.alignRight);
+      setModelMenuWidth((prev) => {
+        const next = Math.min(naturalWidth, placement.availableWidth);
+        return prev === next ? prev : next;
+      });
     };
-    clampToViewport();
-    window.addEventListener("resize", clampToViewport);
-    return () => window.removeEventListener("resize", clampToViewport);
-  }, [menuOpen]);
+    clampToConversation();
+    window.addEventListener("resize", clampToConversation);
+    const conversationEl = menuRef.current?.closest<HTMLElement>("[data-chat-page]");
+    const resizeObserver =
+      conversationEl && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(clampToConversation)
+        : null;
+    if (conversationEl) resizeObserver?.observe(conversationEl);
+    return () => {
+      window.removeEventListener("resize", clampToConversation);
+      resizeObserver?.disconnect();
+    };
+  }, [menuOpen, modelMenuMeasureKey]);
 
   useEffect(() => {
     if (!menuOpen) return;

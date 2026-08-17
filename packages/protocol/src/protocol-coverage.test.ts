@@ -81,6 +81,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "system.getStatus": null,
   "system.rehydrate": null,
   "system.shutdown": null,
+  "piSettings.get": null,
+  "piSettings.patch": { defaultThinkingLevel: "high", retryMaxRetries: 3 },
   "workspace.setCurrent": { cwd: "C:/tmp" },
   "workspace.getCurrent": null,
   "workspace.searchFiles": { query: "src" },

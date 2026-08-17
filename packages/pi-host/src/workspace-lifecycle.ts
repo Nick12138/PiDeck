@@ -688,8 +688,14 @@ export class WorkspaceLifecycle {
     };
 
     try {
+      // PiDeck has no separate project-trust prompt. Treat "ask" as the
+      // compatibility default (load project resources) and reserve "never"
+      // for explicitly disabling project-local settings/resources.
+      const globalSettings = SettingsManager.create(args.canonicalCwd, agentDir, {
+        projectTrusted: false,
+      });
       const settingsManager = SettingsManager.create(args.canonicalCwd, agentDir, {
-        projectTrusted: true,
+        projectTrusted: globalSettings.getDefaultProjectTrust() !== "never",
       });
       const packageManager = new DefaultPackageManager({
         cwd: args.canonicalCwd,

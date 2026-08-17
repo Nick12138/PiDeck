@@ -6,6 +6,7 @@ import {
   GitBranch,
   GitCompareArrows,
   Globe2,
+  ListTodo,
   LoaderCircle,
   Plus,
   RotateCcw,
@@ -30,6 +31,8 @@ import { FilesPanel } from "../features/dock/FilesPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
+import { TodoPanel } from "../features/dock/TodoPanel";
+import { extractLatestTodos } from "../features/dock/todo-model";
 import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
 import { subscribeTreePanel } from "../lib/dock-tree";
@@ -37,7 +40,7 @@ import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  "files" | "tree" | "changes" | `browser:${number}` | `shell:${number}` | `extension:${string}`;
+  "files" | "tree" | "changes" | "todo" | `browser:${number}` | `shell:${number}` | `extension:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -130,6 +133,8 @@ export function RightDock() {
   const dockOpen = useAppStore((state) => state.dockOpen);
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
+  const session = useAppStore((state) => state.session);
+  const todoCount = extractLatestTodos(session).filter((item) => item.status !== "completed").length;
   const terminalProfile = useAppStore((state) => state.desktopSettings?.terminalProfile ?? "auto");
   const setDockOpen = useAppStore((state) => state.setDockOpen);
   const pushNotification = useAppStore((state) => state.pushNotification);
@@ -146,6 +151,10 @@ export function RightDock() {
   const [visibleTabLimit, setVisibleTabLimit] = useState(Number.MAX_SAFE_INTEGER);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+  const todoAvailabilityRef = useRef({
+    sessionId: session?.sessionId ?? null,
+    hasTodos: todoCount > 0,
+  });
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
   const nextBrowserId = useRef(1);
@@ -326,6 +335,26 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
+  const createTodo = () => {
+    setTabOrder((current) => (current.includes("todo") ? current : [...current, "todo"]));
+    setActiveTab("todo");
+    setAddMenuOpen(false);
+  };
+
+  useEffect(() => {
+    const sessionId = session?.sessionId ?? null;
+    const availability = todoAvailabilityRef.current;
+    const sessionChanged = availability.sessionId !== sessionId;
+    const becameAvailable = todoCount > 0 && (!availability.hasTodos || sessionChanged);
+    availability.sessionId = sessionId;
+    availability.hasTodos = todoCount > 0;
+    if (todoCount <= 0 || (!becameAvailable && !sessionChanged)) return;
+    setTabOrder((current) => (current.includes("todo") ? current : [...current, "todo"]));
+    setActiveTab("todo");
+    setDockOpen(true);
+    setSidebarPref("pideck.dock.open", true);
+  }, [session, session?.sessionId, todoCount, setDockOpen]);
+
   useEffect(
     () =>
       subscribeTreePanel(() => {
@@ -449,7 +478,7 @@ export function RightDock() {
   };
 
   const closeTab = (tabId: DockTabId) => {
-    if (tabId === "files" || tabId === "tree" || tabId === "changes") {
+    if (tabId === "files" || tabId === "tree" || tabId === "changes" || tabId === "todo") {
       closeOrderTab(tabId);
       return;
     }
@@ -468,6 +497,7 @@ export function RightDock() {
     if (tabId === "files") return { label: t("dockFiles"), Icon: FolderTree };
     if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
+    if (tabId === "todo") return { label: t("dockTodo"), Icon: ListTodo };
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
@@ -604,7 +634,9 @@ export function RightDock() {
                     id={`dock-tab-${tabId}`}
                     aria-controls={`dock-panel-${tabId}`}
                     aria-selected={activeTab === tabId}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch pl-2"
+                    className={`flex min-w-0 flex-1 items-center gap-1.5 self-stretch pl-2 text-left ${
+                      tabId === "todo" ? "justify-start" : ""
+                    }`}
                     title={label}
                     aria-label={label}
                     onClick={() => setActiveTab(tabId)}
@@ -804,6 +836,16 @@ export function RightDock() {
                     <SquareTerminal size={14} />
                     {t("dockTerminal")}
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center justify-start gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
+                    onClick={createTodo}
+                  >
+                    <ListTodo size={14} />
+                    <span className="min-w-0 flex-1">{t("dockTodo")}</span>
+                    {todoCount > 0 && <span className="text-[10px] text-accent">{todoCount}</span>}
+                  </button>
                 </div>,
                 document.body,
               )}
@@ -840,6 +882,16 @@ export function RightDock() {
             className={`min-h-0 min-w-0 flex-1 ${activeTab === "changes" ? "flex" : "hidden"}`}
           >
             <ChangesPanel visible={activeTab === "changes" && dockOpen} />
+          </div>
+        )}
+        {tabOrder.includes("todo") && (
+          <div
+            role="tabpanel"
+            id="dock-panel-todo"
+            aria-labelledby="dock-tab-todo"
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === "todo" ? "flex" : "hidden"}`}
+          >
+            <TodoPanel />
           </div>
         )}
         {browserTabs.map((tab) => (
@@ -918,6 +970,16 @@ export function RightDock() {
                 >
                   <GitCompareArrows size={17} className="shrink-0" />
                   <span>{t("gitChanges")}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("dockOpenNamed", { label: t("dockTodo") })}
+                  className="flex h-11 w-full items-center justify-start gap-3 rounded-md px-3 text-left text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+                  onClick={createTodo}
+                >
+                  <ListTodo size={17} className="shrink-0" />
+                  <span className="min-w-0 flex-1">{t("dockTodo")}</span>
+                  {todoCount > 0 && <span className="text-xs text-accent">{todoCount}</span>}
                 </button>
                 <button
                   type="button"

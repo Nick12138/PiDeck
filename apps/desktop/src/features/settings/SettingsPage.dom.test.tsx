@@ -73,6 +73,19 @@ afterEach(() => {
 });
 
 describe("SettingsPage navigation guard", () => {
+  it("shows the right Dock toggle in the Settings page corner", () => {
+    useAppStore.setState({ dockOpen: false });
+    const { container } = render(<SettingsPage initialSection="general" />);
+
+    const toggle = screen.getByRole("button", { name: "Open right panel" });
+    expect(toggle).toBeVisible();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", "right-dock");
+    expect(toggle).toHaveAttribute("data-dock-toolbar-toggle");
+    expect(container.querySelector("[data-settings-dock-toggle]")).toContainElement(toggle);
+    expect(container.querySelector("[data-settings-sidebar-header]")).not.toContainElement(toggle);
+  });
+
   it("places the Settings identity and active section title in separate columns", () => {
     const { container } = render(<SettingsPage initialSection="general" />);
 
@@ -81,7 +94,8 @@ describe("SettingsPage navigation guard", () => {
     const sidebarHeader = container.querySelector("[data-settings-sidebar-header]");
     const content = container.querySelector("[data-settings-content]");
 
-    expect(shell?.firstElementChild).toBe(sidebar);
+    expect(shell?.firstElementChild).toHaveAttribute("data-settings-dock-toggle");
+    expect(sidebar?.parentElement).toBe(shell);
     expect(sidebarHeader?.parentElement).toBe(sidebar);
     expect(content?.parentElement).toBe(shell);
     expect(
@@ -324,12 +338,13 @@ describe("SettingsPage navigation guard", () => {
     await waitFor(() =>
       expect(useAppStore.getState().desktopSettings?.extensionDecisionPresentation).toBe("auto"),
     );
-    expect(request).toHaveBeenNthCalledWith(
-      1,
+    const extensionRequests = () =>
+      request.mock.calls.filter(([method]) => method === "extensionUi.configure");
+    expect(extensionRequests()[0]).toEqual([
       "extensionUi.configure",
       { expectedHostInstanceId: CONNECTED_HOST.hostInstanceId },
       { extensionDecisionPresentation: "auto" },
-    );
+    ]);
     expect(automatic).toBeChecked();
 
     await user.click(legacy);
@@ -338,12 +353,11 @@ describe("SettingsPage navigation guard", () => {
         "legacy-modal",
       ),
     );
-    expect(request).toHaveBeenNthCalledWith(
-      2,
+    expect(extensionRequests()[1]).toEqual([
       "extensionUi.configure",
       { expectedHostInstanceId: CONNECTED_HOST.hostInstanceId },
       { extensionDecisionPresentation: "legacy-modal" },
-    );
+    ]);
     expect(legacy).toBeChecked();
   });
 
