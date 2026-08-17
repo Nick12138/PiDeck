@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   createHostError,
   stripAttachmentReferenceBlocks,
@@ -8,6 +9,7 @@ import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
+import { isObject, readModelsConfig } from "./provider-models-config.js";
 
 type SdkSessionTreeNode = {
   entry: unknown;
@@ -450,10 +452,22 @@ export function createSessionHandlers(
         run: async () => {
           const g = factory.getGraph();
           if (!g) throw new Error("No workspace");
+          const providerNames = new Map(
+            factory.deps.modelRuntime
+              .getProviders()
+              .map((provider) => [provider.id, provider.name]),
+          );
+          const modelsConfig = await readModelsConfig(join(factory.deps.agentDir, "models.json"));
+          for (const [providerId, rawProvider] of Object.entries(modelsConfig.providers)) {
+            if (isObject(rawProvider) && typeof rawProvider.name === "string") {
+              providerNames.set(providerId, rawProvider.name);
+            }
+          }
           return buildSessionUsageReport({
             agentDir: factory.deps.agentDir,
             canonicalCwd: g.canonicalCwd,
             workspaceId: g.workspaceId,
+            providerNames,
           });
         },
       });

@@ -829,13 +829,25 @@ function isSessionSummary(value: unknown): boolean {
   );
 }
 
+function isSessionUsageModelItem(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["provider", "modelId", "sessionCount", "usage"], ["providerName"]) &&
+    isString(value.provider) &&
+    isOptionalString(value.providerName) &&
+    isString(value.modelId) &&
+    isSafeRevision(value.sessionCount) &&
+    isSerializableUsage(value.usage)
+  );
+}
+
 function isSessionUsageReportItem(value: unknown): boolean {
   return (
     isPlainObject(value) &&
     hasExactKeys(
       value,
       ["sessionId", "sessionPath", "updatedAt", "archived", "messageCount", "usage"],
-      ["name"],
+      ["name", "models"],
     ) &&
     isUuid(value.sessionId) &&
     isString(value.sessionPath) &&
@@ -843,14 +855,16 @@ function isSessionUsageReportItem(value: unknown): boolean {
     isNonNegativeNumber(value.updatedAt) &&
     isBoolean(value.archived) &&
     isSafeRevision(value.messageCount) &&
-    isSerializableUsage(value.usage)
+    isSerializableUsage(value.usage) &&
+    (value.models === undefined ||
+      (Array.isArray(value.models) && value.models.every(isSessionUsageModelItem)))
   );
 }
 
 function isSessionUsageReport(value: unknown): boolean {
   if (
     !isPlainObject(value) ||
-    !hasExactKeys(value, ["workspaceId", "generatedAt", "totals", "sessions"]) ||
+    !hasExactKeys(value, ["workspaceId", "generatedAt", "totals", "sessions"], ["models"]) ||
     !isUuid(value.workspaceId) ||
     !isNonNegativeNumber(value.generatedAt) ||
     !isPlainObject(value.totals) ||
@@ -858,6 +872,8 @@ function isSessionUsageReport(value: unknown): boolean {
     !isSafeRevision(value.totals.sessionCount) ||
     !isSafeRevision(value.totals.messageCount) ||
     !isSerializableUsage(value.totals.usage) ||
+    (value.models !== undefined &&
+      (!Array.isArray(value.models) || !value.models.every(isSessionUsageModelItem))) ||
     !Array.isArray(value.sessions) ||
     !value.sessions.every(isSessionUsageReportItem)
   ) {

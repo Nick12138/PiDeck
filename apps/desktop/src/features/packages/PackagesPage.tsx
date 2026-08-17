@@ -161,7 +161,7 @@ function Segmented<T extends string>({
   return (
     <div
       data-ui="segmented"
-      className="inline-flex h-8 gap-[5px] rounded-md border border-border bg-surface p-0.5"
+      className="inline-flex h-8 gap-[2px] rounded-md border border-border bg-surface p-0.5"
     >
       {values.map((item) => (
         <button
@@ -248,7 +248,7 @@ function PackagePreferenceControl({
         role="group"
         aria-label={label}
         data-ui="segmented"
-        className="inline-flex h-8 rounded-md border border-border p-0.5"
+        className="inline-flex h-8 gap-[2px] rounded-md border border-border p-0.5"
       >
         {values.map((value) => (
           <button
@@ -258,7 +258,7 @@ function PackagePreferenceControl({
             aria-pressed={state === value}
             data-ui="segmented-item"
             data-state={state === value ? "active" : "inactive"}
-            className={`rounded px-2 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+            className={`rounded-md px-2 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
             disabled={disabled || state === null}
             onClick={() => onChange(value)}
           >
@@ -1068,7 +1068,7 @@ export function PackagesPage() {
           {configurable ? (
             <div
               data-ui="segmented"
-              className="inline-flex h-8 rounded-md border border-border p-0.5"
+              className="inline-flex h-8 gap-[2px] rounded-md border border-border p-0.5"
             >
               {(resourceMode === "project"
                 ? ["inherit", "enabled", "disabled"]
@@ -1085,7 +1085,7 @@ export function PackagesPage() {
                   })}
                   data-ui="segmented-item"
                   data-state={preference === value ? "active" : "inactive"}
-                  className={`rounded px-2 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+                  className={`rounded-md px-2 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                   disabled={mutationBlocked}
                   onClick={() =>
                     setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")
@@ -1309,14 +1309,14 @@ export function PackagesPage() {
           role="group"
           aria-label={t("packagesViewGroup")}
           data-ui="segmented"
-          className="flex h-8 rounded-md border border-border bg-surface p-0.5"
+          className="flex h-8 gap-[2px] rounded-md border border-border bg-surface p-0.5"
         >
           <button
             aria-pressed={tab === "installed"}
             type="button"
             data-ui="segmented-item"
             data-state={tab === "installed" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            className={`rounded-md px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
             onClick={() => setTab("installed")}
           >
             {t("packagesTabInstalled")}
@@ -1326,7 +1326,7 @@ export function PackagesPage() {
             type="button"
             data-ui="segmented-item"
             data-state={tab === "resources" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            className={`rounded-md px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
             onClick={() => setTab("resources")}
           >
             {t("packagesTabResources")}
@@ -1336,7 +1336,7 @@ export function PackagesPage() {
             type="button"
             data-ui="segmented-item"
             data-state={tab === "market" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            className={`rounded-md px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
             onClick={() => setTab("market")}
           >
             {t("packagesTabMarket")}
@@ -2073,7 +2073,7 @@ export function PackagesPage() {
           <div
             role="group"
             aria-label={t("packagesResourceTypeGroup")}
-            className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2"
+            className="flex shrink-0 gap-[2px] overflow-x-auto border-b border-border px-3 py-2"
           >
             {(["all", ...PACKAGE_RESOURCE_TYPES] as ResourceTypeFilter[]).map((type) => (
               <button
@@ -2082,7 +2082,7 @@ export function PackagesPage() {
                 type="button"
                 data-ui="segmented-item"
                 data-state={resourceType === type ? "active" : "inactive"}
-                className={`h-7 shrink-0 rounded px-2.5 text-xs ${resourceType === type ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+                className={`h-7 shrink-0 rounded-md px-2.5 text-xs ${resourceType === type ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                 onClick={() => setResourceType(type)}
               >
                 {type === "all" ? t("packagesFilterAll") : pluralType(t, type)}

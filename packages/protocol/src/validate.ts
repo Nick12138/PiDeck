@@ -315,6 +315,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "session.getForkPoints":
     case "session.usageReport":
     case "session.getCommands":
+      return params === null ? ok(null) : fail("params must be null", { method });
     case "agent.abort":
     case "agent.abortCompaction":
     case "agent.abortRetry":

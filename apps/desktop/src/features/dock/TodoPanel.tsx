@@ -4,7 +4,20 @@ import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { extractLatestTodos, type TodoItem } from "./todo-model";
 
-function TodoRow({ item, active }: { item: TodoItem; active: boolean }) {
+function todoNumber(item: TodoItem, todos: readonly TodoItem[]): number {
+  const index = todos.findIndex((candidate) => candidate.id === item.id);
+  return index >= 0 ? index + 1 : 0;
+}
+
+function TodoRow({
+  item,
+  active,
+  number,
+}: {
+  item: TodoItem;
+  active: boolean;
+  number: number;
+}) {
   const t = useT();
   const Icon = item.status === "completed" ? Check : item.status === "in_progress" ? CircleDot : Circle;
   const statusLabel =
@@ -22,6 +35,14 @@ function TodoRow({ item, active }: { item: TodoItem; active: boolean }) {
       }`}
       title={statusLabel}
     >
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 w-5 shrink-0 text-right font-mono text-xs tabular-nums ${
+          item.status === "completed" ? "text-muted/70" : "text-muted"
+        }`}
+      >
+        #{number}
+      </span>
       <Icon
         size={15}
         aria-hidden="true"
@@ -86,7 +107,12 @@ export function TodoPanel() {
       <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto p-2">
         <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
           {activeTodos.map((item) => (
-            <TodoRow key={item.id} item={item} active={item.status === "in_progress"} />
+            <TodoRow
+              key={item.id}
+              item={item}
+              number={todoNumber(item, todos)}
+              active={item.status === "in_progress"}
+            />
           ))}
         </ul>
         {completedTodos.length > 0 && (
@@ -96,7 +122,7 @@ export function TodoPanel() {
             </summary>
             <ul className="mt-1 flex flex-col gap-0.5">
               {completedTodos.map((item) => (
-                <TodoRow key={item.id} item={item} active={false} />
+                <TodoRow key={item.id} item={item} number={todoNumber(item, todos)} active={false} />
               ))}
             </ul>
           </details>

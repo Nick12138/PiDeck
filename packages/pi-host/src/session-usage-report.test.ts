@@ -10,15 +10,21 @@ const ACTIVE_ID = "33333333-3333-4333-8333-333333333333";
 const ARCHIVED_ID = "44444444-4444-4444-8444-444444444444";
 const roots: string[] = [];
 
-function messageEntry(id: string, usage: Record<string, unknown>): string {
+function messageEntry(
+  id: string,
+  usage: Record<string, unknown>,
+  options: { timestamp?: string; provider?: string; model?: string } = {},
+): string {
   return JSON.stringify({
     type: "message",
     id,
     parentId: null,
-    timestamp: "2026-01-01T00:00:00.000Z",
+    timestamp: options.timestamp ?? "2026-01-01T00:00:00.000Z",
     message: {
       role: "assistant",
       content: [{ type: "text", text: "done" }],
+      ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.model ? { model: options.model } : {}),
       usage,
     },
   });
@@ -74,7 +80,10 @@ describe("session usage report", () => {
           cwd: fixture.cwd,
         }),
         JSON.stringify({ type: "session_info", name: "Active session" }),
-        messageEntry("55555555-5555-4555-8555-555555555555", usage(12, 0.03)),
+        messageEntry("55555555-5555-4555-8555-555555555555", usage(12, 0.03), {
+          provider: "anthropic",
+          model: "claude-sonnet",
+        }),
       ].join("\n"),
     );
     await writeFile(
@@ -95,6 +104,7 @@ describe("session usage report", () => {
       agentDir: fixture.agentDir,
       canonicalCwd: fixture.cwd,
       workspaceId: WORKSPACE_ID,
+      providerNames: new Map([["anthropic", "Anthropic"]]),
     });
 
     expect(report.totals.sessionCount).toBe(2);
@@ -102,12 +112,49 @@ describe("session usage report", () => {
     expect(report.totals.usage.totalTokens).toBe(20);
     expect(report.totals.usage.reasoning).toBe(2);
     expect(report.totals.usage.cost.total).toBeCloseTo(0.03);
+    expect(report.models).toEqual([
+      expect.objectContaining({
+        provider: "anthropic",
+        modelId: "claude-sonnet",
+        sessionCount: 1,
+        providerName: "Anthropic",
+        usage: expect.objectContaining({ totalTokens: 12 }),
+      }),
+    ]);
     expect(report.sessions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ sessionId: ACTIVE_ID, name: "Active session", archived: false }),
         expect.objectContaining({ sessionId: ARCHIVED_ID, archived: true }),
       ]),
     );
+  });
+
+  it("filters usage by the requested date range", async () => {
+    const fixture = await createFixture();
+    const sessionPath = join(fixture.dirs.activeDir, "active.jsonl");
+    await writeFile(
+      sessionPath,
+      [
+        JSON.stringify({ type: "session", version: 3, id: ACTIVE_ID, cwd: fixture.cwd }),
+        messageEntry("old", usage(12, 0), { timestamp: "2026-01-01T00:00:00.000Z" }),
+        messageEntry("new", usage(8, 0), {
+          timestamp: "2026-01-10T12:00:00.000Z",
+          provider: "openai",
+          model: "gpt-4.1",
+        }),
+      ].join("\n"),
+    );
+
+    const report = await buildSessionUsageReport({
+      agentDir: fixture.agentDir,
+      canonicalCwd: fixture.cwd,
+      workspaceId: WORKSPACE_ID,
+      range: "7d",
+      now: new Date("2026-01-10T15:00:00.000Z").getTime(),
+    });
+
+    expect(report.totals.usage.totalTokens).toBe(8);
+    expect(report.models?.[0]).toMatchObject({ provider: "openai", modelId: "gpt-4.1" });
   });
 
   it("reparses a session after its mtime changes", async () => {
@@ -122,9 +169,7 @@ describe("session usage report", () => {
     });
     await writeFile(
       sessionPath,
-      [header, messageEntry("55555555-5555-4555-8555-555555555555", usage(12, 0.03))].join(
-        "\n",
-      ),
+      [header, messageEntry("55555555-5555-4555-8555-555555555555", usage(12, 0.03))].join("\n"),
     );
     const first = await buildSessionUsageReport({
       agentDir: fixture.agentDir,
@@ -135,9 +180,7 @@ describe("session usage report", () => {
 
     await writeFile(
       sessionPath,
-      [header, messageEntry("55555555-5555-4555-8555-555555555555", usage(24, 0.06))].join(
-        "\n",
-      ),
+      [header, messageEntry("55555555-5555-4555-8555-555555555555", usage(24, 0.06))].join("\n"),
     );
     const future = new Date(Date.now() + 2_000);
     await utimes(sessionPath, future, future);

@@ -811,6 +811,16 @@ export type SessionStatsSnapshot = {
   sessionFile?: string;
 };
 
+export type UsageRange = "today" | "7d" | "all";
+
+export type SessionUsageModelItem = {
+  provider: string;
+  providerName?: string;
+  modelId: string;
+  sessionCount: number;
+  usage: SerializableUsage;
+};
+
 export type SessionUsageReportItem = {
   sessionId: string;
   sessionPath: string;
@@ -819,6 +829,7 @@ export type SessionUsageReportItem = {
   archived: boolean;
   messageCount: number;
   usage: SerializableUsage;
+  models?: SessionUsageModelItem[];
 };
 
 export type SessionUsageReport = {
@@ -829,6 +840,7 @@ export type SessionUsageReport = {
     messageCount: number;
     usage: SerializableUsage;
   };
+  models?: SessionUsageModelItem[];
   sessions: SessionUsageReportItem[];
 };
 

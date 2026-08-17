@@ -58,7 +58,7 @@ type BrowserDockTab = {
 
 const DOCK_WIDTH_KEY = "pideck.dock.width.v1";
 const DEFAULT_DOCK_WIDTH = 460;
-const MIN_DOCK_WIDTH = 460;
+const MIN_DOCK_WIDTH = 350;
 const MAX_DOCK_WIDTH = 720;
 const MAX_BROWSER_TABS = 8;
 const MIN_TAB_WIDTH = 96;

@@ -930,6 +930,7 @@ describe("protocol coverage — response discrimination", () => {
       workspaceId: WORKSPACE_ID,
       generatedAt: 1,
       totals: { sessionCount: 1, messageCount: 1, usage },
+      models: [{ provider: "anthropic", modelId: "claude-sonnet", sessionCount: 1, usage }],
       sessions: [
         {
           sessionId: SESSION_ID,

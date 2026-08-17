@@ -130,4 +130,53 @@ describe("extractLatestTodos", () => {
       { id: "0", content: "Show the task panel", status: "in_progress" },
     ]);
   });
+
+  it("uses the latest complete harness snapshot when new tasks are added", () => {
+    const current = session([
+      {
+        role: "toolResult",
+        toolName: "todo",
+        details: {
+          tasks: [{ id: 1, subject: "旧任务", status: "completed" }],
+        },
+        content: [{ type: "text", text: "Updated #1" }],
+      },
+      {
+        role: "toolResult",
+        toolName: "todo",
+        details: {
+          tasks: [
+            { id: 1, subject: "旧任务", status: "completed" },
+            { id: 2, subject: "新任务", status: "pending" },
+          ],
+        },
+        content: [{ type: "text", text: "Created #2" }],
+      },
+    ]);
+
+    expect(extractLatestTodos(current)).toEqual([
+      { id: "1", content: "旧任务", status: "completed" },
+      { id: "2", content: "新任务", status: "pending" },
+    ]);
+  });
+
+  it("ignores deleted tasks in the latest harness snapshot", () => {
+    const current = session([
+      {
+        role: "toolResult",
+        toolName: "todo",
+        details: {
+          tasks: [
+            { id: 1, subject: "已删除", status: "deleted" },
+            { id: 2, subject: "当前任务", status: "pending" },
+          ],
+        },
+        content: [{ type: "text", text: "Created #2" }],
+      },
+    ]);
+
+    expect(extractLatestTodos(current)).toEqual([
+      { id: "2", content: "当前任务", status: "pending" },
+    ]);
+  });
 });
