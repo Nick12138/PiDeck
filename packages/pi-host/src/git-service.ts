@@ -1082,6 +1082,46 @@ export class GitService {
     return { applied: true, ...(await this.refreshAfterMutation(workspace, signal)) };
   }
 
+  async push(workspace: string, signal?: AbortSignal): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["push"],
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Git push failed"),
+      );
+    }
+    const snapshot = await this.getStatus(workspace, signal);
+    return { applied: true, snapshot };
+  }
+
+  async pull(workspace: string, signal?: AbortSignal): Promise<GitMutationResult> {
+    const status = this.requireReady(await this.getStatus(workspace, signal));
+    const result = await runGitCommand(this.executable, {
+      cwd: status.repositoryRoot,
+      args: ["pull", "--rebase"],
+      timeoutMs: GIT_MUTATION_TIMEOUT_MS,
+      maxStdoutBytes: GIT_MUTATION_OUTPUT_LIMIT_BYTES,
+      truncateStdout: true,
+      signal,
+    });
+    if (result.exitCode !== 0) {
+      throw new GitServiceError(
+        "GIT_OPERATION_FAILED",
+        safeGitMessage(result.stderr || result.stdout.toString("utf8"), "Git pull failed"),
+      );
+    }
+    const snapshot = await this.getStatus(workspace, signal);
+    return { applied: true, snapshot };
+  }
+
   async listHistory(
     workspace: string,
     limit: number,

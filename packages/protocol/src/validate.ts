@@ -303,6 +303,8 @@ export function validateRequestParams<M extends HostMethod>(
     case "workspace.getCurrent":
     case "git.getStatus":
     case "git.listBranches":
+    case "git.push":
+    case "git.pull":
     case "session.list":
     case "session.cleanupArchived":
     case "session.reload":

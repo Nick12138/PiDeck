@@ -1902,7 +1902,6 @@ export function ThinkingBlock({
         aria-expanded={open}
         aria-controls={contentId}
       >
-        <Brain size={14} />
         <span>{label ?? t("transcriptThinking")}</span>
         <ChevronRight
           size={13}

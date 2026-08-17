@@ -1734,6 +1734,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "git.unstage":
     case "git.unstageAll":
     case "git.discard":
+    case "git.push":
+    case "git.pull":
     case "git.createBranch":
     case "git.switchBranch":
       return isGitMutationResult(result, false) ? null : `invalid ${method} result`;

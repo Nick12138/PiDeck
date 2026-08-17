@@ -326,6 +326,12 @@ export function createGitHandlers(
       }
     },
 
+    "git.push": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => service.push(root, signal), emitSnapshot),
+
+    "git.pull": async (ctx) =>
+      mutateGit(factory, ctx, (root, signal) => service.pull(root, signal), emitSnapshot),
+
     "git.createBranch": async (ctx) =>
       mutateGit(
         factory,

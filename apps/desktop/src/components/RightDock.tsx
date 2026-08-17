@@ -176,6 +176,7 @@ export function RightDock() {
   };
 
   const closeOrderTab = (tabId: DockTabId) => {
+    const closesLastTab = tabOrder.length === 1 && tabOrder[0] === tabId;
     setTabOrder((current) => {
       const index = current.indexOf(tabId);
       if (index < 0) return current;
@@ -185,6 +186,10 @@ export function RightDock() {
       );
       return next;
     });
+    if (closesLastTab) {
+      setDockOpen(false);
+      setSidebarPref("pideck.dock.open", false);
+    }
   };
 
   const panelRequestId = panel?.requestId ?? null;

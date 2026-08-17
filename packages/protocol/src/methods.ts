@@ -25,6 +25,8 @@ export const HOST_METHODS = [
   "git.listHistory",
   "git.getCommitDiff",
   "git.generateCommitMessage",
+  "git.push",
+  "git.pull",
   "attachment.create",
   "attachment.createText",
   "attachment.get",
@@ -181,6 +183,8 @@ export type WorkspaceOnlyMethod =
   | "git.listHistory"
   | "git.getCommitDiff"
   | "git.generateCommitMessage"
+  | "git.push"
+  | "git.pull"
   | "session.list"
   | "session.archive"
   | "session.restore"
@@ -293,6 +297,8 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "git.listHistory": "workspace",
   "git.getCommitDiff": "workspace",
   "git.generateCommitMessage": "workspace",
+  "git.push": "workspace",
+  "git.pull": "workspace",
   "attachment.create": "activeSession",
   "attachment.createText": "activeSession",
   "attachment.get": "activeSession",

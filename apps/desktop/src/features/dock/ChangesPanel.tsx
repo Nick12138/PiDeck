@@ -16,6 +16,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  ArrowUpToLine,
+  ArrowDownToLine,
   Check,
   ChevronDown,
   FileCode2,
@@ -116,6 +118,18 @@ function errorMessage(error: HostError | undefined, fallback: string, t: Transla
     default:
       return error.message || fallback;
   }
+}
+
+function pullErrorMessage(error: HostError | undefined, t: Translate): string {
+  const message = error?.message ?? "";
+  if (
+    /cannot pull with rebase|please commit or stash|local changes.*would be overwritten/i.test(
+      message,
+    )
+  ) {
+    return t("gitPullRequiresCleanWorktree");
+  }
+  return errorMessage(error, t("gitPullFailed"), t);
 }
 
 export function buildGitListRows(status: ReadyStatus): ListRow[] {
@@ -627,7 +641,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const mutateAll = async (area: "staged" | "unstaged") => {
     if (!host || !workspace || !ready) return;
     const method = area === "unstaged" ? "git.stageAll" : "git.unstageAll";
-    const count = ready.files.filter((file) => file[area] !== null).length;
     const requestGeneration = generation.current;
     setOperation(method);
     setError(null);
@@ -647,12 +660,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
       else void refresh();
       if (response.result.warning) pushNotification(response.result.warning, "warning");
-      pushNotification(
-        area === "unstaged"
-          ? t("gitStageAllSuccess", { count })
-          : t("gitUnstageAllSuccess", { count }),
-        "success",
-      );
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(requestError instanceof Error ? requestError.message : t("gitOperationFailed"));
@@ -768,10 +775,76 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
       else void refresh();
       if (response.result.warning) pushNotification(response.result.warning, "warning");
-      pushNotification(t("gitCommitSuccess", { sha: shortSha }), "success");
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(requestError instanceof Error ? requestError.message : t("gitCommitFailed"));
+      }
+    } finally {
+      if (requestGeneration === generation.current) setOperation(null);
+    }
+  };
+
+  const hasUnpushedCommits = Boolean(ready && ready.ahead > 0);
+
+  const push = async () => {
+    if (!host || !workspace || !ready) return;
+    const requestGeneration = generation.current;
+    setOperation("push");
+    setError(null);
+    try {
+      const response = await hostClient.request(
+        "git.push",
+        workspaceContext(host, workspace),
+        null,
+        90_000,
+      );
+      if (requestGeneration !== generation.current) return;
+      if (!response.ok) {
+        setError(errorMessage(response.error, t("gitPushFailed"), t));
+        return;
+      }
+      if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
+      else void refresh();
+      pushNotification(t("gitPushSuccess"), "success");
+    } catch (requestError) {
+      if (requestGeneration === generation.current) {
+        setError(requestError instanceof Error ? requestError.message : t("gitPushFailed"));
+      }
+    } finally {
+      if (requestGeneration === generation.current) setOperation(null);
+    }
+  };
+
+  const pull = async () => {
+    if (!host || !workspace || !ready) return;
+    if (ready.files.length > 0) {
+      setError(t("gitPullRequiresCleanWorktree"));
+      return;
+    }
+    const requestGeneration = generation.current;
+    setOperation("pull");
+    setError(null);
+    try {
+      const response = await hostClient.request(
+        "git.pull",
+        workspaceContext(host, workspace),
+        null,
+        90_000,
+      );
+      if (requestGeneration !== generation.current) return;
+      if (!response.ok) {
+        setError(pullErrorMessage(response.error, t));
+        return;
+      }
+      if (response.result.snapshot) acceptSnapshot(response.result.snapshot);
+      else void refresh();
+      setHistory([]);
+      setHistoryCursor(null);
+      setHistoryLoaded(false);
+      pushNotification(t("gitPullSuccess"), "success");
+    } catch (requestError) {
+      if (requestGeneration === generation.current) {
+        setError(requestError instanceof Error ? requestError.message : t("gitPullFailed"));
       }
     } finally {
       if (requestGeneration === generation.current) setOperation(null);
@@ -881,7 +954,7 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
     <>
       <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col text-sm">
         <header className="shrink-0 border-b border-border px-3 py-2.5">
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <GitCompareArrows size={16} className="mt-0.5 shrink-0 text-muted" />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
@@ -916,11 +989,6 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                     {ready.behind}
                   </span>
                 )}
-                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted">
-                  {view === "changes"
-                    ? t("gitChangeCount", { count: ready.files.length })
-                    : t("gitCommitCount", { count: history.length })}
-                </span>
               </div>
               <p
                 className="mt-0.5 truncate font-mono text-[10px] text-muted"
@@ -929,6 +997,11 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                 {ready.repositoryRoot}
               </p>
             </div>
+            <span className="shrink-0 text-xs tabular-nums text-muted">
+              {view === "changes"
+                ? t("gitChangeCount", { count: ready.files.length })
+                : t("gitCommitCount", { count: history.length })}
+            </span>
             <button
               type="button"
               title={t("gitRefresh")}
@@ -941,6 +1014,20 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
               }}
             >
               <RefreshCw size={14} className={loading || historyLoading ? "animate-spin" : ""} />
+            </button>
+            <button
+              type="button"
+              title={t("gitPull")}
+              aria-label={t("gitPull")}
+              disabled={loading || historyLoading || Boolean(operation) || !ready}
+              className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:opacity-40"
+              onClick={() => void pull()}
+            >
+              {operation === "pull" ? (
+                <LoaderCircle size={14} className="animate-spin" />
+              ) : (
+                <ArrowDownToLine size={14} />
+              )}
             </button>
           </div>
         </header>
@@ -1095,63 +1182,81 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
                   {t("gitCommitSuccess", { sha: commitSha })}
                 </p>
               )}
-              <div className="mb-1.5 flex items-center gap-2">
-                <label
-                  htmlFor="git-commit-message"
-                  className="block text-[11px] font-medium text-muted"
-                >
-                  {t("gitCommitMessage")}
-                </label>
+              {hasUnpushedCommits && stagedCount === 0 ? (
                 <button
                   type="button"
-                  title={t("gitGenerateCommitMessage")}
-                  disabled={
-                    stagedCount === 0 || hasConflicts || Boolean(operation) || generatingMessage
-                  }
-                  className="ml-auto flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={() => void generateCommitMessage()}
+                  disabled={Boolean(operation) || loading}
+                  className="flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-accent-foreground hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => void push()}
                 >
-                  {generatingMessage ? (
-                    <LoaderCircle size={12} className="animate-spin" />
+                  {operation === "push" ? (
+                    <LoaderCircle size={13} className="animate-spin" />
                   ) : (
-                    <Sparkles size={12} />
+                    <ArrowUpToLine size={13} />
                   )}
-                  {generatingMessage
-                    ? t("gitGeneratingCommitMessage")
-                    : t("gitGenerateCommitMessage")}
+                  {operation === "push" ? t("gitPushing") : t("gitPush")}
                 </button>
-              </div>
-              <textarea
-                id="git-commit-message"
-                value={commitMessage}
-                maxLength={16 * 1024}
-                rows={3}
-                disabled={Boolean(operation) || generatingMessage}
-                placeholder={
-                  stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")
-                }
-                className="commit-message-input w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-focus disabled:opacity-50"
-                onChange={(event) => setCommitMessage(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    void commit();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                disabled={!canCommit}
-                className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-accent-foreground hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => void commit()}
-              >
-                {operation === "commit" ? (
-                  <LoaderCircle size={13} className="animate-spin" />
-                ) : (
-                  <GitCommitHorizontal size={13} />
-                )}
-                {operation === "commit" ? t("gitCommitting") : t("gitCommit")}
-              </button>
+              ) : (
+                <>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <label
+                      htmlFor="git-commit-message"
+                      className="block text-[11px] font-medium text-muted"
+                    >
+                      {t("gitCommitMessage")}
+                    </label>
+                    <button
+                      type="button"
+                      title={t("gitGenerateCommitMessage")}
+                      disabled={
+                        stagedCount === 0 || hasConflicts || Boolean(operation) || generatingMessage
+                      }
+                      className="ml-auto flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-muted hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-40"
+                      onClick={() => void generateCommitMessage()}
+                    >
+                      {generatingMessage ? (
+                        <LoaderCircle size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      {generatingMessage
+                        ? t("gitGeneratingCommitMessage")
+                        : t("gitGenerateCommitMessage")}
+                    </button>
+                  </div>
+                  <textarea
+                    id="git-commit-message"
+                    value={commitMessage}
+                    maxLength={16 * 1024}
+                    rows={3}
+                    disabled={Boolean(operation) || generatingMessage}
+                    placeholder={
+                      stagedCount > 0 ? t("gitCommitPlaceholder") : t("gitStageBeforeCommit")
+                    }
+                    className="commit-message-input w-full resize-none rounded border border-border bg-surface-raised px-2.5 py-2 text-sm outline-none placeholder:text-muted focus:border-focus disabled:opacity-50"
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                        event.preventDefault();
+                        void commit();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!canCommit}
+                    className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded bg-accent px-3 text-xs font-medium text-accent-foreground hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => void commit()}
+                  >
+                    {operation === "commit" ? (
+                      <LoaderCircle size={13} className="animate-spin" />
+                    ) : (
+                      <GitCommitHorizontal size={13} />
+                    )}
+                    {operation === "commit" ? t("gitCommitting") : t("gitCommit")}
+                  </button>
+                </>
+              )}
             </footer>
           </>
         ) : (

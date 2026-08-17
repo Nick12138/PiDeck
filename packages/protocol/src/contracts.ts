@@ -92,6 +92,8 @@ export type HostContextMap = {
   "git.listHistory": WorkspaceContext;
   "git.getCommitDiff": WorkspaceContext;
   "git.generateCommitMessage": WorkspaceContext;
+  "git.push": WorkspaceContext;
+  "git.pull": WorkspaceContext;
   "attachment.create": ActiveSessionContext;
   "attachment.createText": ActiveSessionContext;
   "attachment.get": ActiveSessionContext;
@@ -202,6 +204,8 @@ export type HostRequestParams = {
   "git.listHistory": { limit: number; cursor?: string };
   "git.getCommitDiff": { commitSha: string };
   "git.generateCommitMessage": { expectedIndexGeneration: string };
+  "git.push": null;
+  "git.pull": null;
   "attachment.create": { path: string };
   "attachment.createText": { text: string };
   "attachment.get": { attachmentId: string };
@@ -332,6 +336,8 @@ export type HostResultMap = {
   "git.listHistory": GitHistoryResult;
   "git.getCommitDiff": GitCommitDiffSnapshot;
   "git.generateCommitMessage": GitCommitMessageResult;
+  "git.push": GitMutationResult;
+  "git.pull": GitMutationResult;
   "attachment.create": AttachmentSnapshot;
   "attachment.createText": AttachmentSnapshot;
   "attachment.get": AttachmentSnapshot;
