@@ -161,7 +161,7 @@ function Segmented<T extends string>({
   return (
     <div
       data-ui="segmented"
-      className="inline-flex h-8 rounded-md border border-border bg-surface p-0.5"
+      className="inline-flex h-8 gap-[5px] rounded-md border border-border bg-surface p-0.5"
     >
       {values.map((item) => (
         <button
@@ -170,7 +170,7 @@ function Segmented<T extends string>({
           aria-pressed={value === item}
           data-ui="segmented-item"
           data-state={value === item ? "active" : "inactive"}
-          className={`rounded px-2 text-xs capitalize ${value === item ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+          className={`rounded-md px-2 text-xs capitalize ${value === item ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
           onClick={() => onChange(item)}
         >
           {item}
@@ -1299,6 +1299,58 @@ export function PackagesPage() {
         </Dialog>
       )}
 
+      <header
+        className="flex min-h-16 shrink-0 flex-wrap items-center gap-2 px-6 pb-2 pt-3"
+        data-settings-section-header
+        data-tauri-drag-region
+      >
+        <h1 className="mr-2 text-base font-semibold">{t("navPackages")}</h1>
+        <div
+          role="group"
+          aria-label={t("packagesViewGroup")}
+          data-ui="segmented"
+          className="flex h-8 rounded-md border border-border bg-surface p-0.5"
+        >
+          <button
+            aria-pressed={tab === "installed"}
+            type="button"
+            data-ui="segmented-item"
+            data-state={tab === "installed" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            onClick={() => setTab("installed")}
+          >
+            {t("packagesTabInstalled")}
+          </button>
+          <button
+            aria-pressed={tab === "resources"}
+            type="button"
+            data-ui="segmented-item"
+            data-state={tab === "resources" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            onClick={() => setTab("resources")}
+          >
+            {t("packagesTabResources")}
+          </button>
+          <button
+            aria-pressed={tab === "market"}
+            type="button"
+            data-ui="segmented-item"
+            data-state={tab === "market" ? "active" : "inactive"}
+            className={`rounded px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
+            onClick={() => setTab("market")}
+          >
+            {t("packagesTabMarket")}
+          </button>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+          onClick={() => void openCatalog()}
+        >
+          {t("packagesCatalogLink")} <ExternalLink size={11} />
+        </button>
+      </header>
+
       {packageProgress &&
         pendingPreferenceUpdates.length === 0 &&
         dismissedProgressOp !== packageProgress.operationId && (
@@ -1398,58 +1450,6 @@ export function PackagesPage() {
           </button>
         </div>
       )}
-
-      <header
-        className="flex min-h-16 shrink-0 flex-wrap items-start gap-2 px-6 pb-2 pt-3"
-        data-settings-section-header
-        data-tauri-drag-region
-      >
-        <h1 className="mr-2 text-base font-semibold">{t("navPackages")}</h1>
-        <div
-          role="group"
-          aria-label={t("packagesViewGroup")}
-          data-ui="segmented"
-          className="flex h-8 rounded-md border border-border bg-surface p-0.5"
-        >
-          <button
-            aria-pressed={tab === "installed"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "installed" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("installed")}
-          >
-            {t("packagesTabInstalled")}
-          </button>
-          <button
-            aria-pressed={tab === "resources"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "resources" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("resources")}
-          >
-            {t("packagesTabResources")}
-          </button>
-          <button
-            aria-pressed={tab === "market"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "market" ? "active" : "inactive"}
-            className={`rounded px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("market")}
-          >
-            {t("packagesTabMarket")}
-          </button>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
-          onClick={() => void openCatalog()}
-        >
-          {t("packagesCatalogLink")} <ExternalLink size={11} />
-        </button>
-      </header>
 
       {tab === "market" ? (
         <div className="flex min-h-0 flex-1 flex-col">
