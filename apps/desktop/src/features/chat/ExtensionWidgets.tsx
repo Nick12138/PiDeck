@@ -314,7 +314,11 @@ export function TodoFloatingPopover({ anchorRef }: { anchorRef: RefObject<HTMLEl
   if (todos.length === 0) return null;
 
   const position = layout?.above;
-  const maxWidth = Math.max(180, Math.min(position?.width ?? 360, 440));
+  // Keep the right-side jump-to-latest control clear even when the
+  // conversation column is narrow. The card remains content-sized within this
+  // safe width; long task text is truncated by TodoRow.
+  const availableWidth = Math.max(1, (position?.width ?? 360) - 48);
+  const maxWidth = Math.min(availableWidth, 440);
   const activeCount = todos.filter((item) => item.status !== "completed").length;
   const style: CSSProperties = position
     ? {

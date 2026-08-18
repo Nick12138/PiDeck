@@ -1939,7 +1939,7 @@ export function ThinkingBlock({
             <button
               type="button"
               onClick={scrollToLatest}
-              className="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
+              className="absolute bottom-2 right-2 z-50 flex size-7 items-center justify-center rounded-full border border-border bg-surface-raised text-muted shadow-md transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
               title={t("transcriptThinkingJumpLatest")}
               aria-label={t("transcriptThinkingJumpLatest")}
             >
