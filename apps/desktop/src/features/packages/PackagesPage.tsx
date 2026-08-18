@@ -1337,24 +1337,22 @@ export function PackagesPage() {
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[minmax(280px,34%)_minmax(0,1fr)] md:overflow-hidden">
           <aside className="flex min-h-[300px] flex-col border-b border-border md:min-h-0 md:border-b-0 md:border-r">
             <div className="border-b border-border p-3">
-              <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
                 <input
-                  className={`${inputClass} w-full`}
+                  className={`${inputClass} min-w-0 flex-1`}
                   aria-label={t("packagesSourceLabel")}
                   placeholder={t("packagesSourcePlaceholder")}
                   value={installSource}
                   onChange={(event) => setInstallSource(event.target.value)}
                 />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={primaryButton}
-                    disabled={mutationBlocked || !installSource.trim()}
-                    onClick={beginInstallReview}
-                  >
-                    {t("packagesInstallAction")}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className={`${primaryButton} shrink-0`}
+                  disabled={mutationBlocked || !installSource.trim()}
+                  onClick={beginInstallReview}
+                >
+                  {t("packagesInstallAction")}
+                </button>
               </div>
             </div>
             {packageUpdateActions}
