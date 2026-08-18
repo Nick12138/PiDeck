@@ -262,7 +262,7 @@ export function WorkspacePicker() {
           aria-expanded={!collapsed}
           aria-controls="workspace-list-region"
           title={collapsed ? t("workspacesExpand") : t("workspacesCollapse")}
-          className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
+          className="group flex min-w-0 items-center gap-1 text-[13px] font-medium text-muted transition-colors hover:text-foreground"
         >
           <span>{t("workspacesTitle")}</span>
           <ChevronDown

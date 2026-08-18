@@ -166,7 +166,7 @@ function GeneralSettings() {
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalStartupGroup")}</h2>
+            <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalStartupGroup")}</h2>
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
@@ -196,7 +196,7 @@ function GeneralSettings() {
           <PiSettings />
 
           <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalBusySendGroup")}</h2>
+            <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalBusySendGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-4">
                 <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
@@ -224,7 +224,7 @@ function GeneralSettings() {
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">
+            <h2 className="mb-2 text-[13px] font-medium text-muted">
               {t("generalExtensionDecisionGroup")}
             </h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -283,7 +283,7 @@ function GeneralSettings() {
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalTerminalGroup")}</h2>
+            <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalTerminalGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-4">
                 <label htmlFor="default-shell" className="min-w-0 text-sm">
@@ -356,7 +356,7 @@ function GeneralSettings() {
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalAdvancedGroup")}</h2>
+            <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalAdvancedGroup")}</h2>
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <p className="text-sm text-muted">{t("generalAdvancedDesc")}</p>
               <div className="flex flex-wrap items-center gap-2">
@@ -460,7 +460,7 @@ export function SettingsPage({
             <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
               <Settings2 size={15} />
             </span>
-            <h1 className="truncate text-sm font-semibold">{t("settingsTitle")}</h1>
+            <h1 className="truncate text-[13px] font-semibold">{t("settingsTitle")}</h1>
           </div>
         </header>
 
@@ -471,7 +471,7 @@ export function SettingsPage({
               type="button"
               data-ui="nav-item"
               data-state={section === id ? "active" : "inactive"}
-              className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+              className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors ${
                 section === id
                   ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
                   : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"

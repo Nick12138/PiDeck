@@ -901,8 +901,8 @@ html[data-theme-family="apple"]
 
 html[data-theme-family="apple"] [data-settings-content] section > h2 {
   padding-left: 4px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   letter-spacing: 0.012em;
 }
 

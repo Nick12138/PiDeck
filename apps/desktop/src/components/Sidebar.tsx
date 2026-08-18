@@ -83,7 +83,7 @@ function NewSessionButton() {
         void createNewSession();
       }}
       disabled={!workspace?.servicesReady || pending}
-      className="theme-sidebar-primary interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+      className="theme-sidebar-primary interface-density-primary-row flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] font-medium transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
     >
       <MessageCirclePlus size={18} className="shrink-0" />
       <span>{pending ? t("sidebarCreating") : t("sidebarNewConversation")}</span>
@@ -255,7 +255,7 @@ export function SidebarLayout({
                 title={t("settingsTitle")}
                 aria-label={t("settingsTitle")}
                 aria-pressed={page !== "chat"}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm font-medium transition-colors ${
+                className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] transition-colors ${
                   page !== "chat"
                     ? "theme-nav-active bg-nav-active text-nav-active-foreground"
                     : "text-foreground hover:bg-surface-overlay"

@@ -739,7 +739,7 @@ export function SessionList({
             aria-expanded={!collapsed}
             aria-controls="session-list-region"
             title={collapsed ? t("sessionsExpand") : t("sessionsCollapse")}
-            className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
+            className="group flex min-w-0 items-center gap-1 text-[13px] font-medium text-muted transition-colors hover:text-foreground"
           >
             <span>{t("sessionsRecent")}</span>
             <ChevronDown
@@ -750,7 +750,7 @@ export function SessionList({
             />
           </button>
         ) : (
-          <span className="text-[11px] font-medium text-muted">{t("sessionsRecent")}</span>
+          <span className="text-[13px] font-medium text-muted">{t("sessionsRecent")}</span>
         )}
         <div className="flex items-center gap-0.5">
           {filter === "archived" && archivedCount > 0 && (
@@ -811,7 +811,7 @@ export function SessionList({
             {groupedItems.map(({ group, items }) =>
               items.length === 0 ? null : (
                 <div key={group} className="flex flex-col gap-0.5">
-                  <p className="px-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+                  <p className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted">
                     {group === "today"
                       ? t("sessionsGroupToday")
                       : group === "thisWeek"
