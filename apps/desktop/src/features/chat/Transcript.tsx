@@ -15,8 +15,6 @@ import {
   Activity,
   ArrowDown,
   Ban,
-  Bot,
-  Brain,
   Braces,
   ChevronRight,
   CircleAlert,
@@ -1680,41 +1678,26 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
   const t = useT();
   const event = row.event;
   if (!event) return null;
-  const Icon = event.kind === "model" ? Bot : event.kind === "thinkingLevel" ? Brain : CircleAlert;
+  // Model and thinking-level change events are deliberately not rendered. They
+  // fire on session start and whenever settings change, but the user already
+  // sees the active model/thinking level in the composer; printing a divider
+  // row for each change is noise. Keep the data (export/tree still reference
+  // these entries) and only suppress the transcript row.
+  if (event.kind === "model" || event.kind === "thinkingLevel") return null;
+  const Icon = CircleAlert;
   const eventDetails =
     event.details && typeof event.details === "object"
       ? (event.details as Record<string, unknown>)
       : undefined;
-  const thinkingLevel = String(eventDetails?.thinkingLevel ?? "off");
-  const thinkingLevelLabels = {
-    off: "modelThinkingOff",
-    minimal: "modelThinkingMinimal",
-    low: "modelThinkingLow",
-    medium: "modelThinkingMedium",
-    high: "modelThinkingHigh",
-    xhigh: "modelThinkingExtraHigh",
-  } as const;
-  const localizedThinkingLevel =
-    thinkingLevel in thinkingLevelLabels
-      ? t(thinkingLevelLabels[thinkingLevel as keyof typeof thinkingLevelLabels])
-      : thinkingLevel;
   const label =
-    event.kind === "model" && eventDetails
-      ? t("transcriptModelChanged", {
-          model: `${String(eventDetails.provider ?? "")}/${String(eventDetails.modelId ?? "")}`,
+    eventDetails
+      ? t("transcriptUnknownMessageRole", {
+          role:
+            typeof eventDetails.role === "string" && eventDetails.role
+              ? eventDetails.role
+              : t("transcriptMissingRole"),
         })
-      : event.kind === "thinkingLevel" && eventDetails
-        ? t("transcriptThinkingLevelChanged", {
-            level: localizedThinkingLevel,
-          })
-        : event.kind === "unknown" && eventDetails
-          ? t("transcriptUnknownMessageRole", {
-              role:
-                typeof eventDetails.role === "string" && eventDetails.role
-                  ? eventDetails.role
-                  : t("transcriptMissingRole"),
-            })
-          : event.label;
+      : event.label;
   return (
     <div>
       <div className="flex items-center gap-3 py-1 text-[9px] text-muted">

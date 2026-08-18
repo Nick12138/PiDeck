@@ -96,13 +96,15 @@ describe("sessionStatusLabelKey", () => {
     );
   });
 
-  it("hides terminal markers only once acknowledged", () => {
+  it("hides terminal markers once acknowledged, and hides every state for the focused session", () => {
     expect(sessionStatusLabelKey("idle", { state: "done", acknowledged: true }, false)).toBeNull();
     expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: true }, false)).toBeNull();
-    // An unacknowledged terminal state still surfaces even for the focused session.
-    expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: false }, true)).toBe(
-      "sessionsStatusError",
-    );
+    // The focused session renders no sidebar status at all — the user is
+    // already in that window, so running/queued/done/error all stay quiet.
+    expect(sessionStatusLabelKey("running", undefined, true)).toBeNull();
+    expect(sessionStatusLabelKey("queued", undefined, true)).toBeNull();
+    expect(sessionStatusLabelKey("idle", { state: "error", acknowledged: false }, true)).toBeNull();
+    expect(sessionStatusLabelKey("error", undefined, true)).toBeNull();
     expect(sessionStatusLabelKey("idle", undefined, false)).toBeNull();
   });
 });
@@ -115,6 +117,16 @@ describe("sessionStatusDotClass", () => {
     expect(sessionStatusDotClass("inactive", undefined, false)).toBeNull();
   });
 
+  it("hides every surfaced state for the focused session", () => {
+    // Focused session: the user is in that window, so the sidebar dot is
+    // redundant for running/queued as well as terminal markers.
+    expect(sessionStatusDotClass("running", undefined, true)).toBeNull();
+    expect(sessionStatusDotClass("queued", undefined, true)).toBeNull();
+    expect(sessionStatusDotClass("idle", { state: "error", acknowledged: false }, true)).toBeNull();
+    expect(sessionStatusDotClass("idle", { state: "done", acknowledged: false }, true)).toBeNull();
+    expect(sessionStatusDotClass("error", undefined, true)).toBeNull();
+  });
+
   it("shows pulsing terminal states until the session is reopened", () => {
     expect(sessionStatusDotClass("idle", { state: "error", acknowledged: false }, false)).toBe(
       "bg-danger status-dot-pulse",
@@ -122,17 +134,12 @@ describe("sessionStatusDotClass", () => {
     expect(sessionStatusDotClass("idle", { state: "done", acknowledged: false }, false)).toBe(
       "bg-muted status-dot-pulse",
     );
-    // Even the focused session surfaces an unacknowledged terminal dot.
-    expect(sessionStatusDotClass("idle", { state: "error", acknowledged: false }, true)).toBe(
-      "bg-danger status-dot-pulse",
-    );
     expect(sessionStatusDotClass("idle", { state: "done", acknowledged: true }, false)).toBeNull();
     expect(sessionStatusDotClass("idle", undefined, false)).toBeNull();
   });
 
   it("falls back to a pulsing catalog error state when no marker exists", () => {
     expect(sessionStatusDotClass("error", undefined, false)).toBe("bg-danger status-dot-pulse");
-    expect(sessionStatusDotClass("error", undefined, true)).toBe("bg-danger status-dot-pulse");
   });
 });
 

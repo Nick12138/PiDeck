@@ -991,21 +991,36 @@ export const useAppStore = create<AppState>((set, get) => ({
           );
         }
       } else if (runtimeState === "error") {
+        // A failure in the focused session is already visible in the
+        // conversation pane and the sidebar would be redundant; auto-acknowledge
+        // it so no red dot shows while watching and none lingers after leaving.
+        // A failure in some other session stays red until the user returns.
+        const focusedFailure = state.session?.sessionId === sessionId;
         sessionTerminalStates = mergeTerminalState(sessionTerminalStates, workspaceId, sessionId, {
           state: "error",
-          // Every failure shows its dot until the user returns to the session,
-          // even when the failing session is the one in focus.
-          acknowledged: false,
+          acknowledged: focusedFailure,
         });
       } else if (runtimeState === "idle") {
         const wasBusy =
           previousRuntime === "running" ||
           previousRuntime === "queued" ||
           previousRuntime === "starting";
-        // The idle event after an error is the run settling; keep the
-        // unacknowledged error marker so a failed session stays red.
+        const focused = state.session?.sessionId === sessionId;
+        // The idle event after an error is the run settling; keep an
+        // unacknowledged error marker so a failed session stays red (a focused
+        // failure was already acknowledged above, so this guard still holds for
+        // unfocused ones).
         if (current && current.state === "error" && !current.acknowledged) {
           // keep the error marker
+        } else if (wasBusy && focused) {
+          // The user watched this run finish; auto-acknowledge the done marker
+          // so switching away never leaves a stale gray dot in the sidebar.
+          sessionTerminalStates = mergeTerminalState(
+            sessionTerminalStates,
+            workspaceId,
+            sessionId,
+            { state: "done", acknowledged: true },
+          );
         } else if (wasBusy) {
           sessionTerminalStates = mergeTerminalState(
             sessionTerminalStates,

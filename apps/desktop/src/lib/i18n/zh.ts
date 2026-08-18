@@ -753,8 +753,6 @@ export const zh: Record<MessageKey, string> = {
   transcriptCopied: "已复制",
   transcriptCopyMessage: "复制消息",
   transcriptRetryMessage: "重试",
-  transcriptModelChanged: "模型：{model}",
-  transcriptThinkingLevelChanged: "思考级别：{level}",
   transcriptUnknownMessageRole: "未知消息角色：{role}",
   transcriptMissingRole: "（缺失）",
 

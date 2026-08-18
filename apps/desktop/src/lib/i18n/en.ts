@@ -784,8 +784,6 @@ export const en = {
   transcriptCopied: "Copied",
   transcriptCopyMessage: "Copy message",
   transcriptRetryMessage: "Retry",
-  transcriptModelChanged: "Model: {model}",
-  transcriptThinkingLevelChanged: "Thinking level: {level}",
   transcriptUnknownMessageRole: "Unknown message role: {role}",
   transcriptMissingRole: "(missing)",
 

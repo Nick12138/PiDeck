@@ -32,8 +32,14 @@ export type SessionStatusLabelKey =
 export function sessionStatusLabelKey(
   runtimeState: SessionRuntimeState,
   terminal: SessionTerminalState | undefined,
-  _active: boolean,
+  active: boolean,
 ): SessionStatusLabelKey | null {
+  // The focused session is the one the user is already looking at — its live
+  // status (running/queued) and terminal markers (error/done) are visible in
+  // the conversation pane, so the sidebar dot is redundant there. Hide every
+  // surfaced state for the focused row so the sidebar only lights up sessions
+  // the user is NOT currently watching.
+  if (active) return null;
   if (runtimeState === "running") return "sessionsStatusRunning";
   if (runtimeState === "queued") return "sessionsStatusQueued";
   if (terminal?.state === "error" && !terminal.acknowledged) return "sessionsStatusError";
@@ -43,17 +49,22 @@ export function sessionStatusLabelKey(
 }
 
 /**
- * Dot color for states worth surfacing; quiet states render nothing. Live
- * states (running/queued) always show. Terminal states (error/done) show for
- * every session — including the one in focus — until the user returns to the
- * session, which acknowledges the marker. All surfaced states pulse so
- * ongoing/ended sessions read clearly at a glance.
+ * Dot color for states worth surfacing; quiet states render nothing. The
+ * focused session renders no dot at all — the user is already in that window,
+ * so its running/queued/terminal states are visible in the conversation pane
+ * and would only be noise in the sidebar. For other sessions, live states
+ * (running/queued) always show, and terminal states (error/done) show until
+ * the user returns to the session, which acknowledges the marker. The focused
+ * session's terminal markers are auto-acknowledged when they occur (see
+ * setSessionRuntimeState), so switching away never leaves a stale dot. All
+ * surfaced states pulse so ongoing/ended sessions read clearly at a glance.
  */
 export function sessionStatusDotClass(
   runtimeState: SessionRuntimeState,
   terminal: SessionTerminalState | undefined,
-  _active: boolean,
+  active: boolean,
 ): string | null {
+  if (active) return null;
   if (runtimeState === "running") return "bg-success status-dot-pulse";
   if (runtimeState === "queued") return "bg-warning status-dot-pulse";
   if (terminal?.state === "error" && !terminal.acknowledged) return "bg-danger status-dot-pulse";

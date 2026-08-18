@@ -924,11 +924,12 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().sessionCatalog.entries.s1?.runtimeState).toBe("idle");
 
     // The explicit runtime edge arrives afterwards and must still remember that
-    // the previous explicit runtime state was busy.
+    // the previous explicit runtime state was busy. The session is in focus,
+    // so the done marker is auto-acknowledged (no lingering sidebar dot).
     useAppStore.getState().setSessionRuntimeState("s1", "idle", undefined, 20);
     expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
       state: "done",
-      acknowledged: false,
+      acknowledged: true,
     });
   });
 
@@ -943,18 +944,39 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toBeUndefined();
   });
 
-  it("shows the done marker even for the session in focus until the user returns", () => {
+  it("auto-acknowledges the done marker for a session completing while in focus", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
     useAppStore.getState().applySessionSnapshot(session("s1"));
 
-    // s1 is active and completes → the done marker still shows until the user
-    // returns to the session (returning acknowledges it).
+    // s1 completes while the user is still looking at it → the marker is
+    // acknowledged immediately so switching away never leaves a stale gray dot.
     useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
     useAppStore.getState().setSessionRuntimeState("s1", "idle");
     expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
       state: "done",
-      acknowledged: false,
+      acknowledged: true,
+    });
+  });
+
+  it("auto-acknowledges a failure for the session in focus", () => {
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    // s1 fails while focused → the error marker is acknowledged so no red dot
+    // shows while watching and none lingers after the user leaves.
+    useAppStore.getState().setSessionRuntimeState("s1", "error", "boom");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "error",
+      acknowledged: true,
+    });
+    // Settling to idle does not re-arm a done marker (error is not a busy
+    // state), so the acknowledged error marker simply persists, hidden.
+    useAppStore.getState().setSessionRuntimeState("s1", "idle");
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "error",
+      acknowledged: true,
     });
 
     // A failure of a session that is no longer open stays unacknowledged (red dot).

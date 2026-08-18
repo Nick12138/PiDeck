@@ -278,8 +278,9 @@ describe("SessionList actions", () => {
     });
     render(<SessionList />);
 
-    // Completion happens while this session remains active, so the navigation
-    // effect must not immediately acknowledge it.
+    // Completion happens while this session remains active. The focused
+    // session hides its sidebar dot, so the marker is not visible even though
+    // it exists; clicking the already-active row acknowledges it.
     useAppStore.setState({
       sessionTerminalStates: {
         "workspace-1": {
@@ -287,7 +288,7 @@ describe("SessionList actions", () => {
         },
       },
     });
-    expect(await screen.findByTitle("Done")).toBeInTheDocument();
+    expect(screen.queryByTitle("Done")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Position the menu"));
 
