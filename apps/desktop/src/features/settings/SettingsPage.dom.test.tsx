@@ -119,6 +119,21 @@ describe("SettingsPage navigation guard", () => {
     ).toEqual(["General", "Appearance", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
   });
 
+  it("persists the steer behavior for messages sent while the agent is running", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    const behavior = screen.getByRole("button", { name: "Send while running" });
+    expect(behavior).toHaveTextContent("Send after it finishes");
+
+    await user.click(behavior);
+    await user.click(screen.getByRole("option", { name: "Send immediately" }));
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.busySendBehavior).toBe("steer"),
+    );
+    expect(behavior).toHaveTextContent("Send immediately");
+  });
+
   it("keeps startup controls in General and moves interface controls to Appearance", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="general" />);

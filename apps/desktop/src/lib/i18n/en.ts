@@ -177,6 +177,13 @@ export const en = {
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
+  generalBusySendGroup: "While the agent is running",
+  generalBusySend: "Send while running",
+  generalBusySendDesc: "What happens when you send another message during a turn.",
+  generalBusySendFollowUp: "Send after it finishes",
+  generalBusySendFollowUpDesc: "Wait until this turn finishes, then send.",
+  generalBusySendSteer: "Send immediately",
+  generalBusySendSteerDesc: "Inject into the current turn immediately.",
   generalExtensionDecisionGroup: "Extension prompts",
   generalExtensionDecision: "Extension prompt presentation",
   generalExtensionDecisionDesc:

@@ -10,7 +10,11 @@ import {
   ServerCog,
   Settings2,
 } from "lucide-react";
-import type { ExtensionDecisionPresentation, TerminalProfileId } from "@pideck/protocol";
+import type {
+  BusySendBehavior,
+  ExtensionDecisionPresentation,
+  TerminalProfileId,
+} from "@pideck/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { DockToggleButton } from "../../components/DockToggleButton";
 import { SectionHeader } from "../../components/SectionHeader";
@@ -190,6 +194,34 @@ function GeneralSettings() {
           </section>
 
           <PiSettings />
+
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-muted">{t("generalBusySendGroup")}</h2>
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-4">
+                <label htmlFor="busy-send-behavior" className="min-w-0 text-sm">
+                  <span className="block">{t("generalBusySend")}</span>
+                  <span id="busy-send-behavior-help" className="block text-xs text-muted">
+                    {t("generalBusySendDesc")}
+                  </span>
+                </label>
+                <Select
+                  className="min-w-40"
+                  ariaLabel={t("generalBusySend")}
+                  value={desktopSettings?.busySendBehavior ?? "followUp"}
+                  onChange={(value) =>
+                    void patchDesktop({
+                      busySendBehavior: value as BusySendBehavior,
+                    })
+                  }
+                  options={[
+                    { value: "followUp", label: t("generalBusySendFollowUp") },
+                    { value: "steer", label: t("generalBusySendSteer") },
+                  ]}
+                />
+              </div>
+            </div>
+          </section>
 
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">

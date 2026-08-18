@@ -82,6 +82,13 @@ pub enum ExtensionDecisionPresentation {
     InlineFirst,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BusySendBehavior {
+    FollowUp,
+    Steer,
+}
+
 fn legacy_extension_decision_presentation() -> ExtensionDecisionPresentation {
     ExtensionDecisionPresentation::LegacyModal
 }
@@ -101,6 +108,8 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_dir: Option<String>,
     pub auto_restart_host_once: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub busy_send_behavior: Option<BusySendBehavior>,
     #[serde(default = "legacy_extension_decision_presentation")]
     pub extension_decision_presentation: ExtensionDecisionPresentation,
     pub terminal_profile: TerminalProfileId,
@@ -128,6 +137,7 @@ impl Default for DesktopSettings {
             last_session_path: None,
             agent_dir: None,
             auto_restart_host_once: true,
+            busy_send_behavior: None,
             extension_decision_presentation: ExtensionDecisionPresentation::Auto,
             terminal_profile: TerminalProfileId::Auto,
             language: None,
@@ -411,6 +421,7 @@ impl DesktopSettingsStore {
                     | "lastSessionPath"
                     | "agentDir"
                     | "autoRestartHostOnce"
+                    | "busySendBehavior"
                     | "extensionDecisionPresentation"
                     | "terminalProfile"
                     | "language"
@@ -522,6 +533,37 @@ mod tests {
             .patch(serde_json::json!({ "language": null }))
             .unwrap();
         assert_eq!(cleared.settings.language, None);
+    }
+
+    #[test]
+    fn persists_busy_send_behavior_across_reloads() {
+        let dir = test_dir("busy-send-behavior");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(store.settings.busy_send_behavior, None);
+
+        store
+            .patch(serde_json::json!({ "busySendBehavior": "steer" }))
+            .unwrap();
+        assert_eq!(
+            store.settings.busy_send_behavior,
+            Some(BusySendBehavior::Steer)
+        );
+
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(
+            reloaded.settings.busy_send_behavior,
+            Some(BusySendBehavior::Steer)
+        );
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "busySendBehavior": "invalid" }))
+            .is_err());
+        assert_eq!(
+            invalid.settings.busy_send_behavior,
+            Some(BusySendBehavior::Steer)
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

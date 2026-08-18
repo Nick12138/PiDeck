@@ -22,6 +22,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
+import { busySendMethod } from "../../lib/busy-send";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -342,6 +343,7 @@ export function Composer({
   const host = useAppStore((s) => s.host);
   const workspace = useAppStore((s) => s.workspace);
   const session = useAppStore((s) => s.session);
+  const busySendBehavior = useAppStore((s) => s.desktopSettings?.busySendBehavior);
   // Re-pick a greeting whenever a new conversation (session) is opened.
   const welcomeKey = useMemo(
     () => (welcomeWorkspaceName ? pickWelcomeKey() : null),
@@ -1319,8 +1321,8 @@ export function Composer({
 
     try {
       if (busy) {
-        // Busy sends append to the waiting queue (follow-up), never run concurrently.
-        const res = await hostClient.request("agent.followUp", context, {
+        // Running-session sends use the configured steer or follow-up behavior.
+        const res = await hostClient.request(busySendMethod(busySendBehavior), context, {
           text: outgoingText,
           ...imageParams,
           ...attachmentParams,
