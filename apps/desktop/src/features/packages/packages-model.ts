@@ -10,9 +10,9 @@ import type {
 
 export const PACKAGE_RESOURCE_TYPES: ResourceType[] = ["extension", "skill", "prompt", "theme"];
 
-export type PackageScopeFilter = "all" | "user" | "project";
+type PackageScopeFilter = "all" | "user" | "project";
 export type ResourceTypeFilter = "all" | ResourceType;
-export type ResourceOriginFilter = "all" | "package" | "standalone" | "runtime";
+type ResourceOriginFilter = "all" | "package" | "standalone" | "runtime";
 export type ResourceMode = "user" | "project";
 
 export type InstalledFilters = {

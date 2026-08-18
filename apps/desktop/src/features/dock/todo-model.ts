@@ -5,7 +5,7 @@ import type {
   SessionSnapshot,
 } from "@pideck/protocol";
 
-export type TodoStatus = "pending" | "in_progress" | "completed";
+type TodoStatus = "pending" | "in_progress" | "completed";
 
 export type TodoItem = {
   id: string;
