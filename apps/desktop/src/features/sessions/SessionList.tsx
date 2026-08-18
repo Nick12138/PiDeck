@@ -42,7 +42,7 @@ import {
   requestSessionOpenWithRetry,
   SESSION_OPEN_TIMEOUT_MS,
 } from "../../lib/bridge/session-open-request";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { sessionCatalogItems, type SessionCatalogEntry } from "../../lib/stores/session-catalog";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
@@ -278,7 +278,7 @@ export function SessionList({
       return false;
     }
     if (!res.ok) {
-      pushNotification(localizeHostError(res.error, t), "error");
+      pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
       return false;
     }
     // Reused-pristine creates return the already-active snapshot, and normal
@@ -446,7 +446,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       updateSessionCatalogInfo(res.result.sessionId, res.result.name);
@@ -518,7 +518,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       if (method === "session.archive") {
@@ -587,7 +587,7 @@ export function SessionList({
           pushNotification(t("notifSessionGone"), "warning");
           return;
         }
-        pushNotification(localizeHostError(deleted.error, t), "error");
+        pushNotification(localizeHostError(deleted.error, t), hostErrorLevel(deleted.error));
         return;
       }
 
@@ -639,7 +639,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       await refresh();
@@ -698,7 +698,7 @@ export function SessionList({
         return;
       }
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       setSession(res.result);

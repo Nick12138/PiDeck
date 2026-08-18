@@ -26,7 +26,7 @@ import { busySendMethod } from "../../lib/busy-send";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_IMAGE_BYTES,
@@ -42,7 +42,11 @@ import {
 import { buildAttachedFileBlock } from "./transcript-model";
 import { ContextUsageRing, ModelControls, ThinkingControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
-import { ExtensionWidgetsPopover, ExtensionWidgetsButton } from "./ExtensionWidgets";
+import {
+  ExtensionWidgetsPopover,
+  ExtensionWidgetsButton,
+  TodoFloatingPopover,
+} from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
 import {
   activeSessionContext,
@@ -828,7 +832,7 @@ export function Composer({
         { attachmentId: document.id },
       );
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return false;
       }
       updateDocuments((current) => current.filter((item) => item.id !== document.id));
@@ -1314,7 +1318,7 @@ export function Composer({
               : null,
         });
       } else {
-        pushNotification(localizeHostError(error, t), "error");
+        pushNotification(localizeHostError(error, t), hostErrorLevel(error));
       }
       restoreDraft();
     };
@@ -1370,7 +1374,7 @@ export function Composer({
       return;
     }
     if (!res.ok) {
-      pushNotification(localizeHostError(res.error, t), "error");
+      pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
       return;
     }
     setSession(res.result.session);
@@ -1817,6 +1821,7 @@ export function Composer({
           open={extensionWidgetsOpen}
           onClose={closeExtensionWidgets}
         />
+        <TodoFloatingPopover anchorRef={extensionWidgetAnchorRef} />
         <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
         <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
       </div>

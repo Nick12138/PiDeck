@@ -188,9 +188,7 @@ function TypeBadge({ type }: { type: ResourceType }) {
     theme: "bg-surface-overlay text-muted",
   };
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium uppercase ${colors[type]}`}>
-      {type}
-    </span>
+    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${colors[type]}`}>{type}</span>
   );
 }
 

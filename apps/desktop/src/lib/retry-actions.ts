@@ -2,7 +2,7 @@ import type { JsonValue, SerializableImage } from "@pideck/protocol";
 import { useAppStore } from "./stores/app-store";
 import { hostClient } from "./bridge/host-client";
 import { activeSessionContext } from "./bridge/host-context";
-import { localizeHostError } from "./bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 import { tCurrent } from "./i18n/use-t";
 import {
   buildAttachedFileBlock,
@@ -27,7 +27,8 @@ export async function requestRetry(row: TranscriptRow): Promise<boolean> {
 
   const parsed = parseUserAttachments(row.copyText);
   const outgoingText = parsed.files.reduce(
-    (text, file) => `${text}${text ? "\n\n" : ""}${buildAttachedFileBlock(file.name, file.content)}`,
+    (text, file) =>
+      `${text}${text ? "\n\n" : ""}${buildAttachedFileBlock(file.name, file.content)}`,
     parsed.text,
   );
   const images: SerializableImage[] = row.blocks.flatMap((block) =>
@@ -39,7 +40,9 @@ export async function requestRetry(row: TranscriptRow): Promise<boolean> {
       ? { attachmentIds: parsed.documents.map((document) => document.id) }
       : {};
 
-  const handleFailure = (error: { code: string; message: string; details?: JsonValue } | undefined) => {
+  const handleFailure = (
+    error: { code: string; message: string; details?: JsonValue } | undefined,
+  ) => {
     if (error?.code === "AUTH_REQUIRED") {
       const details = error.details;
       setAuthBlocked({
@@ -51,7 +54,7 @@ export async function requestRetry(row: TranscriptRow): Promise<boolean> {
             : null,
       });
     } else {
-      pushNotification(localizeHostError(error, tCurrent), "error");
+      pushNotification(localizeHostError(error, tCurrent), hostErrorLevel(error));
     }
   };
 
@@ -69,7 +72,10 @@ export async function requestRetry(row: TranscriptRow): Promise<boolean> {
     setAuthBlocked(null);
     return true;
   } catch (error) {
-    pushNotification(error instanceof Error ? error.message : tCurrent("composerSendFailed"), "error");
+    pushNotification(
+      error instanceof Error ? error.message : tCurrent("composerSendFailed"),
+      "error",
+    );
     return false;
   }
 }

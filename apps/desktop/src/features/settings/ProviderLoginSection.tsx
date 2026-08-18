@@ -15,7 +15,7 @@ import {
 import { open as openExternalUrl } from "@tauri-apps/plugin-shell";
 import type { BuiltinProviderAuthStatus, BuiltinProviderModelChoice } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
@@ -83,7 +83,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
         authType,
       });
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       beginProviderLogin(res.result.loginId, res.result.providerId);
@@ -101,7 +101,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
         providerId: provider.providerId,
       });
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       pushNotification(t("notifProviderLoggedOut", { name: provider.name }), "success");
@@ -122,7 +122,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
         enabled,
       });
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       refreshProviderConfig();
@@ -146,7 +146,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
       return { ...current, loading: false, models: res.result.models };
     });
     if (!res.ok) {
-      pushNotification(localizeHostError(res.error, t), "error");
+      pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
     }
   }
 
@@ -162,7 +162,7 @@ export function ProviderLoginPage({ onClose }: { onClose: () => void }) {
       modelIds: models.filter((model) => model.enabled).map((model) => model.id),
     });
     if (!res.ok) {
-      pushNotification(localizeHostError(res.error, t), "error");
+      pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
       await loadModelPanel(providerId);
       return;
     }
@@ -493,7 +493,7 @@ function LoginFlowCard({
         value,
       });
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       onResolvePrompt(prompt.promptId);

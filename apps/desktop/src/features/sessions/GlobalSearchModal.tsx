@@ -13,7 +13,7 @@ import {
   requestSessionOpenWithRetry,
   SESSION_OPEN_TIMEOUT_MS,
 } from "../../lib/bridge/session-open-request";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -167,7 +167,10 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
             if (isWorkspaceSwitchBusyError(switched.error) && (await connectDedicatedHost(true))) {
               // The Host became busy after the initial decision; isolation completed.
             } else {
-              state.pushNotification(localizeHostError(switched.error, t), "error");
+              state.pushNotification(
+                localizeHostError(switched.error, t),
+                hostErrorLevel(switched.error),
+              );
               return;
             }
           } else {
@@ -235,7 +238,9 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
       });
       if (!res) return;
       if (!res.ok) {
-        useAppStore.getState().pushNotification(localizeHostError(res.error, t), "error");
+        useAppStore
+          .getState()
+          .pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       const appliedSession = useAppStore.getState().session;

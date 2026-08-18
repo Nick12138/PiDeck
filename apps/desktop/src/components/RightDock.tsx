@@ -40,7 +40,13 @@ import { useT } from "../lib/i18n/use-t";
 import { subscribeDockCommands } from "../lib/commands/events";
 
 export type DockTabId =
-  "files" | "tree" | "changes" | "todo" | `browser:${number}` | `shell:${number}` | `extension:${string}`;
+  | "files"
+  | "tree"
+  | "changes"
+  | "todo"
+  | `browser:${number}`
+  | `shell:${number}`
+  | `extension:${string}`;
 
 type ShellDockTab = {
   id: number;
@@ -134,7 +140,9 @@ export function RightDock() {
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
   const session = useAppStore((state) => state.session);
-  const todoCount = extractLatestTodos(session).filter((item) => item.status !== "completed").length;
+  const todoCount = extractLatestTodos(session).filter(
+    (item) => item.status !== "completed",
+  ).length;
   const terminalProfile = useAppStore((state) => state.desktopSettings?.terminalProfile ?? "auto");
   const setDockOpen = useAppStore((state) => state.setDockOpen);
   const pushNotification = useAppStore((state) => state.pushNotification);
@@ -622,7 +630,7 @@ export function RightDock() {
                   key={tabId}
                   data-ui="tab"
                   data-state={activeTab === tabId ? "active" : "inactive"}
-                  className={`flex h-full w-44 min-w-[96px] shrink items-center border-b-2 text-xs ${
+                  className={`flex h-full w-auto min-w-[72px] max-w-60 shrink items-center border-b-2 text-xs ${
                     activeTab === tabId
                       ? "border-accent text-foreground"
                       : "border-transparent text-muted hover:text-foreground"

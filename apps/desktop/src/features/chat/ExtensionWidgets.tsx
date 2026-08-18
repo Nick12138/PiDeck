@@ -1,8 +1,17 @@
-import { useId, useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, PanelsTopLeft, X } from "lucide-react";
+import { ChevronRight, ListChecks, PanelsTopLeft, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
+import { extractLatestTodos } from "../dock/todo-model";
+import { TodoRow, todoNumber } from "../dock/TodoPanel";
 
 type WidgetPlacement = "aboveEditor" | "belowEditor";
 
@@ -285,6 +294,92 @@ export function WidgetPanel({
   );
 }
 
+function isTodoWidgetKey(key: string): boolean {
+  return /todo/i.test(key);
+}
+
+/**
+ * Floating collapsible todo card anchored above the composer. Narrow width
+ * and left-aligned so it never covers the transcript's jump-to-latest button
+ * on the right. Hidden entirely when the session has no todos.
+ */
+export function TodoFloatingPopover({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
+  const t = useT();
+  const session = useAppStore((state) => state.session);
+  const todos = useMemo(() => extractLatestTodos(session), [session]);
+  const [collapsed, setCollapsed] = useState(false);
+  const contentId = useId();
+  const layout = useWidgetPopoverLayout(anchorRef, todos.length > 0, true, false);
+
+  if (todos.length === 0) return null;
+
+  const position = layout?.above;
+  const maxWidth = Math.max(180, Math.min(position?.width ?? 360, 440));
+  const activeCount = todos.filter((item) => item.status !== "completed").length;
+  const style: CSSProperties = position
+    ? {
+        left: position.left,
+        width: "max-content",
+        maxWidth,
+        maxHeight: position.maxHeight,
+        ...(position.top !== undefined ? { top: position.top } : {}),
+        ...(position.bottom !== undefined ? { bottom: position.bottom } : {}),
+      }
+    : { left: 0, top: 0, width: "max-content", maxWidth, maxHeight: 1 };
+  const toggleLabel = t(collapsed ? "extWidgetExpand" : "extWidgetCollapse", {
+    key: "Todo",
+  });
+
+  const card = (
+    <section
+      className={`theme-floating-surface fixed z-40 flex max-w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl ${
+        position ? "" : "invisible pointer-events-none"
+      }`}
+      style={style}
+      aria-label="Todo"
+    >
+      <button
+        type="button"
+        className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+        onClick={() => setCollapsed((value) => !value)}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          size={14}
+          className={`shrink-0 text-muted transition-transform duration-150 motion-reduce:transition-none ${
+            collapsed ? "" : "rotate-90"
+          }`}
+        />
+        <ListChecks size={15} className="shrink-0 text-accent" aria-hidden="true" />
+        <span className="min-w-0 shrink truncate text-sm font-medium text-foreground">Todo</span>
+        <span className="shrink-0 rounded-full bg-surface-overlay px-2 py-0.5 text-xs text-muted">
+          {activeCount}
+        </span>
+      </button>
+      {!collapsed && (
+        <div id={contentId} className="scrollbar-auto-hide min-h-0 overflow-y-auto p-2">
+          <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
+            {todos.map((item) => (
+              <TodoRow
+                key={item.id}
+                item={item}
+                number={todoNumber(item, todos)}
+                active={item.status === "in_progress"}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+
+  return typeof document === "undefined" ? card : createPortal(card, document.body);
+}
+
 function WidgetSection({
   entry,
   collapsed,
@@ -347,7 +442,7 @@ export function ExtensionWidgetsPopover({
   const widgets = useAppStore((state) => state.extensionWidgets);
   const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
   const onToggleCollapsed = useAppStore((state) => state.toggleExtensionWidgetCollapsed);
-  const entries = Object.values(widgets);
+  const entries = Object.values(widgets).filter((entry) => !isTodoWidgetKey(entry.key));
   const { aboveEditor, belowEditor } = partitionExtensionWidgets(entries);
   const layout = useWidgetPopoverLayout(
     anchorRef,
@@ -403,7 +498,7 @@ export function ExtensionWidgetsButton({
 }) {
   const t = useT();
   const widgets = useAppStore((state) => state.extensionWidgets);
-  const entries = Object.values(widgets);
+  const entries = Object.values(widgets).filter((entry) => !isTodoWidgetKey(entry.key));
 
   if (entries.length === 0) return null;
 

@@ -20,6 +20,44 @@ type GetMeResponse = {
   };
 };
 
+/** Maps a getMe network/abort error to an actionable one-line description.
+ *
+ *  Telegram's api.telegram.org is frequently unreachable from networks that
+ *  block it — the symptom is a TCP connect timeout, not an HTTP response. The
+ *  host already installs an undici `EnvHttpProxyAgent` global dispatcher that
+ *  honors the global settings `httpProxy` (mirrored to `HTTPS_PROXY`), so a
+ *  connect failure here almost always means no proxy is configured. Surface
+ *  that hint instead of a bare "Timed out contacting Telegram."
+ */
+function describeTelegramCallError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  // Our own AbortController fired (10 s hard timeout).
+  if (err.name === "AbortError") {
+    return (
+      "Timed out contacting Telegram. If the Telegram API is not directly " +
+      "reachable from your network, set `httpProxy` in the agent settings.json " +
+      "to a reachable HTTP proxy and restart the host."
+    );
+  }
+  // Undici connect / socket failures carry a `code`.
+  const code = (err as { code?: string }).code;
+  const isConnectFailure =
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "ECONNREFUSED" ||
+    code === "ECONNRESET" ||
+    code === "EAI_AGAIN" ||
+    code === "ENETUNREACH" ||
+    code === "ETIMEDOUT";
+  if (isConnectFailure) {
+    return (
+      `Could not reach the Telegram API (${err.message}). If Telegram is blocked ` +
+      "on your network, set `httpProxy` in the agent settings.json " +
+      '(e.g. "http://127.0.0.1:7897") and restart the host.'
+    );
+  }
+  return err.message;
+}
+
 /**
  * Host method `telegram.validateToken`.
  *
@@ -32,9 +70,7 @@ type GetMeResponse = {
  * directory at `<agentDir>/workspace/telegram` (created if missing) and returns
  * its absolute path as `workspacePath`.
  */
-export function createTelegramHandlers(
-  agentDir: string,
-): Partial<Record<string, MethodHandler>> {
+export function createTelegramHandlers(agentDir: string): Partial<Record<string, MethodHandler>> {
   /** Ensures `<agentDir>/workspace/telegram` exists and returns its absolute path. */
   const ensureTelegramWorkspace = async (): Promise<string> => {
     const workspacePath = join(agentDir, TELEGRAM_WORKSPACE_SEGMENT);
@@ -62,13 +98,10 @@ export function createTelegramHandlers(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
       try {
-        const response = await fetch(
-          `${TELEGRAM_API_BASE}/bot${trimmed}/getMe`,
-          { signal: controller.signal },
-        );
-        const data = (await response.json().catch(() => undefined)) as
-          | GetMeResponse
-          | undefined;
+        const response = await fetch(`${TELEGRAM_API_BASE}/bot${trimmed}/getMe`, {
+          signal: controller.signal,
+        });
+        const data = (await response.json().catch(() => undefined)) as GetMeResponse | undefined;
         if (!data) {
           return {
             result: {
@@ -118,16 +151,10 @@ export function createTelegramHandlers(
           } satisfies TelegramValidateTokenResult,
         };
       } catch (err) {
-        const message =
-          err instanceof Error
-            ? err.name === "AbortError"
-              ? "Timed out contacting Telegram."
-              : err.message
-            : String(err);
         return {
           result: {
             ok: false,
-            description: message,
+            description: describeTelegramCallError(err),
           } satisfies TelegramValidateTokenResult,
         };
       } finally {

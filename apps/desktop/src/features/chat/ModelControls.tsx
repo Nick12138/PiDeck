@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -537,7 +537,7 @@ export function ModelControls() {
       setThinkingLevels(res.result.thinkingLevels);
       return true;
     }
-    pushNotification(localizeHostError(res.error, t), "error");
+    pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
     return false;
   }
 
@@ -547,7 +547,7 @@ export function ModelControls() {
         <span
           ref={modelMenuMeasureRef}
           aria-hidden="true"
-          className="pointer-events-none invisible absolute flex w-max flex-col whitespace-nowrap text-[11px]"
+          className="pointer-events-none invisible absolute flex w-max flex-col whitespace-nowrap text-xs"
         >
           {modelMenuLabels.map((label, index) => (
             <span key={`${index}:${label}`}>{label}</span>
@@ -555,7 +555,7 @@ export function ModelControls() {
         </span>
         <button
           type="button"
-          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -595,7 +595,7 @@ export function ModelControls() {
                     <button
                       key={key}
                       type="button"
-                      className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-[11px] text-muted ${
+                      className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
                         selected ? "font-medium" : ""
                       }`}
                       role="menuitemradio"
@@ -680,7 +680,7 @@ export function ThinkingControls() {
       setOpen(false);
       return;
     }
-    pushNotification(localizeHostError(res.error, t), "error");
+    pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
   }
 
   return (

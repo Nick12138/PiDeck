@@ -2,6 +2,19 @@ import type { Translate } from "../i18n/use-t";
 
 type HostErrorLike = { code?: string; message?: string };
 
+/** Host error codes that represent a transient "busy" condition. These surface
+ *  as a one-shot toast but are not retained in the notification center history
+ *  (they use the non-persistent `info` level that the bell badge ignores).
+ *  See `apps/desktop/src/components/NotificationCenter.tsx`. */
+export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set(["AGENT_BUSY"]);
+
+/** Choose the notification level for a host error. Transient "busy" conditions
+ *  return `info` so they don't linger in the notification history; everything
+ *  else returns `error`. */
+export function hostErrorLevel(error: HostErrorLike | null | undefined): "info" | "error" {
+  return error && TRANSIENT_HOST_ERROR_CODES.has(error.code ?? "") ? "info" : "error";
+}
+
 const CODE_TO_KEY: Record<
   string,
   | "hostErrAgentBusy"

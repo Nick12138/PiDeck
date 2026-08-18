@@ -422,7 +422,8 @@ export type HostResultMap = {
     providerId: string;
     models: DiscoveredProviderModel[];
   };
-  "provider.checkConnection": ProviderConnectionResult;  "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
+  "provider.checkConnection": ProviderConnectionResult;
+  "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
   "provider.loginStart": { loginId: string; providerId: string };
   "provider.loginRespond": { accepted: true };
   "provider.loginCancel": { accepted: true };

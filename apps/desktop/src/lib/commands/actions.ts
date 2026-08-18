@@ -1,5 +1,5 @@
 import { hostClient } from "../bridge/host-client";
-import { localizeHostError } from "../bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -53,7 +53,12 @@ export async function createNewSession(): Promise<boolean> {
       return false;
     }
     if (!response.ok) {
-      useAppStore.getState().pushNotification(localizeHostError(response.error, tCurrent), "error");
+      useAppStore
+        .getState()
+        .pushNotification(
+          localizeHostError(response.error, tCurrent),
+          hostErrorLevel(response.error),
+        );
       return false;
     }
     const current = useAppStore.getState();
@@ -126,7 +131,12 @@ export async function abortCurrentAgent(): Promise<boolean> {
       return false;
     }
     if (!response.ok) {
-      useAppStore.getState().pushNotification(localizeHostError(response.error, tCurrent), "error");
+      useAppStore
+        .getState()
+        .pushNotification(
+          localizeHostError(response.error, tCurrent),
+          hostErrorLevel(response.error),
+        );
       return false;
     }
     useAppStore.getState().applySessionSnapshot(response.result.session);

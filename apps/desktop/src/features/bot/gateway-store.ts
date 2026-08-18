@@ -40,10 +40,7 @@ const STORAGE_KEY = "pideck.bot.gateways.v1";
  * testing. Path separators are normalized to the host OS by {@link
  * normalizeWorkspacePath} when the host can't return an authoritative path.
  */
-export function defaultGatewayWorkspacePath(
-  kind: BotGatewayKind,
-  agentDir: string,
-): string {
+export function defaultGatewayWorkspacePath(kind: BotGatewayKind, agentDir: string): string {
   const segment = kind === "telegram" ? "workspace/telegram" : "workspace/weixin";
   // agentDir is OS-canonical already; join without assuming POSIX separators.
   const sep = agentDir.includes("\\") && !agentDir.includes("/") ? "\\" : "/";
@@ -82,8 +79,7 @@ export function createTelegramGateway(input: {
 }): BotGateway {
   const trimmedToken = input.token.trim();
   const handle = input.username ? `@${input.username}` : "";
-  const name =
-    input.name.trim() || input.username || input.firstName || "Telegram Bot";
+  const name = input.name.trim() || input.username || input.firstName || "Telegram Bot";
   return {
     id: `tg-${crypto.randomUUID()}`,
     kind: "telegram",
@@ -101,6 +97,13 @@ export function createTelegramGateway(input: {
 
 export function addGateway(gateway: BotGateway): BotGateway[] {
   const next = [...loadBotGateways(), gateway];
+  saveBotGateways(next);
+  return next;
+}
+
+/** Removes the gateway with the given id and returns the new list. */
+export function removeGateway(id: string): BotGateway[] {
+  const next = loadBotGateways().filter((g) => g.id !== id);
   saveBotGateways(next);
   return next;
 }

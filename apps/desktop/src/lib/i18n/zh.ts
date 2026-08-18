@@ -640,7 +640,8 @@ export const zh: Record<MessageKey, string> = {
   botAddWeixinBotDesc: "微信网关支持即将推出。",
   botAddComingSoon: "敬请期待",
   botAddTelegramTitle: "添加 Telegram Bot",
-  botAddTelegramSubtitle: "Bot 默认拥有最高权限：首位向该 bot 发送 /start 的用户将被锁定为所有者，可驱动 Pi；其他人均被拒绝。",
+  botAddTelegramSubtitle:
+    "Bot 默认拥有最高权限：首位向该 bot 发送 /start 的用户将被锁定为所有者，可驱动 Pi；其他人均被拒绝。",
   botAddTelegramTokenLabel: "Bot token",
   botAddTelegramTokenPlaceholder: "123456:ABC-DEF...",
   botAddTelegramTokenRequired: "请填写 Bot token。",
@@ -657,6 +658,18 @@ export const zh: Record<MessageKey, string> = {
   botAddTelegramConfirm: "添加",
   botAddTelegramSaved: "已添加 Telegram Bot「{name}」。",
   botAddWeixinComingSoon: "WeXin Bot 网关支持即将推出。",
+
+  // Bot gateways list (saved gateways shown in the sidebar under Workspaces)
+  botGatewaysTitle: "机器人网关",
+  botGatewaysExpand: "展开机器人网关",
+  botGatewaysCollapse: "折叠机器人网关",
+  botGatewayConnected: "已连接",
+  botGatewayDisconnected: "未连接",
+  botGatewayBoundWorkspace: "工作区：{path}",
+  botGatewayBoundWorkspaceUnknown: "工作区：跟随当前",
+  botGatewayRemoveTitle: "移除网关",
+  botGatewayRemoveAria: "移除机器人网关「{name}」",
+  botGatewayRemovedNotif: "已移除机器人网关「{name}」。",
 
   // Session list
   sessionsRecent: "最近对话",
@@ -954,7 +967,6 @@ export const zh: Record<MessageKey, string> = {
   dockTodo: "任务",
   todoCurrentTitle: "当前任务",
   todoActiveTitle: "进行中的任务",
-  todoCompletedTitle: "已完成（{count}）",
   todoStatusPending: "待处理",
   todoStatusInProgress: "进行中",
   todoStatusCompleted: "已完成",

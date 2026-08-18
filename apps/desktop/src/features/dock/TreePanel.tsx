@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, GitFork, LoaderCircle, RefreshCw } from "lucide-react";
 import type { SerializableSessionTreeNode } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   activeSessionContext,
   captureRequestGeneration,
@@ -221,7 +221,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
         return;
       }
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
       if (res.result.cancelled) {

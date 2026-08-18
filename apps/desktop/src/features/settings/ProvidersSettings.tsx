@@ -26,7 +26,7 @@ import type {
 } from "@pideck/protocol";
 import { THINKING_LEVELS } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { hostContext } from "../../lib/bridge/host-context";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -452,7 +452,7 @@ export function ProvidersSettings() {
         20_000,
       );
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
       }
       // The user may have switched to another Provider while the fetch was in
@@ -503,7 +503,7 @@ export function ProvidersSettings() {
         25_000,
       );
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
       }
       // Never render a result banner for a Provider the user switched away from.
@@ -540,7 +540,7 @@ export function ProvidersSettings() {
         enabled,
       });
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
       }
       setProviders((current) =>
@@ -574,7 +574,7 @@ export function ProvidersSettings() {
         providerId: draft.originalId,
       });
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
       }
       const listResponse = await hostClient.request("provider.list", hostContext(host), null);

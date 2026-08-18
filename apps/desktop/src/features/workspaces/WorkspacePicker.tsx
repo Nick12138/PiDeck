@@ -1,4 +1,15 @@
-import { ChevronDown, Folder, FolderPlus, LoaderCircle, MessageCircle, Plus, Send, X } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  Folder,
+  FolderPlus,
+  LoaderCircle,
+  MessageCircle,
+  Plus,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -11,7 +22,7 @@ import {
   replayActiveHostReady,
   subscribeHostActivity,
 } from "../../lib/bridge/tauri-transport";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   notifyDesktopSettingsSaveFailure,
   persistDesktopSettings,
@@ -25,7 +36,7 @@ import {
   workspaceHasActiveAgent,
 } from "./workspace-switch-policy";
 import { TelegramAddDialog } from "../bot/TelegramAddDialog";
-import { addGateway, type BotGateway } from "../bot/gateway-store";
+import { addGateway, loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -83,6 +94,10 @@ export function WorkspacePicker() {
   );
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
+  const [gateways, setGateways] = useState<BotGateway[]>(() => loadBotGateways());
+  const [gatewaysCollapsed, setGatewaysCollapsed] = useState(() =>
+    sidebarPref("pideck.sidebar.botGatewaysCollapsed"),
+  );
   const requestRef = useRef(0);
 
   function toggleCollapsed() {
@@ -90,6 +105,18 @@ export function WorkspacePicker() {
       setSidebarPref("pideck.sidebar.workspacesCollapsed", !current);
       return !current;
     });
+  }
+
+  function toggleGatewaysCollapsed() {
+    setGatewaysCollapsed((current) => {
+      setSidebarPref("pideck.sidebar.botGatewaysCollapsed", !current);
+      return !current;
+    });
+  }
+
+  function removeGatewayEntry(gateway: BotGateway) {
+    setGateways(removeGateway(gateway.id));
+    pushNotification(t("botGatewayRemovedNotif", { name: gateway.name }), "success");
   }
 
   const currentCwd = workspace?.canonicalCwd ?? null;
@@ -186,7 +213,7 @@ export function WorkspacePicker() {
       if (request !== requestRef.current) return;
       if (!res.ok) {
         if (isWorkspaceSwitchBusyError(res.error) && (await connectDedicatedHost(true))) return;
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
         return;
       }
 
@@ -426,11 +453,77 @@ export function WorkspacePicker() {
           </ul>
         )}
       </CollapsibleRegion>
+      {gateways.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 flex h-7 items-center px-2">
+            <button
+              type="button"
+              onClick={toggleGatewaysCollapsed}
+              aria-expanded={!gatewaysCollapsed}
+              aria-controls="bot-gateways-region"
+              title={gatewaysCollapsed ? t("botGatewaysExpand") : t("botGatewaysCollapse")}
+              className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
+            >
+              <span>{t("botGatewaysTitle")}</span>
+              <ChevronDown
+                size={12}
+                className={`opacity-0 transition-all group-hover:opacity-100 ${
+                  gatewaysCollapsed ? "-rotate-90" : ""
+                }`}
+              />
+            </button>
+          </div>
+          <CollapsibleRegion open={!gatewaysCollapsed} id="bot-gateways-region">
+            <ul className="flex flex-col gap-0.5">
+              {gateways.map((gateway) => {
+                const statusDot = gateway.connected ? "bg-success" : "bg-muted";
+                const boundTitle = gateway.boundWorkspacePath
+                  ? t("botGatewayBoundWorkspace", { path: gateway.boundWorkspacePath })
+                  : t("botGatewayBoundWorkspaceUnknown");
+                return (
+                  <li
+                    key={gateway.id}
+                    className="interface-density-nav-row group flex h-9 items-center rounded-md hover:bg-surface-overlay/70"
+                  >
+                    <span
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-[13px]"
+                      title={`${gateway.name}\n${boundTitle}`}
+                    >
+                      <Bot size={16} className="shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1 truncate">{gateway.name}</span>
+                      {gateway.handle && (
+                        <span className="shrink-0 truncate font-mono text-[10px] text-muted">
+                          {gateway.handle}
+                        </span>
+                      )}
+                      <span
+                        className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`}
+                        title={
+                          gateway.connected ? t("botGatewayConnected") : t("botGatewayDisconnected")
+                        }
+                      />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeGatewayEntry(gateway)}
+                      className="mr-1 hidden rounded p-1 text-muted hover:bg-surface hover:text-foreground group-hover:block"
+                      title={t("botGatewayRemoveTitle")}
+                      aria-label={t("botGatewayRemoveAria", { name: gateway.name })}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </CollapsibleRegion>
+        </div>
+      )}
       {telegramDialogOpen && (
         <TelegramAddDialog
           onCancel={() => setTelegramDialogOpen(false)}
           onConfirm={(gateway: BotGateway) => {
-            addGateway(gateway);
+            setGateways(addGateway(gateway));
             setTelegramDialogOpen(false);
             pushNotification(t("botAddTelegramSaved", { name: gateway.name }), "success");
           }}

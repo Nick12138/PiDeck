@@ -187,8 +187,12 @@ export function Transcript() {
     suppressedSessionRef.current = sessionKey;
     if (suppressedKeys.size > 0) setSuppressedKeys(new Set());
   }
-  const shownRows = suppressedKeys.size === 0 ? rows : rows.filter((row) => !suppressedKeys.has(row.key));
-  const retryableTurns = useMemo(() => computeRetryableTurns(rows, suppressedKeys), [rows, suppressedKeys]);
+  const shownRows =
+    suppressedKeys.size === 0 ? rows : rows.filter((row) => !suppressedKeys.has(row.key));
+  const retryableTurns = useMemo(
+    () => computeRetryableTurns(rows, suppressedKeys),
+    [rows, suppressedKeys],
+  );
 
   const handleRetry = useCallback(
     (row: TranscriptRow): Promise<void> =>
@@ -1689,18 +1693,17 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
     event.details && typeof event.details === "object"
       ? (event.details as Record<string, unknown>)
       : undefined;
-  const label =
-    eventDetails
-      ? t("transcriptUnknownMessageRole", {
-          role:
-            typeof eventDetails.role === "string" && eventDetails.role
-              ? eventDetails.role
-              : t("transcriptMissingRole"),
-        })
-      : event.label;
+  const label = eventDetails
+    ? t("transcriptUnknownMessageRole", {
+        role:
+          typeof eventDetails.role === "string" && eventDetails.role
+            ? eventDetails.role
+            : t("transcriptMissingRole"),
+      })
+    : event.label;
   return (
     <div>
-      <div className="flex items-center gap-3 py-1 text-[9px] text-muted">
+      <div className="flex items-center gap-3 py-1 text-[11px] text-muted">
         <div className="h-px flex-1 bg-border/70" />
         <span className="flex min-w-0 max-w-[80%] items-center gap-1.5 text-center">
           <Icon size={13} />

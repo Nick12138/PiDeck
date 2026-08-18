@@ -61,7 +61,7 @@ export function NotificationPanel({
       role="dialog"
       aria-label={t("notifCenterTitle")}
       style={style}
-      className="theme-floating-surface fixed z-[70] flex w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+      className="theme-floating-surface fixed z-[70] flex w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
     >
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("notifCenterTitle")}</h2>
@@ -129,13 +129,13 @@ const TOAST_DURATION_MS = 6_000;
 const TOAST_LEAVE_MS = 200;
 const MAX_STACKED_TOASTS = 3;
 
-// Matches the panel width in the CSS (`w-[min(25rem,calc(100vw-1.5rem))]`);
-// on desktop the 25rem cap is what applies.
-const PANEL_WIDTH_PX = 25 * 16;
+// Matches the panel width in the CSS (`w-[min(22rem,calc(100vw-1.5rem))]`);
+// on desktop the 22rem cap is what applies.
+const PANEL_WIDTH_PX = 22 * 16;
 
 // The popover uses fixed positioning anchored to the bell button so it can
 // overflow the sidebar's overflow:hidden (the sidebar is only 220–420px wide,
-// a 25rem panel would be clipped by an absolute anchor). It opens below the
+// a 22rem panel would be clipped by an absolute anchor). It opens below the
 // button with its left edge aligned to the button's left edge, growing right.
 // The 4px gap keeps the panel clear of the bell's hover bg.
 function panelAnchorStyle(rootRef: RefObject<HTMLDivElement | null>): CSSProperties {
@@ -329,7 +329,7 @@ export function NotificationCenter() {
         <div
           role="status"
           aria-live="polite"
-          className="pointer-events-none fixed right-3 top-14 z-[70] flex w-[min(23rem,calc(100vw-1.5rem))] flex-col gap-2"
+          className="pointer-events-none fixed right-3 top-14 z-[70] flex w-[min(20rem,calc(100vw-1.5rem))] flex-col gap-2"
         >
           {toasts.map(({ id, leaving }) => {
             const notification = notifications.find((item) => item.id === id);

@@ -241,12 +241,12 @@ function MetricCard({
   return (
     <div className="group rounded-xl border border-border bg-surface-raised/70 p-4 transition-colors hover:border-border-strong">
       <div className="flex items-start justify-between gap-3">
-        <span className="text-xs text-muted">{label}</span>
+        <span className="text-[11px] text-muted">{label}</span>
         <span className={`flex size-8 items-center justify-center rounded-lg ${tone}`}>
           <Icon size={16} strokeWidth={1.8} />
         </span>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-1.5 text-xl font-semibold tracking-tight tabular-nums">{value}</p>
       {detail && <p className="mt-1 text-[11px] text-muted">{detail}</p>}
     </div>
   );
@@ -334,7 +334,7 @@ function UsageSettingsContent({
         <section className="rounded-xl border border-border bg-surface-raised/70 p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">{t("usageTokenMix")}</h2>
+              <h2 className="text-sm font-medium">{t("usageTokenMix")}</h2>
               <p className="mt-1 text-xs text-muted">{t("usageTokenMixSubtitle")}</p>
             </div>
             <Sparkles size={17} className="text-accent" aria-hidden />
@@ -382,7 +382,7 @@ function UsageSettingsContent({
         <section className="rounded-xl border border-border bg-surface-raised/70 p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">{t("usageTopModels")}</h2>
+              <h2 className="text-sm font-medium">{t("usageTopModels")}</h2>
               <p className="mt-1 text-xs text-muted">{t("usageTopModelsSubtitle")}</p>
             </div>
             <BarChart3 size={17} className="text-accent" aria-hidden />
@@ -410,7 +410,7 @@ function UsageSettingsContent({
       <section className="overflow-hidden rounded-xl border border-border bg-surface-raised/70">
         <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h2 className="text-sm font-semibold">{t("usageSessionBreakdown")}</h2>
+            <h2 className="text-sm font-medium">{t("usageSessionBreakdown")}</h2>
             <p className="mt-1 text-xs text-muted">{t("usageSessionBreakdownSubtitle")}</p>
           </div>
           <span className="text-xs tabular-nums text-muted">

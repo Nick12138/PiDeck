@@ -668,7 +668,8 @@ export const en = {
   botAddWeixinBotDesc: "WeXin gateway support is coming soon.",
   botAddComingSoon: "Coming soon",
   botAddTelegramTitle: "Add Telegram Bot",
-  botAddTelegramSubtitle: "The bot defaults to highest privilege: the first person to send /start to it becomes the owner and can drive Pi; everyone else is rejected.",
+  botAddTelegramSubtitle:
+    "The bot defaults to highest privilege: the first person to send /start to it becomes the owner and can drive Pi; everyone else is rejected.",
   botAddTelegramTokenLabel: "Bot token",
   botAddTelegramTokenPlaceholder: "123456:ABC-DEF...",
   botAddTelegramTokenRequired: "Bot token is required.",
@@ -681,10 +682,23 @@ export const en = {
   botAddTelegramWorkspaceLabel: "Workspace",
   botAddTelegramWorkspaceDefault: "<agentDir>/workspace/telegram (auto-created)",
   botAddTelegramWorkspaceReady: "Ready",
-  botAddTelegramWorkspaceNotCreated: "Workspace directory couldn’t be created; check the agent directory permissions.",
+  botAddTelegramWorkspaceNotCreated:
+    "Workspace directory couldn’t be created; check the agent directory permissions.",
   botAddTelegramConfirm: "Add",
   botAddTelegramSaved: "Added Telegram Bot “{name}”.",
   botAddWeixinComingSoon: "WeXin Bot support is coming soon.",
+
+  // Bot gateways list (saved gateways shown in the sidebar under Workspaces)
+  botGatewaysTitle: "Bot gateways",
+  botGatewaysExpand: "Expand bot gateways",
+  botGatewaysCollapse: "Collapse bot gateways",
+  botGatewayConnected: "Connected",
+  botGatewayDisconnected: "Disconnected",
+  botGatewayBoundWorkspace: "Workspace: {path}",
+  botGatewayBoundWorkspaceUnknown: "Workspace: follows active",
+  botGatewayRemoveTitle: "Remove gateway",
+  botGatewayRemoveAria: "Remove bot gateway “{name}”",
+  botGatewayRemovedNotif: "Removed bot gateway “{name}”.",
 
   // Session list
   sessionsRecent: "Recent conversations",
@@ -989,7 +1003,6 @@ export const en = {
   dockTodo: "Tasks",
   todoCurrentTitle: "Current tasks",
   todoActiveTitle: "Active tasks",
-  todoCompletedTitle: "Completed ({count})",
   todoStatusPending: "Pending",
   todoStatusInProgress: "In progress",
   todoStatusCompleted: "Completed",

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, Pencil, Play, Trash2, ArrowUp, Check, Paperclip, X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
+import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { activeSessionContext } from "../../lib/bridge/host-context";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import {
@@ -28,7 +28,7 @@ function QueueText({ raw }: { raw: string }) {
   const visible = stripAttachmentReferenceBlocks(raw).trim();
   const attachments = parseAttachmentReferences(raw);
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs" title={visible}>
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs leading-4" title={visible}>
       <span className="min-w-0 flex-1 truncate">{visible || t("queueAttachmentOnly")}</span>
       {attachments.length > 0 && (
         <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted">
@@ -84,7 +84,7 @@ export function QueuePanel() {
         followUp: nextFollowUp,
       });
       if (!res.ok) {
-        pushNotification(localizeHostError(res.error, t), "error");
+        pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
       }
     } finally {
       setBusyOp(false);
@@ -104,7 +104,7 @@ export function QueuePanel() {
         followUpIndex: index,
       });
       if (!response.ok) {
-        pushNotification(localizeHostError(response.error, t), "error");
+        pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
       }
       const current = useAppStore.getState().session;
@@ -147,7 +147,7 @@ export function QueuePanel() {
         <ul className="border-t border-border px-1.5 py-1">
           {steering.map((text, index) => (
             <li key={`steer:${index}`} className="group flex items-start gap-2 rounded px-1.5 py-1">
-              <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] text-warning">
+              <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] font-medium leading-none text-warning">
                 {t("queueSteering")}
               </span>
               <QueueText raw={text} />
