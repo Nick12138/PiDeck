@@ -22,6 +22,22 @@ const MODEL_MENU_ROW_CONTROLS_WIDTH = 96;
 const MODEL_MENU_VIEWPORT_GUTTER = 12;
 const CONTEXT_POPOVER_CENTER_MAX_WIDTH = 560;
 
+/** Frozen empty map shared for clearing the store's `providerNames`. */
+const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
+
+/** Build a provider id -> display name map from the model catalog. The catalog
+ *  carries `providerName` per model (e.g. "天机阁"), so the historical
+ *  `model_change` transcript rows can render the Provider name instead of the
+ *  raw service id (e.g. "8"). */
+function buildProviderNames(models: readonly ModelSummary[]): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const model of models) {
+    const label = model.providerName || model.provider;
+    if (!names.has(model.provider)) names.set(model.provider, label);
+  }
+  return names;
+}
+
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
   return () => window.removeEventListener("resize", onChange);
@@ -305,6 +321,7 @@ export function ModelControls() {
   const rehydrating = useAppStore((s) => s.rehydrating);
   const desynchronized = useAppStore((s) => s.desynchronized);
   const setThinkingLevels = useAppStore((s) => s.setThinkingLevels);
+  const setProviderNames = useAppStore((s) => s.setProviderNames);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [enabledProviders, setEnabledProviders] = useState<string[] | undefined>();
@@ -349,6 +366,7 @@ export function ModelControls() {
       listRequest.current += 1;
       setModels([]);
       setEnabledProviders(undefined);
+      setProviderNames(EMPTY_PROVIDER_NAMES);
       return;
     }
     let cancelled = false;
@@ -392,6 +410,7 @@ export function ModelControls() {
         setModels(res.result.models);
         setEnabledProviders(res.result.enabledProviders);
         setThinkingLevels(res.result.thinkingLevels);
+        setProviderNames(buildProviderNames(res.result.models));
         if (res.result.current) {
           const latestSession = current.session;
           const selected = latestSession?.model;
@@ -424,6 +443,7 @@ export function ModelControls() {
     rehydrating,
     desynchronized,
     setThinkingLevels,
+    setProviderNames,
   ]);
 
   const modelOptions = includeCurrentModel(models, session?.model, enabledProviders);

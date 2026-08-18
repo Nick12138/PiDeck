@@ -53,12 +53,12 @@ export function Select({
   return (
     <div
       ref={ref}
-      className={`relative min-w-0 ${className}`}
+      className={`interface-density-control relative min-w-0 ${className}`}
       style={maxWidth ? { maxWidth } : undefined}
     >
       <button
         type="button"
-        className={`flex h-8 w-full items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none transition-colors hover:bg-surface-overlay/60 focus-visible:border-focus disabled:cursor-default disabled:opacity-40 ${triggerClassName}`}
+        className={`interface-density-control flex h-8 w-full items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none transition-colors hover:bg-surface-overlay/60 focus-visible:border-focus disabled:cursor-default disabled:opacity-40 ${triggerClassName}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}

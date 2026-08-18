@@ -117,6 +117,9 @@ export type BuildTranscriptOptions = {
   extensionMessageRenders?: Readonly<Record<string, ExtensionMessageRenderSnapshot>>;
   /** Authoritative Host state used to settle tool calls left open by an interrupted run. */
   turnActive?: boolean;
+  /** Provider id -> display name used to render historical `model_change` rows
+   *  with the Provider name instead of its raw service id. */
+  providerNames?: ReadonlyMap<string, string>;
 };
 
 export function findStreamingAssistantKey(
@@ -821,6 +824,8 @@ function sourceMessages(
       continue;
     }
     if (type === "model_change") {
+      const providerId = String(record.provider ?? "");
+      const providerLabel = options?.providerNames?.get(providerId) ?? providerId;
       sources.push({
         kind: "row",
         row: {
@@ -830,7 +835,7 @@ function sourceMessages(
           copyText: "",
           event: {
             kind: "model",
-            label: `Model: ${String(record.provider ?? "")}/${String(record.modelId ?? "")}`,
+            label: `Model: ${providerLabel}/${String(record.modelId ?? "")}`,
             details: record,
           },
           ...(sourceId ? { sourceId } : {}),

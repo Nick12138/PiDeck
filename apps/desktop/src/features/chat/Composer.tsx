@@ -45,7 +45,7 @@ import { QueuePanel } from "./QueuePanel";
 import {
   ExtensionWidgetsPopover,
   ExtensionWidgetsButton,
-  TodoFloatingPopover,
+  TodoPopoverButton,
 } from "./ExtensionWidgets";
 import { PiMark } from "../../components/PiMark";
 import {
@@ -1772,6 +1772,7 @@ export function Composer({
             >
               <Paperclip size={16} />
             </button>
+            <TodoPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
               <ContextUsageRing />
@@ -1821,7 +1822,6 @@ export function Composer({
           open={extensionWidgetsOpen}
           onClose={closeExtensionWidgets}
         />
-        <TodoFloatingPopover anchorRef={extensionWidgetAnchorRef} />
         <SessionStatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
         <ForkModal open={forkOpen} onClose={() => setForkOpen(false)} />
       </div>

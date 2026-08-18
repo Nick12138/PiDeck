@@ -1,24 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Boxes,
   Check,
+  ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
   FolderOpen,
+  Github,
   PackageOpen,
   RefreshCw,
   Search,
-  Settings2,
   Trash2,
   X,
 } from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
+import { SectionHeader } from "../../components/SectionHeader";
 import type {
   HostRequestParams,
-  HostStatusSnapshot,
   PackageCatalog,
   PackageCatalogItem,
   PackageMutationResult,
@@ -26,52 +27,39 @@ import type {
   ResourceRecord,
   ResourcePreferenceUpdate,
   ResourceType,
-  WorkspaceSnapshot,
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import {
   captureRequestGeneration,
-  captureWorkspaceAuthorization,
   hostContext,
-  isCurrentWorkspaceAuthorization,
   isExpectedPackageMutationCompletion,
   mergeHostIdentity,
   sessionPackageContext,
   workspaceContext,
-  type WorkspaceAuthorization,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
-import { useT, type Translate } from "../../lib/i18n/use-t";
+import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import {
   PACKAGE_RESOURCE_TYPES,
   PACKAGE_LIST_PARAMS,
   applyOptimisticResourcePreferences,
-  buildResourceListItems,
   buildResourcePreferenceUpdate,
   buildResourcePreferenceUpdates,
   canConfigureResource,
-  filterCatalogItems,
+  catalogPageRange,
   filterInstalledPackages,
   filterResources,
+  formatCatalogPublishedAt,
   formatDownloadsPerMonth,
   hasActiveInstalledFilters,
-  hasActiveResourceFilters,
   isCatalogItemInstalled,
   planPackageUpdate,
-  preferenceResourcesForListItems,
   resourcePreference,
-  sortCatalogItems,
   summarizeResources,
   type CatalogSort,
-  type PackageScopeFilter,
-  type ResourceListItem,
   type ResourceMode,
-  type ResourceOriginFilter,
   type ResourceTypeFilter,
 } from "./packages-model";
-
-type PackageResourceListItem = Extract<ResourceListItem, { kind: "package" }>;
 
 type MutationMethod =
   | "package.install"
@@ -82,13 +70,6 @@ type MutationMethod =
   | "resource.setPreference"
   | "resource.setPreferences";
 
-export type PendingProjectMutation = {
-  method: MutationMethod;
-  params: HostRequestParams[MutationMethod];
-  allowReconcileRetry?: boolean;
-  authorization: WorkspaceAuthorization;
-};
-
 type MutationReview = {
   kind: "install" | "update" | "remove";
   method: "package.install" | "package.update" | "package.updateAll" | "package.remove";
@@ -97,7 +78,6 @@ type MutationReview = {
     | HostRequestParams["package.update"]
     | HostRequestParams["package.updateAll"]
     | HostRequestParams["package.remove"];
-  authorization?: WorkspaceAuthorization;
   packages: PackageRecord[];
 };
 
@@ -109,17 +89,7 @@ const PACKAGE_LIST_BUSY_RETRY_INITIAL_MS = 250;
 const PACKAGE_LIST_BUSY_RETRY_MAX_MS = 2_000;
 
 const inputClass =
-  "h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-focus";
-
-export function reconcileProjectGateAuthorization(
-  host: HostStatusSnapshot | null,
-  workspace: WorkspaceSnapshot | null,
-  projectGate: PendingProjectMutation,
-): PendingProjectMutation | null {
-  return isCurrentWorkspaceAuthorization(host, workspace, projectGate.authorization)
-    ? projectGate
-    : null;
-}
+  "box-border interface-density-control h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-foreground placeholder:text-muted focus:border-focus";
 
 function scopeLabel(t: Translate, scope: PackageRecord["scope"] | ResourceRecord["scope"]): string {
   return scope === "temporary"
@@ -149,38 +119,19 @@ function singularType(t: Translate, type: ResourceType): string {
         : t("typeTheme");
 }
 
-function Segmented<T extends string>({
-  value,
-  values,
-  onChange,
-}: {
-  value: T;
-  values: readonly T[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div
-      data-ui="segmented"
-      className="inline-flex h-8 gap-[2px] rounded-md border border-border bg-surface p-0.5"
-    >
-      {values.map((item) => (
-        <button
-          key={item}
-          type="button"
-          aria-pressed={value === item}
-          data-ui="segmented-item"
-          data-state={value === item ? "active" : "inactive"}
-          className={`rounded-md px-2 text-xs capitalize ${value === item ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
-          onClick={() => onChange(item)}
-        >
-          {item}
-        </button>
-      ))}
-    </div>
-  );
+function isResourceType(type: string): type is ResourceType {
+  return (PACKAGE_RESOURCE_TYPES as readonly string[]).includes(type);
 }
 
-function TypeBadge({ type }: { type: ResourceType }) {
+function TypeBadge({ type }: { type: string }) {
+  const t = useT();
+  if (!isResourceType(type)) {
+    return (
+      <span className="rounded bg-surface-overlay px-1.5 py-0.5 text-[11px] font-medium text-muted">
+        {type}
+      </span>
+    );
+  }
   const colors: Record<ResourceType, string> = {
     extension: "bg-accent/15 text-accent",
     skill: "bg-success/15 text-success",
@@ -188,7 +139,9 @@ function TypeBadge({ type }: { type: ResourceType }) {
     theme: "bg-surface-overlay text-muted",
   };
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${colors[type]}`}>{type}</span>
+    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${colors[type]}`}>
+      {singularType(t, type)}
+    </span>
   );
 }
 
@@ -246,7 +199,7 @@ function PackagePreferenceControl({
         role="group"
         aria-label={label}
         data-ui="segmented"
-        className="inline-flex h-8 gap-[2px] rounded-md border border-border p-0.5"
+        className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
       >
         {values.map((value) => (
           <button
@@ -256,7 +209,7 @@ function PackagePreferenceControl({
             aria-pressed={state === value}
             data-ui="segmented-item"
             data-state={state === value ? "active" : "inactive"}
-            className={`rounded-md px-2 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+            className={`rounded px-2.5 text-xs capitalize ${state === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
             disabled={disabled || state === null}
             onClick={() => onChange(value)}
           >
@@ -268,8 +221,160 @@ function PackagePreferenceControl({
   );
 }
 
+const MARKET_CATALOG_TIMEOUT_MS = 30_000;
+const MARKET_QUERY_DEBOUNCE_MS = 300;
+
+function MarketPackageCard({
+  item,
+  installed,
+  locale,
+  t,
+  mutationBlocked,
+  onOpen,
+  onInstall,
+}: {
+  item: PackageCatalogItem;
+  installed: boolean;
+  locale: "en" | "zh";
+  t: Translate;
+  mutationBlocked: boolean;
+  onOpen: (url: string) => void;
+  onInstall: (item: PackageCatalogItem) => void;
+}) {
+  return (
+    <article
+      data-market-card={item.name}
+      className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="min-w-0 text-[13px] font-semibold">
+          <button
+            type="button"
+            className="min-w-0 truncate text-left hover:underline"
+            title={t("packagesMarketOpenPage", { name: item.name })}
+            aria-label={t("packagesMarketOpenPage", { name: item.name })}
+            onClick={() => onOpen(item.pageUrl)}
+          >
+            {item.name}
+          </button>
+        </h3>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          {item.types.map((type) => (
+            <TypeBadge key={type} type={type} />
+          ))}
+        </div>
+      </div>
+      <p className="line-clamp-2 min-h-10 text-xs leading-5 text-muted" title={item.description}>
+        {item.description}
+      </p>
+      <div className="mt-auto flex items-center gap-2 text-[11px] text-muted">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+          {item.author && (
+            <span className="min-w-0 truncate" title={item.author}>
+              {item.author}
+            </span>
+          )}
+          {item.downloadsPerMonth !== undefined && (
+            <span className="shrink-0 tabular-nums">
+              {t("packagesMarketDownloads", {
+                count: formatDownloadsPerMonth(item.downloadsPerMonth),
+              })}
+            </span>
+          )}
+          {item.publishedAt !== undefined && (
+            <span
+              className="shrink-0 tabular-nums"
+              title={t("packagesMarketPublished", {
+                date: formatCatalogPublishedAt(item.publishedAt, locale),
+              })}
+            >
+              {formatCatalogPublishedAt(item.publishedAt, locale)}
+            </span>
+          )}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {item.githubUrl && (
+            <button
+              type="button"
+              className="text-muted hover:text-foreground"
+              title={t("packagesMarketOpenGithub", { name: item.name })}
+              aria-label={t("packagesMarketOpenGithub", { name: item.name })}
+              onClick={() => onOpen(item.githubUrl!)}
+            >
+              <Github size={12} />
+            </button>
+          )}
+          {item.npmUrl && (
+            <button
+              type="button"
+              className="text-muted hover:text-foreground"
+              title={t("packagesMarketOpenNpm", { name: item.name })}
+              aria-label={t("packagesMarketOpenNpm", { name: item.name })}
+              onClick={() => onOpen(item.npmUrl!)}
+            >
+              <ExternalLink size={12} />
+            </button>
+          )}
+          {installed ? (
+            <span className="inline-flex items-center gap-1 text-success">
+              <Check size={12} />
+              {t("packagesMarketInstalled")}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className={primaryButton}
+              disabled={mutationBlocked}
+              onClick={() => onInstall(item)}
+            >
+              <Download size={13} />
+              {t("packagesInstallAction")}
+            </button>
+          )}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function MarketCatalogGrid({
+  items,
+  allPackages,
+  locale,
+  t,
+  mutationBlocked,
+  onOpen,
+  onInstall,
+}: {
+  items: PackageCatalogItem[];
+  allPackages: PackageRecord[];
+  locale: "en" | "zh";
+  t: Translate;
+  mutationBlocked: boolean;
+  onOpen: (url: string) => void;
+  onInstall: (item: PackageCatalogItem) => void;
+}) {
+  return (
+    <div className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
+      {items.map((item) => (
+        <MarketPackageCard
+          key={item.name}
+          item={item}
+          installed={isCatalogItemInstalled(item, allPackages)}
+          locale={locale}
+          t={t}
+          mutationBlocked={mutationBlocked}
+          onOpen={onOpen}
+          onInstall={onInstall}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function PackagesPage() {
   const t = useT();
+  const locale = useLocale();
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
   const packages = useAppStore((state) => state.packages);
@@ -280,25 +385,17 @@ export function PackagesPage() {
   const setPackageRetry = useAppStore((state) => state.setPackageRetry);
   const pushNotification = useAppStore((state) => state.pushNotification);
 
-  const [tab, setTab] = useState<"installed" | "resources" | "market">("installed");
+  const [tab, setTab] = useState<"installed" | "market">("installed");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [installedQuery, setInstalledQuery] = useState("");
-  const [installedScope, setInstalledScope] = useState<PackageScopeFilter>("all");
   const [installedType, setInstalledType] = useState<ResourceTypeFilter>("all");
-  const [resourceQuery, setResourceQuery] = useState("");
-  const [resourceMode, setResourceMode] = useState<ResourceMode>("user");
-  const [resourceType, setResourceType] = useState<ResourceTypeFilter>("all");
-  const [resourceOrigin, setResourceOrigin] = useState<ResourceOriginFilter>("all");
-  const [resourceOwnerId, setResourceOwnerId] = useState("");
   const [installSource, setInstallSource] = useState("");
-  const [installScope, setInstallScope] = useState<"user" | "project">("user");
   const [marketCatalog, setMarketCatalog] = useState<PackageCatalog | null>(null);
   const [marketState, setMarketState] = useState<LoadState>("idle");
   const [marketError, setMarketError] = useState("");
   const [marketQuery, setMarketQuery] = useState("");
   const [marketType, setMarketType] = useState<ResourceTypeFilter>("all");
   const [marketSort, setMarketSort] = useState<CatalogSort>("downloads");
-  const [marketScope, setMarketScope] = useState<"user" | "project">("user");
   const marketRequest = useRef(0);
   const [busy, setBusy] = useState(false);
   const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<
@@ -306,7 +403,6 @@ export function PackagesPage() {
   >([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [loadError, setLoadError] = useState("");
-  const [projectGate, setProjectGate] = useState<PendingProjectMutation | null>(null);
   const [review, setReview] = useState<MutationReview | null>(null);
   const [dismissedProgressOp, setDismissedProgressOp] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -319,43 +415,15 @@ export function PackagesPage() {
   );
   const selected = allPackages.find((item) => item.id === selectedId);
   const installedFilters = useMemo(
-    () => ({ query: installedQuery, scope: installedScope, type: installedType }),
-    [installedQuery, installedScope, installedType],
+    () => ({ query: installedQuery, scope: "all" as const, type: installedType }),
+    [installedQuery, installedType],
   );
   const visiblePackages = useMemo(
     () => filterInstalledPackages(allPackages, allResources, installedFilters),
     [allPackages, allResources, installedFilters],
   );
-  const resourceFilters = useMemo(
-    () => ({
-      query: resourceQuery,
-      mode: resourceMode,
-      type: resourceType,
-      origin: resourceOrigin,
-      packageId: resourceOwnerId || undefined,
-    }),
-    [resourceMode, resourceOrigin, resourceOwnerId, resourceQuery, resourceType],
-  );
-  const visibleResourceItems = useMemo(
-    () => buildResourceListItems(allResources, allPackages, resourceFilters),
-    [allResources, allPackages, resourceFilters],
-  );
-  const visiblePreferenceResources = useMemo(
-    () => preferenceResourcesForListItems(visibleResourceItems),
-    [visibleResourceItems],
-  );
-  const resourcesById = useMemo(
-    () => new Map(allResources.map((item) => [item.id, item])),
-    [allResources],
-  );
-  const visibleMarketItems = useMemo(
-    () =>
-      sortCatalogItems(
-        filterCatalogItems(marketCatalog?.items ?? [], marketQuery, marketType),
-        marketSort,
-      ),
-    [marketCatalog, marketQuery, marketType, marketSort],
-  );
+  const visibleMarketItems = marketCatalog?.items ?? [];
+  const marketRange = marketCatalog ? catalogPageRange(marketCatalog) : null;
   const selectedResources = selected
     ? filterResources(allResources, allPackages, {
         query: "",
@@ -422,7 +490,7 @@ export function PackagesPage() {
       }
       const current = useAppStore.getState();
       if (!isCurrentRequest()) return;
-      if (!response.ok) throw new Error(localizeHostError(response.error, t));
+      if (!response.ok) throw new Error(response.error?.message ?? t("notifPackagesLoadFailed"));
       setPackages(response.result);
       const nextHost = current.host && mergeHostIdentity(current.host, response);
       if (nextHost) current.setHost(nextHost);
@@ -444,18 +512,26 @@ export function PackagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.hostInstanceId, workspace?.id, workspace?.revision]);
 
-  async function loadMarket(refresh = false) {
+  async function loadMarket(args: { page?: number; refresh?: boolean } = {}) {
     if (!host) return;
     const request = ++marketRequest.current;
     const expectedHostId = host.hostInstanceId;
+    const page = args.page ?? marketCatalog?.page ?? 1;
+    const params: HostRequestParams["package.catalog"] = {
+      page,
+      sort: marketSort,
+      ...(args.refresh ? { refresh: true } : {}),
+      ...(marketQuery.trim() ? { query: marketQuery.trim() } : {}),
+      ...(marketType !== "all" ? { type: marketType } : {}),
+    };
     setMarketState("loading");
     setMarketError("");
     try {
       const response = await hostClient.request(
         "package.catalog",
         hostContext(host),
-        refresh ? { refresh: true } : {},
-        30_000,
+        params,
+        MARKET_CATALOG_TIMEOUT_MS,
       );
       if (
         request !== marketRequest.current ||
@@ -464,38 +540,56 @@ export function PackagesPage() {
         return;
       }
       if (!response.ok) {
-        setMarketState("error");
-        setMarketError(localizeHostError(response.error, t));
+        setMarketError(response.error?.message ?? t("packagesMarketError"));
+        setMarketState(marketCatalog ? "ready" : "error");
         return;
       }
       setMarketCatalog(response.result);
       setMarketState("ready");
     } catch (error) {
       if (request !== marketRequest.current) return;
-      setMarketState("error");
       setMarketError(error instanceof Error ? error.message : t("packagesMarketError"));
+      setMarketState(marketCatalog ? "ready" : "error");
     }
   }
 
   useEffect(() => {
-    if (tab === "market" && marketState === "idle") void loadMarket();
-    // The catalog is host-global; a single lazy load per Host epoch suffices.
+    marketRequest.current += 1;
+    setMarketCatalog(null);
+    setMarketState("idle");
+    setMarketError("");
+  }, [host?.hostInstanceId]);
+
+  useEffect(() => {
+    if (tab === "market" && marketState === "idle") void loadMarket({ page: 1 });
+    // The first page is host-global; later pages and filters request on demand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, marketState, host?.hostInstanceId]);
+
+  useEffect(() => {
+    if (tab !== "market" || marketState === "idle") return;
+    const timer = window.setTimeout(() => void loadMarket({ page: 1 }), MARKET_QUERY_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketQuery]);
+
+  useEffect(() => {
+    if (tab !== "market" || marketState === "idle") return;
+    void loadMarket({ page: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketType, marketSort]);
 
   function beginCatalogInstall(item: PackageCatalogItem) {
     if (!host || !workspace) return;
     const params: HostRequestParams["package.install"] = {
       source: item.installSource,
-      scope: marketScope,
+      scope: "user",
     };
     setReview({
       kind: "install",
       method: "package.install",
       params,
       packages: [],
-      authorization:
-        marketScope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
     });
   }
 
@@ -522,17 +616,6 @@ export function PackagesPage() {
     setPendingPreferenceUpdates([]);
   }, [workspace?.id, workspace?.revision]);
 
-  useEffect(() => {
-    if (!projectGate) return;
-    const reconciled = reconcileProjectGateAuthorization(host, workspace, projectGate);
-    if (reconciled !== projectGate) setProjectGate(reconciled);
-  }, [host, workspace, projectGate]);
-
-  useEffect(() => {
-    if (!review?.authorization) return;
-    if (!isCurrentWorkspaceAuthorization(host, workspace, review.authorization)) setReview(null);
-  }, [host, workspace, review]);
-
   function applyMutationResult(result: PackageMutationResult) {
     applyPackageMutationResult(result);
     if (result.status === "partialFailure" || result.reconcileRequired) {
@@ -548,55 +631,12 @@ export function PackagesPage() {
     }
   }
 
-  function isProjectMutation<M extends MutationMethod>(
-    method: M,
-    params: HostRequestParams[M],
-  ): boolean {
-    if (method === "package.install")
-      return (params as HostRequestParams["package.install"]).scope === "project";
-    if (method === "package.updateAll") return allPackages.some((item) => item.scope === "project");
-    if (method === "package.remove" || method === "package.update") {
-      const packageId = (params as HostRequestParams["package.remove"]).packageId;
-      return allPackages.find((item) => item.id === packageId)?.scope === "project";
-    }
-    if (method === "resource.setPreference") {
-      return (params as HostRequestParams["resource.setPreference"]).targetScope === "project";
-    }
-    if (method === "resource.setPreferences") {
-      return (params as HostRequestParams["resource.setPreferences"]).updates.some(
-        (update) => update.targetScope === "project",
-      );
-    }
-    return false;
-  }
-
   async function runMutation<M extends MutationMethod>(
     method: M,
     params: HostRequestParams[M],
-    options?: { allowReconcileRetry?: boolean; projectAuthorization?: WorkspaceAuthorization },
+    options?: { allowReconcileRetry?: boolean },
   ) {
     if (!host || !workspace) return;
-    if (isProjectMutation(method, params)) {
-      if (!options?.projectAuthorization) {
-        setProjectGate({
-          method,
-          params: params as HostRequestParams[MutationMethod],
-          allowReconcileRetry: options?.allowReconcileRetry,
-          authorization: captureWorkspaceAuthorization(host, workspace),
-        });
-        return;
-      }
-      if (
-        !isCurrentWorkspaceAuthorization(
-          useAppStore.getState().host,
-          useAppStore.getState().workspace,
-          options.projectAuthorization,
-        )
-      ) {
-        pushNotification(t("notifPackagesProjectConfirmExpired"), "warning");
-        return;
-      }
-    }
     if (
       (reloadRequired || reconcileRequired) &&
       method !== "package.reloadResources" &&
@@ -634,7 +674,8 @@ export function PackagesPage() {
         current.workspace?.revision !== workspace.revision
       )
         return;
-      if (!response.ok) throw new Error(localizeHostError(response.error, t));
+      if (!response.ok)
+        throw new Error(response.error?.message ?? t("notifPackagesOperationFailed"));
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -660,29 +701,23 @@ export function PackagesPage() {
     if (!host || !workspace || !installSource.trim()) return;
     const params: HostRequestParams["package.install"] = {
       source: installSource.trim(),
-      scope: installScope,
+      scope: "user",
     };
     setReview({
       kind: "install",
       method: "package.install",
       params,
       packages: [],
-      authorization:
-        installScope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
     });
   }
 
   function beginRemoveReview(pkg: PackageRecord) {
     if (!host || !workspace) return;
-    // Capture the project authorization up front so a project-scoped removal
-    // needs exactly one dialog instead of chaining into the generic gate.
     setReview({
       kind: "remove",
       method: "package.remove",
       params: { packageId: pkg.id },
       packages: [pkg],
-      authorization:
-        pkg.scope === "project" ? captureWorkspaceAuthorization(host, workspace) : undefined,
     });
   }
 
@@ -695,53 +730,15 @@ export function PackagesPage() {
       method: plan.method,
       params: plan.params,
       packages: plan.packages,
-      authorization: plan.touchesProject
-        ? captureWorkspaceAuthorization(host, workspace)
-        : undefined,
     });
   }
 
   function confirmReview() {
     if (!review) return;
-    if (
-      review.authorization &&
-      !isCurrentWorkspaceAuthorization(
-        useAppStore.getState().host,
-        useAppStore.getState().workspace,
-        review.authorization,
-      )
-    ) {
-      setReview(null);
-      pushNotification(t("notifPackagesProjectConfirmExpired"), "warning");
-      return;
-    }
     const pending = review;
     setReview(null);
     if (pending.kind === "install") setInstallSource("");
-    void runMutation(pending.method, pending.params as never, {
-      projectAuthorization: pending.authorization,
-    });
-  }
-
-  function confirmProjectMutation() {
-    const pending = projectGate;
-    if (!pending) return;
-    if (
-      !isCurrentWorkspaceAuthorization(
-        useAppStore.getState().host,
-        useAppStore.getState().workspace,
-        pending.authorization,
-      )
-    ) {
-      setProjectGate(null);
-      pushNotification(t("notifPackagesProjectConfirmExpired"), "warning");
-      return;
-    }
-    setProjectGate(null);
-    void runMutation(pending.method, pending.params as never, {
-      allowReconcileRetry: pending.allowReconcileRetry,
-      projectAuthorization: pending.authorization,
-    });
+    void runMutation(pending.method, pending.params as never);
   }
 
   async function checkUpdates() {
@@ -761,7 +758,8 @@ export function PackagesPage() {
         current.workspace?.revision !== workspace.revision
       )
         return;
-      if (!response.ok) throw new Error(localizeHostError(response.error, t));
+      if (!response.ok)
+        throw new Error(response.error?.message ?? t("notifPackagesUpdateCheckFailed"));
       const updateIds = new Set(response.result.updates.map((update) => update.packageId));
       if (current.packages?.workspaceId === workspace.id) {
         setPackages({
@@ -793,18 +791,10 @@ export function PackagesPage() {
   function setResourcePreference(
     resource: ResourceRecord,
     preference: "inherit" | "enabled" | "disabled",
+    mode: ResourceMode,
   ) {
-    const update = buildResourcePreferenceUpdate(resource, resourceMode, preference);
+    const update = buildResourcePreferenceUpdate(resource, mode, preference);
     if (update) void runMutation("resource.setPreference", update);
-  }
-
-  function batchPreference(preference: "inherit" | "enabled" | "disabled") {
-    const updates = buildResourcePreferenceUpdates(
-      visiblePreferenceResources,
-      resourceMode,
-      preference,
-    );
-    if (updates.length) void runMutation("resource.setPreferences", { updates });
   }
 
   function setPackagePreference(
@@ -814,27 +804,6 @@ export function PackagesPage() {
   ) {
     const updates = buildResourcePreferenceUpdates(resources, mode, preference);
     if (updates.length) void runMutation("resource.setPreferences", { updates });
-  }
-
-  function clearResourceFilters() {
-    setResourceQuery("");
-    setResourceType("all");
-    setResourceOrigin("all");
-    setResourceOwnerId("");
-  }
-
-  function managePackageResources(packageId: string) {
-    const pkg = allPackages.find((item) => item.id === packageId);
-    setResourceOwnerId(packageId);
-    setResourceMode(pkg?.scope === "user" && pkg.effective === false ? "user" : "project");
-    setTab("resources");
-  }
-
-  function showResourceOwner(owner: ResourceRecord) {
-    const ownerPackage = allPackages.find((item) => item.id === owner.packageId);
-    setResourceOwnerId(owner.packageId ?? "");
-    setResourceQuery(ownerPackage?.displayName ?? owner.name);
-    setResourceType("extension");
   }
 
   async function openExternal(url: string) {
@@ -869,134 +838,10 @@ export function PackagesPage() {
     );
   }
 
-  function renderPackageResourceRow(item: PackageResourceListItem): ReactNode {
-    const pkg = item.package;
-    const summary = summarizeResources(item.resources);
-    const preferenceState = packagePreferenceState(item.resources, resourceMode);
-    const configurable = item.resources.filter((resource) =>
-      canConfigureResource(resource, resourceMode),
-    ).length;
-    const diagnostics = item.resources.flatMap((resource) => resource.diagnostics);
-    const activeLabel =
-      summary.enabled === 0
-        ? t("packagesInactive")
-        : summary.enabled === summary.total
-          ? t("packagesActive")
-          : t("packagesActiveRatio", { enabled: summary.enabled, total: summary.total });
-
-    return (
-      <li
-        key={`package-resources:${item.id}`}
-        className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4"
-      >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Boxes size={14} className="text-accent" />
-            <span className="truncate text-sm font-medium">{pkg.displayName}</span>
-            {PACKAGE_RESOURCE_TYPES.map((type) => {
-              const count = item.resources.filter((resource) => resource.type === type).length;
-              return count > 0 ? (
-                <span key={type} className="inline-flex items-center gap-1">
-                  <TypeBadge type={type} />
-                  {count > 1 && <span className="text-[11px] text-muted">{count}</span>}
-                </span>
-              ) : null;
-            })}
-            {diagnostics.some((diagnostic) => diagnostic.severity === "error") && (
-              <AlertTriangle size={13} className="text-danger" />
-            )}
-          </div>
-          {pkg.description && <p className="mt-1 text-xs text-muted">{pkg.description}</p>}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-            <span>
-              {t("packagesScopePackage", { scope: scopeLabel(t, pkg.scope), kind: pkg.kind })}
-            </span>
-            {pkg.versionOrRef && <span>{pkg.versionOrRef}</span>}
-            <span>
-              {t(summary.total === 1 ? "packagesResourceCount" : "packagesResourcesCount", {
-                count: summary.total,
-              })}
-            </span>
-          </div>
-          <details className="mt-2 text-xs">
-            <summary className="w-fit cursor-pointer select-none text-[11px] text-accent hover:underline">
-              {t("packagesShowPackageResources")}
-            </summary>
-            <ul className="mt-2 divide-y divide-border border-y border-border">
-              {item.resources.map((resource) => (
-                <li key={resource.id} className="py-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <TypeBadge type={resource.type} />
-                    <span className="font-medium">{packageMemberName(t, resource, pkg)}</span>
-                    {resource.type === "skill" && resource.manualOnly && (
-                      <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">
-                        {t("packagesManualOnly")}
-                      </span>
-                    )}
-                    <span
-                      className={`ml-auto text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}
-                    >
-                      {resource.enabled ? t("packagesActive") : t("packagesInactive")}
-                    </span>
-                  </div>
-                  <p
-                    className="mt-1 truncate font-mono text-[11px] text-muted"
-                    title={resource.path}
-                  >
-                    {resource.relativePath ?? resource.path}
-                  </p>
-                  {resource.diagnostics.map((diagnostic, index) => (
-                    <p
-                      key={`${diagnostic.message}-${index}`}
-                      className={`mt-1 text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}
-                    >
-                      {diagnostic.message}
-                    </p>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </details>
-        </div>
-        <div className="flex min-w-40 self-start items-center justify-between gap-3 sm:justify-end">
-          <span className={`text-[11px] ${summary.enabled > 0 ? "text-success" : "text-muted"}`}>
-            {activeLabel}
-          </span>
-          {configurable > 0 ? (
-            <PackagePreferenceControl
-              label={t("packagesPackageAria", { name: pkg.displayName })}
-              mode={resourceMode}
-              state={preferenceState}
-              disabled={mutationBlocked}
-              onChange={(preference) =>
-                setPackagePreference(item.resources, resourceMode, preference)
-              }
-            />
-          ) : (
-            <span className="max-w-44 text-right text-[11px] text-muted">
-              {t("packagesReadOnly")}
-            </span>
-          )}
-        </div>
-      </li>
-    );
-  }
-
-  function renderResourceRow(resource: ResourceRecord): ReactNode {
-    const owner =
-      resource.control.kind === "owner-extension"
-        ? resourcesById.get(resource.control.ownerResourceId)
-        : undefined;
-    const ownerPackage = allPackages.find(
-      (item) => item.id === (resource.packageId ?? owner?.packageId),
-    );
-    const ownerLabel = owner
-      ? ownerPackage
-        ? packageMemberName(t, owner, ownerPackage)
-        : owner.name
-      : undefined;
-    const configurable = canConfigureResource(resource, resourceMode);
-    const preference = resourcePreference(resource, resourceMode);
+  function renderSelectedResourceRow(resource: ResourceRecord, pkg: PackageRecord) {
+    const mode = pkg.scope;
+    const configurable = canConfigureResource(resource, mode);
+    const preference = resourcePreference(resource, mode);
     const readOnlyReason =
       resource.control.kind === "owner-extension"
         ? t("packagesManagedByExtension")
@@ -1005,14 +850,13 @@ export function PackagesPage() {
           : undefined;
 
     return (
-      <li
-        key={resource.id}
-        className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-4"
-      >
-        <div className="min-w-0">
+      <li key={resource.id} className="flex flex-wrap items-start justify-between gap-3 py-2.5">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={resource.type} />
-            <span className="truncate text-sm font-medium">{resource.name}</span>
+            <span className="truncate text-sm font-medium">
+              {packageMemberName(t, resource, pkg)}
+            </span>
             {resource.type === "skill" && resource.manualOnly && (
               <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted">
                 {t("packagesManualOnly")}
@@ -1022,74 +866,42 @@ export function PackagesPage() {
               <AlertTriangle size={13} className="text-danger" />
             )}
           </div>
-          {resource.description && (
-            <p className="mt-1 text-xs text-muted">{resource.description}</p>
-          )}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-            <span>
-              {t("packagesResourceScopeOrigin", {
-                scope: scopeLabel(t, resource.scope),
-                origin: resource.origin,
-              })}
-            </span>
-            {ownerPackage && <span>{t("packagesOwner", { name: ownerPackage.displayName })}</span>}
-            {owner && (
-              <button
-                type="button"
-                className="text-accent hover:underline"
-                onClick={() => showResourceOwner(owner)}
-              >
-                {t("packagesProvidedBy", { name: ownerLabel ?? "" })}
-              </button>
-            )}
-            <span className="max-w-full truncate font-mono" title={resource.path}>
-              {resource.relativePath ?? resource.path}
-            </span>
-          </div>
-          {resource.diagnostics.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {resource.diagnostics.map((diagnostic, index) => (
-                <li
-                  key={`${diagnostic.message}-${index}`}
-                  className={`text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}
-                >
-                  {diagnostic.message}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="mt-1 truncate font-mono text-[11px] text-muted" title={resource.path}>
+            {resource.relativePath ?? resource.path}
+          </p>
+          {resource.diagnostics.map((diagnostic, index) => (
+            <p
+              key={`${diagnostic.message}-${index}`}
+              className={`mt-1 text-[11px] ${diagnostic.severity === "error" ? "text-danger" : diagnostic.severity === "warning" ? "text-warning" : "text-muted"}`}
+            >
+              {diagnostic.message}
+            </p>
+          ))}
         </div>
-        <div className="flex min-w-40 items-center justify-between gap-3 sm:justify-end">
+        <div className="flex min-w-40 items-center justify-end gap-3">
           <span className={`text-[11px] ${resource.enabled ? "text-success" : "text-muted"}`}>
             {resource.enabled ? t("packagesActive") : t("packagesInactive")}
           </span>
           {configurable ? (
             <div
               data-ui="segmented"
-              className="inline-flex h-8 gap-[2px] rounded-md border border-border p-0.5"
+              className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
             >
-              {(resourceMode === "project"
-                ? ["inherit", "enabled", "disabled"]
-                : ["enabled", "disabled"]
-              ).map((value) => (
+              {(["enabled", "disabled"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
                   title={t("packagesPrefScopeTitle", {
-                    value: preferenceLabel(t, value as Preference),
-                    mode: t(
-                      resourceMode === "project" ? "packagesScopeProject" : "packagesScopeUser",
-                    ),
+                    value: preferenceLabel(t, value),
+                    mode: scopeLabel(t, mode),
                   })}
                   data-ui="segmented-item"
                   data-state={preference === value ? "active" : "inactive"}
-                  className={`rounded-md px-2 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
+                  className={`rounded px-2.5 text-xs capitalize ${preference === value ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
                   disabled={mutationBlocked}
-                  onClick={() =>
-                    setResourcePreference(resource, value as "inherit" | "enabled" | "disabled")
-                  }
+                  onClick={() => setResourcePreference(resource, value, mode)}
                 >
-                  {preferenceLabel(t, value as Preference)}
+                  {preferenceLabel(t, value)}
                 </button>
               ))}
             </div>
@@ -1110,47 +922,6 @@ export function PackagesPage() {
       </div>
     );
   }
-
-  const configurableVisible = visiblePreferenceResources.filter((item) =>
-    canConfigureResource(item, resourceMode),
-  );
-  const resourceSections = [
-    {
-      key: "packages",
-      label: t("packagesGroupPackages"),
-      items: visibleResourceItems.filter((item) => item.kind === "package"),
-    },
-    {
-      key: "standalone",
-      label: t("packagesGroupStandalone"),
-      items: visibleResourceItems.filter(
-        (item) =>
-          item.kind === "resource" &&
-          item.resource.origin === "top-level" &&
-          item.resource.scope !== "temporary",
-      ),
-    },
-    {
-      key: "runtime",
-      label: t("packagesGroupRuntime"),
-      items: visibleResourceItems.filter(
-        (item) =>
-          item.kind === "resource" &&
-          (item.resource.scope === "temporary" || item.resource.origin === "extension"),
-      ),
-    },
-    {
-      key: "other",
-      label: t("packagesGroupOther"),
-      items: visibleResourceItems.filter(
-        (item) =>
-          item.kind === "resource" &&
-          item.resource.origin !== "top-level" &&
-          item.resource.scope !== "temporary" &&
-          item.resource.origin !== "extension",
-      ),
-    },
-  ].filter((section) => section.items.length > 0);
 
   const packageUpdateActions = (
     <div
@@ -1238,9 +1009,6 @@ export function PackagesPage() {
                   {(review.params as HostRequestParams["package.install"]).scope}
                 </dd>
               </dl>
-              {review.authorization && (
-                <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>
-              )}
             </>
           ) : review.kind === "remove" ? (
             <>
@@ -1263,9 +1031,6 @@ export function PackagesPage() {
                     : ""}
                 </dd>
               </dl>
-              {review.authorization && (
-                <p className="mt-3 text-warning">{t("packagesProjectSettingsWarning")}</p>
-              )}
             </>
           ) : (
             <>
@@ -1278,83 +1043,58 @@ export function PackagesPage() {
                   </li>
                 ))}
               </ul>
-              {review.authorization && (
-                <p className="mt-3 text-warning">{t("packagesUpdateProjectWarning")}</p>
-              )}
             </>
           )}
         </Dialog>
       )}
 
-      {projectGate && (
-        <Dialog
-          title={t("packagesProjectGateTitle")}
-          confirmLabel={t("packagesProjectGateConfirm")}
-          onCancel={() => setProjectGate(null)}
-          onConfirm={confirmProjectMutation}
-        >
-          <p>{t("packagesProjectGateBody")}</p>
-        </Dialog>
-      )}
-
-      <header
-        className="flex min-h-16 shrink-0 flex-wrap items-center gap-2 px-6 pb-2 pt-3"
-        data-settings-section-header
-        data-tauri-drag-region
-      >
-        <h1 className="mr-2 text-base font-semibold">{t("navPackages")}</h1>
+      <SectionHeader title={t("navPackages")} subtitle={t("packagesSubtitle")}>
         <div
           role="group"
           aria-label={t("packagesViewGroup")}
           data-ui="segmented"
-          className="flex h-8 gap-[2px] rounded-md border border-border bg-surface p-0.5"
+          className="interface-density-control inline-flex h-8 gap-1 rounded-md border border-border bg-surface p-1"
         >
-          <button
-            aria-pressed={tab === "installed"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "installed" ? "active" : "inactive"}
-            className={`rounded-md px-3 text-xs ${tab === "installed" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("installed")}
-          >
-            {t("packagesTabInstalled")}
-          </button>
-          <button
-            aria-pressed={tab === "resources"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "resources" ? "active" : "inactive"}
-            className={`rounded-md px-3 text-xs ${tab === "resources" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("resources")}
-          >
-            {t("packagesTabResources")}
-          </button>
-          <button
-            aria-pressed={tab === "market"}
-            type="button"
-            data-ui="segmented-item"
-            data-state={tab === "market" ? "active" : "inactive"}
-            className={`rounded-md px-3 text-xs ${tab === "market" ? "bg-selection text-selection-foreground" : "text-muted"}`}
-            onClick={() => setTab("market")}
-          >
-            {t("packagesTabMarket")}
-          </button>
+          {(
+            [
+              ["installed", "packagesTabInstalled"],
+              ["market", "packagesTabMarket"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              aria-pressed={tab === id}
+              type="button"
+              data-ui="segmented-item"
+              data-state={tab === id ? "active" : "inactive"}
+              className={`rounded px-3 text-xs ${
+                tab === id
+                  ? "bg-selection font-medium text-selection-foreground"
+                  : "text-muted hover:text-foreground"
+              }`}
+              onClick={() => setTab(id)}
+            >
+              {t(label)}
+            </button>
+          ))}
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+          className="inline-flex h-8 items-center gap-1 text-xs text-muted hover:text-accent"
           onClick={() => void openCatalog()}
         >
           {t("packagesCatalogLink")} <ExternalLink size={11} />
         </button>
-      </header>
+      </SectionHeader>
 
       {packageProgress &&
         pendingPreferenceUpdates.length === 0 &&
         dismissedProgressOp !== packageProgress.operationId && (
-          <div className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs">
+          <div
+            data-settings-top-banner
+            className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs"
+          >
             <RefreshCw size={13} className={progressActive ? "animate-spin" : ""} />
-            <span className="font-medium capitalize">{packageProgress.action}</span>
             <span className="min-w-0 flex-1 truncate text-muted" title={packageProgress.source}>
               {packageProgress.message ?? packageProgress.source}
             </span>
@@ -1381,6 +1121,7 @@ export function PackagesPage() {
 
       {pendingPreferenceUpdates.length > 0 && (
         <div
+          data-settings-top-banner
           className="flex min-h-9 items-center gap-2 border-b border-border bg-surface-overlay/50 px-4 text-xs"
           role="status"
           aria-live="polite"
@@ -1394,7 +1135,10 @@ export function PackagesPage() {
       )}
 
       {reconcileRequired && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs">
+        <div
+          data-settings-top-banner
+          className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs"
+        >
           <AlertTriangle size={14} className="text-warning" />
           <span className="min-w-48 flex-1 text-warning">{t("packagesReconcileWarning")}</span>
           <button
@@ -1424,7 +1168,10 @@ export function PackagesPage() {
       )}
 
       {reloadRequired && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs">
+        <div
+          data-settings-top-banner
+          className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs"
+        >
           <span className="min-w-48 flex-1 text-warning">{t("packagesReloadRequired")}</span>
           <button
             type="button"
@@ -1438,7 +1185,10 @@ export function PackagesPage() {
       )}
 
       {loadState === "error" && packages && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-danger/35 bg-danger/10 px-4 py-2 text-xs">
+        <div
+          data-settings-top-banner
+          className="flex flex-wrap items-center gap-2 border-b border-danger/35 bg-danger/10 px-4 py-2 text-xs"
+        >
           <AlertTriangle size={14} className="text-danger" />
           <span className="min-w-48 flex-1 text-danger">
             {t("packagesRefreshFailed", { message: loadError })}
@@ -1451,7 +1201,7 @@ export function PackagesPage() {
 
       {tab === "market" ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
             <label className="relative min-w-48 flex-1">
               <Search
                 size={13}
@@ -1472,7 +1222,7 @@ export function PackagesPage() {
               onChange={(next) => setMarketType(next as ResourceTypeFilter)}
               options={[
                 { value: "all", label: t("packagesMarketTypeAll") },
-                ...PACKAGE_RESOURCE_TYPES.map((type) => ({ value: type, label: type })),
+                ...PACKAGE_RESOURCE_TYPES.map((type) => ({ value: type, label: singularType(t, type) })),
               ]}
             />
             <Select
@@ -1485,26 +1235,49 @@ export function PackagesPage() {
                 { value: "recent", label: t("packagesMarketSortRecent") },
               ]}
             />
-            <Select
-              className="h-8"
-              ariaLabel={t("packagesInstallScope")}
-              value={marketScope}
-              onChange={(next) => setMarketScope(next as "user" | "project")}
-              options={[
-                { value: "user", label: t("packagesScopeUser") },
-                { value: "project", label: t("packagesScopeProject") },
-              ]}
-            />
             <button
               type="button"
               className={secondaryButton}
               title={t("packagesMarketRefresh")}
               aria-label={t("packagesMarketRefresh")}
               disabled={marketState === "loading"}
-              onClick={() => void loadMarket(true)}
+              onClick={() => void loadMarket({ refresh: true })}
             >
               <RefreshCw size={13} className={marketState === "loading" ? "animate-spin" : ""} />
             </button>
+            {marketCatalog && marketRange && (
+              <div className="ml-auto flex items-center gap-1.5 text-[11px] text-muted">
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  title={t("packagesMarketPrev")}
+                  aria-label={t("packagesMarketPrev")}
+                  disabled={marketState === "loading" || marketCatalog.page <= 1}
+                  onClick={() => void loadMarket({ page: marketCatalog.page - 1 })}
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <span className="min-w-24 text-center tabular-nums">
+                  {t("packagesMarketRange", {
+                    start: marketRange.start,
+                    end: marketRange.end,
+                    total: marketCatalog.total,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  title={t("packagesMarketNext")}
+                  aria-label={t("packagesMarketNext")}
+                  disabled={
+                    marketState === "loading" || marketCatalog.page >= marketCatalog.lastPage
+                  }
+                  onClick={() => void loadMarket({ page: marketCatalog.page + 1 })}
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            )}
           </div>
           {marketState === "error" && !marketCatalog ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
@@ -1517,7 +1290,7 @@ export function PackagesPage() {
                 <button
                   type="button"
                   className={secondaryButton}
-                  onClick={() => void loadMarket(true)}
+                  onClick={() => void loadMarket({ refresh: true, page: 1 })}
                 >
                   <RefreshCw size={13} />
                   {t("packagesTryAgain")}
@@ -1537,83 +1310,15 @@ export function PackagesPage() {
           ) : visibleMarketItems.length === 0 ? (
             <p className="p-8 text-center text-sm text-muted">{t("packagesMarketEmpty")}</p>
           ) : (
-            <div className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
-              {visibleMarketItems.map((item) => {
-                const installed = isCatalogItemInstalled(item, allPackages);
-                return (
-                  <article
-                    key={item.name}
-                    data-market-card={item.name}
-                    className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="min-w-0 truncate text-[13px] font-semibold" title={item.name}>
-                        {item.name}
-                      </h3>
-                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                        {item.types.map((type) => (
-                          <span
-                            key={type}
-                            className="meta-chip rounded border border-border px-1 text-[10px] text-muted"
-                          >
-                            {type}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <p
-                      className="line-clamp-2 min-h-10 text-xs leading-5 text-muted"
-                      title={item.description}
-                    >
-                      {item.description}
-                    </p>
-                    <div className="mt-auto flex items-center gap-2 text-[11px] text-muted">
-                      {item.author && (
-                        <span className="min-w-0 truncate" title={item.author}>
-                          {item.author}
-                        </span>
-                      )}
-                      {item.downloadsPerMonth !== undefined && (
-                        <span className="shrink-0 tabular-nums">
-                          {t("packagesMarketDownloads", {
-                            count: formatDownloadsPerMonth(item.downloadsPerMonth),
-                          })}
-                        </span>
-                      )}
-                      <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                        {item.npmUrl && (
-                          <button
-                            type="button"
-                            className="text-muted hover:text-foreground"
-                            title="npm"
-                            aria-label={`npm: ${item.name}`}
-                            onClick={() => void openExternal(item.npmUrl!)}
-                          >
-                            <ExternalLink size={12} />
-                          </button>
-                        )}
-                        {installed ? (
-                          <span className="inline-flex items-center gap-1 text-success">
-                            <Check size={12} />
-                            {t("packagesMarketInstalled")}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className={primaryButton}
-                            disabled={mutationBlocked}
-                            onClick={() => beginCatalogInstall(item)}
-                          >
-                            <Download size={13} />
-                            {t("packagesInstallAction")}
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+            <MarketCatalogGrid
+              items={visibleMarketItems}
+              allPackages={allPackages}
+              locale={locale}
+              t={t}
+              mutationBlocked={mutationBlocked}
+              onOpen={(url) => void openExternal(url)}
+              onInstall={beginCatalogInstall}
+            />
           )}
         </div>
       ) : loadState === "error" && !packages ? (
@@ -1628,29 +1333,19 @@ export function PackagesPage() {
             {t("packagesTryAgain")}
           </button>
         </div>
-      ) : tab === "installed" ? (
+      ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[minmax(280px,34%)_minmax(0,1fr)] md:overflow-hidden">
           <aside className="flex min-h-[300px] flex-col border-b border-border md:min-h-0 md:border-b-0 md:border-r">
             <div className="border-b border-border p-3">
-              <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+              <div className="flex flex-col gap-2">
                 <input
-                  className={`${inputClass} flex-1`}
+                  className={`${inputClass} w-full`}
                   aria-label={t("packagesSourceLabel")}
                   placeholder={t("packagesSourcePlaceholder")}
                   value={installSource}
                   onChange={(event) => setInstallSource(event.target.value)}
                 />
                 <div className="flex gap-2">
-                  <Select
-                    className="h-8"
-                    ariaLabel={t("packagesInstallScope")}
-                    value={installScope}
-                    onChange={(next) => setInstallScope(next as "user" | "project")}
-                    options={[
-                      { value: "user", label: t("packagesScopeUser") },
-                      { value: "project", label: t("packagesScopeProject") },
-                    ]}
-                  />
                   <button
                     type="button"
                     className={primaryButton}
@@ -1677,17 +1372,6 @@ export function PackagesPage() {
                   onChange={(event) => setInstalledQuery(event.target.value)}
                 />
               </label>
-              <Select
-                ariaLabel={t("packagesFilterScope")}
-                className="h-8"
-                value={installedScope}
-                onChange={(next) => setInstalledScope(next as PackageScopeFilter)}
-                options={[
-                  { value: "all", label: t("packagesFilterAllScopes") },
-                  { value: "user", label: t("packagesScopeUser") },
-                  { value: "project", label: t("packagesScopeProject") },
-                ]}
-              />
               <Select
                 ariaLabel={t("packagesFilterType")}
                 className="h-8"
@@ -1723,7 +1407,6 @@ export function PackagesPage() {
                       className={`${secondaryButton} mt-3`}
                       onClick={() => {
                         setInstalledQuery("");
-                        setInstalledScope("all");
                         setInstalledType("all");
                       }}
                     >
@@ -1732,7 +1415,7 @@ export function PackagesPage() {
                   )}
                 </div>
               )}
-              <ul>
+              <ul className="flex flex-col gap-1">
                 {visiblePackages.map((item) => (
                   <li key={item.id}>
                     <button
@@ -1936,255 +1619,50 @@ export function PackagesPage() {
                         selectedPackageResources.length === 0
                           ? t("packagesCountsUnavailable")
                           : t("packagesEnabledDisabled", {
-                              enabled: summarizeResources(selectedPackageResources).enabled,
-                              disabled: summarizeResources(selectedPackageResources).disabled,
+                              enabled: summarizeResources(selectedResources).enabled,
+                              disabled: summarizeResources(selectedResources).disabled,
                             })}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <PackagePreferenceControl
-                        label={t("packagesPackageAria", { name: selected.displayName })}
-                        mode={selected.scope}
-                        state={packagePreferenceState(selectedPackageResources, selected.scope)}
-                        disabled={mutationBlocked}
-                        onChange={(preference) =>
-                          setPackagePreference(selectedPackageResources, selected.scope, preference)
-                        }
-                      />
-                      <button
-                        type="button"
-                        className={secondaryButton}
-                        onClick={() => managePackageResources(selected.id)}
-                      >
-                        <Settings2 size={13} />
-                        {t("packagesManageResources")}
-                      </button>
+                    <PackagePreferenceControl
+                      label={t("packagesPackageAria", { name: selected.displayName })}
+                      mode={selected.scope}
+                      state={packagePreferenceState(selectedPackageResources, selected.scope)}
+                      disabled={mutationBlocked}
+                      onChange={(preference) =>
+                        setPackagePreference(selectedPackageResources, selected.scope, preference)
+                      }
+                    />
+                  </div>
+                  {!(
+                    selected.resourceCountsState === "unknownShadowed" &&
+                    selectedPackageResources.length === 0
+                  ) && (
+                    <div className="mt-3 space-y-4">
+                      {PACKAGE_RESOURCE_TYPES.map((type) => {
+                        const resources = selectedResources.filter(
+                          (resource) => resource.type === type,
+                        );
+                        if (resources.length === 0) return null;
+                        return (
+                          <div key={type}>
+                            <h4 className="text-[11px] font-semibold uppercase text-muted">
+                              {pluralType(t, type)}
+                            </h4>
+                            <ul className="mt-1 divide-y divide-border">
+                              {resources.map((resource) =>
+                                renderSelectedResourceRow(resource, selected),
+                              )}
+                            </ul>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {PACKAGE_RESOURCE_TYPES.map((type) => {
-                      const resources = selectedPackageResources.filter(
-                        (resource) => resource.type === type,
-                      );
-                      const enabled = resources.filter((resource) => resource.enabled).length;
-                      const state =
-                        resources.length === 0
-                          ? t("packagesStateNone")
-                          : enabled === 0
-                            ? t("commonDisabled")
-                            : enabled === resources.length
-                              ? t("commonEnabled")
-                              : t("packagesStateMixed");
-                      return (
-                        <div
-                          key={type}
-                          className="flex min-h-14 flex-col items-stretch justify-center rounded-md border border-border px-2 py-1.5 text-left text-xs"
-                        >
-                          <span className="flex items-center justify-between gap-2">
-                            <span>{pluralType(t, type)}</span>
-                            <span className="font-mono text-muted">
-                              {enabled}/{resources.length}
-                            </span>
-                          </span>
-                          <span className="mt-0.5 text-[11px] text-muted">{state}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  )}
                 </section>
               </div>
             )}
           </main>
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {packageUpdateActions}
-          <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-            <Segmented
-              value={resourceMode}
-              values={["user", "project"] as const}
-              onChange={setResourceMode}
-            />
-            <label className="relative min-w-48 flex-1 sm:max-w-sm">
-              <Search
-                size={13}
-                className="pointer-events-none absolute left-2 top-2.5 text-muted"
-              />
-              <input
-                aria-label={t("packagesSearchResources")}
-                className={`${inputClass} w-full pl-7`}
-                placeholder={t("packagesSearchResources")}
-                value={resourceQuery}
-                onChange={(event) => setResourceQuery(event.target.value)}
-              />
-            </label>
-            <Select
-              className="h-8"
-              ariaLabel={t("packagesFilterOrigin")}
-              value={resourceOrigin}
-              onChange={(next) => setResourceOrigin(next as ResourceOriginFilter)}
-              options={[
-                { value: "all", label: t("packagesFilterAll") },
-                { value: "package", label: t("packagesOriginPackage") },
-                { value: "standalone", label: t("packagesOriginStandalone") },
-                { value: "runtime", label: t("packagesOriginRuntime") },
-              ]}
-            />
-            <div className="flex min-w-0 items-center gap-1">
-              <Select
-                className="h-8 max-w-52"
-                ariaLabel={t("packagesOwnerFilter")}
-                value={resourceOwnerId}
-                onChange={(next) => setResourceOwnerId(next)}
-                options={[
-                  { value: "", label: t("packagesAllOwners") },
-                  ...allPackages.map((item) => ({
-                    value: item.id,
-                    label: `${item.displayName} (${scopeLabel(t, item.scope)})`,
-                  })),
-                ]}
-              />
-              {resourceOwnerId && (
-                <button
-                  type="button"
-                  title={t("packagesClearOwnerFilter")}
-                  aria-label={t("packagesClearOwnerFilter")}
-                  className={secondaryButton}
-                  onClick={() => setResourceOwnerId("")}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            {hasActiveResourceFilters(resourceFilters) && (
-              <button
-                type="button"
-                title={t("packagesClearResourceFilters")}
-                aria-label={t("packagesClearResourceFilters")}
-                className={secondaryButton}
-                onClick={clearResourceFilters}
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
-          <div
-            role="group"
-            aria-label={t("packagesResourceTypeGroup")}
-            className="flex shrink-0 gap-[2px] overflow-x-auto border-b border-border px-3 py-2"
-          >
-            {(["all", ...PACKAGE_RESOURCE_TYPES] as ResourceTypeFilter[]).map((type) => (
-              <button
-                key={type}
-                aria-pressed={resourceType === type}
-                type="button"
-                data-ui="segmented-item"
-                data-state={resourceType === type ? "active" : "inactive"}
-                className={`h-7 shrink-0 rounded-md px-2.5 text-xs ${resourceType === type ? "bg-selection text-selection-foreground" : "text-muted hover:text-foreground"}`}
-                onClick={() => setResourceType(type)}
-              >
-                {type === "all" ? t("packagesFilterAll") : pluralType(t, type)}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-raised px-3 py-2 text-xs">
-            <span className="text-muted">
-              {t("packagesConfigurableSummary", {
-                configurable: configurableVisible.length,
-                shown: visibleResourceItems.length,
-              })}
-            </span>
-            <span className="ml-auto" />
-            {resourceMode === "project" && (
-              <button
-                type="button"
-                title={t("packagesBatchInheritTitle")}
-                className={secondaryButton}
-                disabled={mutationBlocked || !configurableVisible.length}
-                onClick={() => batchPreference("inherit")}
-              >
-                {t("packagesInheritAllShown")}
-              </button>
-            )}
-            <button
-              type="button"
-              title={t("packagesBatchEnableTitle")}
-              className={secondaryButton}
-              disabled={mutationBlocked || !configurableVisible.length}
-              onClick={() => batchPreference("enabled")}
-            >
-              <Check size={13} />
-              {t("packagesEnableAllShown")}
-            </button>
-            <button
-              type="button"
-              title={t("packagesBatchDisableTitle")}
-              className={secondaryButton}
-              disabled={mutationBlocked || !configurableVisible.length}
-              onClick={() => batchPreference("disabled")}
-            >
-              <X size={13} />
-              {t("packagesDisableAllShown")}
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            {loadState === "loading" && !packages ? (
-              <div className="flex h-full min-h-64 items-center justify-center gap-2 p-8 text-xs text-muted">
-                <RefreshCw size={13} className="animate-spin" />
-                {t("packagesLoadingResources")}
-              </div>
-            ) : visibleResourceItems.length === 0 ? (
-              <div className="flex h-full min-h-64 flex-col items-center justify-center p-8 text-center text-muted">
-                <Settings2 size={28} className="mb-3 opacity-40" />
-                <p className="text-sm">
-                  {allResources.length === 0
-                    ? t("packagesNoResources")
-                    : hasActiveResourceFilters(resourceFilters)
-                      ? t("packagesNoResourcesMatch")
-                      : t("packagesNoResourcesInMode", {
-                          mode:
-                            resourceMode === "user"
-                              ? t("packagesScopeUser")
-                              : t("packagesScopeProject"),
-                        })}
-                </p>
-                <p className="mt-1 text-xs">
-                  {allResources.length === 0
-                    ? t("packagesInstallToPopulate")
-                    : t("packagesAdjustFilters")}
-                </p>
-                {hasActiveResourceFilters(resourceFilters) && (
-                  <button
-                    type="button"
-                    className={`${secondaryButton} mt-3`}
-                    onClick={clearResourceFilters}
-                  >
-                    <X size={13} /> {t("packagesClearFilters")}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div>
-                {resourceSections.map((section) => (
-                  <section key={section.key} aria-labelledby={`resource-group-${section.key}`}>
-                    <h3
-                      id={`resource-group-${section.key}`}
-                      className="sticky top-0 z-10 border-y border-border bg-surface-raised px-4 py-1.5 text-[11px] font-semibold uppercase text-muted"
-                    >
-                      {section.label} <span className="font-normal">({section.items.length})</span>
-                    </h3>
-                    <ul className="divide-y divide-border">
-                      {section.items.map((item) =>
-                        item.kind === "package"
-                          ? renderPackageResourceRow(item)
-                          : renderResourceRow(item.resource),
-                      )}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>

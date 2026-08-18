@@ -1257,6 +1257,42 @@ describe("Pi extension and session entry messages", () => {
     expect(rows[2]?.copyText).toBe("Use these settings");
   });
 
+  it("renders model_change rows with the Provider display name from providerNames", () => {
+    const entries = [
+      {
+        id: "model-1",
+        type: "model_change",
+        parentId: null,
+        timestamp: "2026-07-22T00:00:00.000Z",
+        provider: "8",
+        modelId: "gpt-5.6-luna",
+      },
+      {
+        id: "user-1",
+        type: "message",
+        parentId: "model-1",
+        timestamp: "2026-07-22T00:00:01.000Z",
+        message: { role: "user", content: "Hi" },
+      },
+    ];
+    const messages = [{ role: "user", content: "Hi" }] as SerializableAgentMessage[];
+
+    // Without a providerNames map, the raw service id is used.
+    const rawRows = buildTranscriptRows(messages, { entries });
+    expect(rawRows[0]?.event).toMatchObject({
+      kind: "model",
+      label: "Model: 8/gpt-5.6-luna",
+    });
+
+    // With a providerNames map, the Provider display name replaces the id.
+    const providerNames = new Map([["8", "天机阁"]]);
+    const rows = buildTranscriptRows(messages, { entries, providerNames });
+    expect(rows[0]?.event).toMatchObject({
+      kind: "model",
+      label: "Model: 天机阁/gpt-5.6-luna",
+    });
+  });
+
   it("keeps deferred setting events stable across the live-to-persisted handoff", () => {
     const settingEntries = [
       {

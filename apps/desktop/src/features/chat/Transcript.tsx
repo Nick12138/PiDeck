@@ -131,6 +131,7 @@ export function Transcript() {
   const t = useT();
   const locale = useLocale();
   const session = useAppStore((state) => state.session);
+  const providerNames = useAppStore((state) => state.providerNames);
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   // The "Pi 正在处理…" placeholder shows a playful random status per request.
   // A status is picked when a working phase begins and kept until the session
@@ -164,6 +165,7 @@ export function Transcript() {
           leafId: session?.leafId,
           extensionMessageRenders: session?.extensionMessageRenders,
           turnActive: session?.isIdle === false,
+          providerNames,
         }),
       ),
     [
@@ -172,6 +174,7 @@ export function Transcript() {
       session?.leafId,
       session?.extensionMessageRenders,
       session?.isIdle,
+      providerNames,
     ],
   );
   prevRowsRef.current = rows;

@@ -66,6 +66,10 @@ import {
 
 export type NavPage = "chat" | "packages" | "settings";
 
+/** Frozen empty map shared as the initial `providerNames` value so unrelated
+ *  sessions don't reallocate a new Map on every reset. */
+const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
+
 /** Live view of the single in-flight builtin Provider login flow. */
 type ProviderLoginUiState = {
   loginId: string;
@@ -200,6 +204,11 @@ export type AppState = EpochState & {
   packageRetry: PackageRetryState | null;
   thinkingLevels: string[];
   providerConfigRevision: number;
+  /** Provider id -> display name, resolved from the model catalog. Used to render
+   *  historical `model_change` session entries with the Provider name rather than
+   *  its raw service id (e.g. "天机阁" instead of "8"). */
+  providerNames: ReadonlyMap<string, string>;
+  setProviderNames: (names: ReadonlyMap<string, string>) => void;
   sessionCatalog: SessionCatalogState;
   /** Last explicit session.runtimeChanged state per session. Session snapshots
    * may arrive first and must not erase the busy-to-terminal event edge. */
@@ -365,6 +374,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   packageRetry: null,
   thinkingLevels: [],
   providerConfigRevision: 0,
+  providerNames: EMPTY_PROVIDER_NAMES,
   sessionCatalog: emptySessionCatalog(),
   sessionRuntimeStates: {},
   sessionTerminalStates: readTerminalStates(),
@@ -489,6 +499,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       packageRetry: null,
       thinkingLevels: [],
       providerConfigRevision: 0,
+      providerNames: EMPTY_PROVIDER_NAMES,
       sessionCatalog: emptySessionCatalog(),
       sessionRuntimeStates: {},
       hostFatal: null,
@@ -947,6 +958,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPackageProgress: (packageProgress) => set({ packageProgress }),
   setPackageRetry: (packageRetry) => set({ packageRetry }),
   setThinkingLevels: (thinkingLevels) => set({ thinkingLevels: [...thinkingLevels] }),
+  setProviderNames: (providerNames) => set({ providerNames: new Map(providerNames) }),
   refreshProviderConfig: () =>
     set((state) => ({ providerConfigRevision: state.providerConfigRevision + 1 })),
   replaceSessionCatalog: (workspaceId, items) =>

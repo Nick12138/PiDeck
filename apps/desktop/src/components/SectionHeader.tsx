@@ -22,7 +22,7 @@ export function SectionHeader({
         {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
       </div>
       {children && (
-        <div className="ml-auto flex shrink-0 items-center gap-1.5" data-settings-header-actions>
+        <div className="ml-auto flex shrink-0 items-center gap-2 pr-[50px]" data-settings-header-actions>
           {children}
         </div>
       )}

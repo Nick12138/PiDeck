@@ -1,7 +1,9 @@
 import {
   useId,
+  useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type RefObject,
@@ -298,90 +300,128 @@ function isTodoWidgetKey(key: string): boolean {
   return /todo/i.test(key);
 }
 
-/**
- * Floating collapsible todo card anchored above the composer. Narrow width
- * and left-aligned so it never covers the transcript's jump-to-latest button
- * on the right. Hidden entirely when the session has no todos.
- */
-export function TodoFloatingPopover({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
+/** Todo trigger in the composer toolbar with a compact list popover above it. */
+export function TodoPopoverButton() {
   const t = useT();
   const session = useAppStore((state) => state.session);
   const todos = useMemo(() => extractLatestTodos(session), [session]);
-  const [collapsed, setCollapsed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
   const contentId = useId();
-  const layout = useWidgetPopoverLayout(anchorRef, todos.length > 0, true, false);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || todos.length === 0) return;
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const margin = 8;
+      const gap = 8;
+      const maxWidth = Math.min(448, Math.max(1, window.innerWidth - margin * 2));
+      const left = Math.min(
+        Math.max(margin, rect.left),
+        Math.max(margin, window.innerWidth - maxWidth - margin),
+      );
+      const availableHeight = Math.max(1, rect.top - gap - margin);
+      setPopoverStyle({
+        left,
+        bottom: Math.max(margin, window.innerHeight - rect.top + gap),
+        maxWidth,
+        maxHeight: Math.min(240, availableHeight),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, todos.length]);
 
   if (todos.length === 0) return null;
 
-  const position = layout?.above;
-  // Keep the right-side jump-to-latest control clear even when the
-  // conversation column is narrow. The card remains content-sized within this
-  // safe width; long task text is truncated by TodoRow.
-  const availableWidth = Math.max(1, (position?.width ?? 360) - 48);
-  const maxWidth = Math.min(availableWidth, 440);
   const activeCount = todos.filter((item) => item.status !== "completed").length;
-  const style: CSSProperties = position
-    ? {
-        left: position.left,
-        width: "max-content",
-        maxWidth,
-        maxHeight: position.maxHeight,
-        ...(position.top !== undefined ? { top: position.top } : {}),
-        ...(position.bottom !== undefined ? { bottom: position.bottom } : {}),
-      }
-    : { left: 0, top: 0, width: "max-content", maxWidth, maxHeight: 1 };
-  const toggleLabel = t(collapsed ? "extWidgetExpand" : "extWidgetCollapse", {
-    key: "Todo",
-  });
-
-  const card = (
-    <section
-      className={`theme-floating-surface fixed z-40 flex max-w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl ${
-        position ? "" : "invisible pointer-events-none"
+  const button = (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-expanded={open}
+      aria-controls={contentId}
+      aria-label="Todo"
+      title="Todo"
+      className={`flex size-8 items-center justify-center rounded-md transition-colors ${
+        open
+          ? "bg-accent/15 text-accent"
+          : "text-muted hover:bg-surface-overlay hover:text-foreground"
       }`}
-      style={style}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <ListChecks size={15} />
+    </button>
+  );
+  const popover = open ? (
+    <section
+      ref={popoverRef}
+      id={contentId}
+      className="theme-floating-surface fixed z-50 flex w-max min-w-64 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl"
+      style={popoverStyle ?? { visibility: "hidden", left: 0, bottom: 0 }}
       aria-label="Todo"
     >
-      <button
-        type="button"
-        className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
-        aria-expanded={!collapsed}
-        aria-controls={contentId}
-        aria-label={toggleLabel}
-        title={toggleLabel}
-        onClick={() => setCollapsed((value) => !value)}
-      >
-        <ChevronRight
-          aria-hidden="true"
-          size={14}
-          className={`shrink-0 text-muted transition-transform duration-150 motion-reduce:transition-none ${
-            collapsed ? "" : "rotate-90"
-          }`}
-        />
+      <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <ListChecks size={15} className="shrink-0 text-accent" aria-hidden="true" />
-        <span className="min-w-0 shrink truncate text-sm font-medium text-foreground">Todo</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {t("todoListTitle")}
+        </span>
         <span className="shrink-0 rounded-full bg-surface-overlay px-2 py-0.5 text-xs text-muted">
           {activeCount}
         </span>
-      </button>
-      {!collapsed && (
-        <div id={contentId} className="scrollbar-auto-hide min-h-0 overflow-y-auto p-2">
-          <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
-            {todos.map((item) => (
-              <TodoRow
-                key={item.id}
-                item={item}
-                number={todoNumber(item, todos)}
-                active={item.status === "in_progress"}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
+      </div>
+      <div className="scrollbar-auto-hide min-h-0 overflow-y-auto p-2">
+        <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
+          {todos.map((item) => (
+            <TodoRow
+              key={item.id}
+              item={item}
+              number={todoNumber(item, todos)}
+              active={item.status === "in_progress"}
+            />
+          ))}
+        </ul>
+      </div>
     </section>
-  );
+  ) : null;
 
-  return typeof document === "undefined" ? card : createPortal(card, document.body);
+  return (
+    <>
+      {button}
+      {typeof document === "undefined" || !popoverStyle || !popover
+        ? null
+        : createPortal(popover, document.body)}
+    </>
+  );
 }
 
 function WidgetSection({
