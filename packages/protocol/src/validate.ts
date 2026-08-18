@@ -733,6 +733,10 @@ export function validateRequestParams<M extends HostMethod>(
         params.rows <= 1000
         ? ok(params)
         : fail("invalid extensionUi.customResize params", { method });
+    case "telegram.validateToken":
+      return exactObject(params, ["token"]) && isNonEmptyString(params.token)
+        ? ok(params)
+        : fail("invalid telegram.validateToken params", { method });
     default:
       // Exhaustiveness guard: adding a HostMethod without a params validator
       // is a compile error here, not a silently-undefined result at runtime.

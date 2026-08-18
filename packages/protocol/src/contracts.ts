@@ -49,6 +49,7 @@ import type {
   ProviderSnapshot,
   DiscoveredProviderModel,
   ProviderConnectionResult,
+  TelegramValidateTokenResult,
   BuiltinProviderAuthStatus,
   BuiltinProviderModelsResult,
   ProviderLoginFlowEvent,
@@ -168,6 +169,7 @@ export type HostContextMap = {
   "extensionUi.respond": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
   "extensionUi.customResize": SessionTargetContext;
+  "telegram.validateToken": HostContext;
 };
 
 export type HostRequestParams = {
@@ -305,6 +307,7 @@ export type HostRequestParams = {
   };
   "extensionUi.customInput": { requestId: string; data: string };
   "extensionUi.customResize": { requestId: string; cols: number; rows: number };
+  "telegram.validateToken": { token: string };
 };
 
 export type HostResultMap = {
@@ -419,8 +422,7 @@ export type HostResultMap = {
     providerId: string;
     models: DiscoveredProviderModel[];
   };
-  "provider.checkConnection": ProviderConnectionResult;
-  "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
+  "provider.checkConnection": ProviderConnectionResult;  "provider.authStatus": { providers: BuiltinProviderAuthStatus[] };
   "provider.loginStart": { loginId: string; providerId: string };
   "provider.loginRespond": { accepted: true };
   "provider.loginCancel": { accepted: true };
@@ -457,6 +459,7 @@ export type HostResultMap = {
   "extensionUi.respond": { accepted: true };
   "extensionUi.customInput": { accepted: true };
   "extensionUi.customResize": { accepted: true };
+  "telegram.validateToken": TelegramValidateTokenResult;
 };
 
 export type HostEventPayloadMap = {

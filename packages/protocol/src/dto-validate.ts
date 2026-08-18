@@ -2049,6 +2049,17 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isOptionalString(result.suggestion)
         ? null
         : "invalid provider.checkConnection result";
+    case "telegram.validateToken":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["ok"], ["botId", "username", "firstName", "workspacePath", "description"]) &&
+        isBoolean(result.ok) &&
+        (result.botId === undefined || isSafeRevision(result.botId)) &&
+        (result.username === undefined || (isString(result.username) && result.username.length > 0)) &&
+        (result.firstName === undefined || isString(result.firstName)) &&
+        (result.workspacePath === undefined || (isString(result.workspacePath) && result.workspacePath.length > 0)) &&
+        (result.description === undefined || isString(result.description))
+        ? null
+        : "invalid telegram.validateToken result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(

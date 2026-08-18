@@ -218,6 +218,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
+  "telegram.validateToken": { token: "123456:ABC-DEF" },
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -408,6 +409,8 @@ function invalidParams(method: HostMethod): unknown {
       return { requestId: EXTENSION_REQUEST_ID, data: "" };
     case "extensionUi.customResize":
       return { requestId: EXTENSION_REQUEST_ID, cols: 0, rows: 32 };
+    case "telegram.validateToken":
+      return { token: "" };
     default:
       return { __invalid: true };
   }

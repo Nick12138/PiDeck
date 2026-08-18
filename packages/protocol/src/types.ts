@@ -384,6 +384,24 @@ export type ProviderConnectionResult = {
   suggestion?: string;
 };
 
+/** Result of validating a Telegram bot token via `getMe`. */
+export type TelegramValidateTokenResult = {
+  /** Whether the getMe call succeeded with a bot-shaped result. */
+  ok: boolean;
+  /** Telegram bot user id. */
+  botId?: number;
+  /** Bot username without the leading @. */
+  username?: string;
+  /** Bot display name from getMe.first_name. */
+  firstName?: string;
+  /** Absolute path of the default Telegram workspace directory this host
+   *  provisions for the gateway (`<agentDir>/workspace/telegram`). Always
+   *  present when `ok` is true. */
+  workspacePath?: string;
+  /** Telegram error description when `ok` is false. */
+  description?: string;
+};
+
 export type SerializableAgentContent = {
   type: string;
   text?: string;

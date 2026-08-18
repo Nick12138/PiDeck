@@ -380,7 +380,14 @@ export function Composer({
     const prevHeight = el.clientHeight;
     el.style.height = "auto";
     const target = Math.min(el.scrollHeight, 280);
-    el.style.height = `${Math.max(target, Math.min(prevHeight, 280))}px`;
+    // After a send the draft is cleared (text === ""); reset to the initial
+    // height instead of preserving the previous (grown) height, so the box
+    // visibly shrinks back to its resting size.
+    if (text.trim().length === 0) {
+      el.style.height = ``;
+    } else {
+      el.style.height = `${Math.max(target, Math.min(prevHeight, 280))}px`;
+    }
   }, [text]);
   const composerResizeStart = useRef<{ pointerId: number; y: number; height: number } | null>(null);
 

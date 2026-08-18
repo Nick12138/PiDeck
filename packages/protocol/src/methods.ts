@@ -99,6 +99,7 @@ export const HOST_METHODS = [
   "extensionUi.respond",
   "extensionUi.customInput",
   "extensionUi.customResize",
+  "telegram.validateToken",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -164,7 +165,8 @@ export type HostOnlyMethod =
   | "provider.setBuiltinModels"
   | "session.searchAll"
   | "package.catalog"
-  | "extensionUi.configure";
+  | "extensionUi.configure"
+  | "telegram.validateToken";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -372,6 +374,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "resource.setPreference": "sessionPackage",
   "resource.setPreferences": "sessionPackage",
   "extensionUi.configure": "host",
+  "telegram.validateToken": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

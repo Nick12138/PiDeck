@@ -1,4 +1,4 @@
-import { ChevronDown, Folder, FolderPlus, LoaderCircle, Plus, X } from "lucide-react";
+import { ChevronDown, Folder, FolderPlus, LoaderCircle, MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -24,6 +24,8 @@ import {
   waitForWorkspaceActivation,
   workspaceHasActiveAgent,
 } from "./workspace-switch-policy";
+import { TelegramAddDialog } from "../bot/TelegramAddDialog";
+import { addGateway, type BotGateway } from "../bot/gateway-store";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -79,6 +81,8 @@ export function WorkspacePicker() {
   const [collapsed, setCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.workspacesCollapsed"),
   );
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
   const requestRef = useRef(0);
 
   function toggleCollapsed() {
@@ -268,16 +272,84 @@ export function WorkspacePicker() {
             }`}
           />
         </button>
-        <button
-          type="button"
-          onClick={() => void pickAndAdd()}
-          disabled={!host || pending}
-          className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-          title={t("workspacesAdd")}
-          aria-label={t("workspacesAdd")}
-        >
-          <Plus size={15} />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setAddMenuOpen((v) => !v)}
+            disabled={!host || pending}
+            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+            title={t("botAddMenu")}
+            aria-label={t("botAddMenu")}
+            aria-haspopup="menu"
+            aria-expanded={addMenuOpen}
+          >
+            <Plus size={15} />
+          </button>
+          {addMenuOpen && (
+            <div
+              className="absolute right-0 top-9 z-30 w-60 rounded-md border border-border bg-surface-raised p-1 shadow-xl"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  void pickAndAdd();
+                }}
+              >
+                <FolderPlus size={16} className="mt-0.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {t("botAddFolderWorkspace")}
+                  </span>
+                  <span className="block truncate text-xs text-muted">
+                    {t("botAddFolderWorkspaceDesc")}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  setTelegramDialogOpen(true);
+                }}
+              >
+                <Send size={16} className="mt-0.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {t("botAddTelegramBot")}
+                  </span>
+                  <span className="block truncate text-xs text-muted">
+                    {t("botAddTelegramBotDesc")}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled
+                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <MessageCircle size={16} className="mt-0.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {t("botAddWeixinBot")}
+                  </span>
+                  <span className="block truncate text-xs text-muted">
+                    {t("botAddWeixinBotDesc")}
+                  </span>
+                </span>
+                <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                  {t("botAddComingSoon")}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <CollapsibleRegion open={!collapsed} id="workspace-list-region">
         {listed.length === 0 ? (
@@ -354,6 +426,16 @@ export function WorkspacePicker() {
           </ul>
         )}
       </CollapsibleRegion>
+      {telegramDialogOpen && (
+        <TelegramAddDialog
+          onCancel={() => setTelegramDialogOpen(false)}
+          onConfirm={(gateway: BotGateway) => {
+            addGateway(gateway);
+            setTelegramDialogOpen(false);
+            pushNotification(t("botAddTelegramSaved", { name: gateway.name }), "success");
+          }}
+        />
+      )}
     </section>
   );
 }
