@@ -488,7 +488,7 @@ html[data-theme-family="apple"] {
   --theme-sidebar-shadow:
     inset -1px 0 0 color-mix(in srgb, var(--color-foreground) 5%, transparent),
     1px 0 0 var(--color-border-subtle), 8px 0 28px rgb(0 0 0 / 8%);
-  --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 6%, transparent);
+  --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 0%, transparent);
   --theme-toolbar-material: color-mix(in srgb, var(--color-surface) 82%, transparent);
   --theme-floating-material: color-mix(in srgb, var(--color-surface-raised) 90%, transparent);
 }
