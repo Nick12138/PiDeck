@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LoaderCircle, RotateCcw, X } from "lucide-react";
 import { Dialog, secondaryButton } from "../../components/Dialog";
-import { SettingsTopBarActions } from "./SettingsPage";
+import { SettingsTopBarActions } from "./settings-top-bar";
 import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 import {
   notifyDesktopSettingsSaveFailure,

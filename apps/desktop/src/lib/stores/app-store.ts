@@ -44,7 +44,7 @@ import {
   type SessionTerminalState,
   type SessionTerminalStates,
 } from "../session-terminal-states";
-import { sidebarPref } from "../sidebar-prefs";
+import { setSidebarPref, sidebarPref } from "../sidebar-prefs";
 import type { AppUpdate } from "../updater";
 import {
   draftKeyForTarget,
@@ -200,6 +200,10 @@ export type AppState = EpochState & {
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
   dockRestoreOnPanelClose: boolean | null;
+  /** Whether the global left aside is collapsed. Backed by localStorage so it
+   *  survives reloads; promoted out of Sidebar-local state so the app-level
+   *  top bar can both read and toggle it. */
+  sidebarCollapsed: boolean;
   packageProgress: PackageProgressState | null;
   packageRetry: PackageRetryState | null;
   thinkingLevels: string[];
@@ -235,6 +239,7 @@ export type AppState = EpochState & {
   clearProviderLogin: () => void;
   setPage: (page: NavPage) => void;
   openSettingsSection: (section: SettingsSection) => void;
+  setSettingsSection: (section: SettingsSection) => void;
   setAuthBlocked: (blocked: { providerId: string | null } | null) => void;
   setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
@@ -259,6 +264,8 @@ export type AppState = EpochState & {
   openExtensionTerminal: (t: ExtensionTerminalState) => void;
   closeExtensionTerminal: (requestId: string) => void;
   setDockOpen: (open: boolean) => void;
+  setSidebarCollapsed: (open: boolean) => void;
+  toggleSidebar: () => void;
   setExtensionStatus: (key: string | undefined, text: string | null) => void;
   setExtensionMessageRender: (
     entryId: string,
@@ -370,6 +377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionTerminal: null,
   dockOpen: sidebarPref("pideck.dock.open"),
   dockRestoreOnPanelClose: null,
+  sidebarCollapsed: sidebarPref("pideck.sidebar.collapsed"),
   packageProgress: null,
   packageRetry: null,
   thinkingLevels: [],
@@ -478,6 +486,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   openSettingsSection: (section) =>
     set({ page: "settings", settingsSection: section, extensionWidgetsOpen: false }),
+  setSettingsSection: (section) => set({ settingsSection: section }),
   setAuthBlocked: (authBlocked) => set({ authBlocked }),
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
@@ -885,6 +894,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       dockOpen: open,
       // Manual toggle takes over — the panel close no longer restores.
       dockRestoreOnPanelClose: null,
+    }),
+  setSidebarCollapsed: (open) => {
+    setSidebarPref("pideck.sidebar.collapsed", open);
+    set({ sidebarCollapsed: open });
+  },
+  toggleSidebar: () =>
+    set((state) => {
+      const next = !state.sidebarCollapsed;
+      setSidebarPref("pideck.sidebar.collapsed", next);
+      return { sidebarCollapsed: next };
     }),
   setExtensionStatus: (key, text) =>
     set((state) => {

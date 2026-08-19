@@ -101,6 +101,14 @@
   --theme-motion-standard: 220ms;
   --theme-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
   --window-frame-radius: 12px;
+  /* The app bar + left aside read as one shell "frame" that visually wraps the
+     floating content area. Pure-color themes get a solid shell (--app-shell)
+     matched to the sidebar tint and a margin around the content card. Acrylic
+     / apple leave these at 0 and rely on their own material/transparent frame
+     rules elsewhere. */
+  --app-shell-bg: var(--color-sidebar);
+  --app-content-gap: 8px;
+  --app-content-radius: 12px;
 
   color-scheme: dark;
   font-family: var(--font-sans);
@@ -154,6 +162,35 @@ body,
 
 [data-pideck-app][data-window-frame="filled"] {
   border-radius: 0;
+}
+
+/* App shell: the top bar (AppTopBar) and the left aside are visually one piece
+   — they share the sidebar tint (or go transparent under acrylic). The whole
+   [data-app-body] gets the shell background so the frame reads as one surface
+   wrapping the content. Each theme can override --app-shell-bg to transparent
+   to delegate to its own frosted/material rules (acrylic, apple). */
+[data-pideck-app][data-has-topbar] {
+  background-color: var(--app-shell-bg);
+}
+[data-pideck-app][data-has-topbar] [data-app-topbar] {
+  background-color: var(--app-shell-bg);
+}
+[data-pideck-app][data-has-topbar] [data-sidebar] {
+  background-color: var(--app-shell-bg);
+}
+
+/* The content area (main + right dock) floats as a rounded card inset from the
+   shell frame. Pure-color themes get the surface fill + radius + margin here;
+   acrylic/apple override --app-content-gap to 0 since they paint their own
+   rounding/inset on [data-chat-content]/[data-dock-content]. */
+[data-app-body] {
+  gap: 0;
+}
+[data-content-frame] {
+  margin: var(--app-content-gap);
+  background-color: var(--color-surface);
+  border-radius: var(--app-content-radius);
+  overflow: hidden;
 }
 
 * {
@@ -420,27 +457,9 @@ select option {
   opacity: 1;
 }
 
-[data-window-platform="macos"] [data-sidebar-header] {
-  padding-top: 24px;
-  padding-left: 16px;
-}
-
 [data-window-platform="macos"] .mac-sidebar-brand-mark {
   width: 18px;
   height: 18px;
-}
-
-[data-window-platform="macos"] [data-chat-header] {
-  padding-right: 8px;
-}
-
-[data-window-platform="macos"] [data-dock-header] {
-  padding-right: 8px;
-}
-
-/* Reserve the Windows frameless controls horizontally without making headers taller. */
-[data-window-platform="windows"] [data-settings-section-header][data-settings-has-actions] {
-  padding-right: 148px;
 }
 
 /* Multi-select checkboxes follow the app accent instead of the OS default. */
@@ -475,6 +494,10 @@ html[data-theme-family="apple"] {
   --theme-material-blur: 24px;
   --theme-toolbar-blur: 18px;
   --theme-chat-header-fade-height: 24px;
+  /* Apple already paints a frosted toolbar/sidebar; keep the content card flush
+     and let theme-specific selectors colour the frame. */
+  --app-shell-bg: var(--color-surface);
+  --app-content-gap: 0px;
   --theme-control-shadow: inset 0 0 0 0.5px var(--color-border-subtle), 0 1px 2px rgb(0 0 0 / 8%);
   --theme-composer-shadow:
     0 0 0 0.5px var(--color-border-subtle), 0 10px 30px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 7%);
@@ -583,6 +606,10 @@ html[data-theme-family="acrylic"] {
   --theme-material-blur: 24px;
   --theme-toolbar-blur: 18px;
   --theme-chat-header-fade-height: 0px;
+  /* Acrylic bootstraps its own 0%-material shell:[chat/dock content] insets and
+     backsplash; the generic content frame stays flush here. */
+  --app-shell-bg: transparent;
+  --app-content-gap: 0px;
   --theme-control-shadow: inset 0 0 0 0.5px var(--color-border-subtle), 0 1px 2px rgb(0 0 0 / 8%);
   --theme-composer-shadow:
     0 0 0 0.5px var(--color-border-subtle), 0 10px 30px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 7%);
@@ -724,12 +751,11 @@ html[data-theme-family="acrylic"] [data-window-controls-platform="windows"] butt
 
 /* Frosted top strips: wash hovered header-area buttons with a 50% transparent
    surface so the hover read stays glassy instead of laying down a solid fill.
-   Scope the variable override to the three header strips, the collapsed
-   sidebar toggle slot, and the window controls cluster — every button there
-   that uses hover:bg-surface-overlay picks up the translucent value. */
+   Scope the variable override to the top bar segments and the window controls
+   cluster — every button there that uses hover:bg-surface-overlay picks up the
+   translucent value. */
 html[data-theme-family="acrylic"] :where(
   [data-sidebar-header],
-  [data-sidebar-collapsed-toggle-slot],
   [data-chat-header],
   [data-dock-header],
   [data-settings-section-header],
@@ -747,18 +773,6 @@ html[data-theme-family="acrylic"] [data-settings-content] {
 
 html[data-theme-family="acrylic"] .mac-window-controls {
   top: 19px;
-}
-
-/* When the sidebar collapses, its toggle button keeps the same fixed slot
-   (h-12 + translate) used by every other theme. Override only in acrylic to
-   match the padded 50px header baseline (29px center) so the button does not
-   jump between expanded/collapsed. */
-html[data-theme-family="acrylic"] [data-sidebar-collapsed-toggle-slot] {
-  height: 50px;
-  padding-top: 8px;
-}
-html[data-theme-family="acrylic"] [data-sidebar-collapsed-toggle-slot] > * {
-  transform: none;
 }
 
 html[data-theme-family="acrylic"] [data-chat-content] {
@@ -1295,15 +1309,6 @@ html[data-theme-family="apple"] :where([data-chat-header], [data-dock-header]) {
 
 html[data-theme-family="apple"] [data-dock-header] {
   border-bottom: 1px solid var(--color-border-subtle);
-}
-
-html[data-theme-family="apple"] [data-chat-header] {
-  padding-left: 24px;
-}
-
-[data-sidebar-collapsed="true"] ~ main [data-chat-header],
-html[data-theme-family="apple"] [data-sidebar-collapsed="true"] ~ main [data-chat-header] {
-  padding-left: 56px;
 }
 
 html[data-theme-family="apple"] [data-chat-header-fade] {

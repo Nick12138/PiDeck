@@ -605,7 +605,7 @@ export function RightDock() {
         // buttons still block drag and stay interactive.
         data-tauri-drag-region="deep"
         data-dock-header
-        className="flex h-11 shrink-0 items-center border-b border-border pl-2 pr-[180px]"
+        className="flex h-11 shrink-0 items-center border-b border-border pl-2"
       >
         <div ref={tabBarRef} className="flex min-w-0 flex-1 items-center gap-1 self-stretch">
           <div

@@ -36,7 +36,7 @@ vi.mock("../features/dock/ChangesPanel", () => ({
 }));
 
 import { RightDock } from "./RightDock";
-import { ChatHeader } from "../features/chat/ChatHeader";
+import { DockToggleButton } from "./DockToggleButton";
 
 class ResizeObserverStub {
   observe() {}
@@ -107,7 +107,7 @@ describe("RightDock pages", () => {
     useAppStore.setState({ desktopSettings: settings("auto", "zh") });
     render(
       <>
-        <ChatHeader />
+        <DockToggleButton />
         <RightDock />
       </>,
     );
@@ -134,24 +134,19 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
   });
 
-  it("moves the toolbar toggle with the chat edge as the Dock opens and closes", async () => {
+  it("toggles the dock open state through the toolbar button", async () => {
     const user = userEvent.setup();
     const { container } = render(
       <>
-        <ChatHeader />
+        <DockToggleButton />
         <RightDock />
       </>,
     );
-    const header = container.querySelector<HTMLElement>("[data-chat-header]")!;
-
-    expect(header).toHaveAttribute("data-dock-open", "true");
-    expect(header).toHaveClass("pr-2");
+    expect(useAppStore.getState().dockOpen).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "Collapse right panel" }));
 
     expect(useAppStore.getState().dockOpen).toBe(false);
-    expect(header).toHaveAttribute("data-dock-open", "false");
-    expect(header).toHaveClass("pr-[140px]");
     expect(screen.getByRole("button", { name: "Open right panel" })).toHaveAttribute(
       "aria-expanded",
       "false",

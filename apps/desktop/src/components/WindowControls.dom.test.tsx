@@ -46,12 +46,16 @@ describe("shouldRenderWindowControls", () => {
 });
 
 describe("WindowControls", () => {
-  it("renders macOS traffic lights at the top-left in native action order", () => {
+  it("renders macOS traffic lights inline for the app top bar in native action order", () => {
     render(<WindowControls platform="macos" />);
 
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "macos");
-    expect(controls).toHaveClass("left-1.5", "top-1.5");
+    // Traffic lights are now inlined inside AppTopBar's left segment instead of
+    // an absolute floating layer — assert the inline flex group carries no
+    // positioning classes.
+    expect(controls).toHaveClass("mac-window-controls", "flex", "shrink-0", "items-center");
+    expect(controls).not.toHaveClass("absolute", "left-1.5", "top-1.5", "z-50");
     expect(
       within(controls)
         .getAllByRole("button")
@@ -69,12 +73,15 @@ describe("WindowControls", () => {
     ).toHaveClass("mac-window-control-dot--maximize");
   });
 
-  it("aligns the Windows controls with the chat header in native action order", () => {
+  it("aligns the Windows controls with the app top bar in native action order", () => {
     render(<WindowControls platform="windows" />);
 
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "windows");
-    expect(controls).toHaveClass("right-0", "top-0");
+    // Windows controls are now inlined at the right end of AppTopBar instead of
+    // an absolute floating layer.
+    expect(controls).toHaveClass("flex", "shrink-0", "items-center");
+    expect(controls).not.toHaveClass("absolute", "right-0", "top-0", "z-50");
     const buttons = within(controls).getAllByRole("button");
     expect(buttons.map((button) => button.ariaLabel)).toEqual([
       "Minimize window",

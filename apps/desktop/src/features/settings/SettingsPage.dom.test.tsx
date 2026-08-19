@@ -73,36 +73,25 @@ afterEach(() => {
 });
 
 describe("SettingsPage navigation guard", () => {
-  it("shows the right Dock toggle in the Settings page corner", () => {
+  it("does not render a dock toggle inside the Settings page (moved to AppTopBar)", () => {
     useAppStore.setState({ dockOpen: false });
     const { container } = render(<SettingsPage initialSection="general" />);
 
-    const toggle = screen.getByRole("button", { name: "Open right panel" });
-    expect(toggle).toBeVisible();
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(toggle).toHaveAttribute("aria-controls", "right-dock");
-    expect(toggle).toHaveAttribute("data-dock-toolbar-toggle");
-    expect(container.querySelector("[data-settings-dock-toggle]")).toContainElement(toggle);
-    expect(container.querySelector("[data-settings-section-header]")).not.toContainElement(toggle);
+    expect(container.querySelector("[data-settings-dock-toggle]")).toBeNull();
+    expect(container.querySelector("[data-dock-toolbar-toggle]")).toBeNull();
   });
 
-  it("renders the active section title in the top header and nav in the aside", () => {
+  it("renders nav in the aside and content side-by-side under the shell", () => {
     const { container } = render(<SettingsPage initialSection="general" />);
 
     const shell = container.querySelector("[data-settings-shell]");
     const sidebar = container.querySelector("[data-settings-sidebar]");
-    const sectionHeader = container.querySelector("[data-settings-section-header]");
     const content = container.querySelector("[data-settings-content]");
 
-    expect(shell?.firstElementChild).toHaveAttribute("data-settings-dock-toggle");
-    expect(sidebar?.parentElement).toBe(shell);
-    expect(sectionHeader?.parentElement).toBe(shell);
-    expect(content?.parentElement).toBe(shell);
-    expect(
-      within(sectionHeader as HTMLElement).getByRole("heading", { name: "General" }),
-    ).toBeInTheDocument();
-    expect(sectionHeader).not.toHaveClass("border-b");
-    expect(content?.querySelector("header")).toBeNull();
+    expect(sidebar?.parentElement?.parentElement).toBe(shell);
+    expect(content?.parentElement?.parentElement).toBe(shell);
+    // Standalone render (no AppTopBar host) still shows an inline section header.
+    expect(container.querySelector("[data-settings-section-header]")).not.toBeNull();
   });
 
   it("places Shortcuts last in the settings sidebar", () => {

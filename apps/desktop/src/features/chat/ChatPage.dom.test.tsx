@@ -96,8 +96,10 @@ describe("ChatPage conversation width", () => {
 
     expect(screen.queryByRole("heading", { name: "New conversation" })).toBeNull();
     expect(container.querySelector("[data-chat-status]")).toBeNull();
-    expect(container.querySelector("[data-chat-header]")).toBeInTheDocument();
-    expect(container.querySelector("[data-dock-toolbar-toggle]")).toBeInTheDocument();
+    // The chat header / dock toggle moved into the app-level AppTopBar, so the
+    // ChatPage itself no longer hosts them.
+    expect(container.querySelector("[data-chat-header]")).toBeNull();
+    expect(container.querySelector("[data-dock-toolbar-toggle]")).toBeNull();
   });
 
   it("shows the default session heading once the conversation has data", () => {
@@ -105,10 +107,11 @@ describe("ChatPage conversation width", () => {
       .getState()
       .applySessionSnapshot(session([{ role: "user", content: "Hello", timestamp: 1 }]));
 
-    const { container } = render(<ChatPage />);
+    render(<ChatPage />);
 
-    expect(screen.getByRole("heading", { name: "New conversation" })).toBeVisible();
-    expect(container.querySelector("[data-chat-status]")).toHaveTextContent("Ready");
+    // Session name/status moved to the app-level AppTopBar; ChatPage now only
+    // hosts the transcript. The status pill is not rendered inside ChatPage.
+    expect(screen.queryByRole("heading", { name: "New conversation" })).toBeNull();
   });
 
   it("shows the transcript (not the welcome screen) for a session pinned via tree navigation", () => {

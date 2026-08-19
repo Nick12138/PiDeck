@@ -5,7 +5,10 @@ import { SidebarLayout } from "./Sidebar";
 import type { NavPage } from "../lib/stores/app-store";
 
 describe("Sidebar", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
 
   it.each<NavPage>(["chat", "packages", "settings"])(
     "keeps the conversation workspace mounted on the %s page",
@@ -21,28 +24,34 @@ describe("Sidebar", () => {
     },
   );
 
-  it("keeps the PI sidebar toggle mounted when the sidebar is collapsed", () => {
+  it("renders the aside as a zero-width strip when the sidebar is collapsed", async () => {
+    // sidebarCollapsed lives in app-store (zustand v5 serves SSR from the
+    // store's initial snapshot captured at module load, so setState can't
+    // reach a renderToStaticMarkup render). Stub the persisted pref and
+    // re-import the module so the store's create() initializer sees the
+    // collapsed pref.
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => (key === "pideck.sidebar.collapsed" ? "1" : null),
       setItem: vi.fn(),
     });
+    vi.resetModules();
+    const { SidebarLayout: FreshSidebarLayout } = await import("./Sidebar");
 
     const html = renderToStaticMarkup(
-      createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
+      createElement(FreshSidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    expect(html).toContain('aria-label="Expand sidebar"');
-    expect(html).toContain('data-sidebar-brand-toggle="true"');
-    expect(html).toContain('data-sidebar-collapsed-toggle-slot="true"');
-    expect(html).toContain("h-12 w-14 items-center justify-center");
-    expect(html).toContain("translate-x-0.5 translate-y-[3px]");
+    // The collapse toggle moved into the app-level AppTopBar, so a collapsed
+    // sidebar is now simply a zero-width aside with its body hidden — no more
+    // fixed top-left toggle slot.
     expect(html).toContain("width:0");
     expect(html).toContain('data-sidebar-collapsed="true"');
     expect(html).not.toContain("New conversation");
     expect(html).not.toContain("Recent conversations");
+    expect(html).not.toContain("data-sidebar-collapsed-toggle-slot");
   });
 
-  it("renders the PI sidebar toggle instead of an edge handle when expanded", () => {
+  it("renders the workspace nav when expanded", () => {
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => (key === "pideck.sidebar.width.v1" ? "300" : null),
       setItem: vi.fn(),
@@ -52,10 +61,8 @@ describe("Sidebar", () => {
       createElement(SidebarLayout, { page: "chat", setPage: vi.fn() }),
     );
 
-    expect(html).toContain('aria-label="Collapse sidebar"');
-    expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain('data-sidebar-brand-toggle="true"');
-    expect(html).not.toContain("group/sidebar-edge");
+    expect(html).toContain("New conversation");
+    expect(html).toContain("Recent conversations");
     expect(html).not.toContain('data-sidebar-collapsed="true"');
   });
 });

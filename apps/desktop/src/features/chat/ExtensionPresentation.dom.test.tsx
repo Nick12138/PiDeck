@@ -249,7 +249,7 @@ describe("Extension presentation surfaces", () => {
       />,
     );
 
-    const trace = screen.getByRole("button", { name: "✅ 搞定 2 个，💥 搞砸 1 个" });
+    const trace = screen.getByRole("button", { name: "💪 搞定 2 个，💥 搞砸 1 个" });
     expect(screen.queryByRole("button", { name: /Agent 协作/ })).not.toBeInTheDocument();
     trace.focus();
     await user.keyboard("{Enter}");

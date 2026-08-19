@@ -19,7 +19,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { SettingsTopBarActions } from "./SettingsPage";
+import { SettingsTopBarActions } from "./settings-top-bar";
 import { useT } from "../../lib/i18n/use-t";
 import { useEffect, useMemo, useState } from "react";
 import { hostClient } from "../../lib/bridge/host-client";

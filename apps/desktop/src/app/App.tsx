@@ -5,18 +5,19 @@ import { createTauriTransport, replayActiveHostReady } from "../lib/bridge/tauri
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
+import { AppTopBar } from "../components/AppTopBar";
 import {
-  WindowControls,
   resolveWindowControlsPlatform,
-  shouldRenderWindowControls,
 } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
 import { ExtensionUiModal } from "../features/chat/ExtensionUiModal";
 import { GlobalSearchHost } from "../features/sessions/GlobalSearchModal";
 import { WorkspaceSwitchTransition } from "../features/workspaces/WorkspaceSwitchTransition";
 import { applyTheme } from "../lib/theme";
 import { applyAppearancePreferences } from "../lib/appearance-preferences";
+import { subscribeSidebarToggle } from "../lib/commands/events";
 import {
   applyAgentEvent,
   applyAgentEventBatch,
@@ -468,6 +469,7 @@ export function App() {
   const windowControlsPlatform = resolveWindowControlsPlatform();
   const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
+  const [actionsEl, setActionsEl] = useState<HTMLDivElement | null>(null);
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
   const settingsSection = useAppStore((s) => s.settingsSection);
@@ -972,10 +974,15 @@ export function App() {
     );
   }, [connecting, rehydrating, desynchronized, desktopSettings, workspacePath, activeSessionPath]);
 
+  // The sidebar collapse toggle moved into AppTopBar, so App owns the
+  // sidebar.toggle command bus subscription that previously lived in Sidebar.
+  useEffect(() => subscribeSidebarToggle(() => useAppStore.getState().toggleSidebar()), []);
+
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
       data-pideck-app
+      data-has-topbar
       data-window-platform={windowControlsPlatform}
       data-window-frame={resolveWindowFrameAttribute(nativeWindowAvailable, windowFrameMode)}
       data-host-instance-id={hostInstanceId}
@@ -985,33 +992,39 @@ export function App() {
       data-desynchronized={desynchronized ? "true" : "false"}
     >
       <DraftPersistenceController />
-      {shouldRenderWindowControls(windowControlsPlatform, false) && (
-        <WindowControls platform={windowControlsPlatform} />
-      )}
-      <div
-        className={`flex min-h-0 flex-1 ${startupVisible ? "pointer-events-none" : ""}`}
-        aria-hidden={startupVisible ? true : undefined}
-      >
-        <Sidebar />
-        <main className="relative flex min-w-0 flex-1 flex-col bg-surface">
-          {hostFatal ? (
-            <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
-              <h2 className="mb-2 font-semibold text-danger">{t("hostUnavailableTitle")}</h2>
-              <p className="text-sm text-muted">{hostFatal}</p>
-              <p className="mt-2 text-xs text-muted">{t("hostUnavailableBody")}</p>
-            </div>
-          ) : page === "settings" ? (
-            <SettingsPage initialSection={settingsSection ?? "general"} onClose={() => setPage("chat")} />
-          ) : page === "packages" ? (
-            <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
-          ) : (
-            <WorkspaceSwitchTransition>
-              <ChatPage />
-            </WorkspaceSwitchTransition>
-          )}
-        </main>
-        <RightDock />
-      </div>
+      <SettingsTopBarActionsContext.Provider value={actionsEl}>
+        <AppTopBar actionsSlotRef={setActionsEl} />
+        <div
+          className="flex min-h-0 flex-1"
+          data-app-body
+          aria-hidden={startupVisible ? true : undefined}
+        >
+          <Sidebar />
+          <div className="flex min-h-0 flex-1" data-content-frame>
+            <main
+              className="relative flex min-w-0 flex-1 flex-col"
+              data-content-main
+            >
+              {hostFatal ? (
+                <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
+                  <h2 className="mb-2 font-semibold text-danger">{t("hostUnavailableTitle")}</h2>
+                  <p className="text-sm text-muted">{hostFatal}</p>
+                  <p className="mt-2 text-xs text-muted">{t("hostUnavailableBody")}</p>
+                </div>
+              ) : page === "settings" ? (
+                <SettingsPage initialSection={settingsSection ?? "general"} onClose={() => setPage("chat")} />
+              ) : page === "packages" ? (
+                <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
+              ) : (
+                <WorkspaceSwitchTransition>
+                  <ChatPage />
+                </WorkspaceSwitchTransition>
+              )}
+            </main>
+            {page === "chat" && <RightDock />}
+          </div>
+        </div>
+      </SettingsTopBarActionsContext.Provider>
       <ExtensionUiModal />
       <GlobalSearchHost />
       <CommandLayer />

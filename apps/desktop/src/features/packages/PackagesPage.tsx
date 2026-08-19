@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
-import { SettingsTopBarActions } from "../settings/SettingsPage";
+import { SettingsTopBarActions } from "../settings/settings-top-bar";
 import type {
   HostRequestParams,
   PackageCatalog,

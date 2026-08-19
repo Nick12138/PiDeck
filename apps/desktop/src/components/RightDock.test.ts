@@ -3,7 +3,10 @@ import { clampDockWidth, partitionDockTabs, visibleDockTabLimit } from "./RightD
 
 describe("clampDockWidth", () => {
   it("uses the configured desktop limits", () => {
-    expect(clampDockWidth(300, 1280)).toBe(460);
+    // The dock can be narrowed to MIN_DOCK_WIDTH (350); values below it clamp
+    // up to 350 rather than to the default width.
+    expect(clampDockWidth(300, 1280)).toBe(350);
+    expect(clampDockWidth(350, 1280)).toBe(350);
     expect(clampDockWidth(460, 1280)).toBe(460);
     expect(clampDockWidth(520, 1280)).toBe(520);
     expect(clampDockWidth(900, 1280)).toBe(720);

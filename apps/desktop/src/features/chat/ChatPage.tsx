@@ -3,7 +3,6 @@ import { X } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
-import { ChatHeader } from "./ChatHeader";
 import { InlineExtensionUiRequest } from "./InlineExtensionUiRequest";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 import { useT } from "../../lib/i18n/use-t";
@@ -62,7 +61,6 @@ export function ChatPage() {
       data-chat-page
       style={conversationContentWidthStyle(conversationMinWidth, conversationMaxWidth)}
     >
-      <ChatHeader hideSessionInfo={isNewConversation} />
       <div data-chat-content className="flex min-h-0 flex-1 flex-col">
       {authBlocked && (
         <div

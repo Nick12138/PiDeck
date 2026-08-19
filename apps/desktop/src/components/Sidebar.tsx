@@ -2,7 +2,6 @@ import {
   MessageCirclePlus,
   PanelLeftClose,
   PanelLeftOpen,
-  Search,
   Settings,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -10,22 +9,23 @@ import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
-import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { PiMark } from "./PiMark";
-import { NotificationCenter } from "./NotificationCenter";
+import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import {
   createNewSession,
   isCreateSessionPending,
   subscribeCreateSessionPending,
 } from "../lib/commands/actions";
-import { requestGlobalSearchOpen, subscribeSidebarToggle } from "../lib/commands/events";
 
 const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
 
-function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+/** Sidebar collapse toggle rendered in the app-level AppTopBar. Shows the Pi
+ *  mark by default and reveals the PanelLeft close/open arrow on hover/focus,
+ *  so the same control drives both brand identity and collapse state. */
+export function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const t = useT();
   const label = collapsed ? t("sidebarExpand") : t("sidebarCollapse");
   const PanelIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
@@ -106,12 +106,9 @@ export function SidebarLayout({
   setPage: (page: NavPage) => void;
 }) {
   const t = useT();
-  const host = useAppStore((s) => s.host);
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.sessionsCollapsed"),
-  );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    sidebarPref("pideck.sidebar.collapsed"),
   );
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizing, setResizing] = useState(false);
@@ -143,15 +140,6 @@ export function SidebarLayout({
       return !current;
     });
   }
-
-  function toggleSidebarCollapsed() {
-    setSidebarCollapsed((current) => {
-      setSidebarPref("pideck.sidebar.collapsed", !current);
-      return !current;
-    });
-  }
-
-  useEffect(() => subscribeSidebarToggle(toggleSidebarCollapsed), []);
 
   return (
     <Fragment>
@@ -219,31 +207,7 @@ export function SidebarLayout({
 
         {sidebarCollapsed ? null : (
           <>
-            <div
-              className="flex h-16 shrink-0 items-center gap-3 px-4"
-              data-sidebar-header
-              data-tauri-drag-region
-            >
-              <SidebarBrandToggle collapsed={false} onToggle={toggleSidebarCollapsed} />
-              <span className="text-[15px] font-semibold" data-sidebar-brand>
-                Pi Agent
-              </span>
-              <div className="ml-auto flex items-center gap-0.5">
-                <button
-                  type="button"
-                  title={t("commandGlobalSearch")}
-                  aria-label={t("commandGlobalSearch")}
-                  disabled={!host}
-                  className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-                  onClick={requestGlobalSearchOpen}
-                >
-                  <Search size={15} />
-                </button>
-                <NotificationCenter />
-              </div>
-            </div>
-
-            <div className="px-2 pb-3 pt-2">
+            <div className="px-2 pb-3 pt-[14px]">
               <NewSessionButton />
             </div>
 
@@ -279,23 +243,9 @@ export function SidebarLayout({
                 onToggleCollapsed={toggleSessionsCollapsed}
               />
             </div>
-
-
           </>
         )}
       </aside>
-
-      {sidebarCollapsed && (
-        <div
-          className="fixed left-0 top-0 z-40 flex h-12 w-14 items-center justify-center"
-          data-sidebar-collapsed-toggle-slot
-          data-tauri-drag-region
-        >
-          <div className="translate-x-0.5 translate-y-[3px]">
-            <SidebarBrandToggle collapsed onToggle={toggleSidebarCollapsed} />
-          </div>
-        </div>
-      )}
     </Fragment>
   );
 }
