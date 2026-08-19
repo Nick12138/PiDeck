@@ -35,6 +35,7 @@ export function AppTopBar({
 
   const section = settingsSection ?? "general";
   const meta = SETTINGS_SECTION_META[section];
+  const SettingsHeaderIcon = meta.icon;
 
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
@@ -53,47 +54,63 @@ export function AppTopBar({
 
   return (
     <header
-      className="relative z-30 flex h-[var(--theme-toolbar-height)] shrink-0 items-stretch gap-2 px-2 text-foreground"
+      className="relative z-30 flex h-[var(--theme-toolbar-height)] shrink-0 items-stretch gap-2 text-foreground"
       data-app-topbar
       data-window-platform={platform}
       data-page={page}
       data-tauri-drag-region="deep"
     >
-      {/* Left segment: brand + search + notifications (+ macOS traffic lights). */}
+      {/* Left segment: brand + search + notifications (+ macOS traffic lights).
+          Its min width tracks the live sidebar width so the center column above
+          begins exactly where the content card below begins. */}
       <div
         className="flex shrink-0 items-center gap-3 px-4"
         data-sidebar-header
         data-tauri-drag-region
+        style={{ minWidth: "var(--sidebar-width, 0px)" }}
       >
         {platform === "macos" && <WindowControls platform="macos" />}
         <SidebarBrandToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
-        <span className="text-[15px] font-semibold" data-sidebar-brand>
-          Pi Agent
-        </span>
+        {!sidebarCollapsed && (
+          <span className="text-[15px] font-semibold" data-sidebar-brand>
+            Pi Agent
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-0.5">
-          <button
-            type="button"
-            title={t("commandGlobalSearch")}
-            aria-label={t("commandGlobalSearch")}
-            disabled={!host}
-            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
-            onClick={requestGlobalSearchOpen}
-          >
-            <Search size={15} />
-          </button>
+          {!sidebarCollapsed && (
+            <button
+              type="button"
+              title={t("commandGlobalSearch")}
+              aria-label={t("commandGlobalSearch")}
+              disabled={!host}
+              className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+              onClick={requestGlobalSearchOpen}
+            >
+              <Search size={15} />
+            </button>
+          )}
           <NotificationCenter />
         </div>
       </div>
 
-      {/* Center segment: chat session title, or active settings section title. */}
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-3 pl-5 pr-5">
+      {/* Center segment: chat session title, or active settings section title.
+          Left-aligned to the content-area start: its left edge lies at the
+          sidebar-right edge (via the left segment's --sidebar-width min-width)
+          plus the app shell gap, so the title begins where the content card
+          below begins instead of floating centered apart from the search
+          button on its left. The same base is shared by chat and settings pages
+          so the section nav offset is intentionally not added here. */}
+      <div
+        className="flex min-w-0 flex-1 items-center justify-start gap-3 pr-2"
+        style={{ paddingLeft: "var(--app-content-gap, 8px)" }}
+      >
         {page === "chat" ? (
           <div
             className="flex min-w-0 flex-1 items-center gap-4"
             data-chat-header
             data-tauri-drag-region
           >
-            <div className="pointer-events-none flex min-w-0 items-center justify-center gap-2">
+            <div className="pointer-events-none flex min-w-0 items-center justify-start gap-2">
               {sessionActive && (
                 <>
                   <h1
@@ -126,11 +143,18 @@ export function AppTopBar({
             data-settings-section-header
             data-tauri-drag-region
           >
+            <SettingsHeaderIcon
+              size={16}
+              className="pointer-events-none shrink-0 text-muted"
+              aria-hidden="true"
+            />
             <div className="min-w-0 flex-1 truncate">
               <h1 className="truncate text-base font-semibold leading-5">
                 {t(meta.title)}
               </h1>
-              <p className="truncate text-xs text-muted">{t(meta.subtitle)}</p>
+              {meta.subtitle && (
+                <p className="truncate text-xs text-muted">{t(meta.subtitle)}</p>
+              )}
             </div>
           </div>
         ) : null}

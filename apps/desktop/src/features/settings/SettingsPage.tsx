@@ -463,13 +463,21 @@ export function SettingsPage({
           data-settings-section-header
           data-tauri-drag-region
         >
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">
-              {t(SETTINGS_SECTION_META[localSection].title)}
-            </h1>
-            <p className="mt-0.5 truncate text-xs text-muted">
-              {t(SETTINGS_SECTION_META[localSection].subtitle)}
-            </p>
+          <div className="flex min-w-0 items-center gap-2">
+            {(() => {
+              const Icon = SETTINGS_SECTION_META[localSection].icon;
+              return <Icon size={16} className="shrink-0 text-muted" aria-hidden />;
+            })()}
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold">
+                {t(SETTINGS_SECTION_META[localSection].title)}
+              </h1>
+              {SETTINGS_SECTION_META[localSection].subtitle && (
+                <p className="mt-0.5 truncate text-xs text-muted">
+                  {t(SETTINGS_SECTION_META[localSection].subtitle)}
+                </p>
+              )}
+            </div>
           </div>
           <div
             className="ml-auto flex shrink-0 items-center gap-2"
@@ -480,7 +488,7 @@ export function SettingsPage({
       )}
       <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
       <aside
-        className="flex w-52 shrink-0 flex-col border-r border-border bg-sidebar"
+        className="flex w-[150px] shrink-0 flex-col border-r border-border bg-sidebar"
         data-settings-sidebar
       >
         <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
@@ -499,7 +507,7 @@ export function SettingsPage({
               onClick={() => requestSection(id)}
             >
               <Icon size={16} />
-              {t(label)}
+              <span className="truncate">{t(label)}</span>
             </button>
           ))}
         </nav>

@@ -539,7 +539,7 @@ export function RightDock() {
   return (
     <aside
       id="right-dock"
-      style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth }}
+      style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth, paddingTop: 8 }}
       data-right-dock
       data-dock-open={dockOpen ? "true" : "false"}
       className={`relative flex shrink-0 flex-col border-l border-border bg-surface ${

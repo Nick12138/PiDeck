@@ -116,6 +116,17 @@ export function SidebarLayout({
   sidebarWidthRef.current = sidebarWidth;
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
 
+  // Expose the live sidebar width as a root CSS var so sibling chrome (the top
+  // bar's title column) can align its start to the content-area's left edge.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty(
+      "--sidebar-width",
+      `${sidebarCollapsed ? 0 : sidebarWidth}px`,
+    );
+    return () => root.style.removeProperty("--sidebar-width");
+  }, [sidebarWidth, sidebarCollapsed]);
+
   function finishResize(target: HTMLDivElement, pointerId: number) {
     if (resizeStart.current?.pointerId !== pointerId) return;
     resizeStart.current = null;
@@ -149,7 +160,7 @@ export function SidebarLayout({
         }}
         data-sidebar
         data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
-        className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar ${
+        className={`sidebar-edge-shadow relative flex shrink-0 flex-col overflow-hidden bg-sidebar ${
           resizing ? "transition-none" : "transition-[width] duration-200 ease-out"
         }`}
       >
