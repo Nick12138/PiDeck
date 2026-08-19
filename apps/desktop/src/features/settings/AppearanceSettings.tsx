@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import type { DesktopInterfaceDensity, DesktopThemeFamily } from "@pideck/protocol";
 import { Minus, Plus } from "lucide-react";
-import { SectionHeader } from "../../components/SectionHeader";
 import { Select } from "../../components/Select";
 import {
   applyAppearancePreferences,
@@ -150,6 +149,7 @@ export function AppearanceSettings() {
     { value: "pideck", label: t("appearanceThemePideck") },
     { value: "vercel", label: t("appearanceThemeVercel") },
     { value: "apple", label: t("appearanceThemeApple") },
+    { value: "acrylic", label: t("appearanceThemeAcrylic") },
   ];
 
   const previewStyle = {
@@ -159,7 +159,6 @@ export function AppearanceSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SectionHeader title={t("navAppearance")} subtitle={t("appearanceSubtitle")} />
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <div className="interface-density-stack mx-auto flex max-w-2xl flex-col gap-8">
           <section>

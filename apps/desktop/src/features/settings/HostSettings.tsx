@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { secondaryButton } from "../../components/Dialog";
-import { SectionHeader } from "../../components/SectionHeader";
 import { getAppVersion } from "../../lib/app-version";
 import { checkForAppUpdate, type AppUpdate } from "../../lib/updater";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
@@ -127,7 +126,6 @@ export function HostSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SectionHeader title={t("navHost")} subtitle={t("hostSubtitle")} />
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>

@@ -63,6 +63,7 @@ export function ChatPage() {
       style={conversationContentWidthStyle(conversationMinWidth, conversationMaxWidth)}
     >
       <ChatHeader hideSessionInfo={isNewConversation} />
+      <div data-chat-content className="flex min-h-0 flex-1 flex-col">
       {authBlocked && (
         <div
           role="status"
@@ -117,6 +118,7 @@ export function ChatPage() {
           {t("chatNoSession")}
         </div>
       )}
+      </div>
     </div>
   );
 }

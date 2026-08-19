@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LoaderCircle, RotateCcw, X } from "lucide-react";
 import { Dialog, secondaryButton } from "../../components/Dialog";
-import { SectionHeader } from "../../components/SectionHeader";
+import { SettingsTopBarActions } from "./SettingsPage";
 import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 import {
   notifyDesktopSettingsSaveFailure,
@@ -114,7 +114,10 @@ export function ShortcutsSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SectionHeader title={t("shortcutsTitle")} subtitle={t("shortcutsSubtitle")}>
+      <SettingsTopBarActions
+        title={t("shortcutsTitle")}
+        subtitle={t("shortcutsSubtitle")}
+      >
         <button
           type="button"
           className={secondaryButton}
@@ -124,7 +127,7 @@ export function ShortcutsSettings() {
           <RotateCcw size={13} />
           {t("shortcutsResetAll")}
         </button>
-      </SectionHeader>
+      </SettingsTopBarActions>
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <ul
           className="mx-auto max-w-2xl overflow-hidden rounded-lg border border-border"

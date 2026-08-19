@@ -757,7 +757,8 @@ export function RightDock() {
               aria-label={t("dockNewPage")}
               aria-haspopup="menu"
               aria-expanded={addMenuOpen}
-              className="flex size-7 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+              data-dock-add-button
+              className="flex size-7 shrink-0 items-center justify-center self-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
               onClick={() => {
                 setOverflowMenuOpen(false);
                 setAddMenuOpen((open) => !open);
@@ -861,7 +862,7 @@ export function RightDock() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div data-dock-content className="flex min-h-0 flex-1 flex-col">
         {tabOrder.includes("files") && (
           <div
             role="tabpanel"

@@ -169,6 +169,7 @@ export function SidebarLayout({
           <div
             role="separator"
             tabIndex={0}
+            data-sidebar-resizer
             aria-label={t("sidebarResize")}
             aria-orientation="vertical"
             aria-valuemin={MIN_SIDEBAR_WIDTH}

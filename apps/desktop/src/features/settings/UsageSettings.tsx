@@ -19,7 +19,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { SectionHeader } from "../../components/SectionHeader";
+import { SettingsTopBarActions } from "./SettingsPage";
 import { useT } from "../../lib/i18n/use-t";
 import { useEffect, useMemo, useState } from "react";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -517,7 +517,10 @@ export function UsageSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader title={t("navUsage")} subtitle={t("usageSubtitle")}>
+      <SettingsTopBarActions
+        title={t("navUsage")}
+        subtitle={t("usageSubtitle")}
+      >
         <div
           className="flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-0.5"
           role="group"
@@ -552,7 +555,7 @@ export function UsageSettings() {
         >
           <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
         </button>
-      </SectionHeader>
+      </SettingsTopBarActions>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {error ? (

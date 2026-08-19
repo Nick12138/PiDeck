@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import {
   ChartColumn,
@@ -17,7 +18,6 @@ import type {
 } from "@pideck/protocol";
 import { Dialog, secondaryButton } from "../../components/Dialog";
 import { DockToggleButton } from "../../components/DockToggleButton";
-import { SectionHeader } from "../../components/SectionHeader";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useT } from "../../lib/i18n/use-t";
@@ -162,7 +162,6 @@ function GeneralSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SectionHeader title={t("navGeneral")} subtitle={t("generalSubtitle")} />
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>
@@ -395,6 +394,57 @@ const SETTINGS_NAV: Array<{
   { id: "shortcuts", label: "navShortcuts", icon: Keyboard },
 ];
 
+const SETTINGS_SECTION_META: Record<SettingsSection, { title: MessageKey; subtitle: MessageKey }> = {
+  general: { title: "navGeneral", subtitle: "generalSubtitle" },
+  appearance: { title: "navAppearance", subtitle: "appearanceSubtitle" },
+  providers: { title: "navProviders", subtitle: "providersSubtitle" },
+  packages: { title: "navPackages", subtitle: "packagesSubtitle" },
+  usage: { title: "navUsage", subtitle: "usageSubtitle" },
+  host: { title: "navHost", subtitle: "hostSubtitle" },
+  shortcuts: { title: "shortcutsTitle", subtitle: "shortcutsSubtitle" },
+};
+
+/** Portal target for section-specific action buttons rendered into the top header. */
+const SettingsTopBarActionsContext = createContext<HTMLElement | null>(null);
+
+/** Render children into the settings top-bar actions slot (right side of the
+ *  full-width section header). Inside SettingsPage the actions portal into
+ *  the top header and SettingsPage renders the title from section meta. When
+ *  a section is rendered standalone (no portal target) it falls back to an
+ *  inline SectionHeader so the title/subtitle/actions stay visible. */
+export function SettingsTopBarActions({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: ReactNode;
+}) {
+  const target = useContext(SettingsTopBarActionsContext);
+  if (!target) {
+    return (
+      <header
+        className="flex min-h-16 shrink-0 items-start gap-3 px-6 pb-2 pt-3"
+        data-settings-has-actions={children ? "" : undefined}
+        data-settings-section-header
+        data-tauri-drag-region
+      >
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold">{title}</h1>
+          {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
+        </div>
+        {children && (
+          <div className="ml-auto flex shrink-0 items-center gap-2 pr-[50px]" data-settings-header-actions>
+            {children}
+          </div>
+        )}
+      </header>
+    );
+  }
+  return createPortal(children, target);
+}
+
 export function SettingsPage({
   initialSection = "general",
   onClose,
@@ -404,6 +454,7 @@ export function SettingsPage({
 }) {
   const t = useT();
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [actionsEl, setActionsEl] = useState<HTMLDivElement | null>(null);
   const providersDirty = useAppStore((s) => s.providersDirty);
   const dockOpen = useAppStore((s) => s.dockOpen);
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
@@ -437,7 +488,15 @@ export function SettingsPage({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 overflow-hidden bg-surface" data-settings-shell>
+    <SettingsTopBarActionsContext.Provider value={actionsEl}>
+    <div
+      className="grid h-full min-h-0 overflow-hidden bg-surface"
+      data-settings-shell
+      style={{
+        gridTemplateRows: "auto minmax(0, 1fr)",
+        gridTemplateColumns: "auto minmax(0, 1fr)",
+      }}
+    >
       <div
         className={`absolute top-[12.5px] z-30 transition-[right] duration-200 ease-out ${
           dockOpen ? "right-2" : "right-[140px]"
@@ -446,24 +505,32 @@ export function SettingsPage({
       >
         <DockToggleButton />
       </div>
+
+      <header
+        className="relative flex min-h-16 shrink-0 items-center gap-3 px-6 pb-2 pt-3"
+        data-settings-header
+        data-settings-section-header
+        data-tauri-drag-region
+        style={{ gridColumn: "1 / -1" }}
+      >
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold">{t(SETTINGS_SECTION_META[section].title)}</h1>
+          <p className="mt-0.5 truncate text-xs text-muted">
+            {t(SETTINGS_SECTION_META[section].subtitle)}
+          </p>
+        </div>
+        <div
+          className="ml-auto flex shrink-0 items-center gap-2 pr-[50px]"
+          data-settings-header-actions
+          ref={setActionsEl}
+        />
+      </header>
+
       <aside
         className="flex w-52 shrink-0 flex-col border-r border-border bg-sidebar"
         data-settings-sidebar
+        style={{ gridColumn: 1, gridRow: 2 }}
       >
-        <header
-          className="flex min-h-16 shrink-0 items-center px-4 pb-2 pt-3"
-          data-settings-header
-          data-settings-sidebar-header
-          data-tauri-drag-region
-        >
-          <div className="pointer-events-none flex h-8 min-w-0 items-center justify-center gap-2.5">
-            <span className="theme-settings-mark flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-overlay text-foreground">
-              <Settings2 size={15} />
-            </span>
-            <h1 className="truncate text-[13px] font-semibold">{t("settingsTitle")}</h1>
-          </div>
-        </header>
-
         <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
             <button
@@ -486,7 +553,11 @@ export function SettingsPage({
         </nav>
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1" data-settings-content>
+      <main
+        className="flex min-h-0 min-w-0 flex-1"
+        data-settings-content
+        style={{ gridColumn: 2, gridRow: 2 }}
+      >
         {section === "general" ? (
           <GeneralSettings />
         ) : section === "appearance" ? (
@@ -532,5 +603,6 @@ export function SettingsPage({
         </Dialog>
       )}
     </div>
+    </SettingsTopBarActionsContext.Provider>
   );
 }

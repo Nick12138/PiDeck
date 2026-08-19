@@ -41,12 +41,12 @@ export function ChatHeader({ hideSessionInfo = false }: { hideSessionInfo?: bool
     >
       <div className="pointer-events-none min-w-0 flex-1">
         {!hideSessionInfo && (
-          <div className="flex items-end gap-2">
-            <h1 className="truncate text-base font-semibold" title={sessionName}>
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-base font-semibold leading-5" title={sessionName}>
               {sessionName}
             </h1>
             <span
-              className="mb-0.5 flex shrink-0 items-center gap-1.5 text-[11px] text-muted"
+              className="flex shrink-0 items-center gap-1.5 text-[11px] leading-4 text-muted"
               data-chat-status
             >
               <span

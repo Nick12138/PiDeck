@@ -964,7 +964,7 @@ export type SerializableAgentSessionEvent = {
 export const DESKTOP_THEMES = ["light", "dark", "system"] as const;
 export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
 
-export const DESKTOP_THEME_FAMILIES = ["pideck", "vercel", "apple"] as const;
+export const DESKTOP_THEME_FAMILIES = ["pideck", "vercel", "apple", "acrylic"] as const;
 export type DesktopThemeFamily = (typeof DESKTOP_THEME_FAMILIES)[number];
 
 export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;

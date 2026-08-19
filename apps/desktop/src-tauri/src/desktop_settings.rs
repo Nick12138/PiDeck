@@ -46,6 +46,7 @@ pub enum DesktopThemeFamily {
     Pideck,
     Vercel,
     Apple,
+    Acrylic,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

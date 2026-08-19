@@ -83,29 +83,26 @@ describe("SettingsPage navigation guard", () => {
     expect(toggle).toHaveAttribute("aria-controls", "right-dock");
     expect(toggle).toHaveAttribute("data-dock-toolbar-toggle");
     expect(container.querySelector("[data-settings-dock-toggle]")).toContainElement(toggle);
-    expect(container.querySelector("[data-settings-sidebar-header]")).not.toContainElement(toggle);
+    expect(container.querySelector("[data-settings-section-header]")).not.toContainElement(toggle);
   });
 
-  it("places the Settings identity and active section title in separate columns", () => {
+  it("renders the active section title in the top header and nav in the aside", () => {
     const { container } = render(<SettingsPage initialSection="general" />);
 
     const shell = container.querySelector("[data-settings-shell]");
     const sidebar = container.querySelector("[data-settings-sidebar]");
-    const sidebarHeader = container.querySelector("[data-settings-sidebar-header]");
+    const sectionHeader = container.querySelector("[data-settings-section-header]");
     const content = container.querySelector("[data-settings-content]");
 
     expect(shell?.firstElementChild).toHaveAttribute("data-settings-dock-toggle");
     expect(sidebar?.parentElement).toBe(shell);
-    expect(sidebarHeader?.parentElement).toBe(sidebar);
+    expect(sectionHeader?.parentElement).toBe(shell);
     expect(content?.parentElement).toBe(shell);
     expect(
-      within(sidebarHeader as HTMLElement).getByRole("heading", { name: "Settings" }),
+      within(sectionHeader as HTMLElement).getByRole("heading", { name: "General" }),
     ).toBeInTheDocument();
-    expect(
-      within(content as HTMLElement).getByRole("heading", { name: "General" }),
-    ).toBeInTheDocument();
-    expect(sidebarHeader).not.toHaveClass("border-b");
-    expect(content?.querySelector("header")).not.toHaveClass("border-b");
+    expect(sectionHeader).not.toHaveClass("border-b");
+    expect(content?.querySelector("header")).toBeNull();
   });
 
   it("places Shortcuts last in the settings sidebar", () => {

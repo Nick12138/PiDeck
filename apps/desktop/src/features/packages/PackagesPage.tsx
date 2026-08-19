@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
-import { SectionHeader } from "../../components/SectionHeader";
+import { SettingsTopBarActions } from "../settings/SettingsPage";
 import type {
   HostRequestParams,
   PackageCatalog,
@@ -1048,7 +1048,10 @@ export function PackagesPage() {
         </Dialog>
       )}
 
-      <SectionHeader title={t("navPackages")} subtitle={t("packagesSubtitle")}>
+      <SettingsTopBarActions
+        title={t("navPackages")}
+        subtitle={t("packagesSubtitle")}
+      >
         <div
           role="group"
           aria-label={t("packagesViewGroup")}
@@ -1085,7 +1088,7 @@ export function PackagesPage() {
         >
           {t("packagesCatalogLink")} <ExternalLink size={11} />
         </button>
-      </SectionHeader>
+      </SettingsTopBarActions>
 
       {packageProgress &&
         pendingPreferenceUpdates.length === 0 &&

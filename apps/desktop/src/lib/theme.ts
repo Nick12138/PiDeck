@@ -11,6 +11,7 @@ const THEME_COLORS: Record<AppThemeFamily, Record<EffectiveTheme, string>> = {
   pideck: { light: "#ffffff", dark: "#17171b" },
   vercel: { light: "#ffffff", dark: "#000000" },
   apple: { light: "#f5f5f7", dark: "#1c1c1e" },
+  acrylic: { light: "#f5f5f7", dark: "#1c1c1e" },
 };
 
 function syncNativeTheme(theme: AppTheme, effective: EffectiveTheme): void {
@@ -43,7 +44,9 @@ export function readStoredTheme(): AppTheme | null {
 export function readStoredThemeFamily(): AppThemeFamily | null {
   try {
     const value = window.localStorage.getItem(STARTUP_THEME_FAMILY_STORAGE_KEY);
-    return value === "pideck" || value === "vercel" || value === "apple" ? value : null;
+    return value === "pideck" || value === "vercel" || value === "apple" || value === "acrylic"
+      ? value
+      : null;
   } catch {
     return null;
   }

@@ -109,6 +109,7 @@ export const en = {
   appearanceThemePideck: "PiDeck",
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
+  appearanceThemeAcrylic: "Acrylic",
   appearanceColorMode: "Color mode",
   appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
   appearanceDensity: "Interface density",
