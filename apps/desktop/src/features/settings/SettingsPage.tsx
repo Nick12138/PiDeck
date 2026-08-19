@@ -451,7 +451,7 @@ export function SettingsPage({
         data-settings-sidebar
       >
         <header
-          className="shrink-0 px-4 py-3"
+          className="flex min-h-16 shrink-0 items-center px-4 pb-2 pt-3"
           data-settings-header
           data-settings-sidebar-header
           data-tauri-drag-region

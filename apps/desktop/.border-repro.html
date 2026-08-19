@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" data-theme-family="apple" class="dark">
+<head>
+<meta charset="UTF-8" />
+<style>
+  :root {
+    --color-surface: #1c1c1e;
+    --color-surface-raised: #2c2c2e;
+    --color-surface-overlay: #3a3a3c;
+    --color-sidebar: #242426;
+    --color-border: rgb(255 255 255 / 14%);
+    --color-border-subtle: rgb(255 255 255 / 9%);
+    --color-border-strong: rgb(255 255 255 / 24%);
+    --color-foreground: #f5f5f7;
+    --color-muted: #a1a1a6;
+    --theme-sidebar-shadow:
+      inset -1px 0 0 color-mix(in srgb, var(--color-foreground) 5%, transparent),
+      1px 0 0 var(--color-border-subtle), 8px 0 28px rgb(0 0 0 / 24%);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-surface); color: var(--color-foreground);
+         font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; font-size: 13px; }
+  .shell { display:flex; height: 420px; width: 480px; }
+  aside {
+    display:flex; width: 208px; flex-direction:column; flex-shrink:0;
+    border-right: 1px solid var(--color-border);
+    background-color: var(--color-sidebar);
+    box-shadow: var(--theme-sidebar-shadow);
+  }
+  html[data-theme-family="apple"] aside { border-color: var(--color-border-subtle); }
+  html[data-theme-family="apple"] header { border-bottom: 1px solid var(--color-border-subtle); }
+
+  header { display:flex; min-height: 64px; flex-shrink:0; align-items:center; padding: 12px 16px 8px; }
+  header .inner { display:flex; height:32px; min-width:0; align-items:center; justify-content:center; gap:10px; pointer-events:none; flex:1; }
+  .mark { display:flex; width:32px; height:32px; flex-shrink:0; align-items:center; justify-content:center;
+          border-radius:6px; background: var(--color-surface-overlay); color: var(--color-foreground); font-size:11px; }
+  header h1 { font-size:13px; font-weight:600; margin:0; }
+
+  nav { min-height:0; flex:1; overflow-y:auto; padding: 8px 12px; }
+  nav button { display:flex; height:36px; width:100%; align-items:center; gap:10px; border-radius:6px;
+               padding: 0 10px; border:none; background:transparent; color: var(--color-muted);
+               font-size:13px; margin-bottom:2px; cursor:pointer; }
+  nav button.active { background: var(--color-surface-overlay); color: var(--color-foreground); font-weight:500; }
+  nav .ic { width:16px; height:16px; flex-shrink:0; border-radius:2px; background: currentColor; opacity:.7; }
+
+  main { flex:1; min-width:0; background: var(--color-surface); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside data-settings-sidebar>
+    <header data-settings-sidebar-header>
+      <div class="inner">
+        <span class="mark">S</span>
+        <h1>设置</h1>
+      </div>
+    </header>
+    <nav>
+      <button class="active"><span class="ic"></span>通用</button>
+      <button><span class="ic"></span>外观</button>
+      <button><span class="ic"></span>模型服务</button>
+      <button><span class="ic"></span>包管理</button>
+    </nav>
+  </aside>
+  <main></main>
+</div>
+</body>
+</html>
