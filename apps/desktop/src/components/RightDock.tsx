@@ -539,7 +539,7 @@ export function RightDock() {
   return (
     <aside
       id="right-dock"
-      style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth, paddingTop: 8 }}
+      style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth }}
       data-right-dock
       data-dock-open={dockOpen ? "true" : "false"}
       className={`relative flex shrink-0 flex-col border-l border-border bg-surface ${
@@ -555,7 +555,7 @@ export function RightDock() {
           aria-valuemin={MIN_DOCK_WIDTH}
           aria-valuemax={MAX_DOCK_WIDTH}
           aria-valuenow={dockWidth}
-          className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
+          className="absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize touch-none"
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();

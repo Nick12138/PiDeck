@@ -206,13 +206,21 @@ body,
 /* Right dock: round the top-right corner to match the content card's radius.
    The bottom-right corner is already clipped by [data-content-frame]'s
    overflow:hidden, but the top-right sits under the top bar and can read
-   as square — give it an explicit radius so it always rounds. */
-/* Right-dock stack: the aside, its header strip and the content body all
-   carry the top-right radius so the corner stays round at every layer during
-   the margin-right slide animation (each layer can be the one revealing the
-   corner for a frame during the tween). Specified as plain attribute selectors
-   (not :where()) so specificity beats theme-prefixed overrides. */
-[data-right-dock],
+   as square — give it an explicit radius so it always rounds. The aside also
+   self-clips via clip-path: during the margin-right slide the frame's
+   rounded clip can lag while the panel re-rasterizes (a known Chromium
+   compositor artifact with backdrop-filter child layers), letting child
+   layers (header backdrop-filter, content body) flash a square corner for
+   one or more frames. Self-clipping bakes the radius into the aside's own
+   paint via compositor-level clip-path, so no child layer can ever escape
+   the rounded corner even when the frame's clip lags. Kept as a plain
+   attribute selector (not :where()) so specificity beats theme-prefixed
+   overrides; the header strip and content body keep their own radius below
+   as defense-in-depth. */
+[data-right-dock] {
+  border-top-right-radius: var(--app-content-radius);
+  clip-path: inset(0 round 0 var(--app-content-radius) 0 0);
+}
 [data-dock-header],
 [data-dock-content],
 [data-content-main] {
