@@ -97,10 +97,12 @@
   --theme-sidebar-shadow: 4px 0 16px -6px rgb(0 0 0 / 45%);
   --theme-toolbar-height: 3rem;
   --theme-toolbar-blur: 0px;
+  --theme-sidebar-blur: 18px;
+  --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 78%, transparent);
   --theme-motion-fast: 160ms;
   --theme-motion-standard: 220ms;
   --theme-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --window-frame-radius: 12px;
+  --window-frame-radius: 10px;
   /* The app bar + left aside read as one shell "frame" that visually wraps the
      floating content area. Pure-color themes get a solid shell (--app-shell)
      matched to the sidebar tint and a margin around the content card. Acrylic
@@ -108,7 +110,7 @@
      rules elsewhere. */
   --app-shell-bg: var(--color-sidebar);
   --app-content-gap: 8px;
-  --app-content-radius: 12px;
+  --app-content-radius: 10px;
 
   color-scheme: dark;
   font-family: var(--font-sans);
@@ -250,6 +252,20 @@ body,
    specificity — no per-theme override needed. */
 [data-pideck-app] [data-sidebar] {
   overflow: visible;
+}
+
+/* All theme families use the acrylic-style frosted left rail. The material tint
+   keeps ordinary opaque themes readable while allowing transparent native
+   windows to contribute their backdrop underneath the sidebar. */
+[data-pideck-app][data-has-topbar] [data-sidebar] {
+  background-color: var(--theme-sidebar-material);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  [data-pideck-app][data-has-topbar] [data-sidebar] {
+    -webkit-backdrop-filter: saturate(145%) blur(var(--theme-sidebar-blur));
+    backdrop-filter: saturate(145%) blur(var(--theme-sidebar-blur));
+  }
 }
 
 * {
@@ -406,6 +422,17 @@ select option {
 
   border-color: rgb(0 0 0 / 12%);
   border-radius: 8px;
+}
+
+.theme-family-preview[data-theme-preview="transparent"] {
+  --theme-preview-canvas: #1c1c1e;
+  --theme-preview-sidebar: rgb(255 255 255 / 8%);
+  --theme-preview-surface: rgb(255 255 255 / 12%);
+  --theme-preview-muted: rgb(255 255 255 / 38%);
+  --theme-preview-accent: #409cff;
+
+  border-color: rgb(255 255 255 / 18%);
+  backdrop-filter: blur(5px);
 }
 
 .theme-family-preview__sidebar {
@@ -650,7 +677,7 @@ html[data-theme-family="apple"].dark {
    crisp hairline replaces the soft header fade to separate the transparent
    strip from the solid content below.
    ========================================================================== */
-html[data-theme-family="acrylic"] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiDeck PingFang SC", "Inter Variable",
     system-ui, "Segoe UI", sans-serif;
@@ -685,9 +712,10 @@ html[data-theme-family="acrylic"] {
   --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 0%, transparent);
   --theme-toolbar-material: color-mix(in srgb, var(--color-surface) 0%, transparent);
   --theme-floating-material: color-mix(in srgb, var(--color-surface-raised) 86%, transparent);
+  --theme-content-material: color-mix(in srgb, var(--color-surface) 62%, transparent);
 }
 
-html[data-theme-family="acrylic"].light {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).light {
   --color-surface: #f5f5f7;
   --color-surface-raised: #ffffff;
   --color-surface-overlay: #e8e8ed;
@@ -715,7 +743,7 @@ html[data-theme-family="acrylic"].light {
   --color-danger: #d70015;
 }
 
-html[data-theme-family="acrylic"].dark {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).dark {
   --color-surface: #1c1c1e;
   --color-surface-raised: #2c2c2e;
   --color-surface-overlay: #3a3a3c;
@@ -758,11 +786,11 @@ html[data-theme-family="acrylic"].dark {
 
 /* Content surfaces stay solid so the transcript/panels remain readable; only
    the surrounding shell goes transparent to reveal the OS acrylic. */
-html[data-theme-family="acrylic"] [data-settings-shell] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-shell] {
   background-color: transparent;
 }
 
-html[data-theme-family="acrylic"] [data-settings-sidebar] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-sidebar] {
   background-color: var(--color-sidebar);
   border-right: 1px solid var(--color-border-subtle);
   box-shadow: none !important;
@@ -773,69 +801,76 @@ html[data-theme-family="acrylic"] [data-settings-sidebar] {
    Scope the variable override to the top bar segments and the window controls
    cluster — every button there that uses hover:bg-surface-overlay picks up the
    translucent value. */
-html[data-theme-family="acrylic"] :where(
-  [data-sidebar-header],
-  [data-chat-header],
-  [data-dock-header],
-  [data-settings-section-header],
-  [data-app-topbar-right],
-  [data-window-controls-platform]
-) {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+  :where(
+    [data-sidebar-header],
+    [data-chat-header],
+    [data-dock-header],
+    [data-settings-section-header],
+    [data-app-topbar-right],
+    [data-window-controls-platform]
+  ) {
   --color-surface-overlay: color-mix(in srgb, var(--color-foreground) 8%, transparent);
 }
 
 /* The settings content main (grid row 2, col 2) is a solid surface block
    paired with the solid nav block to the left — no floating card rim, only
    the top header stays frosted/transparent. */
-html[data-theme-family="acrylic"] [data-settings-content] {
-  background-color: var(--color-surface) !important;
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-content] {
+  background-color: var(--theme-content-material) !important;
 }
 
-html[data-theme-family="acrylic"] [data-sidebar] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-sidebar] {
   border-right: 0;
   box-shadow: none !important;
 }
 
-html[data-theme-family="acrylic"] .sidebar-edge-shadow {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) .sidebar-edge-shadow {
   box-shadow: none !important;
 }
 
-html[data-theme-family="acrylic"] [data-chat-header-fade] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-chat-header-fade] {
   display: none;
 }
 
 /* Hard hairline under both header strips: separates the transparent frosted
    strip from the solid content below. */
-html[data-theme-family="acrylic"] [data-chat-header] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-chat-header] {
   border-bottom: 1px solid transparent;
 }
 
-html[data-theme-family="acrylic"] [data-dock-header] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-dock-header] {
   border-bottom: 1px solid transparent;
 }
 
 /* Only when a real native acrylic window is present (data-window-frame set)
    do we drop the shell backgrounds to let the wallpaper sampling through.
    Otherwise (tests / non-native web) surfaces keep their solid fills. */
-html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+  [data-pideck-app][data-window-frame] {
   background-color: transparent;
 }
 
-html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] main {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+  [data-pideck-app][data-window-frame]
+  main {
   background-color: transparent;
 }
 
-html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] [data-sidebar] {
+html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+  [data-pideck-app][data-window-frame]
+  [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
 @supports (backdrop-filter: blur(1px)) {
-  html[data-theme-family="acrylic"] :where([data-chat-header], [data-dock-header]) {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    :where([data-chat-header], [data-dock-header]) {
     -webkit-backdrop-filter: saturate(150%) blur(var(--theme-toolbar-blur));
     backdrop-filter: saturate(150%) blur(var(--theme-toolbar-blur));
   }
 
-  html[data-theme-family="acrylic"]
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
     :where(
       .chat-composer-surface,
       .theme-floating-surface,
@@ -848,29 +883,76 @@ html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] [data-sid
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    [data-pideck-app][data-window-frame] {
     background-color: var(--color-surface);
   }
 
-  html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] main {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    [data-pideck-app][data-window-frame]
+    main {
     background-color: var(--color-surface);
   }
 
   /* Reduced-transparency fallback: the top bar stays transparent over the now-surface
      app root, so the aside must fall back to surface too to stay one底色 with it. */
-  html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] [data-sidebar] {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    [data-pideck-app][data-window-frame]
+    [data-sidebar] {
     background-color: var(--color-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 
-  html[data-theme-family="acrylic"] [data-pideck-app][data-window-frame] [data-right-dock] {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    [data-pideck-app][data-window-frame]
+    [data-right-dock] {
     background-color: var(--color-surface);
   }
 
-  html[data-theme-family="acrylic"] :where([data-chat-header], [data-dock-header]) {
+  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+    :where([data-chat-header], [data-dock-header]) {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+}
+
+/* Transparent theme: keep the acrylic layout/material treatment, but give the
+   main content and floating surfaces different glass densities. The content
+   plane is lighter so the app remains open and airy; dialogs/menus are denser
+   so they stay readable above the content. */
+html[data-theme-family="transparent"] {
+  --theme-content-material: color-mix(in srgb, var(--color-surface) 0%, transparent);
+  --theme-floating-material: color-mix(in srgb, var(--color-surface-raised) 84%, transparent);
+  --theme-content-blur: 20px;
+  --theme-floating-blur: 28px;
+}
+
+html[data-theme-family="transparent"] [data-content-frame],
+html[data-theme-family="transparent"] [data-settings-content] {
+  background-color: var(--theme-content-material) !important;
+}
+
+html[data-theme-family="transparent"] [data-content-main],
+html[data-theme-family="transparent"] [data-chat-content],
+html[data-theme-family="transparent"] [data-dock-content] {
+  background-color: transparent !important;
+}
+
+html[data-theme-family="transparent"] .theme-floating-surface {
+  background-color: var(--theme-floating-material) !important;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  html[data-theme-family="transparent"] [data-content-frame],
+  html[data-theme-family="transparent"] [data-settings-content] {
+    -webkit-backdrop-filter: saturate(140%) blur(var(--theme-content-blur));
+    backdrop-filter: saturate(140%) blur(var(--theme-content-blur));
+  }
+
+  html[data-theme-family="transparent"] .theme-floating-surface {
+    -webkit-backdrop-filter: saturate(150%) blur(var(--theme-floating-blur));
+    backdrop-filter: saturate(150%) blur(var(--theme-floating-blur));
   }
 }
 
@@ -1417,149 +1499,81 @@ html.light .pi-mark-dark {
   display: none;
 }
 
+/* Pi Host startup status renders as a small floating badge in the window
+   corner while the main UI is already interactive — no full-screen splash.
+   The badge tints like a frosted chip so it respects the acrylic window. */
 .startup-screen {
-  position: absolute;
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
   z-index: 45;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: #101211;
-  color: #f3f1ed;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 300px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-surface-raised) 82%, transparent);
+  box-shadow: var(--theme-floating-shadow);
+  color: var(--color-foreground);
+  padding: 7px 13px;
   opacity: 1;
-  transition: opacity 200ms ease-out;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
 }
 
 html.light .startup-screen {
-  background: #ffffff;
   color: #171918;
 }
 
 .startup-screen--exiting {
   pointer-events: none;
   opacity: 0;
+  transform: translateY(4px);
 }
 
-.startup-drag-region {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 44px;
-}
-
-.startup-content {
-  display: flex;
-  width: 180px;
-  align-items: center;
-  flex-direction: column;
-  transform: translateY(0);
-  transition: transform 200ms ease-out;
-}
-
-.startup-screen--exiting .startup-content {
-  transform: translateY(-4px);
-}
-
-.startup-mark {
-  width: 58px;
-  height: 58px;
-  animation: startup-mark-breathe 1.8s ease-in-out infinite;
-}
-
-.startup-wordmark {
-  margin-top: 17px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0;
-}
-
-.startup-progress {
-  width: 104px;
-  height: 2px;
-  margin-top: 22px;
-  overflow: hidden;
-  border-radius: 1px;
-  background: #2b2e2c;
-}
-
-html.light .startup-progress {
-  background: #dedfe1;
-}
-
-.startup-progress-value {
-  display: block;
-  width: 34px;
-  height: 100%;
-  background: #e06b35;
-  animation: startup-progress 1.25s ease-in-out infinite;
-}
-
-html.light .startup-progress-value {
-  background: #d45d2d;
+.startup-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid color-mix(in srgb, var(--color-foreground) 20%, transparent);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: startup-spin 700ms linear infinite;
 }
 
 .startup-status {
   min-height: 16px;
-  margin-top: 11px;
-  color: #8f938f;
-  font-size: 11px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 16px;
-  text-align: center;
-}
-
-html.light .startup-status {
-  color: #70736f;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 html[data-theme-family="vercel"] .startup-screen {
+  border-color: var(--color-border-strong);
   background: var(--color-surface);
-  color: var(--color-foreground);
-}
-
-html[data-theme-family="vercel"] .startup-progress {
-  background: var(--color-border-strong);
-}
-
-html[data-theme-family="vercel"] .startup-progress-value {
-  background: var(--color-accent);
 }
 
 html[data-theme-family="vercel"] .startup-status {
   color: var(--color-muted);
 }
 
-@keyframes startup-mark-breathe {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: scale(0.985);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes startup-progress {
-  from {
-    transform: translateX(-38px);
-  }
+@keyframes startup-spin {
   to {
-    transform: translateX(110px);
+    transform: rotate(360deg);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .startup-screen,
-  .startup-content {
+  .startup-screen {
     transition-duration: 0ms;
   }
-  .startup-mark,
-  .startup-progress-value {
+  .startup-spinner {
     animation: none;
-  }
-  .startup-progress-value {
-    transform: translateX(35px);
   }
 }
 
@@ -1575,9 +1589,9 @@ textarea:focus-visible {
    reduce to 1.3px for a thinner but still visible indicator. */
 [data-settings-content]
   :where(
-    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
-        [type="file"]
-      ):not([type="hidden"]),
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(
+        [type="hidden"]
+      ),
     select,
     textarea
   ):focus-visible {

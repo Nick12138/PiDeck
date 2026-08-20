@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MessageKey } from "../lib/i18n";
 import { useT } from "../lib/i18n/use-t";
-import { PiMark } from "../components/PiMark";
 
 export type StartupStage =
   | "preparing"
@@ -13,8 +12,8 @@ export type StartupStage =
 
 export type StartupPhase = "active" | "exiting" | "complete";
 
-const STARTUP_MIN_VISIBLE_MS = 360;
-const STARTUP_EXIT_MS = 200;
+const STARTUP_MIN_VISIBLE_MS = 200;
+const STARTUP_EXIT_MS = 160;
 
 const STAGE_LABELS: Record<StartupStage, MessageKey> = {
   preparing: "startupPreparing",
@@ -82,15 +81,8 @@ export function StartupScreen({ stage, exiting }: { stage: StartupStage; exiting
       data-startup-exiting={exiting ? "true" : "false"}
       className={`startup-screen ${exiting ? "startup-screen--exiting" : ""}`}
     >
-      <div className="startup-drag-region" data-tauri-drag-region />
-      <div className="startup-content">
-        <PiMark className="startup-mark" />
-        <span className="startup-wordmark">PiDeck</span>
-        <div className="startup-progress" aria-hidden="true">
-          <span className="startup-progress-value" />
-        </div>
-        <span className="startup-status">{t(STAGE_LABELS[stage])}</span>
-      </div>
+      <span className="startup-spinner" aria-hidden="true" />
+      <span className="startup-status">{t(STAGE_LABELS[stage])}</span>
     </div>
   );
 }

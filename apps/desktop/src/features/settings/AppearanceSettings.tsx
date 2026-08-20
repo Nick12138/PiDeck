@@ -150,6 +150,7 @@ export function AppearanceSettings() {
     { value: "vercel", label: t("appearanceThemeVercel") },
     { value: "apple", label: t("appearanceThemeApple") },
     { value: "acrylic", label: t("appearanceThemeAcrylic") },
+    { value: "transparent", label: t("appearanceThemeTransparent") },
   ];
 
   const previewStyle = {

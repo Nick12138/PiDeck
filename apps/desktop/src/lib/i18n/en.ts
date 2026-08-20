@@ -110,6 +110,7 @@ export const en = {
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
   appearanceThemeAcrylic: "Acrylic",
+  appearanceThemeTransparent: "Transparent",
   appearanceColorMode: "Color mode",
   appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
   appearanceDensity: "Interface density",

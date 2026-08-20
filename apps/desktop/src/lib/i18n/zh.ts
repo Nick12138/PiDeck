@@ -104,6 +104,7 @@ export const zh: Record<MessageKey, string> = {
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
   appearanceThemeAcrylic: "亚克力",
+  appearanceThemeTransparent: "透明",
   appearanceColorMode: "颜色模式",
   appearanceColorModeDesc: "跟随系统外观，或使用固定模式。",
   appearanceDensity: "界面密度",

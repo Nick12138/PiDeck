@@ -47,6 +47,7 @@ pub enum DesktopThemeFamily {
     Vercel,
     Apple,
     Acrylic,
+    Transparent,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

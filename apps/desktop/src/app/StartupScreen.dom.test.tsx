@@ -79,14 +79,12 @@ describe("initial startup latch", () => {
 });
 
 describe("pre-React startup contract", () => {
-  it("ships both theme assets and motion-safe first-paint styles", () => {
+  it("keeps a transparent first paint and tiny bootstrap theme hook", () => {
     const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
     const css = readFileSync(join(process.cwd(), "src/styles/index.css"), "utf8");
     expect(html).toContain("/src/bootstrap-theme.ts");
-    expect(html).toContain("pi-mark-light.png");
-    expect(html).toContain("pi-mark-dark.png");
-    expect(html).toContain("prefers-color-scheme: light");
-    expect(html).toContain("prefers-reduced-motion: reduce");
+    expect(html).toContain("background: transparent");
+    expect(html).not.toContain("pideck-bootstrap");
     expect(css).toContain("html.light .startup-screen");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });

@@ -6,9 +6,7 @@ import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
 import { AppTopBar } from "../components/AppTopBar";
-import {
-  resolveWindowControlsPlatform,
-} from "../components/WindowControls";
+import { resolveWindowControlsPlatform } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { SettingsTopBarActionsContext } from "../features/settings/settings-top-bar";
@@ -994,17 +992,10 @@ export function App() {
       <DraftPersistenceController />
       <SettingsTopBarActionsContext.Provider value={actionsEl}>
         <AppTopBar actionsSlotRef={setActionsEl} />
-        <div
-          className="flex min-h-0 flex-1"
-          data-app-body
-          aria-hidden={startupVisible ? true : undefined}
-        >
+        <div className="flex min-h-0 flex-1" data-app-body>
           <Sidebar />
           <div className="flex min-h-0 flex-1" data-content-frame>
-            <main
-              className="relative flex min-w-0 flex-1 flex-col"
-              data-content-main
-            >
+            <main className="relative flex min-w-0 flex-1 flex-col" data-content-main>
               {hostFatal ? (
                 <div className="m-6 rounded-lg border border-danger/40 bg-danger/10 p-4">
                   <h2 className="mb-2 font-semibold text-danger">{t("hostUnavailableTitle")}</h2>
@@ -1012,7 +1003,10 @@ export function App() {
                   <p className="mt-2 text-xs text-muted">{t("hostUnavailableBody")}</p>
                 </div>
               ) : page === "settings" ? (
-                <SettingsPage initialSection={settingsSection ?? "general"} onClose={() => setPage("chat")} />
+                <SettingsPage
+                  initialSection={settingsSection ?? "general"}
+                  onClose={() => setPage("chat")}
+                />
               ) : page === "packages" ? (
                 <SettingsPage initialSection="packages" onClose={() => setPage("chat")} />
               ) : (

@@ -99,6 +99,11 @@ describe("theme bootstrap", () => {
     );
   });
 
+  it("accepts the transparent theme family", () => {
+    applyTheme("dark", { family: "transparent" });
+    expect(document.documentElement.dataset.themeFamily).toBe("transparent");
+  });
+
   it("restores the mirrored preference before native settings are available", () => {
     window.localStorage.setItem(STARTUP_THEME_STORAGE_KEY, "light");
     window.localStorage.setItem(STARTUP_THEME_FAMILY_STORAGE_KEY, "vercel");
