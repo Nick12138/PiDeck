@@ -693,6 +693,8 @@ export const zh: Record<MessageKey, string> = {
   sessionsGroupToday: "今天",
   sessionsGroupThisWeek: "本周",
   sessionsGroupEarlier: "更早",
+  sessionsGroupCollapse: "折叠该分组",
+  sessionsGroupExpand: "展开该分组",
   sessionsShowArchivedTitle: "显示已归档会话（{count}）",
   sessionsShowActiveTitle: "返回活跃会话",
   sessionsUntitled: "新会话",

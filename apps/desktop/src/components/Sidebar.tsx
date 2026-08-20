@@ -11,6 +11,7 @@ import { useT } from "../lib/i18n/use-t";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
+import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
 import {
   createNewSession,
   isCreateSessionPending,
@@ -21,6 +22,18 @@ const SIDEBAR_WIDTH_KEY = "pideck.sidebar.width.v1";
 const DEFAULT_SIDEBAR_WIDTH = 268;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
+
+/** Native window minimum height, kept in lockstep with the `minHeight`
+ *  declared in tauri.conf.json. The width is driven dynamically by the
+ *  conversation-area min width + the live sidebar width (see effect below);
+ *  `setSizeConstraints` replaces the whole constraint set, so the height must
+ *  be re-asserted on every update to avoid dropping it. */
+const NATIVE_WINDOW_MIN_HEIGHT = 600;
+
+/** True when running inside the Tauri desktop shell (so the native window
+ *  constraint APIs are available). Mirrors the check used in App.tsx. */
+const nativeWindowAvailable =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 /** Sidebar collapse toggle rendered in the app-level AppTopBar. Shows the Pi
  *  mark by default and reveals the PanelLeft close/open arrow on hover/focus,
@@ -40,7 +53,7 @@ export function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean
       className="group relative flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       onClick={onToggle}
     >
-      <PiMark className="mac-sidebar-brand-mark size-7 transition-opacity group-hover:opacity-0 group-focus:opacity-0" />
+      <PiMark className="mac-sidebar-brand-mark size-6 transition-opacity group-hover:opacity-0 group-focus:opacity-0" />
       <PanelIcon
         size={15}
         className="absolute text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
@@ -115,6 +128,9 @@ export function SidebarLayout({
   const sidebarWidthRef = useRef(sidebarWidth);
   sidebarWidthRef.current = sidebarWidth;
   const resizeStart = useRef<{ pointerId: number; x: number; width: number } | null>(null);
+  const theme = useAppStore((s) => s.desktopSettings?.theme);
+  const themeFamily = useAppStore((s) => s.desktopSettings?.themeFamily);
+  const conversationMinWidth = useAppStore((s) => s.desktopSettings?.conversationMinWidth);
 
   // Expose the live sidebar width as a root CSS var so sibling chrome (the top
   // bar's title column) can align its start to the content-area's left edge.
@@ -124,8 +140,76 @@ export function SidebarLayout({
       "--sidebar-width",
       `${sidebarCollapsed ? 0 : sidebarWidth}px`,
     );
-    return () => root.style.removeProperty("--sidebar-width");
+    return () => {
+      root.style.removeProperty("--sidebar-width");
+    };
   }, [sidebarWidth, sidebarCollapsed]);
+
+  // Drive the OS-level window minimum width from the conversation-area min
+  // width setting, scoped to the conversation column rather than acting as
+  // a flat global floor:
+  //   • sidebar collapsed  → minWidth = conversation min width + frame insets
+  //   • sidebar expanded   → minWidth = conversation min width + current sidebar width + frame insets
+  // The conversation area sits inside `[data-content-frame]`, which carries a
+  // left/right design margin (--app-content-gap, per theme). Those insets
+  // always get space when the window hugs the minimum — otherwise the chat
+  // page's own min-width overflows its frame at minimum size and the
+  // conversation area gets CLIPPED on the right side (read as the composer
+  // looking off-center / right padding missing), while the left padding
+  // stays intact. At minimum width, the conversation area ends up exactly
+  // the configured min width, symmetric and fully visible.
+  // `setSizeConstraints` replaces the whole constraint set, so re-assert the
+  // height floor (matches `minHeight` in tauri.conf.json) on every update to
+  // avoid dropping it.
+  useEffect(() => {
+    if (!nativeWindowAvailable) return;
+    const conversationMin = resolveConversationMinWidth(conversationMinWidth);
+    const sidebarW = sidebarCollapsed ? 0 : sidebarWidth;
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Content frame's left/right design margin: read the computed style
+        // instead of hard-coding, since --app-content-gap can vary per theme.
+        const contentFrameEl = document.querySelector("[data-content-frame]");
+        const frameStyle = contentFrameEl ? getComputedStyle(contentFrameEl) : null;
+        const frameMarginH =
+          (parseFloat(frameStyle?.marginLeft || "0") || 0) +
+          (parseFloat(frameStyle?.marginRight || "0") || 0);
+        const baseMinWidth = conversationMin + sidebarW + frameMarginH;
+
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        if (cancelled) return;
+        const appWindow = getCurrentWindow();
+        // The window is borderless (`decorations: false`) but still renders a
+        // DWM drop shadow, which tao treats as an invisible resize/shadow
+        // margin wrapping the visible client. tao enforces our `minWidth`
+        // against the OUTER window rect (GetWindowRect) in WM_GETMINMAXINFO,
+        // so the visible client (GetClientRect == `window.innerWidth`) ends
+        // up narrower than the value we set by exactly that invisible margin
+        // (~14px = a hairline each side). Measure the live outer↔inner gap
+        // and add it back, so the floor we pass becomes the floor the user
+        // sees in the content area. Same fix applies to the height floor.
+        const [inner, outer, scaleFactor] = await Promise.all([
+          appWindow.innerSize(),
+          appWindow.outerSize(),
+          appWindow.scaleFactor(),
+        ]);
+        if (cancelled) return;
+        const scale = scaleFactor || 1;
+        const chromeW = Math.max(0, (outer.width - inner.width) / scale);
+        const chromeH = Math.max(0, (outer.height - inner.height) / scale);
+        await appWindow.setSizeConstraints({
+          minWidth: baseMinWidth + chromeW,
+          minHeight: NATIVE_WINDOW_MIN_HEIGHT + chromeH,
+        });
+      } catch {
+        /* best-effort: the constraint update is non-critical */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sidebarCollapsed, sidebarWidth, conversationMinWidth, theme, themeFamily]);
 
   function finishResize(target: HTMLDivElement, pointerId: number) {
     if (resizeStart.current?.pointerId !== pointerId) return;

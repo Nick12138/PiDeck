@@ -297,6 +297,7 @@ export type AppState = EpochState & {
   mergeSessionTerminalSnapshots: (
     workspaceId: string,
     snapshots: Readonly<Record<string, SessionTerminalSnapshot>>,
+    focusedSessionId?: string | null,
   ) => void;
   /** Drop terminal markers for removed sessions (permanent delete / cleanup). */
   removeSessionTerminalStates: (workspaceId: string, sessionIds: readonly string[]) => void;
@@ -1084,12 +1085,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       };
     }),
-  mergeSessionTerminalSnapshots: (workspaceId, snapshots) =>
+  mergeSessionTerminalSnapshots: (workspaceId, snapshots, focusedSessionId) =>
     set((state) => {
       const sessionTerminalStates = mergeTerminalSnapshots(
         state.sessionTerminalStates,
         workspaceId,
         snapshots,
+        focusedSessionId ?? state.session?.sessionId,
       );
       return sessionTerminalStates === state.sessionTerminalStates ? {} : { sessionTerminalStates };
     }),

@@ -317,7 +317,11 @@ export function FilesPanel({ visible }: { visible: boolean }) {
 
   const rootError = errors.get("");
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-surface" aria-label={t("dockFilesRegion")}>
+    <section
+      className="flex min-h-0 flex-1 flex-col bg-surface"
+      aria-label={t("dockFilesRegion")}
+      data-dock-panel
+    >
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="relative min-w-0 flex-1">
           <Search

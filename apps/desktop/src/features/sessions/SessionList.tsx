@@ -46,6 +46,7 @@ import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-hos
 import { sessionCatalogItems, type SessionCatalogEntry } from "../../lib/stores/session-catalog";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { createNewSession } from "../../lib/commands/actions";
+import { sidebarJsonPref, setSidebarJsonPref } from "../../lib/sidebar-prefs";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
@@ -65,10 +66,21 @@ import {
   sessionStatusLabelKey,
   shouldClearLastSessionPath,
   type SessionFilter,
+  type SessionTimeGroup,
 } from "./session-list-policy";
 
 type SessionConfirmAction =
   { kind: "delete"; item: SessionCatalogEntry } | { kind: "cleanup"; count: number };
+
+const SESSION_GROUPS_COLLAPSED_KEY = "pideck.sidebar.sessionGroupsCollapsed.v1";
+
+function sessionGroupLabelKey(group: SessionTimeGroup): "sessionsGroupToday" | "sessionsGroupThisWeek" | "sessionsGroupEarlier" {
+  return group === "today"
+    ? "sessionsGroupToday"
+    : group === "thisWeek"
+      ? "sessionsGroupThisWeek"
+      : "sessionsGroupEarlier";
+}
 
 function acknowledgeVisitedSession(sessionId: string): void {
   const current = useAppStore.getState();
@@ -118,6 +130,9 @@ export function SessionList({
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [filter, setFilter] = useState<SessionFilter>("active");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<SessionTimeGroup>>(
+    () => new Set(sidebarJsonPref<SessionTimeGroup[]>(SESSION_GROUPS_COLLAPSED_KEY, [])),
+  );
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [confirmAction, setConfirmAction] = useState<SessionConfirmAction | null>(null);
@@ -457,6 +472,16 @@ export function SessionList({
     } finally {
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
+  }
+
+  function toggleGroupCollapsed(group: SessionTimeGroup) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      setSidebarJsonPref(SESSION_GROUPS_COLLAPSED_KEY, [...next]);
+      return next;
+    });
   }
 
   function togglePinnedSession(item: SessionCatalogEntry) {
@@ -811,14 +836,24 @@ export function SessionList({
             {groupedItems.map(({ group, items }) =>
               items.length === 0 ? null : (
                 <div key={group} className="flex flex-col gap-0.5">
-                  <p className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted">
-                    {group === "today"
-                      ? t("sessionsGroupToday")
-                      : group === "thisWeek"
-                        ? t("sessionsGroupThisWeek")
-                        : t("sessionsGroupEarlier")}
-                  </p>
-                  <ul className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    aria-expanded={!collapsedGroups.has(group)}
+                    aria-controls={`session-group-${group}`}
+                    title={collapsedGroups.has(group) ? t("sessionsGroupExpand") : t("sessionsGroupCollapse")}
+                    onClick={() => toggleGroupCollapsed(group)}
+                    className="group flex min-w-0 items-center gap-1 px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted transition-colors hover:text-foreground"
+                  >
+                    <span>{t(sessionGroupLabelKey(group))}</span>
+                    <ChevronDown
+                      size={12}
+                      className={`opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100 ${
+                        collapsedGroups.has(group) ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  <CollapsibleRegion open={!collapsedGroups.has(group)} id={`session-group-${group}`}>
+                    <ul className="flex flex-col gap-0.5">
                     {items.map((item) => {
                       const active = !item.archived && session?.sessionId === item.sessionId;
                       const editing = editingSessionId === item.sessionId;
@@ -1122,7 +1157,8 @@ export function SessionList({
                         </li>
                       );
                     })}
-                  </ul>
+                    </ul>
+                  </CollapsibleRegion>
                 </div>
               ),
             )}

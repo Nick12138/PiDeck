@@ -722,6 +722,8 @@ export const en = {
   sessionsGroupToday: "Today",
   sessionsGroupThisWeek: "This week",
   sessionsGroupEarlier: "Earlier",
+  sessionsGroupCollapse: "Collapse this group",
+  sessionsGroupExpand: "Expand this group",
   sessionsShowArchivedTitle: "Show archived sessions ({count})",
   sessionsShowActiveTitle: "Back to active sessions",
   sessionsUntitled: "New session",

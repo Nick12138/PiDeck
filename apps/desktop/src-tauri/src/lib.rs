@@ -1,3 +1,5 @@
+#![allow(linker_messages)]
+
 mod browser_surface;
 mod commands;
 mod desktop_settings;

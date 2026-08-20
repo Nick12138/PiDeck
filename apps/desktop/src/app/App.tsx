@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
-import { createTauriTransport, replayActiveHostReady } from "../lib/bridge/tauri-transport";
+import { createTauriTransport, replayActiveHostReady, acknowledgeSessionTerminal } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
@@ -106,6 +106,24 @@ export function applyModelChanged(payload: HostEventPayloadMap["model.changed"])
   store.setThinkingLevels(payload.availableThinkingLevels);
 }
 
+/**
+ * A terminal (done/error) state that occurs while a session is in focus is
+ * already visible in the conversation pane, so the local store auto-acknowledges
+ * its marker (switching away never leaves a stale dot). The Rust Host pool
+ * keeps its own copy of the marker with a fresh generation, and a later
+ * activity snapshot would otherwise re-open the local acknowledgement across
+ * the generation change — so tell the Host pool to drop it as well. Safe when
+ * no marker exists yet (e.g. a plain idle announcement that never ran).
+ */
+function acknowledgeHostTerminalIfFocused(sessionId: string, state: string): void {
+  if (state !== "error" && state !== "idle") return;
+  const current = useAppStore.getState();
+  if (current.session?.sessionId !== sessionId) return;
+  const cwd = current.workspace?.canonicalCwd;
+  if (!cwd) return;
+  void acknowledgeSessionTerminal(cwd, sessionId);
+}
+
 export function handleHostEvent(
   event: HostEventEnvelope,
   requestRecovery: (reason: string) => void,
@@ -205,6 +223,7 @@ export function handleHostEvent(
         event.payload.error,
         event.payload.updatedAt,
       );
+      acknowledgeHostTerminalIfFocused(event.payload.sessionId, event.payload.state);
       break;
     case "agent.toolsChanged": {
       const action = classifyToolSnapshot(store.tools, event.payload);
@@ -414,6 +433,7 @@ export function handleHostEvent(
               ? event.payload.event.message
               : "Agent error";
         useAppStore.getState().setSessionRuntimeState(event.sessionId, "error", message);
+        acknowledgeHostTerminalIfFocused(event.sessionId, "error");
         useAppStore
           .getState()
           .pushNotification(tCurrent("notifSessionFailed", { message }), "error");

@@ -1784,10 +1784,10 @@ export function Composer({
                     type="button"
                     title={t("composerQueueMessageShortcut")}
                     aria-label={t("composerQueueMessage")}
-                    className="theme-send-control flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85"
+                    className="theme-send-control flex size-8 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85"
                     onClick={() => void send()}
                   >
-                    <Send size={15} />
+                    <Send size={15} className="block shrink-0" />
                   </button>
                 ) : (
                   <button
@@ -1796,10 +1796,10 @@ export function Composer({
                     aria-label={
                       session?.isCompacting ? t("composerStopCompaction") : t("composerStop")
                     }
-                    className="flex size-8 items-center justify-center rounded-md bg-danger/15 text-danger hover:bg-danger/20"
+                    className="flex size-8 items-center justify-center rounded-full bg-danger/15 text-danger hover:bg-danger/20"
                     onClick={() => void (session?.isCompacting ? abortCompaction() : abort())}
                   >
-                    <Square size={14} fill="currentColor" />
+                    <Square size={14} fill="currentColor" className="block shrink-0" />
                   </button>
                 )
               ) : (
@@ -1807,11 +1807,11 @@ export function Composer({
                   type="button"
                   title={t("composerSend")}
                   aria-label={t("composerSend")}
-                  className="theme-send-control flex size-8 items-center justify-center rounded-md bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="theme-send-control flex size-8 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
                   disabled={!canSend}
                   onClick={() => void send()}
                 >
-                  <Send size={15} />
+                  <Send size={15} className="block shrink-0" />
                 </button>
               )}
             </div>

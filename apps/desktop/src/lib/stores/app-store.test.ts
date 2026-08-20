@@ -1058,6 +1058,53 @@ describe("app-store epoch wiring", () => {
     });
   });
 
+  it("does not reopen a focused session's marker across a newer Host generation", () => {
+    // Reproduces the gray-dot bug: a focused run finishes (auto-acknowledged,
+    // picking up a Host generation from the activity snapshot), then a second
+    // focused run finishes with a newer generation. Without focus awareness
+    // the refresh re-opened the marker, so switching away left a stale gray dot.
+    useAppStore.getState().beginHostEpoch(host("h1"));
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().applySessionSnapshot(session("s1"));
+
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 10);
+    // First completion while focused: the Host pushes generation 1.
+    useAppStore.getState().mergeSessionTerminalSnapshots("w1", {
+      s1: { state: "done", generation: 1 },
+    });
+    useAppStore.getState().setSessionRuntimeState("s1", "idle", undefined, 20);
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: true,
+      // Order determines the generation: if the refresh wins, it sets gen 1;
+      // if the local edge wins, the acknowledged marker carries the prior gen.
+      generation: expect.any(Number),
+    });
+
+    // A second run begins and completes while still in focus with gen 2.
+    useAppStore.getState().setSessionRuntimeState("s1", "running", undefined, 30);
+    useAppStore.getState().mergeSessionTerminalSnapshots(
+      "w1",
+      { s1: { state: "done", generation: 2 } },
+      "s1",
+    );
+    useAppStore.getState().setSessionRuntimeState("s1", "idle", undefined, 40);
+
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: true,
+      generation: 2,
+    });
+
+    // Switching to another session never leaves a stale dot.
+    useAppStore.getState().applySessionSnapshot(session("s2"));
+    expect(useAppStore.getState().sessionTerminalStates.w1?.s1).toEqual({
+      state: "done",
+      acknowledged: true,
+      generation: 2,
+    });
+  });
+
   it("removes terminal states for deleted sessions", () => {
     useAppStore.getState().beginHostEpoch(host("h1"));
     useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));

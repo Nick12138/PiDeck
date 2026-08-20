@@ -72,7 +72,7 @@ export function AppTopBar({
         {platform === "macos" && <WindowControls platform="macos" />}
         <SidebarBrandToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
         {!sidebarCollapsed && (
-          <span className="text-[15px] font-semibold" data-sidebar-brand>
+          <span className="text-[13px] font-semibold" data-sidebar-brand>
             Pi Agent
           </span>
         )}

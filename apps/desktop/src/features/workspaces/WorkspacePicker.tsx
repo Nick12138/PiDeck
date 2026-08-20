@@ -165,7 +165,11 @@ export function WorkspacePicker() {
       if (currentWorkspace) {
         const active = activities[normalizedActivityKey(currentWorkspace.canonicalCwd)];
         if (active) {
-          current.mergeSessionTerminalSnapshots(currentWorkspace.id, active.terminalSessions);
+          current.mergeSessionTerminalSnapshots(
+            currentWorkspace.id,
+            active.terminalSessions,
+            current.session?.sessionId,
+          );
         }
       }
       setWorkspaceActivities(activities);
