@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Bot, LoaderCircle } from "lucide-react";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -139,8 +140,9 @@ export function TelegramAddDialog({
     onConfirm(gateway);
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+  return createPortal(
+    (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
       <div
         ref={dialogRef}
         role="dialog"
@@ -268,5 +270,7 @@ export function TelegramAddDialog({
         </div>
       </div>
     </div>
+    ) as ReactNode,
+    document.body,
   );
 }

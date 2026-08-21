@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   MessageCircleQuestion,
   PanelRightOpen,
+  Play,
   Puzzle,
   RotateCcw,
   Terminal,
@@ -59,7 +60,7 @@ import {
   type TranscriptBlock,
   type TranscriptRow,
 } from "./transcript-model";
-import { requestRetry } from "../../lib/retry-actions";
+import { requestGoOn, requestRetry } from "../../lib/retry-actions";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import {
@@ -196,6 +197,18 @@ export function Transcript() {
     () => computeRetryableTurns(rows, suppressedKeys),
     [rows, suppressedKeys],
   );
+  const lastFailedAssistantKey = useMemo(() => {
+    for (let index = shownRows.length - 1; index >= 0; index -= 1) {
+      const row = shownRows[index];
+      if (
+        row.role === "assistant" &&
+        (row.outcome?.status === "error" || row.outcome?.status === "aborted")
+      ) {
+        return row.key;
+      }
+    }
+    return undefined;
+  }, [shownRows]);
 
   const handleRetry = useCallback(
     (row: TranscriptRow): Promise<void> =>
@@ -691,6 +704,7 @@ export function Transcript() {
                   workingLabel={row.key === workingHeaderKey ? workingLabel : undefined}
                   retryableTurn={retryableTurn}
                   retryVisible={retryVisible}
+                  goOnVisible={row.key === lastFailedAssistantKey}
                   onRetry={handleRetry}
                 />
               </div>
@@ -766,6 +780,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
   workingLabel,
   retryableTurn,
   retryVisible,
+  goOnVisible,
   onRetry,
 }: {
   row: TranscriptRow;
@@ -775,6 +790,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
   workingLabel?: string;
   retryableTurn?: RetryableTurn;
   retryVisible: boolean;
+  goOnVisible: boolean;
   onRetry: (row: TranscriptRow) => Promise<void>;
 }) {
   const t = useT();
@@ -900,7 +916,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
           turnActive={working}
         />
         {row.outcome && (row.outcome.status === "error" || row.outcome.status === "aborted") && (
-          <AssistantOutcome outcome={row.outcome} />
+          <AssistantOutcome outcome={row.outcome} showGoOn={goOnVisible} />
         )}
       </div>
       <div className="mt-2 flex h-7 items-center gap-2">
@@ -1728,7 +1744,13 @@ function SessionEventRow({ row }: { row: TranscriptRow }) {
   );
 }
 
-function AssistantOutcome({ outcome }: { outcome: NonNullable<TranscriptRow["outcome"]> }) {
+function AssistantOutcome({
+  outcome,
+  showGoOn = false,
+}: {
+  outcome: NonNullable<TranscriptRow["outcome"]>;
+  showGoOn?: boolean;
+}) {
   const t = useT();
   const aborted = outcome.status === "aborted";
   const message =
@@ -1743,13 +1765,39 @@ function AssistantOutcome({ outcome }: { outcome: NonNullable<TranscriptRow["out
       ) : (
         <CircleAlert size={14} className="mt-0.5 shrink-0" />
       )}
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="font-medium">
           {aborted ? t("transcriptResponseStopped") : t("transcriptResponseFailed")}
         </div>
         <div className="mt-0.5 whitespace-pre-wrap break-words opacity-90">{message}</div>
       </div>
+      {showGoOn && <GoOnButton aborted={aborted} />}
     </div>
+  );
+}
+
+function GoOnButton({ aborted }: { aborted: boolean }) {
+  const t = useT();
+  const idle = useAppStore((s) => s.session?.isIdle ?? false);
+  const [pending, setPending] = useState(false);
+  const tone = aborted
+    ? "border-warning/60 hover:bg-warning/15"
+    : "border-danger/60 hover:bg-danger/15";
+
+  return (
+    <button
+      type="button"
+      title={t("transcriptGoOnHint")}
+      disabled={!idle || pending}
+      className={`shrink-0 self-center inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${tone}`}
+      onClick={() => {
+        setPending(true);
+        void requestGoOn().finally(() => setPending(false));
+      }}
+    >
+      {pending ? <LoaderCircle size={12} className="animate-spin" /> : <Play size={12} />}
+      <span>{t("transcriptGoOn")}</span>
+    </button>
   );
 }
 

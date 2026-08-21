@@ -67,6 +67,11 @@ import type {
   GitCommitMessageResult,
   PiSettingsSnapshot,
   PiSettingsPatch,
+  SkillPathMutation,
+  SkillSnapshot,
+  PluginLibraryApplyParams,
+  PluginLibraryCatalog,
+  PluginLibraryEnvUpdate,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -154,6 +159,9 @@ export type HostContextMap = {
   "model.list": ActiveSessionContext;
   "model.setCurrent": ActiveSessionContext;
   "model.setThinkingLevel": ActiveSessionContext;
+  "skill.list": WorkspaceContext;
+  "skill.addPath": WorkspaceContext;
+  "skill.removePath": WorkspaceContext;
   "package.list": WorkspaceContext;
   "package.catalog": HostContext;
   "package.install": SessionPackageContext;
@@ -165,6 +173,9 @@ export type HostContextMap = {
   "package.reloadResources": SessionPackageContext;
   "resource.setPreference": SessionPackageContext;
   "resource.setPreferences": SessionPackageContext;
+  "pluginLibrary.catalog": HostContext;
+  "pluginLibrary.apply": SessionPackageContext;
+  "pluginLibrary.setEnv": HostContext;
   "extensionUi.configure": HostContext;
   "extensionUi.respond": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
@@ -286,6 +297,9 @@ export type HostRequestParams = {
   "model.list": null;
   "model.setCurrent": { provider: string; modelId: string };
   "model.setThinkingLevel": { level: string };
+  "skill.list": null;
+  "skill.addPath": SkillPathMutation;
+  "skill.removePath": SkillPathMutation;
   "package.list": { scope: "user" | "project" | "all"; includeResources?: boolean };
   "package.catalog": {
     refresh?: boolean;
@@ -303,6 +317,9 @@ export type HostRequestParams = {
   "package.reloadResources": null;
   "resource.setPreference": ResourcePreferenceUpdate;
   "resource.setPreferences": { updates: ResourcePreferenceUpdate[] };
+  "pluginLibrary.catalog": { refresh?: boolean } | null;
+  "pluginLibrary.apply": PluginLibraryApplyParams;
+  "pluginLibrary.setEnv": PluginLibraryEnvUpdate;
   "extensionUi.configure": {
     extensionDecisionPresentation: ExtensionDecisionPresentation;
   };
@@ -449,6 +466,9 @@ export type HostResultMap = {
     session: SessionSnapshot;
   };
   "model.setThinkingLevel": SessionSnapshot;
+  "skill.list": SkillSnapshot;
+  "skill.addPath": SkillSnapshot;
+  "skill.removePath": SkillSnapshot;
   "package.list": PackageSnapshot;
   "package.catalog": PackageCatalog;
   "package.install": PackageMutationResult;
@@ -460,6 +480,9 @@ export type HostResultMap = {
   "package.reloadResources": PackageMutationResult;
   "resource.setPreference": PackageMutationResult;
   "resource.setPreferences": PackageMutationResult;
+  "pluginLibrary.catalog": PluginLibraryCatalog;
+  "pluginLibrary.apply": PackageMutationResult;
+  "pluginLibrary.setEnv": { applied: number };
   "extensionUi.configure": {
     extensionDecisionPresentation: ExtensionDecisionPresentation;
   };

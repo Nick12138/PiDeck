@@ -78,7 +78,8 @@ export function isExtensionPresentation(value: unknown): value is ExtensionPrese
     value.actionRequestId !== undefined &&
     (!isBoundedString(value.actionRequestId, 64, true) ||
       !UUID_PATTERN.test(value.actionRequestId) ||
-      (value.audience !== "user" || value.kind !== "decision"))
+      value.audience !== "user" ||
+      value.kind !== "decision")
   ) {
     return false;
   }

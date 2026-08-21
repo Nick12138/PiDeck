@@ -227,6 +227,9 @@ export type ModelSummary = {
   modelId: string;
   name: string;
   thinkingLevels?: string[];
+  /** Which input modalities the model accepts. Present on `piSettings.get`
+   *  snapshots so clients can filter e.g. vision-capable models. */
+  input?: Array<"text" | "image">;
 };
 
 export type ProviderApi =
@@ -255,6 +258,60 @@ export type PiSettingsPatch = {
   defaultProjectTrust?: "ask" | "always" | "never";
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
+};
+
+/** Scope of a settings-configured skill path (mirrors Settings scopes). */
+export type SkillSettingsScope = "user" | "project";
+
+/** A single skill discovered by Pi's resource loader. */
+export type SkillInfo = {
+  name: string;
+  description: string;
+  /** SKILL.md (or standalone .md) file path. */
+  filePath: string;
+  /** Directory the skill resolves relative paths against. */
+  baseDir: string;
+  /** Loader source label (e.g. "user", package name). */
+  source: string;
+  scope: "user" | "project" | "temporary";
+  origin: "package" | "top-level";
+  /** Owning package install path when origin is "package". */
+  packagePath?: string;
+  /** Hidden from the system prompt; only invocable via /skill:<name>. */
+  disableModelInvocation: boolean;
+};
+
+export type SkillDiagnostic = {
+  severity: "warning" | "error" | "collision";
+  message: string;
+  path?: string;
+};
+
+/** A `skills` entry found in a settings.json file (user or project). */
+export type SkillConfiguredPath = {
+  path: string;
+  scope: SkillSettingsScope;
+  /** Whether the configured path currently exists on disk (after resolution). */
+  exists: boolean;
+};
+
+export type SkillSnapshot = {
+  revision: number;
+  workspaceId: string;
+  /** Workspace cwd the discovery ran against. */
+  cwd: string;
+  /** Whether Pi loads project-local resources for this workspace. */
+  projectTrusted: boolean;
+  skills: SkillInfo[];
+  diagnostics: SkillDiagnostic[];
+  /** Raw `skills` arrays from user and project settings.json. */
+  configuredPaths: SkillConfiguredPath[];
+  resourceReloadRequired: boolean;
+};
+
+export type SkillPathMutation = {
+  path: string;
+  scope: SkillSettingsScope;
 };
 
 export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
@@ -680,6 +737,85 @@ export type PackageUpdateSummary = {
   available?: string;
 };
 
+/* ------------------------------------------------------------------ */
+/* Plugin library (PiDeck-curated registry, see my-pi-plugins repo)   */
+/* ------------------------------------------------------------------ */
+
+/** How a curated plugin is installed. "repo" entries live inside the
+ *  registry's own git repository; "npm"/"git" are standalone pi packages. */
+export type PluginLibraryInstallSource =
+  | { type: "repo"; path: string }
+  | { type: "npm"; source: string }
+  | { type: "git"; source: string };
+
+export type PluginLibraryConfigOption = { value: string; label: string };
+
+/** One auto-generated configuration control. Values are persisted by PiDeck
+ *  and injected as environment variables (`env`) when the Host starts. */
+export type PluginLibraryConfigItem = {
+  key: string;
+  type: "text" | "select";
+  label: string;
+  /** Environment variable name the value is injected under. */
+  env: string;
+  /** Text only: mask the input and never echo the value in plaintext UI. */
+  secret?: boolean;
+  required?: boolean;
+  placeholder?: string;
+  /** Default value; for selects this must be one of `options[].value`. */
+  default?: string;
+  /** Select only: allowed choices. May be omitted/empty when `optionsSource`
+   *  tells the renderer to build the options dynamically at runtime. */
+  options?: PluginLibraryConfigOption[];
+  /** Select only: well-known dynamic option source. Known sources:
+   *  `pi:vision-models` — options come from the runtime's vision-capable
+   *  models. Unknown sources must be ignored (static options/text input). */
+  optionsSource?: string;
+  description?: string;
+};
+
+export type PluginLibraryEntry = {
+  id: string;
+  name: string;
+  description: string;
+  /** Emoji character or an image path relative to the registry repository. */
+  icon: string;
+  version: string;
+  author?: string;
+  tags?: string[];
+  install: PluginLibraryInstallSource;
+  /** Omitted (or empty) means the plugin needs no configuration. */
+  config?: PluginLibraryConfigItem[];
+};
+
+export type PluginLibraryCatalog = {
+  specVersion: number;
+  /** Registry file URL the catalog was fetched from. */
+  registryUrl: string;
+  /** Pi install source of the registry repository; used for `repo` entries. */
+  repoSource: string;
+  fetchedAt: number;
+  plugins: PluginLibraryEntry[];
+  /** Human-readable notes for entries that failed validation and were dropped. */
+  warnings: string[];
+};
+
+/** Toggle one curated plugin's extension pattern inside a package source
+ *  entry (repo-type installs). */
+export type PluginLibraryApplyParams = {
+  /** Package source, e.g. "git:github.com/user/repo". */
+  source: string;
+  /** Extension glob relative to the package root, e.g. "packages/pi-web/extensions/**". */
+  pattern: string;
+  enabled: boolean;
+};
+
+/** Apply plugin config values to the running Host process environment.
+ *  A null value unsets the variable. */
+export type PluginLibraryEnvUpdate = {
+  vars: Record<string, string | null>;
+};
+
 /** Resource kinds exposed by package and top-level resource listings. */
 export type PackageResourceType = ResourceRecord["type"];
 
@@ -1012,6 +1148,9 @@ export type DesktopSettings = {
   terminalProfile: TerminalProfileId;
   /** UI language; "system" (or absent) follows the OS locale. */
   language?: DesktopLanguage;
+  /** Plugin-library configuration: plugin id → env var name → value.
+   *  Injected into the Host process environment when it starts. */
+  pluginEnv?: Record<string, Record<string, string>>;
   /** Spacing density for frequently used interface controls and rows. */
   interfaceDensity?: DesktopInterfaceDensity;
   /** Minimum width of the aligned conversation surfaces, in CSS pixels. */

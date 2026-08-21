@@ -17,9 +17,7 @@ function isReference(value: unknown): value is AttachmentReference {
   const item = value as Record<string, unknown>;
   return (
     typeof item.id === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-      item.id,
-    ) &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(item.id) &&
     typeof item.name === "string" &&
     item.name.length > 0 &&
     typeof item.mediaType === "string" &&
@@ -30,9 +28,7 @@ function isReference(value: unknown): value is AttachmentReference {
   );
 }
 
-export function buildAttachmentReferenceBlock(
-  attachments: readonly AttachmentSnapshot[],
-): string {
+export function buildAttachmentReferenceBlock(attachments: readonly AttachmentSnapshot[]): string {
   const items: AttachmentReference[] = attachments.map((attachment) => ({
     id: attachment.id,
     name: attachment.name,

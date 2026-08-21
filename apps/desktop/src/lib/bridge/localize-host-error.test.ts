@@ -3,6 +3,7 @@ import type { Translate } from "../i18n/use-t";
 import {
   hostErrorLevel,
   localizeHostError,
+  localizePackageMessage,
   TRANSIENT_HOST_ERROR_CODES,
 } from "./localize-host-error";
 
@@ -47,6 +48,43 @@ describe("localizeHostError", () => {
 
   it("falls back when the error is missing", () => {
     expect(localizeHostError(undefined, t)).toBe("操作失败。");
+  });
+
+  it("maps a locked-file package failure (EBUSY) to a friendly message", () => {
+    const stderr =
+      "failed with code 4294963214: npm error code EBUSY\nnpm error syscall copyfile\nnpm error EBUSY: resource busy or locked, copyfile 'C:\\x.node'";
+    expect(localizeHostError({ code: "PACKAGE_REMOVE_FAILED", message: stderr }, t)).toBe(
+      "[hostErrPackageFileBusy]",
+    );
+    expect(
+      localizeHostError({ code: "PACKAGE_PARTIAL_FAILURE", message: stderr }, t),
+    ).toBe("[hostErrPackageFileBusy]");
+  });
+
+  it("maps permission, missing-package and network failures to friendly messages", () => {
+    expect(
+      localizeHostError({ code: "PACKAGE_INSTALL_FAILED", message: "npm error code EPERM\nnpm error syscall mkdir" }, t),
+    ).toBe("[hostErrPackagePermission]");
+    expect(
+      localizeHostError({ code: "PACKAGE_INSTALL_FAILED", message: "npm error code E404\nnpm error 404 Not Found" }, t),
+    ).toBe("[hostErrPackageNotInRegistry]");
+    expect(
+      localizeHostError({ code: "PACKAGE_UPDATE_FAILED", message: "npm error code ETIMEDOUT" }, t),
+    ).toBe("[hostErrPackageNetwork]");
+  });
+
+  it("falls back to a generic package message instead of dumping raw stderr", () => {
+    expect(
+      localizeHostError({ code: "PACKAGE_RESOLVE_FAILED", message: "some odd npm stderr dump" }, t),
+    ).toBe("[hostErrPackageFailed]");
+  });
+
+  it("localizePackageMessage detects known causes and returns undefined otherwise", () => {
+    expect(localizePackageMessage("EBUSY: resource busy or locked", t)).toBe(
+      "[hostErrPackageFileBusy]",
+    );
+    expect(localizePackageMessage("something completely different", t)).toBeUndefined();
+    expect(localizePackageMessage(undefined, t)).toBeUndefined();
   });
 });
 

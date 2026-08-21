@@ -191,6 +191,9 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "model.list": null,
   "model.setCurrent": { provider: "openai", modelId: "gpt" },
   "model.setThinkingLevel": { level: "off" },
+  "skill.list": null,
+  "skill.addPath": { path: "./skills", scope: "project" },
+  "skill.removePath": { path: "./skills", scope: "project" },
   "package.list": { scope: "all" },
   "package.catalog": {},
   "package.install": { source: "npm:x", scope: "user" },
@@ -214,6 +217,13 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
       },
     ],
   },
+  "pluginLibrary.catalog": { refresh: true },
+  "pluginLibrary.apply": {
+    source: "git:github.com/user/repo",
+    pattern: "packages/pi-web/extensions/**",
+    enabled: true,
+  },
+  "pluginLibrary.setEnv": { vars: { MY_PLUGIN_KEY: "value", MY_PLUGIN_GONE: null } },
   "extensionUi.configure": { extensionDecisionPresentation: "auto" },
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
@@ -272,6 +282,7 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.list":
     case "provider.authStatus":
     case "model.list":
+    case "skill.list":
     case "package.reloadResources":
       return {}; // must be null
     case "workspace.setCurrent":
@@ -382,6 +393,9 @@ function invalidParams(method: HostMethod): unknown {
       return { provider: "x" };
     case "model.setThinkingLevel":
       return {};
+    case "skill.addPath":
+    case "skill.removePath":
+      return { path: "./skills", scope: "all" };
     case "package.list":
       return { scope: "both" };
     case "package.catalog":

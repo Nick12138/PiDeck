@@ -58,6 +58,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "codeFontSize",
   "knownWorkspaces",
   "shortcutOverrides",
+  "pluginEnv",
 ]);
 const EXTENSION_DECISION_PRESENTATIONS = ["legacy-modal", "auto", "inline-first"] as const;
 const NULLABLE_PATH_KEYS = [
@@ -175,6 +176,28 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
       !Object.values(shortcuts).every((value) => typeof value === "string" || value === null)
     ) {
       throw new Error("shortcutOverrides must map command ids to strings or null");
+    }
+  }
+  if (values.pluginEnv !== undefined) {
+    const pluginEnv = values.pluginEnv;
+    if (typeof pluginEnv !== "object" || pluginEnv === null || Array.isArray(pluginEnv)) {
+      throw new Error("pluginEnv must map plugin ids to env var maps");
+    }
+    for (const [pluginId, vars] of Object.entries(pluginEnv)) {
+      if (typeof vars !== "object" || vars === null || Array.isArray(vars)) {
+        throw new Error("pluginEnv values must map env var names to strings");
+      }
+      if (pluginId.length === 0 || pluginId.length > 64) {
+        throw new Error("pluginEnv plugin ids must be 1-64 characters");
+      }
+      for (const [name, value] of Object.entries(vars)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          throw new Error(`pluginEnv contains invalid env var name: ${name}`);
+        }
+        if (typeof value !== "string") {
+          throw new Error("pluginEnv values must be strings");
+        }
+      }
     }
   }
 }

@@ -8,7 +8,7 @@ import type {
 import { buildAttachmentReferenceBlock } from "@pideck/protocol";
 import { hostClient } from "./bridge/host-client";
 import { useAppStore } from "./stores/app-store";
-import { requestRetry } from "./retry-actions";
+import { requestGoOn, requestRetry } from "./retry-actions";
 import { buildAttachedFileBlock, type TranscriptRow } from "../features/chat/transcript-model";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
@@ -199,6 +199,67 @@ describe("requestRetry", () => {
     const request = vi.spyOn(hostClient, "request");
 
     await expect(requestRetry(userRow("please review"))).resolves.toBe(false);
+
+    expect(request).not.toHaveBeenCalled();
+    expect(notifications()).toEqual([
+      { message: "Wait for the agent to finish before retrying", level: "info" },
+    ]);
+  });
+});
+
+describe("requestGoOn", () => {
+  beforeEach(() => {
+    useAppStore.getState().setHost(null);
+    useAppStore.getState().setWorkspace(null);
+    useAppStore.getState().applySessionSnapshot(null);
+    useAppStore.getState().clearNotifications();
+    useAppStore.getState().setAuthBlocked(null);
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot(session());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sends a bare Continue prompt to the active session", async () => {
+    const request = vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("agent.prompt", { ok: true, result: { accepted: true, runId: "r2" } }) as never,
+    );
+
+    await expect(requestGoOn()).resolves.toBe(true);
+
+    expect(request).toHaveBeenCalledExactlyOnceWith(
+      "agent.prompt",
+      EXPECTED_CONTEXT,
+      { text: "Continue" },
+      null,
+    );
+    expect(useAppStore.getState().authBlocked).toBeNull();
+  });
+
+  it("surfaces AUTH_REQUIRED into the auth banner", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ...envelope("agent.prompt", { ok: false }),
+      error: {
+        code: "AUTH_REQUIRED",
+        message: "No credentials",
+        details: { providerId: "p2" },
+      },
+    } as never);
+
+    await expect(requestGoOn()).resolves.toBe(false);
+
+    expect(useAppStore.getState().authBlocked).toEqual({ providerId: "p2" });
+    expect(notifications()).toEqual([]);
+  });
+
+  it("refuses to continue while the agent is busy", async () => {
+    useAppStore.getState().applySessionSnapshot(session({ isIdle: false }));
+    const request = vi.spyOn(hostClient, "request");
+
+    await expect(requestGoOn()).resolves.toBe(false);
 
     expect(request).not.toHaveBeenCalled();
     expect(notifications()).toEqual([

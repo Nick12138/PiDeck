@@ -6,9 +6,11 @@ import {
   KeyRound,
   Package,
   Palette,
+  Puzzle,
   RefreshCw,
   ServerCog,
   Settings2,
+  Wand2,
 } from "lucide-react";
 import type {
   BusySendBehavior,
@@ -27,17 +29,16 @@ import {
 } from "../../lib/desktop-settings";
 import { HostSettings } from "./HostSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
+import { SkillsSettings } from "../skills/SkillsSettings";
 import { PackagesPage } from "../packages/PackagesPage";
+import { PluginLibraryPage } from "../plugin-library/PluginLibraryPage";
 import { UsageSettings } from "./UsageSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { PiSettings } from "./PiSettings";
 import { RestartHostButton } from "./restart-host";
 import { hostClient } from "../../lib/bridge/host-client";
-import {
-  SettingsTopBarActionsContext,
-  SETTINGS_SECTION_META,
-} from "./settings-top-bar";
+import { SettingsTopBarActionsContext, SETTINGS_SECTION_META } from "./settings-top-bar";
 
 type ShellProfileSummary = {
   id: TerminalProfileId;
@@ -390,6 +391,8 @@ const SETTINGS_NAV: Array<{
   { id: "general", label: "navGeneral", icon: Settings2 },
   { id: "appearance", label: "navAppearance", icon: Palette },
   { id: "providers", label: "navProviders", icon: KeyRound },
+  { id: "skills", label: "navSkills", icon: Wand2 },
+  { id: "plugins", label: "navPlugins", icon: Puzzle },
   { id: "packages", label: "navPackages", icon: Package },
   { id: "usage", label: "navUsage", icon: ChartColumn },
   { id: "host", label: "navHost", icon: ServerCog },
@@ -453,116 +456,114 @@ export function SettingsPage({
 
   return (
     <SettingsTopBarActionsContext.Provider value={innerTarget}>
-    <div
-      className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"
-      data-settings-shell
-    >
-      {!hasTopBar && (
-        <header
-          className="flex min-h-16 shrink-0 items-center gap-3 px-6 pb-2 pt-3"
-          data-settings-section-header
-          data-tauri-drag-region
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            {(() => {
-              const Icon = SETTINGS_SECTION_META[localSection].icon;
-              return <Icon size={16} className="shrink-0 text-muted" aria-hidden />;
-            })()}
-            <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold">
-                {t(SETTINGS_SECTION_META[localSection].title)}
-              </h1>
-              {SETTINGS_SECTION_META[localSection].subtitle && (
-                <p className="mt-0.5 truncate text-xs text-muted">
-                  {t(SETTINGS_SECTION_META[localSection].subtitle)}
-                </p>
-              )}
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" data-settings-shell>
+        {!hasTopBar && (
+          <header
+            className="flex min-h-16 shrink-0 items-center gap-3 px-6 pb-2 pt-3"
+            data-settings-section-header
+            data-tauri-drag-region
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              {(() => {
+                const Icon = SETTINGS_SECTION_META[localSection].icon;
+                return <Icon size={16} className="shrink-0 text-muted" aria-hidden />;
+              })()}
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-semibold">
+                  {t(SETTINGS_SECTION_META[localSection].title)}
+                </h1>
+                {SETTINGS_SECTION_META[localSection].subtitle && (
+                  <p className="mt-0.5 truncate text-xs text-muted">
+                    {t(SETTINGS_SECTION_META[localSection].subtitle)}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <div
-            className="ml-auto flex shrink-0 items-center gap-2"
-            data-settings-header-actions
-            ref={setInlineSlot}
-          />
-        </header>
-      )}
-      <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
-      <aside
-        className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface"
-        data-settings-sidebar
-      >
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-          {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              data-ui="nav-item"
-              data-state={localSection === id ? "active" : "inactive"}
-              className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors ${
-                localSection === id
-                  ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
-                  : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
-              }`}
-              aria-current={localSection === id ? "page" : undefined}
-              onClick={() => requestSection(id)}
-            >
-              <Icon size={16} />
-              <span className="truncate">{t(label)}</span>
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      <main
-        className="flex min-h-0 min-w-0 flex-1"
-        data-settings-content
-      >
-        {localSection === "general" ? (
-          <GeneralSettings />
-        ) : localSection === "appearance" ? (
-          <AppearanceSettings />
-        ) : localSection === "shortcuts" ? (
-          <ShortcutsSettings />
-        ) : localSection === "providers" ? (
-          <ProvidersSettings />
-        ) : localSection === "packages" ? (
-          <PackagesPage />
-        ) : localSection === "host" ? (
-          <HostSettings />
-        ) : (
-          <UsageSettings />
+            <div
+              className="ml-auto flex shrink-0 items-center gap-2"
+              data-settings-header-actions
+              ref={setInlineSlot}
+            />
+          </header>
         )}
-      </main>
-      {pendingSection && (
-        <Dialog
-          title={t("settingsDiscardTitle")}
-          confirmLabel={t("settingsDiscardConfirm")}
-          tone="warning"
-          onCancel={() => setPendingSection(null)}
-          onConfirm={() => {
-            setLocalSection(pendingSection);
-            setPendingSection(null);
-          }}
-        >
-          <p>{t("settingsDiscardNavBody")}</p>
-        </Dialog>
-      )}
-      {confirmClose && onClose && (
-        <Dialog
-          title={t("settingsDiscardTitle")}
-          confirmLabel={t("settingsDiscardConfirm")}
-          tone="warning"
-          onCancel={() => setConfirmClose(false)}
-          onConfirm={() => {
-            setConfirmClose(false);
-            onClose();
-          }}
-        >
-          <p>{t("settingsDiscardCloseBody")}</p>
-        </Dialog>
-      )}
+        <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)]">
+          <aside
+            className="flex w-[150px] shrink-0 flex-col border-r border-border bg-surface"
+            data-settings-sidebar
+          >
+            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+              {SETTINGS_NAV.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-ui="nav-item"
+                  data-state={localSection === id ? "active" : "inactive"}
+                  className={`theme-nav-item interface-density-nav-row mb-0.5 flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors ${
+                    localSection === id
+                      ? "theme-nav-active bg-nav-active font-medium text-nav-active-foreground"
+                      : "text-muted hover:bg-surface-overlay/70 hover:text-foreground"
+                  }`}
+                  aria-current={localSection === id ? "page" : undefined}
+                  onClick={() => requestSection(id)}
+                >
+                  <Icon size={16} />
+                  <span className="truncate">{t(label)}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+
+          <main className="flex min-h-0 min-w-0 flex-1" data-settings-content>
+            {localSection === "general" ? (
+              <GeneralSettings />
+            ) : localSection === "appearance" ? (
+              <AppearanceSettings />
+            ) : localSection === "shortcuts" ? (
+              <ShortcutsSettings />
+            ) : localSection === "providers" ? (
+              <ProvidersSettings />
+            ) : localSection === "skills" ? (
+              <SkillsSettings />
+            ) : localSection === "packages" ? (
+              <PackagesPage />
+            ) : localSection === "plugins" ? (
+              <PluginLibraryPage />
+            ) : localSection === "host" ? (
+              <HostSettings />
+            ) : (
+              <UsageSettings />
+            )}
+          </main>
+          {pendingSection && (
+            <Dialog
+              title={t("settingsDiscardTitle")}
+              confirmLabel={t("settingsDiscardConfirm")}
+              tone="warning"
+              onCancel={() => setPendingSection(null)}
+              onConfirm={() => {
+                setLocalSection(pendingSection);
+                setPendingSection(null);
+              }}
+            >
+              <p>{t("settingsDiscardNavBody")}</p>
+            </Dialog>
+          )}
+          {confirmClose && onClose && (
+            <Dialog
+              title={t("settingsDiscardTitle")}
+              confirmLabel={t("settingsDiscardConfirm")}
+              tone="warning"
+              onCancel={() => setConfirmClose(false)}
+              onConfirm={() => {
+                setConfirmClose(false);
+                onClose();
+              }}
+            >
+              <p>{t("settingsDiscardCloseBody")}</p>
+            </Dialog>
+          )}
+        </div>
       </div>
-    </div>
     </SettingsTopBarActionsContext.Provider>
   );
 }

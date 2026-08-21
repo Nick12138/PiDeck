@@ -7,8 +7,10 @@ import {
   KeyRound,
   Package,
   Palette,
+  Puzzle,
   ServerCog,
   Settings2,
+  Wand2,
   type LucideIcon,
 } from "lucide-react";
 import type { SettingsSection } from "../../lib/stores/app-store";
@@ -28,7 +30,9 @@ export const SETTINGS_SECTION_META: Record<
   general: { title: "generalSubtitle", icon: Settings2 },
   appearance: { title: "appearanceSubtitle", icon: Palette },
   providers: { title: "providersSubtitle", icon: KeyRound },
+  skills: { title: "skillsSubtitle", icon: Wand2 },
   packages: { title: "packagesSubtitle", icon: Package },
+  plugins: { title: "pluginsSubtitle", icon: Puzzle },
   usage: { title: "usageSubtitle", icon: ChartColumn },
   host: { title: "hostSubtitle", icon: ServerCog },
   shortcuts: { title: "shortcutsSubtitle", icon: Keyboard },

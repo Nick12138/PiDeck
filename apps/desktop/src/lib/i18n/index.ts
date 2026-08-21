@@ -1,8 +1,4 @@
-import {
-  en,
-  piWorkingVariants as enPiWorkingVariants,
-  type MessageKey,
-} from "./en";
+import { en, piWorkingVariants as enPiWorkingVariants, type MessageKey } from "./en";
 import { zh, piWorkingVariants as zhPiWorkingVariants } from "./zh";
 
 export type { MessageKey } from "./en";

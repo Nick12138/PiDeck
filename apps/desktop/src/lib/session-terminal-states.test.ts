@@ -99,34 +99,27 @@ describe("session-terminal-states persistence", () => {
     });
   });
 
-  it("keeps an acknowledged marker for the focused session across a generation change", () => {
-    // The user watched a run finish in focus (auto-acknowledged with a known
-    // Host generation), then another run finished while still in focus. The
-    // newer-generation Host snapshot must not re-open the dot, or switching
-    // away would leave a stale gray marker.
+  it("reopens newer generations without focus suppression", () => {
+    // Newer generations represent fresh runs; they become unacknowledged so the
+    // status dot appears and remains until the user sends a new command or switches away.
     const current: SessionTerminalStates = {
       w1: { s1: { state: "done", acknowledged: true, generation: 4 } },
     };
-    const next = mergeTerminalSnapshots(current, "w1", {
+    const nextDone = mergeTerminalSnapshots(current, "w1", {
       s1: { state: "done", generation: 5 },
-    }, "s1");
-    expect(next.w1?.s1).toEqual({
+    });
+    expect(nextDone.w1?.s1).toEqual({
       state: "done",
-      acknowledged: true,
+      acknowledged: false,
       generation: 5,
     });
-  });
 
-  it("acks a fresh focused error marker even with an older acknowledged done", () => {
-    const current: SessionTerminalStates = {
-      w1: { s1: { state: "done", acknowledged: true, generation: 4 } },
-    };
-    const next = mergeTerminalSnapshots(current, "w1", {
+    const nextError = mergeTerminalSnapshots(current, "w1", {
       s1: { state: "error", generation: 5 },
-    }, "s1");
-    expect(next.w1?.s1).toEqual({
+    });
+    expect(nextError.w1?.s1).toEqual({
       state: "error",
-      acknowledged: true,
+      acknowledged: false,
       generation: 5,
     });
   });

@@ -34,8 +34,7 @@ export type HostFailureEnvelope<M extends HostMethod = HostMethod> = HostIdentit
 };
 
 export type HostResponseEnvelope<M extends HostMethod = HostMethod> =
-  | HostSuccessEnvelope<M>
-  | HostFailureEnvelope<M>;
+  HostSuccessEnvelope<M> | HostFailureEnvelope<M>;
 
 type HostEventEnvelopeFor<E extends HostEventName> = HostIdentity & {
   protocolVersion: 1;
@@ -46,8 +45,9 @@ type HostEventEnvelopeFor<E extends HostEventName> = HostIdentity & {
 };
 
 /** Distributed union so `switch (event.event)` narrows payload when E defaults to HostEventName. */
-export type HostEventEnvelope<E extends HostEventName = HostEventName> =
-  E extends HostEventName ? HostEventEnvelopeFor<E> : never;
+export type HostEventEnvelope<E extends HostEventName = HostEventName> = E extends HostEventName
+  ? HostEventEnvelopeFor<E>
+  : never;
 
 export function createSuccessResponse<M extends HostMethod>(
   identity: HostIdentity,

@@ -55,9 +55,11 @@ function mapEfforts(values: string[]): ThinkingLevelMap | null {
   const mapped = new Map<ThinkingLevel, string>();
   for (const raw of values) {
     const normalized = raw.trim().toLowerCase();
-    const level = aliases[normalized] ?? (THINKING_LEVELS.includes(normalized as ThinkingLevel)
-      ? (normalized as ThinkingLevel)
-      : undefined);
+    const level =
+      aliases[normalized] ??
+      (THINKING_LEVELS.includes(normalized as ThinkingLevel)
+        ? (normalized as ThinkingLevel)
+        : undefined);
     if (level) mapped.set(level, raw);
   }
   if (mapped.size === 0) return null;

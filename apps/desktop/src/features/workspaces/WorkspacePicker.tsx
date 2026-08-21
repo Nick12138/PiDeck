@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -93,6 +94,50 @@ export function WorkspacePicker() {
     sidebarPref("pideck.sidebar.workspacesCollapsed"),
   );
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  const addMenuAnchorRef = useRef<HTMLButtonElement>(null);
+  const [addMenuPos, setAddMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Click outside (or Esc, scroll, or viewport resize) closes the add menu.
+  // The menu is rendered as a fixed overlay anchored to the 按钮 so it both
+  // escapes the sidebar's `overflow-hidden` clipping and stacks above the
+  // right dock (which paints later in DOM). Any layout change scrolled away.
+  useEffect(() => {
+    if (!addMenuOpen) {
+      setAddMenuPos(null);
+      return;
+    }
+    const anchor = addMenuAnchorRef.current;
+    if (anchor) {
+      const rect = anchor.getBoundingClientRect();
+      setAddMenuPos({ left: rect.left, top: rect.bottom + 4 });
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        (addMenuRef.current && addMenuRef.current.contains(target)) ||
+        (addMenuAnchorRef.current && addMenuAnchorRef.current.contains(target))
+      ) {
+        return;
+      }
+      setAddMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAddMenuOpen(false);
+    };
+    const onLayoutChange = () => setAddMenuOpen(false);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onLayoutChange);
+    const onScroll = () => setAddMenuOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onLayoutChange);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [addMenuOpen]);
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
   const [gateways, setGateways] = useState<BotGateway[]>(() => loadBotGateways());
   const [gatewaysCollapsed, setGatewaysCollapsed] = useState(() =>
@@ -168,7 +213,6 @@ export function WorkspacePicker() {
           current.mergeSessionTerminalSnapshots(
             currentWorkspace.id,
             active.terminalSessions,
-            current.session?.sessionId,
           );
         }
       }
@@ -306,6 +350,7 @@ export function WorkspacePicker() {
         <div className="relative">
           <button
             type="button"
+            ref={addMenuAnchorRef}
             onClick={() => setAddMenuOpen((v) => !v)}
             disabled={!host || pending}
             className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
@@ -316,11 +361,14 @@ export function WorkspacePicker() {
           >
             <Plus size={15} />
           </button>
-          {addMenuOpen && (
-            <div
-              className="absolute right-0 top-9 z-30 w-60 rounded-md border border-border bg-surface-raised p-1 shadow-xl"
-              role="menu"
-            >
+          {addMenuOpen && addMenuPos
+            ? createPortal(
+                <div
+                  ref={addMenuRef}
+                  className="theme-floating-surface fixed z-[110] w-60 rounded-md border border-border bg-surface-raised p-1 shadow-xl"
+                  role="menu"
+                  style={{ left: addMenuPos.left, top: addMenuPos.top }}
+                >
               <button
                 type="button"
                 role="menuitem"
@@ -374,12 +422,14 @@ export function WorkspacePicker() {
                     {t("botAddWeixinBotDesc")}
                   </span>
                 </span>
-                <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
-                  {t("botAddComingSoon")}
-                </span>
-              </button>
-            </div>
-          )}
+                  <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                    {t("botAddComingSoon")}
+                  </span>
+                </button>
+              </div>,
+              document.body,
+            )
+            : null}
         </div>
       </div>
       <CollapsibleRegion open={!collapsed} id="workspace-list-region">

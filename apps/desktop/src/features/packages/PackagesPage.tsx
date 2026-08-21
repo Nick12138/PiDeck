@@ -30,6 +30,10 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
+  localizeHostError,
+  localizePackageMessage,
+} from "../../lib/bridge/localize-host-error";
+import {
   captureRequestGeneration,
   hostContext,
   isExpectedPackageMutationCompletion,
@@ -621,13 +625,18 @@ export function PackagesPage() {
     if (result.status === "partialFailure" || result.reconcileRequired) {
       pushNotification(
         result.warnings
-          .map((warning) => warning.message)
+          .map((warning) => localizeHostError(warning, t))
           .filter(Boolean)
           .join("; ") || t("notifPackagesPartialFailure"),
         "warning",
       );
     } else if (result.status === "failed") {
-      pushNotification(result.warnings[0]?.message ?? t("notifPackagesOperationFailed"), "error");
+      pushNotification(
+        result.warnings[0]
+          ? localizeHostError(result.warnings[0], t)
+          : t("notifPackagesOperationFailed"),
+        "error",
+      );
     }
   }
 
@@ -675,7 +684,11 @@ export function PackagesPage() {
       )
         return;
       if (!response.ok)
-        throw new Error(response.error?.message ?? t("notifPackagesOperationFailed"));
+        throw new Error(
+          response.error
+            ? localizeHostError(response.error, t)
+            : t("notifPackagesOperationFailed"),
+        );
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -1099,7 +1112,9 @@ export function PackagesPage() {
           >
             <RefreshCw size={13} className={progressActive ? "animate-spin" : ""} />
             <span className="min-w-0 flex-1 truncate text-muted" title={packageProgress.source}>
-              {packageProgress.message ?? packageProgress.source}
+              {(packageProgress.type === "error"
+                ? (localizePackageMessage(packageProgress.message, t) ?? packageProgress.message)
+                : packageProgress.message) ?? packageProgress.source}
             </span>
             <span className={packageProgress.type === "error" ? "text-danger" : "text-muted"}>
               {progressIdle

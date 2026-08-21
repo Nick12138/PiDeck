@@ -46,6 +46,7 @@ import { createGitHandlers } from "./git-controller.js";
 import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
 import { createPiSettingsHandlers } from "./pi-settings-controller.js";
+import { createSkillHandlers } from "./skill-controller.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -257,6 +258,7 @@ async function main(): Promise<void> {
     ...createExtensionUiHandlers(graphFactory),
     ...createTelegramHandlers(agentDir),
     ...createPiSettingsHandlers(graphFactory, agentDir),
+    ...createSkillHandlers(graphFactory),
   };
 
   const server = new PiHostServer({

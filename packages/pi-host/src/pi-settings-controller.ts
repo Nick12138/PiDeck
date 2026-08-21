@@ -44,6 +44,7 @@ function modelSummaries(runtime: ModelRuntime): ModelSummary[] {
     providerName: runtime.getProvider(model.provider)?.name,
     modelId: model.id,
     name: model.name ?? model.id,
+    input: model.input ?? [],
   }));
 }
 

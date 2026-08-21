@@ -107,20 +107,11 @@ export function mergeTerminalState(
 /**
  * Merge authoritative terminal markers from a background Host. Generations
  * prevent an acknowledgement for an earlier run from hiding a later one.
- *
- * `focusedSessionId` is the session the user is currently looking at. A run
- * that finishes (or fails) while focused is shown live in the conversation
- * pane, so its marker is auto-acknowledged locally and the sidebar dot stays
- * hidden. Without focus awareness, the Host's newer-generation snapshot would
- * re-open that acknowledged marker on the next activity refresh, leaving a
- * stale gray dot the moment the user switches away — so the focused session's
- * acknowledgement is preserved across any generation change.
  */
 export function mergeTerminalSnapshots(
   current: SessionTerminalStates,
   workspaceId: string,
   snapshots: Readonly<Record<string, SessionTerminalSnapshot>>,
-  focusedSessionId?: string | null,
 ): SessionTerminalStates {
   let changed = false;
   const bySession = { ...current[workspaceId] };
@@ -129,20 +120,14 @@ export function mergeTerminalSnapshots(
     if (existing?.generation === snapshot.generation && existing.state === snapshot.state) {
       continue;
     }
-    // The user is watching this session, so whatever terminal event the Host
-    // just reported is already visible in the conversation pane. Keep the
-    // marker acknowledged regardless of generation, matching the local
-    // auto-acknowledge that fires on a focused busy→idle / error transition.
-    const focused = focusedSessionId != null && sessionId === focusedSessionId;
     // A fetch may have started just before the user acknowledged an active
     // terminal event. Preserve that acknowledgement when its local event has
     // not received the Host generation yet; later runs have a known, different
     // generation and correctly become unacknowledged again.
     const preserveAcknowledgement =
-      focused ||
-      (existing?.acknowledged === true &&
-        existing.generation === undefined &&
-        existing.state === snapshot.state);
+      existing?.acknowledged === true &&
+      existing.generation === undefined &&
+      existing.state === snapshot.state;
     bySession[sessionId] = {
       state: snapshot.state,
       acknowledged: preserveAcknowledgement,

@@ -1,5 +1,6 @@
 use crate::desktop_settings::DesktopSettingsStore;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -505,6 +506,10 @@ pub struct PiHostManager {
     host_instance_id: Option<String>,
     /// When true, unexpected exit may auto-restart once this epoch.
     auto_restart_armed: Arc<AtomicBool>,
+    /// Plugin library configuration (plugin id → env name → value), injected
+    /// into the Host process environment at spawn time. Snapshot taken from
+    /// desktop settings; applied on the next Host start.
+    plugin_env: BTreeMap<String, BTreeMap<String, String>>,
     /// Monotonic child generation used to retire delayed stdout/stderr monitors.
     child_generation: Arc<AtomicU32>,
     stdout_task: Option<JoinHandle<()>>,
@@ -833,6 +838,7 @@ impl PiHostPool {
             let mut manager = entry.manager.lock().await;
             manager.set_agent_dir(settings.resolved_agent_dir());
             manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
+            manager.set_plugin_env(settings.settings.plugin_env.clone());
         }
     }
 
@@ -1542,6 +1548,7 @@ impl PiHostManager {
             stdin: None,
             agent_dir: settings.resolved_agent_dir(),
             initial_workspace: initial_workspace.or_else(|| Self::initial_workspace_from(settings)),
+            plugin_env: settings.settings.plugin_env.clone(),
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
             shutting_down: Arc::new(AtomicBool::new(false)),
@@ -1583,6 +1590,10 @@ impl PiHostManager {
 
     pub fn set_agent_dir(&mut self, dir: PathBuf) {
         self.agent_dir = dir;
+    }
+
+    pub fn set_plugin_env(&mut self, plugin_env: BTreeMap<String, BTreeMap<String, String>>) {
+        self.plugin_env = plugin_env;
     }
 
     pub fn set_initial_workspace_path(&mut self, path: PathBuf) {
@@ -1815,6 +1826,21 @@ impl PiHostManager {
         }
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
         cmd.env("PIDECK_HOST_CACHE_DIR", &host_cache_dir);
+        // Reserved names belong to the launcher; plugin config must not shadow them.
+        const RESERVED_ENV: [&str; 5] = [
+            "PATH",
+            "NODE_PATH",
+            "NODE",
+            "PI_CODING_AGENT_DIR",
+            "PIDECK_HOST_CACHE_DIR",
+        ];
+        for vars in self.plugin_env.values() {
+            for (name, value) in vars {
+                if !RESERVED_ENV.contains(&name.as_str()) {
+                    cmd.env(name, value);
+                }
+            }
+        }
 
         let mut controlled_path = Vec::<PathBuf>::new();
         if let Some(node_dir) = node.parent() {

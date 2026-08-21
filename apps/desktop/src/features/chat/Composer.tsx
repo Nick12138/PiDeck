@@ -8,6 +8,7 @@ import {
   type ClipboardEvent,
 } from "react";
 import {
+  ArrowUp,
   CircleAlert,
   CircleCheck,
   ClipboardPaste,
@@ -17,7 +18,6 @@ import {
   Paperclip,
   Puzzle,
   RefreshCw,
-  Send,
   Square,
   Undo2,
   X,
@@ -1787,7 +1787,7 @@ export function Composer({
                     className="theme-send-control flex size-8 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85"
                     onClick={() => void send()}
                   >
-                    <Send size={15} className="block shrink-0" />
+                    <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
                   </button>
                 ) : (
                   <button
@@ -1811,7 +1811,7 @@ export function Composer({
                   disabled={!canSend}
                   onClick={() => void send()}
                 >
-                  <Send size={15} className="block shrink-0" />
+                  <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
                 </button>
               )}
             </div>

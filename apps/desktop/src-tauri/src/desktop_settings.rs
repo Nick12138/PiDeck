@@ -126,6 +126,10 @@ pub struct DesktopSettings {
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcut_overrides: BTreeMap<String, Option<String>>,
+    /// Plugin library configuration: plugin id → environment variable → value.
+    /// Injected into the Host process environment at spawn time.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_env: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl Default for DesktopSettings {
@@ -150,6 +154,7 @@ impl Default for DesktopSettings {
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
+            plugin_env: BTreeMap::new(),
         }
     }
 }
@@ -308,6 +313,26 @@ impl DesktopSettingsStore {
                 "codeFontSize must be between {MIN_CODE_FONT_SIZE} and {MAX_CODE_FONT_SIZE}"
             ));
         }
+        for (plugin_id, vars) in &settings.plugin_env {
+            if plugin_id.is_empty() || plugin_id.chars().count() > 64 {
+                return Err("pluginEnv plugin ids must be 1-64 characters".to_string());
+            }
+            for (name, value) in vars {
+                let valid_name = !name.is_empty()
+                    && name.len() <= 128
+                    && name
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                if !valid_name {
+                    return Err(format!("pluginEnv contains invalid env var name: {name}"));
+                }
+                if value.chars().count() > 8192 {
+                    return Err(format!("pluginEnv value for {name} exceeds 8192 characters"));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -434,6 +459,7 @@ impl DesktopSettingsStore {
                     | "codeFontSize"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
+                    | "pluginEnv"
             ) {
                 return Err(format!("unknown desktop settings field: {key}"));
             }

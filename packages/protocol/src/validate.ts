@@ -106,6 +106,16 @@ function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
 
+/** Reject plugin-library patterns that could escape the package root. */
+function paramsPatternUnsafe(pattern: string): boolean {
+  return (
+    pattern.includes("\\") ||
+    pattern.startsWith("/") ||
+    pattern.includes("..") ||
+    pattern.includes("\0")
+  );
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
@@ -661,6 +671,15 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["level"]) && isNonEmptyString(params.level)
         ? ok(params)
         : fail("invalid model.setThinkingLevel params", { method });
+    case "skill.list":
+      return params === null ? ok(null) : fail("params must be null", { method });
+    case "skill.addPath":
+    case "skill.removePath":
+      return exactObject(params, ["path", "scope"]) &&
+        isNonEmptyString(params.path) &&
+        ["user", "project"].includes(String(params.scope))
+        ? ok(params)
+        : fail(`invalid ${method} params`, { method });
     case "package.list":
       return exactObject(params, ["scope"], ["includeResources"]) &&
         ["user", "project", "all"].includes(String(params.scope)) &&
@@ -724,6 +743,32 @@ export function validateRequestParams<M extends HostMethod>(
         params.updates.every(isResourcePreferenceUpdate)
         ? ok(params)
         : fail("invalid resource.setPreferences params", { method });
+    case "pluginLibrary.catalog":
+      return params === null ||
+        (exactObject(params, [], ["refresh"]) &&
+          (params.refresh === undefined || isBoolean(params.refresh)))
+        ? ok(params)
+        : fail("invalid pluginLibrary.catalog params", { method });
+    case "pluginLibrary.apply":
+      return exactObject(params, ["source", "pattern", "enabled"]) &&
+        isNonEmptyString(params.source) &&
+        typeof params.pattern === "string" &&
+        params.pattern.length > 0 &&
+        params.pattern.length <= 512 &&
+        !paramsPatternUnsafe(params.pattern) &&
+        isBoolean(params.enabled)
+        ? ok(params)
+        : fail("invalid pluginLibrary.apply params", { method });
+    case "pluginLibrary.setEnv":
+      return exactObject(params, ["vars"]) &&
+        isPlainObject(params.vars) &&
+        Object.entries(params.vars).every(
+          ([name, value]) =>
+            /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) &&
+            (value === null || (typeof value === "string" && value.length <= 8192)),
+        )
+        ? ok(params)
+        : fail("invalid pluginLibrary.setEnv params", { method });
     case "extensionUi.configure":
       return exactObject(params, ["extensionDecisionPresentation"]) &&
         ["legacy-modal", "auto", "inline-first"].includes(

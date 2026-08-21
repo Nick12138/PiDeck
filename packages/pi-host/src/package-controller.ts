@@ -17,6 +17,7 @@ import {
 import { buildSessionSnapshot } from "./session-snapshot.js";
 import { captureFilesystemFingerprint } from "./filesystem-fingerprint.js";
 import { getPackageCatalog } from "./package-catalog.js";
+import { getPluginLibraryCatalog } from "./plugin-library-catalog.js";
 import {
   matchesResourcePattern,
   setPackageResourceFilter,
@@ -289,6 +290,33 @@ export function createPackageHandlers(
     "resource.setPreference": async (ctx) => mutatePackage(factory, ctx, "setPreferences"),
     "resource.setPreferences": async (ctx) => mutatePackage(factory, ctx, "setPreferences"),
 
+    "pluginLibrary.catalog": async (ctx) => {
+      // Host-scoped registry read: no workspace graph or lock involved.
+      const params = (ctx.params ?? {}) as { refresh?: boolean };
+      const out = await getPluginLibraryCatalog({ refresh: params.refresh === true });
+      if ("error" in out) return { error: out.error };
+      return { result: out.catalog };
+    },
+    "pluginLibrary.apply": async (ctx) => mutatePackage(factory, ctx, "pluginLibraryApply"),
+
+    "pluginLibrary.setEnv": async (ctx) => {
+      // Host-scoped: extensions run in this process, so applying env vars here
+      // takes effect immediately — the desktop-side copy only matters for the
+      // next Host spawn.
+      const params = ctx.params as { vars: Record<string, string | null> };
+      let applied = 0;
+      for (const [name, value] of Object.entries(params.vars)) {
+        if (value === null) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+        applied += 1;
+      }
+      logger.info("Applied plugin environment variables", { count: applied });
+      return { result: { applied } };
+    },
+
     "package.getResources": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, {
         requireWorkspace: true,
@@ -311,10 +339,22 @@ export function createPackageHandlers(
 }
 
 export type MutateKind =
-  "install" | "remove" | "update" | "updateAll" | "setPreferences" | "reload";
+  | "install"
+  | "remove"
+  | "update"
+  | "updateAll"
+  | "setPreferences"
+  | "pluginLibraryApply"
+  | "reload";
 
 export function packageMutationMayChangeDisk(kind: MutateKind): boolean {
-  return kind === "install" || kind === "remove" || kind === "update" || kind === "updateAll";
+  return (
+    kind === "install" ||
+    kind === "remove" ||
+    kind === "update" ||
+    kind === "updateAll" ||
+    kind === "pluginLibraryApply"
+  );
 }
 
 function operationKindForPackageMutation(
@@ -1043,6 +1083,34 @@ async function runMutation(
               params as ResourcePreferenceUpdate,
             ]);
         applyResourcePreferences(g, updates);
+        break;
+      }
+      case "pluginLibraryApply": {
+        const p = params as { source: string; pattern: string; enabled: boolean };
+        const sm = g.settingsManager!;
+        const current = [...(sm.getPackages() as PackageSource[])];
+        const hasEntry = current.some(
+          (source) => (typeof source === "string" ? source : source.source) === p.source,
+        );
+        if (!hasEntry) {
+          if (!p.enabled) {
+            throw new Error(`Package is not installed: ${p.source}`);
+          }
+          emitProgress("start", "install", p.source);
+          // Fetch the package's files without persisting a plain string entry —
+          // the plugin library registers a filter-scoped object entry instead,
+          // so sibling plugins in the same repository stay unloaded.
+          if (!pm.getInstalledPath(p.source, "user")) {
+            await pm.install(p.source, {});
+          }
+          sm.setPackages([...current, { source: p.source, extensions: [p.pattern] }] as never);
+          emitProgress("complete", "install", p.source);
+          break;
+        }
+        emitProgress("start", "filter", p.source);
+        const next = setPackageResourceFilter(current, p.source, "extension", p.pattern, p.enabled);
+        sm.setPackages(next as never);
+        emitProgress("complete", "filter", p.source);
         break;
       }
       case "reload": {

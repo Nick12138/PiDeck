@@ -867,10 +867,10 @@ export function SessionList({
                         : sessionTerminalStates[workspace?.id ?? ""]?.[item.sessionId];
                       const statusDot = item.archived
                         ? null
-                        : sessionStatusDotClass(item.runtimeState, terminalState, active);
+                        : sessionStatusDotClass(item.runtimeState, terminalState);
                       const statusLabelKey = item.archived
                         ? null
-                        : sessionStatusLabelKey(item.runtimeState, terminalState, active);
+                        : sessionStatusLabelKey(item.runtimeState, terminalState);
                       const statusLabel = statusLabelKey ? t(statusLabelKey) : null;
                       const decisionWaiting = item.archived
                         ? undefined

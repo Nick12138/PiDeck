@@ -173,7 +173,15 @@ function resetExtensionTerminal(state: {
 }
 
 export type SettingsSection =
-  "general" | "appearance" | "shortcuts" | "providers" | "packages" | "usage" | "host";
+  | "general"
+  | "appearance"
+  | "shortcuts"
+  | "providers"
+  | "skills"
+  | "packages"
+  | "plugins"
+  | "usage"
+  | "host";
 
 export type AppState = EpochState & {
   page: NavPage;
@@ -297,7 +305,6 @@ export type AppState = EpochState & {
   mergeSessionTerminalSnapshots: (
     workspaceId: string,
     snapshots: Readonly<Record<string, SessionTerminalSnapshot>>,
-    focusedSessionId?: string | null,
   ) => void;
   /** Drop terminal markers for removed sessions (permanent delete / cleanup). */
   removeSessionTerminalStates: (workspaceId: string, sessionIds: readonly string[]) => void;
@@ -617,6 +624,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       session && current.workspace
         ? upsertCatalogSnapshot(baseCatalog, current.workspace.id, session)
         : baseCatalog;
+    let sessionTerminalStates = current.sessionTerminalStates;
+    if (
+      previousSession &&
+      previousSession.sessionId !== session?.sessionId &&
+      current.workspace
+    ) {
+      const prevTerminal = sessionTerminalStates[current.workspace.id]?.[previousSession.sessionId];
+      if (prevTerminal && !prevTerminal.acknowledged) {
+        sessionTerminalStates = mergeTerminalState(
+          sessionTerminalStates,
+          current.workspace.id,
+          previousSession.sessionId,
+          {
+            state: prevTerminal.state,
+            acknowledged: true,
+            ...(prevTerminal.generation !== undefined ? { generation: prevTerminal.generation } : {}),
+          },
+        );
+      }
+    }
     const generationChanged = Boolean(
       previousSession &&
       (!session ||
@@ -634,6 +661,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       ...next,
       sessionCatalog,
+      ...(sessionTerminalStates !== current.sessionTerminalStates ? { sessionTerminalStates } : {}),
       ...extensionUi,
       ...(sessionChanged ? { sessionTreeNavigated: false } : {}),
       ...(generationChanged
@@ -1023,36 +1051,21 @@ export const useAppStore = create<AppState>((set, get) => ({
           );
         }
       } else if (runtimeState === "error") {
-        // A failure in the focused session is already visible in the
-        // conversation pane and the sidebar would be redundant; auto-acknowledge
-        // it so no red dot shows while watching and none lingers after leaving.
-        // A failure in some other session stays red until the user returns.
-        const focusedFailure = state.session?.sessionId === sessionId;
+        // Failures record an unacknowledged error marker for both active and
+        // background sessions; sending a new command or leaving the session clears it.
         sessionTerminalStates = mergeTerminalState(sessionTerminalStates, workspaceId, sessionId, {
           state: "error",
-          acknowledged: focusedFailure,
+          acknowledged: false,
         });
       } else if (runtimeState === "idle") {
         const wasBusy =
           previousRuntime === "running" ||
           previousRuntime === "queued" ||
           previousRuntime === "starting";
-        const focused = state.session?.sessionId === sessionId;
         // The idle event after an error is the run settling; keep an
-        // unacknowledged error marker so a failed session stays red (a focused
-        // failure was already acknowledged above, so this guard still holds for
-        // unfocused ones).
+        // unacknowledged error marker so a failed session stays red.
         if (current && current.state === "error" && !current.acknowledged) {
           // keep the error marker
-        } else if (wasBusy && focused) {
-          // The user watched this run finish; auto-acknowledge the done marker
-          // so switching away never leaves a stale gray dot in the sidebar.
-          sessionTerminalStates = mergeTerminalState(
-            sessionTerminalStates,
-            workspaceId,
-            sessionId,
-            { state: "done", acknowledged: true },
-          );
         } else if (wasBusy) {
           sessionTerminalStates = mergeTerminalState(
             sessionTerminalStates,
@@ -1085,13 +1098,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       };
     }),
-  mergeSessionTerminalSnapshots: (workspaceId, snapshots, focusedSessionId) =>
+  mergeSessionTerminalSnapshots: (workspaceId, snapshots) =>
     set((state) => {
       const sessionTerminalStates = mergeTerminalSnapshots(
         state.sessionTerminalStates,
         workspaceId,
         snapshots,
-        focusedSessionId ?? state.session?.sessionId,
       );
       return sessionTerminalStates === state.sessionTerminalStates ? {} : { sessionTerminalStates };
     }),

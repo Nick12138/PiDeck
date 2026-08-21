@@ -60,6 +60,10 @@ function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
 }
@@ -236,12 +240,15 @@ export function isWorkspaceSnapshot(value: unknown): boolean {
 function isModelSummary(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["provider", "modelId", "name"], ["thinkingLevels", "providerName"]) &&
+    hasExactKeys(value, ["provider", "modelId", "name"], ["thinkingLevels", "providerName", "input"]) &&
     isString(value.provider) &&
     isString(value.modelId) &&
     isString(value.name) &&
     (value.providerName === undefined || isString(value.providerName)) &&
-    (value.thinkingLevels === undefined || isStringArray(value.thinkingLevels))
+    (value.thinkingLevels === undefined || isStringArray(value.thinkingLevels)) &&
+    (value.input === undefined ||
+      (Array.isArray(value.input) &&
+        value.input.every((modality) => modality === "text" || modality === "image")))
   );
 }
 
@@ -935,6 +942,101 @@ function isPackageCatalog(value: unknown): boolean {
   );
 }
 
+function isPluginLibraryInstallSource(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  if (value.type === "repo") {
+    return hasExactKeys(value, ["type", "path"]) && isNonEmptyString(value.path);
+  }
+  if (value.type === "npm" || value.type === "git") {
+    return hasExactKeys(value, ["type", "source"]) && isNonEmptyString(value.source);
+  }
+  return false;
+}
+
+function isPluginLibraryConfigOption(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["value", "label"]) &&
+    isString(value.value) &&
+    isString(value.label)
+  );
+}
+
+function isPluginLibraryConfigItem(value: unknown): boolean {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(
+      value,
+      ["key", "type", "label", "env"],
+      ["secret", "required", "placeholder", "default", "options", "optionsSource", "description"],
+    )
+  ) {
+    return false;
+  }
+  if (value.type !== "text" && value.type !== "select") return false;
+  if (!isNonEmptyString(value.key) || !isString(value.label) || !isNonEmptyString(value.env)) {
+    return false;
+  }
+  if (value.secret !== undefined && !isBoolean(value.secret)) return false;
+  if (value.required !== undefined && !isBoolean(value.required)) return false;
+  if (value.placeholder !== undefined && !isString(value.placeholder)) return false;
+  if (value.default !== undefined && !isString(value.default)) return false;
+  if (value.description !== undefined && !isString(value.description)) return false;
+  if (value.optionsSource !== undefined && !isNonEmptyString(value.optionsSource)) return false;
+  if (value.type === "select") {
+    const options = value.options;
+    // A select with an optionsSource may omit static options entirely (or
+    // leave them empty): the client builds them dynamically at runtime.
+    if (options === undefined) return isString(value.optionsSource);
+    if (!Array.isArray(options) || !options.every(isPluginLibraryConfigOption)) return false;
+    if (options.length === 0) return isString(value.optionsSource);
+  }
+  return true;
+}
+
+function isPluginLibraryEntry(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["id", "name", "description", "icon", "version", "install"],
+      ["author", "tags", "config"],
+    ) &&
+    isNonEmptyString(value.id) &&
+    isString(value.name) &&
+    isString(value.description) &&
+    isString(value.icon) &&
+    isString(value.version) &&
+    (value.author === undefined || isString(value.author)) &&
+    (value.tags === undefined || (Array.isArray(value.tags) && value.tags.every(isString))) &&
+    (value.config === undefined ||
+      (Array.isArray(value.config) && value.config.every(isPluginLibraryConfigItem))) &&
+    isPluginLibraryInstallSource(value.install)
+  );
+}
+
+function isPluginLibraryCatalog(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "specVersion",
+      "registryUrl",
+      "repoSource",
+      "fetchedAt",
+      "plugins",
+      "warnings",
+    ]) &&
+    isNonNegativeNumber(value.specVersion) &&
+    isNonEmptyString(value.registryUrl) &&
+    isNonEmptyString(value.repoSource) &&
+    isNonNegativeNumber(value.fetchedAt) &&
+    Array.isArray(value.plugins) &&
+    value.plugins.every(isPluginLibraryEntry) &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every(isString)
+  );
+}
+
 function isSessionSearchMatch(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -1158,6 +1260,82 @@ export function isPackageSnapshot(value: unknown): boolean {
         isUuid(mutation.operationId) &&
         ["running", "partialFailure"].includes(String(mutation.status)) &&
         isBoolean(mutation.reconcileRequired)))
+  );
+}
+
+function isSkillInfo(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [
+        "name",
+        "description",
+        "filePath",
+        "baseDir",
+        "source",
+        "scope",
+        "origin",
+        "disableModelInvocation",
+      ],
+      ["packagePath"],
+    ) &&
+    isString(value.name) &&
+    isString(value.description) &&
+    isString(value.filePath) &&
+    isString(value.baseDir) &&
+    isString(value.source) &&
+    ["user", "project", "temporary"].includes(String(value.scope)) &&
+    ["package", "top-level"].includes(String(value.origin)) &&
+    (value.packagePath === undefined || isString(value.packagePath)) &&
+    isBoolean(value.disableModelInvocation)
+  );
+}
+
+function isSkillDiagnostic(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["severity", "message"], ["path"]) &&
+    ["warning", "error", "collision"].includes(String(value.severity)) &&
+    isString(value.message) &&
+    isOptionalString(value.path)
+  );
+}
+
+function isSkillConfiguredPath(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["path", "scope", "exists"]) &&
+    isString(value.path) &&
+    ["user", "project"].includes(String(value.scope)) &&
+    isBoolean(value.exists)
+  );
+}
+
+function isSkillSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "revision",
+      "workspaceId",
+      "cwd",
+      "projectTrusted",
+      "skills",
+      "diagnostics",
+      "configuredPaths",
+      "resourceReloadRequired",
+    ]) &&
+    isSafeRevision(value.revision) &&
+    isUuid(value.workspaceId) &&
+    isString(value.cwd) &&
+    isBoolean(value.projectTrusted) &&
+    Array.isArray(value.skills) &&
+    value.skills.every(isSkillInfo) &&
+    Array.isArray(value.diagnostics) &&
+    value.diagnostics.every(isSkillDiagnostic) &&
+    Array.isArray(value.configuredPaths) &&
+    value.configuredPaths.every(isSkillConfiguredPath) &&
+    isBoolean(value.resourceReloadRequired)
   );
 }
 
@@ -2068,12 +2246,18 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         : "invalid provider.checkConnection result";
     case "telegram.validateToken":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["ok"], ["botId", "username", "firstName", "workspacePath", "description"]) &&
+        hasExactKeys(
+          result,
+          ["ok"],
+          ["botId", "username", "firstName", "workspacePath", "description"],
+        ) &&
         isBoolean(result.ok) &&
         (result.botId === undefined || isSafeRevision(result.botId)) &&
-        (result.username === undefined || (isString(result.username) && result.username.length > 0)) &&
+        (result.username === undefined ||
+          (isString(result.username) && result.username.length > 0)) &&
         (result.firstName === undefined || isString(result.firstName)) &&
-        (result.workspacePath === undefined || (isString(result.workspacePath) && result.workspacePath.length > 0)) &&
+        (result.workspacePath === undefined ||
+          (isString(result.workspacePath) && result.workspacePath.length > 0)) &&
         (result.description === undefined || isString(result.description))
         ? null
         : "invalid telegram.validateToken result";
@@ -2101,6 +2285,10 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         isSessionSnapshot(result.session)
         ? null
         : "invalid model.setCurrent result";
+    case "skill.list":
+    case "skill.addPath":
+    case "skill.removePath":
+      return isSkillSnapshot(result) ? null : "invalid SkillSnapshot";
     case "package.list":
       return isPackageSnapshot(result) ? null : "invalid PackageSnapshot";
     case "package.catalog":
@@ -2110,9 +2298,18 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "package.update":
     case "package.updateAll":
     case "package.reloadResources":
+    case "pluginLibrary.apply":
     case "resource.setPreference":
     case "resource.setPreferences":
       return isPackageMutationResult(result) ? null : "invalid PackageMutationResult";
+    case "pluginLibrary.catalog":
+      return isPluginLibraryCatalog(result) ? null : "invalid plugin library catalog";
+    case "pluginLibrary.setEnv":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["applied"]) &&
+        isSafeRevision(result.applied)
+        ? null
+        : "invalid pluginLibrary.setEnv result";
     case "package.checkUpdates":
       return isPlainObject(result) &&
         hasExactKeys(result, ["supported", "updates"]) &&

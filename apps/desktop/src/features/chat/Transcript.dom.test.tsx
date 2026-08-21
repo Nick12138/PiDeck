@@ -670,5 +670,44 @@ describe("Transcript Session-open scrolling", () => {
       render(<Transcript />);
       expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     });
+
+    it("shows a Go On button on the latest failed answer and sends 'Continue'", async () => {
+      useAppStore.getState().setHost(host());
+      useAppStore.getState().setWorkspace(workspace());
+      useAppStore.getState().applySessionSnapshot(
+        sessionWithMessages([
+          { role: "user", content: "First message" },
+          { role: "assistant", content: [], stopReason: "error", errorMessage: "First failure" },
+          { role: "user", content: "Second message" },
+          { role: "assistant", content: [], stopReason: "error", errorMessage: "Second failure" },
+        ]),
+      );
+      const request = vi.spyOn(hostClient, "request").mockResolvedValue({
+        ok: true,
+        result: { accepted: true, runId: "run-2" },
+      } as never);
+
+      render(<Transcript />);
+      const user = userEvent.setup();
+
+      // Only 1 Go On button rendered even though there are 2 failed turns
+      const goOnButtons = screen.getAllByRole("button", { name: "Go On" });
+      expect(goOnButtons).toHaveLength(1);
+
+      await user.click(goOnButtons[0]);
+
+      await waitFor(() =>
+        expect(request).toHaveBeenCalledWith(
+          "agent.prompt",
+          expect.objectContaining({
+            expectedHostInstanceId: HOST_ID,
+            expectedSessionId: SESSION_A,
+          }),
+          { text: "Continue" },
+          null,
+        ),
+      );
+      request.mockRestore();
+    });
   });
 });

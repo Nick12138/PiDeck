@@ -84,6 +84,9 @@ export const HOST_METHODS = [
   "model.list",
   "model.setCurrent",
   "model.setThinkingLevel",
+  "skill.list",
+  "skill.addPath",
+  "skill.removePath",
   "package.list",
   "package.catalog",
   "package.install",
@@ -95,6 +98,9 @@ export const HOST_METHODS = [
   "package.reloadResources",
   "resource.setPreference",
   "resource.setPreferences",
+  "pluginLibrary.catalog",
+  "pluginLibrary.apply",
+  "pluginLibrary.setEnv",
   "extensionUi.configure",
   "extensionUi.respond",
   "extensionUi.customInput",
@@ -165,6 +171,8 @@ export type HostOnlyMethod =
   | "provider.setBuiltinModels"
   | "session.searchAll"
   | "package.catalog"
+  | "pluginLibrary.catalog"
+  | "pluginLibrary.setEnv"
   | "extensionUi.configure"
   | "telegram.validateToken";
 export type WorkspaceOnlyMethod =
@@ -199,6 +207,9 @@ export type WorkspaceOnlyMethod =
   | "session.getSnapshot"
   | "session.rename"
   | "session.usageReport"
+  | "skill.list"
+  | "skill.addPath"
+  | "skill.removePath"
   | "package.list"
   | "package.checkUpdates";
 export type NullableSessionMethod = "session.create" | "session.open";
@@ -243,7 +254,8 @@ export type SessionPackageMethod =
   | "package.updateAll"
   | "package.reloadResources"
   | "resource.setPreference"
-  | "resource.setPreferences";
+  | "resource.setPreferences"
+  | "pluginLibrary.apply";
 
 export type HostRequestContext<M extends HostMethod> = M extends "system.hello"
   ? EmptyContext
@@ -362,6 +374,9 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "model.list": "activeSession",
   "model.setCurrent": "activeSession",
   "model.setThinkingLevel": "activeSession",
+  "skill.list": "workspace",
+  "skill.addPath": "workspace",
+  "skill.removePath": "workspace",
   "package.list": "workspace",
   "package.catalog": "host",
   "package.install": "sessionPackage",
@@ -373,6 +388,9 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "package.reloadResources": "sessionPackage",
   "resource.setPreference": "sessionPackage",
   "resource.setPreferences": "sessionPackage",
+  "pluginLibrary.catalog": "host",
+  "pluginLibrary.apply": "sessionPackage",
+  "pluginLibrary.setEnv": "host",
   "extensionUi.configure": "host",
   "telegram.validateToken": "host",
   "extensionUi.respond": "sessionTarget",

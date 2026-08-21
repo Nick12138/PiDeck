@@ -15,6 +15,43 @@ export function hostErrorLevel(error: HostErrorLike | null | undefined): "info" 
   return error && TRANSIENT_HOST_ERROR_CODES.has(error.code ?? "") ? "info" : "error";
 }
 
+/** Package mutation failures carry raw npm/git stderr in `message`. Detect the
+ *  common user-actionable causes and map them to friendly localized text. */
+const PACKAGE_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "PACKAGE_INSTALL_FAILED",
+  "PACKAGE_REMOVE_FAILED",
+  "PACKAGE_UPDATE_FAILED",
+  "PACKAGE_PARTIAL_FAILURE",
+  "PACKAGE_RESOLVE_FAILED",
+]);
+
+/** Map raw package-manager output (npm/git stderr) to a friendly localized
+ *  message, or return undefined when no known cause is detected. Also used for
+ *  bare progress-event messages that have no error code. */
+export function localizePackageMessage(
+  message: string | null | undefined,
+  t: Translate,
+): string | undefined {
+  if (!message) return undefined;
+  if (/\bEBUSY\b|resource busy|being used by another process|file is in use|locked/iu.test(message)) {
+    return t("hostErrPackageFileBusy");
+  }
+  if (/\bEPERM\b|\bEACCES\b|operation not permitted|permission denied|access is denied/iu.test(message)) {
+    return t("hostErrPackagePermission");
+  }
+  if (/\bE404\b|404 Not Found|No matching version|not in this registry/iu.test(message)) {
+    return t("hostErrPackageNotInRegistry");
+  }
+  if (
+    /\bENOTFOUND\b|\bEAI_AGAIN\b|\bETIMEDOUT\b|\bECONNRESET\b|\bECONNREFUSED\b|network|fetch failed|socket hang up/iu.test(
+      message,
+    )
+  ) {
+    return t("hostErrPackageNetwork");
+  }
+  return undefined;
+}
+
 const CODE_TO_KEY: Record<
   string,
   | "hostErrAgentBusy"
@@ -76,6 +113,9 @@ export function localizeHostError(error: HostErrorLike | null | undefined, t: Tr
   if (code === "AGENT_NOT_READY" && error.message) {
     if (/no active session/iu.test(error.message)) return t("hostErrNoActiveSession");
     if (/workspace services/iu.test(error.message)) return t("hostErrWorkspaceServicesNotReady");
+  }
+  if (PACKAGE_FAILURE_CODES.has(code)) {
+    return localizePackageMessage(error.message, t) ?? t("hostErrPackageFailed");
   }
   const key = CODE_TO_KEY[code];
   if (key) return t(key);

@@ -102,7 +102,17 @@ describe("SettingsPage navigation guard", () => {
       within(navigation)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["General", "Appearance", "Providers", "Packages", "Usage", "Host", "Shortcuts"]);
+    ).toEqual([
+      "General",
+      "Appearance",
+      "Providers",
+      "Skills",
+      "Plugin Library",
+      "Packages",
+      "Usage",
+      "Host",
+      "Shortcuts",
+    ]);
   });
 
   it("persists the steer behavior for messages sent while the agent is running", async () => {
@@ -136,7 +146,9 @@ describe("SettingsPage navigation guard", () => {
     await user.click(screen.getByRole("button", { name: "Appearance" }));
 
     expect(
-      screen.getByRole("heading", { name: "Theme, density, language, and conversation typography" }),
+      screen.getByRole("heading", {
+        name: "Theme, density, language, and conversation typography",
+      }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
       "aria-current",
@@ -320,7 +332,9 @@ describe("SettingsPage navigation guard", () => {
     render(<SettingsPage initialSection="appearance" />);
 
     expect(
-      screen.getByRole("heading", { name: "Theme, density, language, and conversation typography" }),
+      screen.getByRole("heading", {
+        name: "Theme, density, language, and conversation typography",
+      }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByLabelText(/Language/));

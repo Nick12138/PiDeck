@@ -51,7 +51,7 @@ describe("detectModelThinking", () => {
     ["kimi-k2.7-code", ["high"]],
     ["kimi-k2.6", ["off", "high"]],
     ["mistral-medium-3-5", ["off", "high"]],
-  ] satisfies Array<[string, ThinkingLevel[]]>) (
+  ] satisfies Array<[string, ThinkingLevel[]]>)(
     "uses the exact built-in profile for %s",
     (modelId, expected) => {
       const result = detectModelThinking(modelId);
