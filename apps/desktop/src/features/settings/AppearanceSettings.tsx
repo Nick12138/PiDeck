@@ -149,7 +149,6 @@ export function AppearanceSettings() {
     { value: "pideck", label: t("appearanceThemePideck") },
     { value: "vercel", label: t("appearanceThemeVercel") },
     { value: "apple", label: t("appearanceThemeApple") },
-    { value: "acrylic", label: t("appearanceThemeAcrylic") },
     { value: "transparent", label: t("appearanceThemeTransparent") },
   ];
 

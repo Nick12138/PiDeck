@@ -775,8 +775,27 @@ function clonePackageSources(sources: PackageSource[]): PackageSource[] {
   });
 }
 
+function packageSourceValue(source: PackageSource): string {
+  return typeof source === "string" ? source : source.source;
+}
+
 function packageSourceIdentity(source: PackageSource): string {
-  return normalizePackageIdentity(typeof source === "string" ? source : source.source).identity;
+  return normalizePackageIdentity(packageSourceValue(source)).identity;
+}
+
+/** Find a configured package by the SDK identity rather than its raw spec.
+ * Git sources may carry a ref or use a URL form in settings while callers use
+ * the canonical registry source. */
+export function findConfiguredPackageSource(
+  sources: PackageSource[],
+  requestedSource: string,
+): PackageSource | undefined {
+  const requestedIdentity = normalizePackageIdentity(requestedSource).identity;
+  return sources.find(
+    (source) =>
+      packageSourceValue(source) === requestedSource ||
+      packageSourceIdentity(source) === requestedIdentity,
+  );
 }
 
 function stripExactPreference(patterns: string[], relativePath: string): string[] {
@@ -1089,10 +1108,8 @@ async function runMutation(
         const p = params as { source: string; pattern: string; enabled: boolean };
         const sm = g.settingsManager!;
         const current = [...(sm.getPackages() as PackageSource[])];
-        const hasEntry = current.some(
-          (source) => (typeof source === "string" ? source : source.source) === p.source,
-        );
-        if (!hasEntry) {
+        const configuredSource = findConfiguredPackageSource(current, p.source);
+        if (!configuredSource) {
           if (!p.enabled) {
             throw new Error(`Package is not installed: ${p.source}`);
           }
@@ -1108,7 +1125,13 @@ async function runMutation(
           break;
         }
         emitProgress("start", "filter", p.source);
-        const next = setPackageResourceFilter(current, p.source, "extension", p.pattern, p.enabled);
+        const next = setPackageResourceFilter(
+          current,
+          packageSourceValue(configuredSource),
+          "extension",
+          p.pattern,
+          p.enabled,
+        );
         sm.setPackages(next as never);
         emitProgress("complete", "filter", p.source);
         break;

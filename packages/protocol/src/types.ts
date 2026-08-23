@@ -32,12 +32,28 @@ export type SubagentStatusNode = {
   id: string;
   kind: "subagent" | "workflow" | "step";
   label: string;
+  /** Human-readable task/session name when one is available. */
+  name?: string;
+  /** Configured agent role when the status source exposes it. */
+  role?: string;
   state: SubagentStatusState;
   startedAt?: number;
   updatedAt?: number;
   endedAt?: number;
   activity?: SubagentStatusActivity;
   children?: SubagentStatusNode[];
+};
+
+/** Read-only projection of a child Pi session. Entries use the same shape as
+ * the primary SessionSnapshot so the desktop can reuse its transcript model. */
+export type SubagentSessionSnapshot = {
+  nodeId: string;
+  sessionId: string;
+  name?: string;
+  state: SubagentStatusState;
+  entries: SerializableSessionEntry[];
+  truncated: boolean;
+  updatedAt: number;
 };
 
 export type SubagentFleetEntry = {
@@ -1146,13 +1162,7 @@ export type SerializableAgentSessionEvent = {
 export const DESKTOP_THEMES = ["light", "dark", "system"] as const;
 export type DesktopTheme = (typeof DESKTOP_THEMES)[number];
 
-export const DESKTOP_THEME_FAMILIES = [
-  "pideck",
-  "vercel",
-  "apple",
-  "acrylic",
-  "transparent",
-] as const;
+export const DESKTOP_THEME_FAMILIES = ["pideck", "vercel", "apple", "transparent"] as const;
 export type DesktopThemeFamily = (typeof DESKTOP_THEME_FAMILIES)[number];
 
 export const DESKTOP_LANGUAGES = ["system", "en", "zh"] as const;

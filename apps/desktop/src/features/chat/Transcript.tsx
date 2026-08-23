@@ -16,7 +16,9 @@ import {
   ArrowDown,
   Ban,
   Braces,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleAlert,
   CircleCheck,
   Copy,
@@ -772,7 +774,7 @@ export function DurationLabel({
 
 // Memoized: with reuseStableRows keeping row references stable, only the
 // actively streaming row re-renders per animation frame.
-const TranscriptRowView = memo(function TranscriptRowView({
+export const TranscriptRowView = memo(function TranscriptRowView({
   row,
   mode,
   showCaret,
@@ -782,6 +784,10 @@ const TranscriptRowView = memo(function TranscriptRowView({
   retryVisible,
   goOnVisible,
   onRetry,
+  readOnly = false,
+  userCollapsible = false,
+  userExpanded = false,
+  onToggleUser,
 }: {
   row: TranscriptRow;
   mode: "streaming" | "static";
@@ -792,6 +798,10 @@ const TranscriptRowView = memo(function TranscriptRowView({
   retryVisible: boolean;
   goOnVisible: boolean;
   onRetry: (row: TranscriptRow) => Promise<void>;
+  readOnly?: boolean;
+  userCollapsible?: boolean;
+  userExpanded?: boolean;
+  onToggleUser?: () => void;
 }) {
   const t = useT();
   if (row.role === "user") {
@@ -799,6 +809,29 @@ const TranscriptRowView = memo(function TranscriptRowView({
       (block): block is Extract<TranscriptBlock, { kind: "image" }> => block.kind === "image",
     );
     const parsed = parseUserAttachments(row.copyText);
+    const collapsed = userCollapsible && !userExpanded;
+    if (collapsed) {
+      const summary = (parsed.text || row.copyText || "").trim().split(/\r?\n/, 1)[0] ?? "";
+      return (
+        <div className="group relative ml-auto w-fit max-w-[92%] sm:max-w-[78%]">
+          <div className="theme-user-message rounded-xl rounded-br-md bg-surface-overlay px-3.5 py-2.5 text-sm leading-6">
+            <div className="line-clamp-3 max-w-full whitespace-pre-wrap break-words">{summary}</div>
+            {onToggleUser && (
+              <button
+                type="button"
+                className="mt-1 ml-auto flex h-6 items-center gap-1 text-[10px] text-muted hover:text-foreground"
+                title={t("transcriptExpandMessage")}
+                aria-label={t("transcriptExpandMessage")}
+                onClick={onToggleUser}
+              >
+                <ChevronDown size={12} />
+                {t("transcriptExpandMessage")}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="group relative ml-auto w-fit max-w-[92%] sm:max-w-[78%]">
         {images.length > 0 && (
@@ -855,8 +888,20 @@ const TranscriptRowView = memo(function TranscriptRowView({
             {parsed.text}
           </div>
         )}
-        <div className="mt-1 flex h-7 items-center justify-end">
-          {retryVisible && retryableTurn && (
+        <div className="mt-1 flex h-7 items-center justify-end gap-2">
+          {userCollapsible && userExpanded && onToggleUser && (
+            <button
+              type="button"
+              className="ml-auto flex h-6 items-center gap-1 text-[10px] text-muted hover:text-foreground"
+              title={t("transcriptCollapseMessage")}
+              aria-label={t("transcriptCollapseMessage")}
+              onClick={onToggleUser}
+            >
+              <ChevronUp size={12} />
+              {t("transcriptCollapseMessage")}
+            </button>
+          )}
+          {!readOnly && retryVisible && retryableTurn && (
             <RetryMessageButton
               className="opacity-0 group-hover:opacity-100"
               onClick={() => onRetry(row)}
@@ -922,7 +967,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
       <div className="mt-2 flex h-7 items-center gap-2">
         <DurationLabel startedAt={row.startedAt} endedAt={row.endedAt} active={working} />
         <div className="ml-auto flex items-center gap-1">
-          {!working && row.sourceEndId && (
+          {!readOnly && !working && row.sourceEndId && (
             <ForkFromTurnButton
               entryId={row.sourceEndId}
               className="opacity-0 group-hover/assistant:opacity-100"

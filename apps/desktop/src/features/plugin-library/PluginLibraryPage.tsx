@@ -723,18 +723,6 @@ export function PluginLibraryPage() {
   async function toggle(entry: PluginLibraryEntry, enable: boolean): Promise<boolean> {
     if (!catalog) return false;
     const state = pluginCardState(entry, catalog, packages);
-    if (entry.install.type === "repo") {
-      return runMutation(
-        "pluginLibrary.apply",
-        {
-          source: catalog.repoSource,
-          pattern: repoExtensionPattern(entry.install.path),
-          enabled: enable,
-        },
-        entry.id,
-        entry.name,
-      );
-    }
     const updates = buildResourcePreferenceUpdates(
       state.extensionResources,
       "user",

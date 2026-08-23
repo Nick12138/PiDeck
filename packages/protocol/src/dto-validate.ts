@@ -115,7 +115,7 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     !hasExactKeys(
       value,
       ["id", "kind", "label", "state"],
-      ["startedAt", "updatedAt", "endedAt", "activity", "children"],
+      ["name", "role", "startedAt", "updatedAt", "endedAt", "activity", "children"],
     )
   )
     return false;
@@ -123,6 +123,8 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     isBoundedNonEmptyString(value.id, 160) &&
     ["subagent", "workflow", "step"].includes(String(value.kind)) &&
     isBoundedNonEmptyString(value.label, 160) &&
+    isOptionalBoundedString(value.name, 160) &&
+    isOptionalBoundedString(value.role, 160) &&
     ["queued", "running", "complete", "failed", "paused", "stopped", "rejected"].includes(
       String(value.state),
     ) &&
@@ -187,6 +189,28 @@ function isSubagentsStatusSnapshot(value: unknown): boolean {
     Array.isArray(value.runs) &&
     value.runs.length <= 32 &&
     value.runs.every((run) => isSubagentStatusNode(run))
+  );
+}
+
+function isSubagentTranscriptSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["nodeId", "sessionId", "state", "entries", "truncated", "updatedAt"],
+      ["name"],
+    ) &&
+    isBoundedNonEmptyString(value.nodeId, 160) &&
+    isBoundedNonEmptyString(value.sessionId, 160) &&
+    isOptionalBoundedString(value.name, 160) &&
+    ["queued", "running", "complete", "failed", "paused", "stopped", "rejected"].includes(
+      String(value.state),
+    ) &&
+    Array.isArray(value.entries) &&
+    value.entries.length <= 160 &&
+    value.entries.every(isSessionEntry) &&
+    isBoolean(value.truncated) &&
+    isNonNegativeNumber(value.updatedAt)
   );
 }
 
@@ -2011,6 +2035,12 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.leafId === null || isString(result.leafId))
         ? null
         : "invalid session entries";
+    case "subagents.getSession":
+      return isSubagentTranscriptSnapshot(result) ? null : "invalid subagent session snapshot";
+    case "subagents.stop":
+      return isPlainObject(result) && hasExactKeys(result, ["stopped"]) && isBoolean(result.stopped)
+        ? null
+        : "invalid subagent stop result";
     case "session.getTree":
       return isPlainObject(result) &&
         hasExactKeys(result, ["tree", "leafId"]) &&

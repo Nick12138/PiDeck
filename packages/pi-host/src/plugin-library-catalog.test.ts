@@ -6,8 +6,13 @@ import {
   resetPluginLibraryCatalogCache,
 } from "./plugin-library-catalog.js";
 
+type TestCatalogFetcher = (
+  url: string,
+  init: { signal: AbortSignal; headers: Record<string, string> },
+) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
+
 function fetchJson(body: unknown, status = 200) {
-  return vi.fn(async () => ({
+  return vi.fn<TestCatalogFetcher>(async (_url, _init) => ({
     ok: status >= 200 && status < 300,
     status,
     text: async () => (typeof body === "string" ? body : JSON.stringify(body)),

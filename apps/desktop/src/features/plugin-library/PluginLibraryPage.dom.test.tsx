@@ -161,7 +161,7 @@ function catalogWithVision(includeUnknownSource = false): PluginLibraryCatalog {
         label: "Custom value",
         env: "PI_UNKNOWN_VALUE",
         optionsSource: "pi:everything",
-      },
+      }
     ],
   };
   return {
@@ -522,7 +522,7 @@ describe("PluginLibraryPage DOM workflows", () => {
     );
   });
 
-  it("installs and toggles a repo plugin through pluginLibrary.apply", async () => {
+  it("installs repo plugins through pluginLibrary.apply and toggles them via resource preferences", async () => {
     const user = userEvent.setup();
     render(<PluginLibraryPage />);
 
@@ -546,19 +546,34 @@ describe("PluginLibraryPage DOM workflows", () => {
       ),
     );
 
-    // After the library snapshot includes the plugin, disabling goes through apply too.
+    // After the library snapshot includes the plugin, disabling reuses the
+    // same resource-preference path as the Package Management page.
     currentSnapshot = snapshotWithRepo(true);
     useAppStore.getState().applyPackageSnapshot(currentSnapshot);
     await waitFor(() => expect(within(card).getByRole("switch")).toBeInTheDocument());
     await user.click(within(card).getByRole("switch"));
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
-        "pluginLibrary.apply",
+        "resource.setPreferences",
         expect.objectContaining({ expectedWorkspaceId: "w1" }),
         {
-          source: REPO_SOURCE,
-          pattern: "packages/pi-web/extensions/**",
-          enabled: false,
+          updates: [{ resourceId: "res-web", targetScope: "user", preference: "disabled" }],
+        },
+        expect.any(Number),
+      ),
+    );
+
+    currentSnapshot = snapshotWithRepo(false);
+    currentSnapshot.revision = 3;
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    await waitFor(() => expect(within(card).getByRole("switch")).toHaveAttribute("aria-checked", "false"));
+    await user.click(within(card).getByRole("switch"));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "resource.setPreferences",
+        expect.objectContaining({ expectedWorkspaceId: "w1" }),
+        {
+          updates: [{ resourceId: "res-web", targetScope: "user", preference: "enabled" }],
         },
         expect.any(Number),
       ),
@@ -657,16 +672,20 @@ describe("PluginLibraryPage DOM workflows", () => {
     await user.click(within(listbox).getByRole("option", { name: /Automatic/ }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(tauriMocks.invoke).toHaveBeenCalledWith(
-      "desktop_settings_patch",
-      expect.objectContaining({ patch: { pluginEnv: {} } }),
-    ));
-    await waitFor(() => expect(request).toHaveBeenCalledWith(
-      "pluginLibrary.setEnv",
-      expect.objectContaining({ expectedHostInstanceId: "h1" }),
-      { vars: { PI_VISION_MODEL: null, PI_VISION_FALLBACK_MODELS: null } },
-      expect.any(Number),
-    ));
+    await waitFor(() =>
+      expect(tauriMocks.invoke).toHaveBeenCalledWith(
+        "desktop_settings_patch",
+        expect.objectContaining({ patch: { pluginEnv: {} } }),
+      ),
+    );
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pluginLibrary.setEnv",
+        expect.objectContaining({ expectedHostInstanceId: "h1" }),
+        { vars: { PI_VISION_MODEL: null, PI_VISION_FALLBACK_MODELS: null } },
+        expect.any(Number),
+      ),
+    );
   });
 
   it("falls back to text input when no vision models are available", async () => {
@@ -682,16 +701,22 @@ describe("PluginLibraryPage DOM workflows", () => {
     const dialog = await screen.findByRole("dialog");
     const input = await within(dialog).findByRole("textbox", { name: /Default vision model/ });
     expect(input).toHaveAttribute("type", "text");
-    expect(dialog).toHaveTextContent("No usable vision model detected. You can enter provider/modelId manually");
+    expect(dialog).toHaveTextContent(
+      "No usable vision model detected. You can enter provider/modelId manually",
+    );
     await user.type(input, "anthropic/claude-sonnet-45");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith(
-      "pluginLibrary.setEnv",
-      expect.objectContaining({ expectedHostInstanceId: "h1" }),
-      { vars: { PI_VISION_MODEL: "anthropic/claude-sonnet-45", PI_VISION_FALLBACK_MODELS: null } },
-      expect.any(Number),
-    ));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pluginLibrary.setEnv",
+        expect.objectContaining({ expectedHostInstanceId: "h1" }),
+        {
+          vars: { PI_VISION_MODEL: "anthropic/claude-sonnet-45", PI_VISION_FALLBACK_MODELS: null },
+        },
+        expect.any(Number),
+      ),
+    );
   });
 
   it("adds and removes ordered fallback vision model rows", async () => {
@@ -705,13 +730,21 @@ describe("PluginLibraryPage DOM workflows", () => {
     await user.click(within(card).getByRole("button", { name: "Configure" }));
     const dialog = await screen.findByRole("dialog");
     const add = within(dialog).getByRole("button", { name: "Add fallback model" });
-    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(1);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(
+      1,
+    );
     await user.click(add);
-    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(2);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(
+      2,
+    );
     await user.click(within(dialog).getAllByRole("button", { name: "Remove fallback model" })[0]!);
-    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(1);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(
+      1,
+    );
     await user.click(within(dialog).getByRole("button", { name: "Add fallback model" }));
-    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(2);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(
+      2,
+    );
 
     const fallbackSelects = within(dialog).getAllByRole("button", { name: /Fallback models/ });
     await user.click(fallbackSelects[0]!);
@@ -720,15 +753,24 @@ describe("PluginLibraryPage DOM workflows", () => {
     const secondSelect = within(dialog).getByRole("button", { name: "Fallback models 2" });
     await user.click(secondSelect);
     const secondListbox = await screen.findByRole("listbox", { name: "Fallback models 2" });
-    await user.click(within(secondListbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }));
+    await user.click(
+      within(secondListbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }),
+    );
 
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith(
-      "pluginLibrary.setEnv",
-      expect.objectContaining({ expectedHostInstanceId: "h1" }),
-      { vars: { PI_VISION_MODEL: null, PI_VISION_FALLBACK_MODELS: "openai/gpt-4o-mini,anthropic/claude-sonnet-45" } },
-      expect.any(Number),
-    ));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pluginLibrary.setEnv",
+        expect.objectContaining({ expectedHostInstanceId: "h1" }),
+        {
+          vars: {
+            PI_VISION_MODEL: null,
+            PI_VISION_FALLBACK_MODELS: "openai/gpt-4o-mini,anthropic/claude-sonnet-45",
+          },
+        },
+        expect.any(Number),
+      ),
+    );
   });
 
   it("falls back to text input for an unknown options source", async () => {

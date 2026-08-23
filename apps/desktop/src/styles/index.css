@@ -105,8 +105,8 @@
   --window-frame-radius: 10px;
   /* The app bar + left aside read as one shell "frame" that visually wraps the
      floating content area. Pure-color themes get a solid shell (--app-shell)
-     matched to the sidebar tint and a margin around the content card. Acrylic
-     / apple leave these at 0 and rely on their own material/transparent frame
+     matched to the sidebar tint and a margin around the content card. Apple and
+     transparent leave these at 0 and rely on their own material/transparent
      rules elsewhere. */
   --app-shell-bg: var(--color-sidebar);
   --app-content-gap: 8px;
@@ -167,14 +167,14 @@ body,
 }
 
 /* App shell: the top bar (AppTopBar) and the left aside are visually one piece
-   — they share the sidebar tint (or go transparent under acrylic). The whole
-   [data-app-body] gets the shell background so the frame reads as one surface
+   — they share the sidebar tint (or go transparent under the transparent theme).
+   The whole [data-app-body] gets the shell background so the frame reads as one surface
    wrapping the content. Each theme can override --app-shell-bg to transparent
-   to delegate to its own frosted/material rules (acrylic, apple). */
+   to delegate to its own frosted/material rules (Apple, transparent). */
 /* Give the settings sidebar the matching top/bottom-left radii so the shell's
    clipped left corners read as round, matching the right side (default/vercel
    paint the sidebar with bg-sidebar, which equals the app-shell background, so
-   without this the left corners look squared off). apple/acrylic are unaffected
+   without this the left corners look squared off). apple/transparent are unaffected
    since their sidebar bg is set explicitly. */
 [data-settings-sidebar] {
   border-top-left-radius: var(--app-content-radius);
@@ -194,7 +194,7 @@ body,
 /* The content area (main + right dock) floats as a rounded card inset from the
    shell frame. Pure-color themes get the surface fill + radius + margin here;
    every theme now shares the same gap/radius so the content card sits
-   identically across pideck/vercel/apple/acrylic. */
+   identically across pideck/vercel/apple/transparent. */
 [data-app-body] {
   gap: 0;
 }
@@ -235,7 +235,7 @@ body,
    the eye reads as the joint, rather than floating 4px inside the sidebar like
    the old -right-1 w-2 did. The handle paints nothing itself; the sidebar's
    own edge treatment (aside border + .sidebar-edge-shadow) carries the visible
-   divider. Acrylic overrides right/width via its own !important rule below. */
+   divider. Transparent overrides right/width via its own !important rule below. */
 [data-sidebar-resizer] {
   right: calc(-1 * (var(--app-content-gap) + 3px));
   width: calc(var(--app-content-gap) + 6px);
@@ -246,7 +246,7 @@ body,
 }
 
 /* Every theme lets the aside overflow so the resize handle can spill across
-   the 8px shell gutter (matches the acrylic look). The inner flex column
+   the 8px shell gutter (matches the transparent look). The inner flex column
    keeps the aside body cut to width; nothing else sticks out. The Tailwind
    `overflow-hidden` utility on <aside> is overridden here by higher
    specificity — no per-theme override needed. */
@@ -254,7 +254,7 @@ body,
   overflow: visible;
 }
 
-/* All theme families use the acrylic-style frosted left rail. The material tint
+/* All theme families use the frosted left rail. The material tint
    keeps ordinary opaque themes readable while allowing transparent native
    windows to contribute their backdrop underneath the sidebar. */
 [data-pideck-app][data-has-topbar] [data-sidebar] {
@@ -589,7 +589,7 @@ html[data-theme-family="apple"] {
   --theme-toolbar-blur: 18px;
   --theme-chat-header-fade-height: 24px;
   /* Frosted glass shell: a single半透明 surface tint painted over the OS-level
-     acrylic/vibrancy so the top bar and the left aside read as one continuous
+     transparent window material so the top bar and the left aside read as one continuous
      磨砂底色 (light or dark). All three shell vars share this value so the aside
      and the top bar can never drift apart. */
   --app-shell-bg: transparent;
@@ -678,14 +678,14 @@ html[data-theme-family="apple"].dark {
 }
 
 /* ============================================================================
-   Acrylic theme — whole-window wallpaper-sampled frosted glass.
+   Transparent theme — whole-window wallpaper-sampled frosted glass.
    The sidebar, chat header and dock header strips go fully transparent so the
-   OS-level acrylic shows through uncolored (0% material), while the content
+   OS-level window material shows through uncolored, while the content
    surfaces (transcript, dock panels, dialogs) stay solid for legibility. A
    crisp hairline replaces the soft header fade to separate the transparent
    strip from the solid content below.
    ========================================================================== */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) {
+html[data-theme-family="transparent"] {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiDeck PingFang SC", "Inter Variable",
     system-ui, "Segoe UI", sans-serif;
@@ -698,9 +698,9 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) {
   --theme-material-blur: 24px;
   --theme-toolbar-blur: 18px;
   --theme-chat-header-fade-height: 0px;
-  /* The shell (top bar + aside) is fully transparent so the OS-level acrylic
-     shows through; the content area rides in the same surface-margin floated
-     card model as the other themes. */
+  /* The shell (top bar + aside) is fully transparent so the native window
+     material shows through; the content area rides in the same surface-margin
+     floated card model as the other themes. */
   --app-shell-bg: transparent;
   --app-content-gap: 8px;
   --theme-control-shadow: inset 0 0 0 0.5px var(--color-border-subtle), 0 1px 2px rgb(0 0 0 / 8%);
@@ -716,14 +716,14 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) {
   --theme-sidebar-shadow:
     inset -1px 0 0 color-mix(in srgb, var(--color-foreground) 5%, transparent),
     1px 0 0 var(--color-border-subtle);
-  /* 0% material: the sidebar + header strips reveal raw system acrylic, no tint. */
+  /* 0% material: the sidebar + header strips reveal the native window material. */
   --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 0%, transparent);
   --theme-toolbar-material: color-mix(in srgb, var(--color-surface) 0%, transparent);
   --theme-floating-material: color-mix(in srgb, var(--color-surface-raised) 86%, transparent);
   --theme-content-material: color-mix(in srgb, var(--color-surface) 62%, transparent);
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).light {
+html[data-theme-family="transparent"].light {
   --color-surface: #f5f5f7;
   --color-surface-raised: #ffffff;
   --color-surface-overlay: #e8e8ed;
@@ -751,7 +751,7 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).light 
   --color-danger: #d70015;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).dark {
+html[data-theme-family="transparent"].dark {
   --color-surface: #1c1c1e;
   --color-surface-raised: #2c2c2e;
   --color-surface-overlay: #3a3a3c;
@@ -793,12 +793,12 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]).dark {
 }
 
 /* Content surfaces stay solid so the transcript/panels remain readable; only
-   the surrounding shell goes transparent to reveal the OS acrylic. */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-shell] {
+   the surrounding shell goes transparent to reveal the OS window material. */
+html[data-theme-family="transparent"] [data-settings-shell] {
   background-color: transparent;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-sidebar] {
+html[data-theme-family="transparent"] [data-settings-sidebar] {
   background-color: var(--color-sidebar);
   border-right: 1px solid var(--color-border-subtle);
   box-shadow: none !important;
@@ -809,7 +809,7 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-
    Scope the variable override to the top bar segments and the window controls
    cluster — every button there that uses hover:bg-surface-overlay picks up the
    translucent value. */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+html[data-theme-family="transparent"]
   :where(
     [data-sidebar-header],
     [data-chat-header],
@@ -824,61 +824,55 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
 /* The settings content main (grid row 2, col 2) is a solid surface block
    paired with the solid nav block to the left — no floating card rim, only
    the top header stays frosted/transparent. */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-settings-content] {
+html[data-theme-family="transparent"] [data-settings-content] {
   background-color: var(--theme-content-material) !important;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-sidebar] {
+html[data-theme-family="transparent"] [data-sidebar] {
   border-right: 0;
   box-shadow: none !important;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) .sidebar-edge-shadow {
+html[data-theme-family="transparent"] .sidebar-edge-shadow {
   box-shadow: none !important;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-chat-header-fade] {
+html[data-theme-family="transparent"] [data-chat-header-fade] {
   display: none;
 }
 
 /* Hard hairline under both header strips: separates the transparent frosted
    strip from the solid content below. */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-chat-header] {
+html[data-theme-family="transparent"] [data-chat-header] {
   border-bottom: 1px solid transparent;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"]) [data-dock-header] {
+html[data-theme-family="transparent"] [data-dock-header] {
   border-bottom: 1px solid transparent;
 }
 
-/* Only when a real native acrylic window is present (data-window-frame set)
-   do we drop the shell backgrounds to let the wallpaper sampling through.
+/* Only when a real native transparent window is present (data-window-frame set)
+   do we drop the shell backgrounds to let the window material show through.
    Otherwise (tests / non-native web) surfaces keep their solid fills. */
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-  [data-pideck-app][data-window-frame] {
+html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] {
   background-color: transparent;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-  [data-pideck-app][data-window-frame]
-  main {
+html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] main {
   background-color: transparent;
 }
 
-html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-  [data-pideck-app][data-window-frame]
-  [data-sidebar] {
+html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
 
 @supports (backdrop-filter: blur(1px)) {
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    :where([data-chat-header], [data-dock-header]) {
+  html[data-theme-family="transparent"] :where([data-chat-header], [data-dock-header]) {
     -webkit-backdrop-filter: saturate(150%) blur(var(--theme-toolbar-blur));
     backdrop-filter: saturate(150%) blur(var(--theme-toolbar-blur));
   }
 
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
+  html[data-theme-family="transparent"]
     :where(
       .chat-composer-surface,
       .theme-floating-surface,
@@ -891,41 +885,33 @@ html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    [data-pideck-app][data-window-frame] {
+  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] {
     background-color: var(--color-surface);
   }
 
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    [data-pideck-app][data-window-frame]
-    main {
+  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] main {
     background-color: var(--color-surface);
   }
 
   /* Reduced-transparency fallback: the top bar stays transparent over the now-surface
      app root, so the aside must fall back to surface too to stay one底色 with it. */
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    [data-pideck-app][data-window-frame]
-    [data-sidebar] {
+  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-sidebar] {
     background-color: var(--color-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    [data-pideck-app][data-window-frame]
-    [data-right-dock] {
+  html[data-theme-family="transparent"] [data-pideck-app][data-window-frame] [data-right-dock] {
     background-color: var(--color-surface);
   }
 
-  html:is([data-theme-family="acrylic"], [data-theme-family="transparent"])
-    :where([data-chat-header], [data-dock-header]) {
+  html[data-theme-family="transparent"] :where([data-chat-header], [data-dock-header]) {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 }
 
-/* Transparent theme: keep the acrylic layout/material treatment, but give the
+/* Transparent theme: keep the frosted layout/material treatment, but give the
    main content and floating surfaces different glass densities. The content
    plane is lighter so the app remains open and airy; dialogs/menus are denser
    so they stay readable above the content. */
@@ -984,7 +970,7 @@ html[data-theme-family="transparent"] [data-dock-panel] {
 
 /* Settings nav: under the transparent family the sidebar/nav shares the same
    frosted content plane as the settings content, instead of the opaque sidebar
-   fill the acrylic family carries via the shared rule above. */
+   fill the transparent theme carries via the shared rule above. */
 html[data-theme-family="transparent"] [data-settings-sidebar] {
   background-color: var(--theme-content-material) !important;
 }
@@ -1002,15 +988,15 @@ html[data-theme-family="transparent"] [data-settings-sidebar] {
   }
 }
 
-/* Transparent theme nav selection: the acrylic family's .light/.dark rules
+/* Transparent theme nav selection: the light/dark rules above
    set --color-nav-active to an opaque blue (#dcecff / #153b63) at specificity
    (0,2,1). A plain `html[data-theme-family="transparent"]` override sits at
    only (0,1,1) and loses, so the dock/settings nav still paints blue. Mirror
-   the .light/.dark specificity here and place these rules after the acrylic
+   the .light/.dark specificity here and place these rules after the transparent theme
    block so source order wins the tie, replacing the blue fill with a neutral
    translucent foreground tint — a soft glass highlight with the accent
    hairline (theme-nav-shadow) carrying the selected indicator. */
-/* Transparent theme control palette: the acrylic family defines the surface
+/* Transparent theme control palette: the light/dark rules above define the surface
    tokens (`--color-surface`, `--color-surface-raised`, `--color-surface-overlay`,
    `--color-selection`, `--color-control`, `--color-control-hover`,
    `--color-surface-inset`) as opaque CSS colors at the same (0,2,1) source
@@ -1425,7 +1411,7 @@ html[data-theme-family="apple"] [data-pideck-app][data-window-frame] {
 }
 
 /* Native window: the aside rides the same半透明 surface tint as the top bar so
-   the OS-level acrylic/vibrancy frosts through it uniformly. */
+   the OS-level transparent window material frosts through it uniformly. */
 html[data-theme-family="apple"] [data-pideck-app][data-window-frame] [data-sidebar] {
   background-color: var(--theme-sidebar-material);
 }
@@ -1582,7 +1568,7 @@ html[data-theme-family="apple"] [data-chat-status] {
 }
 
 /* Session sidebar: no edge treatment — the aside meets the content card
-   directly with only the OS material (acrylic) or shell gap between them. */
+   directly with only the OS window material or shell gap between them. */
 .sidebar-edge-shadow {
   box-shadow: none;
 }
@@ -1605,7 +1591,7 @@ html.light .pi-mark-dark {
 
 /* Pi Host startup status renders as a small floating badge in the window
    corner while the main UI is already interactive — no full-screen splash.
-   The badge tints like a frosted chip so it respects the acrylic window. */
+   The badge tints like a frosted chip so it respects the transparent window. */
 .startup-screen {
   position: fixed;
   right: 14px;

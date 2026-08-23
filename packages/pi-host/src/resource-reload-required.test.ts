@@ -380,7 +380,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
 
   it("session.setName remains available while the Agent is running", async () => {
     const factory = mockFactory({ resourceReloadRequired: false });
-    factory.getGraph()!.agentSession!.isIdle = false;
+    Reflect.set(factory.getGraph()!.agentSession!, "isIdle", false);
     const out = await createSessionHandlers(factory)["session.setName"]!({
       ...promptCtx,
       id: "req-session-name-busy",

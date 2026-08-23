@@ -10,6 +10,9 @@ import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
 import { isObject, readModelsConfig } from "./provider-models-config.js";
+import { sessionStorageDirs } from "./session-storage.js";
+import { readSubagentSession, subagentSessionNodeIdCandidates } from "./subagent-session.js";
+import { resolveSubagentStopRunId } from "./subagent-status-extension.js";
 
 type SdkSessionTreeNode = {
   entry: unknown;
@@ -160,6 +163,77 @@ export function createSessionHandlers(
       const result = await factory.cleanupArchivedSessions(ctx.id);
       if ("error" in result) return { error: result.error };
       return { result };
+    },
+
+    "subagents.getSession": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const graph = factory.getGraph();
+      if (!graph) return { error: createHostError("HOST_NOT_READY", "No workspace") };
+      const { activeDir } = sessionStorageDirs(factory.deps.agentDir, graph.canonicalCwd);
+      const { nodeId } = ctx.params as { nodeId: string };
+      for (const candidate of subagentSessionNodeIdCandidates(nodeId)) {
+        const snapshot = readSubagentSession(activeDir, candidate);
+        if (snapshot) return { result: snapshot };
+      }
+      return {
+        error: createHostError(
+          "SESSION_NOT_FOUND",
+          "Subagent session transcript is not available",
+          {
+            retryable: true,
+          },
+        ),
+      };
+    },
+
+    "subagents.stop": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const graph = factory.getGraph();
+      const nodeId = (ctx.params as { nodeId: string }).nodeId;
+      const requestedRunId = nodeId.match(/^external:[^:]+:(.+)$/)?.[1];
+      if (!graph?.agentSession || !requestedRunId) {
+        return { error: createHostError("SESSION_NOT_FOUND", "Subagent run is not stoppable") };
+      }
+      const tool = graph.agentSession.extensionRunner.getToolDefinition("subagent");
+      if (!tool) {
+        return { error: createHostError("HOST_NOT_READY", "Subagent control is unavailable") };
+      }
+      const runId = resolveSubagentStopRunId(
+        sessionStorageDirs(factory.deps.agentDir, graph.canonicalCwd).activeDir,
+        graph.sessionManager?.getSessionId() ?? "",
+        requestedRunId,
+      );
+      try {
+        const result = await tool.execute(
+          `pideck-stop-${ctx.id}`,
+          { action: "stop", id: runId },
+          new AbortController().signal,
+          undefined,
+          graph.agentSession.extensionRunner.createContext(),
+        );
+        if ("isError" in result && result.isError) {
+          const message = result.content
+            .filter((part): part is { type: "text"; text: string } => part.type === "text")
+            .map((part) => part.text)
+            .join("\n");
+          return {
+            error: createHostError("AGENT_BUSY", message || "Unable to stop subagent", {
+              retryable: true,
+            }),
+          };
+        }
+        return { result: { stopped: true } };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "AGENT_BUSY",
+            error instanceof Error ? error.message : String(error),
+            { retryable: true },
+          ),
+        };
+      }
     },
 
     "session.getSnapshot": async (ctx) => {

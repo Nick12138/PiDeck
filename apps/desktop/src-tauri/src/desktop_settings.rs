@@ -46,7 +46,6 @@ pub enum DesktopThemeFamily {
     Pideck,
     Vercel,
     Apple,
-    Acrylic,
     Transparent,
 }
 
@@ -251,7 +250,8 @@ impl DesktopSettingsStore {
     }
 
     fn parse_settings(raw: &str) -> Result<(DesktopSettings, bool), String> {
-        let value: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
+        let mut value: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
+        let removed_theme_family = Self::migrate_removed_theme_family(&mut value);
         let (mut settings, legacy) = if value.get("schemaVersion").is_some()
             || value.get("settings").is_some()
         {
@@ -282,7 +282,26 @@ impl DesktopSettingsStore {
         settings.code_font_size = settings
             .code_font_size
             .clamp(MIN_CODE_FONT_SIZE, MAX_CODE_FONT_SIZE);
-        Ok((settings, legacy))
+        Ok((settings, legacy || removed_theme_family))
+    }
+
+    fn migrate_removed_theme_family(value: &mut serde_json::Value) -> bool {
+        let settings = if value.get("schemaVersion").is_some() || value.get("settings").is_some() {
+            value.get_mut("settings")
+        } else {
+            Some(value)
+        };
+        let Some(settings) = settings.and_then(serde_json::Value::as_object_mut) else {
+            return false;
+        };
+        if settings.get("themeFamily").and_then(serde_json::Value::as_str) != Some("acrylic") {
+            return false;
+        }
+        settings.insert(
+            "themeFamily".to_string(),
+            serde_json::Value::String("apple".to_string()),
+        );
+        true
     }
 
     fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
@@ -843,6 +862,24 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap())
                 .unwrap();
         assert_eq!(migrated["schemaVersion"], SETTINGS_SCHEMA_VERSION);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn migrates_removed_acrylic_theme_family_to_apple() {
+        let dir = test_dir("removed-acrylic-theme");
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            r#"{"theme":"light","themeFamily":"acrylic"}"#,
+        )
+        .unwrap();
+
+        let loaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(loaded.settings.theme_family, DesktopThemeFamily::Apple);
+        let migrated: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap())
+                .unwrap();
+        assert_eq!(migrated["settings"]["themeFamily"], "apple");
         fs::remove_dir_all(dir).unwrap();
     }
 

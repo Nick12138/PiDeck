@@ -43,6 +43,7 @@ import type {
   SerializableSessionTreeNode,
   SerializableCompactionResult,
   SerializableImage,
+  SubagentSessionSnapshot,
   SerializableAgentSessionEvent,
   SessionRuntimeState,
   ProviderDraft,
@@ -129,6 +130,8 @@ export type HostContextMap = {
   "session.usageReport": WorkspaceContext;
   "session.searchAll": HostContext;
   "session.getCommands": ActiveSessionContext;
+  "subagents.getSession": WorkspaceContext;
+  "subagents.stop": WorkspaceContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
   "agent.followUp": ActiveSessionContext;
@@ -250,6 +253,8 @@ export type HostRequestParams = {
   "session.usageReport": null;
   "session.searchAll": { query: string; limit?: number; includeArchived?: boolean };
   "session.getCommands": null;
+  "subagents.getSession": { nodeId: string };
+  "subagents.stop": { nodeId: string };
   "agent.prompt": {
     text: string;
     images?: SerializableImage[];
@@ -403,6 +408,8 @@ export type HostResultMap = {
   "session.usageReport": SessionUsageReport;
   "session.searchAll": SessionSearchReport;
   "session.getCommands": { commands: CommandSummary[] };
+  "subagents.getSession": SubagentSessionSnapshot;
+  "subagents.stop": { stopped: boolean };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
   "agent.followUp": { accepted: true };

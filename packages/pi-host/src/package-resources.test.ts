@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ResourcePreferenceUpdate } from "@pideck/protocol";
-import { applyResourcePreferences, createPackageHandlers } from "./package-controller.js";
+import {
+  applyResourcePreferences,
+  createPackageHandlers,
+  findConfiguredPackageSource,
+} from "./package-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import {
   buildPackageSnapshot,
@@ -718,6 +722,19 @@ describe("resource preference batches", () => {
 });
 
 describe("package identity normalization", () => {
+  it("matches registry Git sources to configured specs with a ref", () => {
+    const configured = [
+      {
+        source: "git:github.com/Nick12138/my-pi-plugins@main",
+        extensions: ["packages/pi-web/extensions/**"],
+      },
+    ] satisfies PackageSource[];
+
+    expect(findConfiguredPackageSource(configured, "git:github.com/Nick12138/my-pi-plugins")).toBe(
+      configured[0],
+    );
+  });
+
   it("uses SDK prefixes and scope-relative bases", () => {
     const agentDir = process.platform === "win32" ? "C:/agent" : "/agent";
     const cwd = process.platform === "win32" ? "C:/workspace" : "/workspace";

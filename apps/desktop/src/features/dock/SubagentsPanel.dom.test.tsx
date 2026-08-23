@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -53,10 +53,99 @@ describe("SubagentsPanel", () => {
 
     render(<SubagentsPanel />);
 
-    expect(screen.getByText("worker workflow")).toBeVisible();
-    expect(screen.getByText("reviewer")).toBeVisible();
+    expect(screen.getByRole("button", { name: /worker workflow/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /reviewer/ })).toBeVisible();
     expect(screen.getByText("read")).toBeVisible();
-    expect(screen.getAllByText("Running")).toHaveLength(2);
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+    expect(screen.getAllByTitle("Running")).toHaveLength(2);
+  });
+
+  it("counts only running tasks in the header", () => {
+    useAppStore.setState({
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          {
+            id: "running",
+            kind: "subagent",
+            label: "running task",
+            role: "reviewer",
+            state: "running",
+          },
+          {
+            id: "complete",
+            kind: "subagent",
+            label: "complete task",
+            state: "complete",
+          },
+          {
+            id: "failed",
+            kind: "subagent",
+            label: "failed task",
+            state: "failed",
+          },
+          {
+            id: "queued",
+            kind: "subagent",
+            label: "queued task",
+            state: "queued",
+          },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+
+    expect(screen.getByText("Active: 1")).toBeVisible();
+    const roleBadge = screen.getByText("Reviewer");
+    const row = roleBadge.closest("button");
+    expect(roleBadge).toBeVisible();
+    expect(row).not.toBeNull();
+    expect(row?.textContent?.indexOf("Reviewer")).toBeLessThan(
+      row?.textContent?.indexOf("running task") ?? -1,
+    );
+    expect(row?.querySelector("svg")).toBeInTheDocument();
+    expect(row?.querySelector("svg")?.classList).toContain("animate-spin");
+  });
+
+  it("expands conversation inline instead of navigating away", () => {
+    useAppStore.setState({
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          {
+            id: "run-inline",
+            kind: "subagent",
+            label: "Inline task",
+            state: "running",
+          },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    const row = screen.getByRole("button", { name: "Inline task" });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByLabelText("Back to subagents")).not.toBeInTheDocument();
+  });
+
+  it("shows a stop button only for running rows", () => {
+    useAppStore.setState({
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          { id: "running", kind: "subagent", label: "Running task", state: "running" },
+          { id: "done", kind: "subagent", label: "Done task", state: "complete" },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    expect(screen.getByRole("button", { name: "Stop subagent" })).toBeVisible();
+    fireEvent.mouseEnter(screen.getByText("Running task"));
+    expect(screen.queryByRole("button", { name: "Stop subagent" })).toBeVisible();
   });
 
   it("shows a useful empty state when no child is active", () => {

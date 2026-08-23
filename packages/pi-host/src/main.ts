@@ -217,7 +217,7 @@ async function main(): Promise<void> {
 
   const graphFactory = new WorkspaceGraphFactory({
     agentDir,
-    subagentStatusBridgeFactory: (emit) => createSubagentStatusBridge(emit),
+    subagentStatusBridgeFactory: (emit, options) => createSubagentStatusBridge(emit, options),
     attachmentStore,
     credentialStore,
     modelRuntime,

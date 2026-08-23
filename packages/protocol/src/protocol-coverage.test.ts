@@ -137,6 +137,8 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.usageReport": null,
   "session.searchAll": { query: "hello" },
   "session.getCommands": null,
+  "subagents.getSession": { nodeId: "run-1" },
+  "subagents.stop": { nodeId: "run-1" },
   "agent.prompt": { text: "hi" },
   "agent.steer": { text: "hi" },
   "agent.followUp": { text: "hi" },
@@ -350,6 +352,17 @@ function invalidParams(method: HostMethod): unknown {
       return { sessionId: "not-a-uuid", sessionPath: "", name: "" };
     case "session.getEntries":
       return "bad";
+    case "subagents.getSession":
+      return {
+        nodeId: "run-1",
+        sessionId: "session-1",
+        state: "running",
+        entries: [],
+        truncated: false,
+        updatedAt: 1,
+      };
+    case "subagents.stop":
+      return { stopped: true };
     case "agent.prompt":
     case "agent.steer":
     case "agent.followUp":
