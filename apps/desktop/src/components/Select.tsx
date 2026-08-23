@@ -1,5 +1,6 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 interface SelectOption {
   value: string;
@@ -30,14 +31,56 @@ export function Select({
   maxWidth,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({
+    top: 0,
+    left: 0,
+    minWidth: 0,
+    maxHeight: 240,
+  });
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = options.find((option) => option.value === value);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updateMenuPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const gutter = 8;
+      const preferredHeight = 240;
+      const below = Math.max(0, window.innerHeight - rect.bottom - gutter);
+      const above = Math.max(0, rect.top - gutter);
+      const opensUpward = below < 160 && above > below;
+      const available = opensUpward ? above : below;
+      const maxHeight = Math.max(1, Math.min(preferredHeight, available || preferredHeight));
+      const width = rect.width;
+      const preferredLeft = align === "right" ? rect.right - width : rect.left;
+      const left = Math.max(gutter, Math.min(preferredLeft, window.innerWidth - width - gutter));
+      const top = opensUpward
+        ? Math.max(gutter, rect.top - maxHeight)
+        : Math.min(rect.bottom + 4, window.innerHeight - maxHeight - gutter);
+
+      setMenuPosition({ top, left, minWidth: width, maxHeight });
+    };
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [align, open, options.length]);
 
   useEffect(() => {
     if (!open) return;
     const closeOnPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!ref.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -59,6 +102,7 @@ export function Select({
       <button
         type="button"
         className={`interface-density-control flex h-8 w-full items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-foreground outline-none transition-colors hover:bg-surface-overlay/60 focus-visible:border-focus disabled:cursor-default disabled:opacity-40 ${triggerClassName}`}
+        ref={triggerRef}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
@@ -71,15 +115,21 @@ export function Select({
           className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
-      {open && (
-        <div
-          role="listbox"
-          aria-label={ariaLabel}
-          className={`theme-floating-surface absolute z-50 mt-1 min-w-full rounded-md border border-border bg-surface-raised py-1 shadow-lg ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-        >
-          {options.map((option) => {
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label={ariaLabel}
+            className="theme-floating-surface fixed z-[100] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              minWidth: menuPosition.minWidth,
+              maxHeight: menuPosition.maxHeight,
+            }}
+          >
+            {options.map((option) => {
             const isSelected = option.value === value;
             return (
               <button
@@ -103,9 +153,10 @@ export function Select({
                 )}
               </button>
             );
-          })}
-        </div>
-      )}
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

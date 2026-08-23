@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
-import type { DesktopSettings, WorkspaceSnapshot } from "@pideck/protocol";
+import type { DesktopSettings, SessionSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../lib/stores/app-store";
 import { requestDockBrowser } from "../lib/dock-browser";
@@ -57,6 +57,16 @@ beforeEach(() => {
     dockOpen: true,
     extensionTerminal: null,
     workspace: { canonicalCwd: "/workspace" } as WorkspaceSnapshot,
+    session: null,
+    subagentsStatus: {
+      version: 1,
+      available: true,
+      generatedAt: 0,
+      totalActive: 0,
+      omitted: 0,
+      fleet: [],
+      runs: [],
+    },
     desktopSettings: settings("auto"),
   });
 });
@@ -100,6 +110,7 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "Open Changes" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Browser" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open Terminal" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open Subagents" })).toBeVisible();
   });
 
   it("localizes Dock navigation and shortcuts in Chinese", async () => {
@@ -121,6 +132,7 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("button", { name: "打开：改动" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：浏览器" })).toBeVisible();
     expect(screen.getByRole("button", { name: "打开：终端" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开：子代理" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "新建 Dock 页面" }));
     expect(screen.getByRole("menuitem", { name: "文件" })).toBeVisible();
@@ -128,10 +140,76 @@ describe("RightDock pages", () => {
     expect(screen.getByRole("menuitem", { name: "改动" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "浏览器" })).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "终端" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "子代理" })).toBeVisible();
 
     await user.click(screen.getByRole("menuitem", { name: "浏览器" }));
     expect(screen.getByRole("tab", { name: "浏览器" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "关闭：浏览器" })).toBeVisible();
+  });
+
+  it("auto-adds and focuses Subagents on first use, then respects a manual collapse", async () => {
+    useAppStore.setState({
+      dockOpen: false,
+      session: { sessionId: "session-1", messages: [], entries: [] } as unknown as SessionSnapshot,
+      subagentsStatus: {
+        version: 1,
+        available: true,
+        generatedAt: 1,
+        totalActive: 1,
+        omitted: 0,
+        fleet: [],
+        runs: [],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(
+      <>
+        <DockToggleButton />
+        <RightDock />
+      </>,
+    );
+
+    await waitFor(() => expect(useAppStore.getState().dockOpen).toBe(true));
+    expect(screen.getByRole("tab", { name: "Subagents" })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: "New dock page" }));
+    await user.click(screen.getByRole("menuitem", { name: "Files" }));
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: "Collapse right panel" }));
+    expect(useAppStore.getState().dockOpen).toBe(false);
+
+    act(() => {
+      useAppStore.setState({
+        subagentsStatus: {
+          version: 1,
+          available: true,
+          generatedAt: 2,
+          totalActive: 0,
+          omitted: 0,
+          fleet: [],
+          runs: [],
+        },
+      });
+    });
+    act(() => {
+      useAppStore.setState({
+        subagentsStatus: {
+          version: 1,
+          available: true,
+          generatedAt: 3,
+          totalActive: 1,
+          omitted: 0,
+          fleet: [],
+          runs: [],
+        },
+      });
+    });
+
+    expect(useAppStore.getState().dockOpen).toBe(false);
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+    expect(document.querySelector("#dock-panel-subagents")).toBeInTheDocument();
   });
 
   it("toggles the dock open state through the toolbar button", async () => {
@@ -174,6 +252,10 @@ describe("RightDock pages", () => {
     await user.click(screen.getByRole("button", { name: "Open Browser" }));
     expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("button", { name: "Close Browser" }));
+
+    await user.click(screen.getByRole("button", { name: "Open Subagents" }));
+    expect(screen.getByRole("tab", { name: "Subagents" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "Close Subagents" }));
 
     await user.click(screen.getByRole("button", { name: "Open Terminal" }));
     expect(screen.getByRole("tab", { name: "Shell - /workspace" })).toHaveAttribute(

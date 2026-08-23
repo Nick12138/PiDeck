@@ -72,6 +72,7 @@ import type {
   PluginLibraryApplyParams,
   PluginLibraryCatalog,
   PluginLibraryEnvUpdate,
+  SubagentsStatusSnapshot,
 } from "./types.js";
 
 export type HostContextMap = {
@@ -525,6 +526,7 @@ export type HostEventPayloadMap = {
     delayMs?: number;
     errorMessage?: string;
   };
+  "subagents.statusChanged": SubagentsStatusSnapshot;
   "model.changed": {
     model?: ModelSummary;
     thinkingLevel: string;

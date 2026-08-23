@@ -77,6 +77,7 @@ type ActiveSessionSlots = Pick<
   | "extensionUiUpdateIdentity"
   | "extensionUiReplayState"
   | "unsubscribeAgent"
+  | "subagentStatusBridge"
 >;
 
 export type ActiveSessionState = ActiveSessionSlots & {
@@ -105,6 +106,7 @@ export function captureActiveSessionState(
     extensionUiUpdateIdentity: graph.extensionUiUpdateIdentity,
     extensionUiReplayState: graph.extensionUiReplayState,
     unsubscribeAgent: graph.unsubscribeAgent,
+    subagentStatusBridge: graph.subagentStatusBridge,
     sessionId: identity.sessionId,
     sessionRevision: identity.sessionRevision,
   };
@@ -127,6 +129,7 @@ export function commitActiveSessionState(
   graph.extensionUiUpdateIdentity = state.extensionUiUpdateIdentity;
   graph.extensionUiReplayState = state.extensionUiReplayState;
   graph.unsubscribeAgent = state.unsubscribeAgent;
+  graph.subagentStatusBridge = state.subagentStatusBridge;
   identity.sessionId = state.sessionId;
   identity.sessionRevision = state.sessionRevision;
 }
@@ -259,6 +262,8 @@ export class SessionRuntimeCache {
       /* ignore subscription cleanup failure during disposal */
     }
     graph.unsubscribeAgent = null;
+    graph.subagentStatusBridge?.dispose();
+    graph.subagentStatusBridge = undefined;
     if (graph.agentSession) {
       await this.disposeAgentSessionOnly(graph.agentSession);
       graph.agentSession = null;

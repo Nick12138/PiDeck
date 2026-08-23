@@ -130,7 +130,10 @@ export function canRenameSession(
   item: SessionCatalogEntry,
   session: SessionSnapshot | null,
 ): boolean {
-  if (session?.sessionId === item.sessionId) return session.isIdle;
+  // Renaming is metadata-only and is safe while the current Session is
+  // running. Background runtimes remain excluded because their live snapshot
+  // is not the foreground editing target.
+  if (session?.sessionId === item.sessionId) return true;
   return item.runtimeState === "inactive" || item.runtimeState === "error";
 }
 

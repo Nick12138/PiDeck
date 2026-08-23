@@ -82,6 +82,17 @@ function oversizedResponseFailure(body: unknown): unknown {
 }
 
 /** Latest-wins or mergeable event classes — safe to collapse under pressure. */
+function sameIdentity(left: HostIdentity, right: HostIdentity): boolean {
+  return (
+    left.hostInstanceId === right.hostInstanceId &&
+    left.workspaceId === right.workspaceId &&
+    left.workspaceRevision === right.workspaceRevision &&
+    left.sessionId === right.sessionId &&
+    left.sessionRevision === right.sessionRevision &&
+    left.packageRevision === right.packageRevision
+  );
+}
+
 function sessionScope(identity: HostIdentity): string {
   return [
     identity.hostInstanceId,
@@ -120,6 +131,8 @@ function coalesceKeyFor(
       return "agent.queueChanged";
     case "host.statusChanged":
       return "host.statusChanged";
+    case "subagents.statusChanged":
+      return `subagents:${sessionScope(identity)}`;
     default:
       return null;
   }
@@ -128,6 +141,7 @@ function coalesceKeyFor(
 export class OutboundWriter {
   private readonly stream: WritableLike;
   private readonly allocateSequence: () => number;
+  private readonly getCurrentIdentity?: () => HostIdentity;
   private readonly softWatermark: number;
   private readonly hardCap: number;
   private readonly maxFrameBytes: number;
@@ -142,12 +156,14 @@ export class OutboundWriter {
   constructor(options: {
     stream: WritableLike;
     allocateSequence: () => number;
+    getCurrentIdentity?: () => HostIdentity;
     softWatermark?: number;
     hardCap?: number;
     maxFrameBytes?: number;
   }) {
     this.stream = options.stream;
     this.allocateSequence = options.allocateSequence;
+    this.getCurrentIdentity = options.getCurrentIdentity;
     this.softWatermark = options.softWatermark ?? OUTBOUND_SOFT_WATERMARK_BYTES;
     this.hardCap = options.hardCap ?? OUTBOUND_HARD_CAP_BYTES;
     this.maxFrameBytes = options.maxFrameBytes ?? MAX_HOST_JSONL_FRAME_BYTES;
@@ -349,6 +365,18 @@ export class OutboundWriter {
         }
         if (entry.dropped) continue;
         this.pendingBytes -= entry.bytes;
+
+        // Subagent status is a session-scoped projection. A session switch can
+        // happen while stdout is backpressured, leaving an old status entry in
+        // this queue. Do not let that entry reach the new desktop session.
+        if (
+          entry.kind === "event" &&
+          entry.event === "subagents.statusChanged" &&
+          this.getCurrentIdentity &&
+          !sameIdentity(entry.identity, this.getCurrentIdentity())
+        ) {
+          continue;
+        }
 
         let line: string;
         if (entry.kind === "response") {

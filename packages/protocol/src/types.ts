@@ -15,6 +15,52 @@ export type HostCapabilities = {
   sessionExport: boolean;
 };
 
+/** Safe, bounded status projection published by pi-subagents for the active Pi session. */
+export type SubagentStatusState =
+  "queued" | "running" | "complete" | "failed" | "paused" | "stopped" | "rejected";
+
+export type SubagentStatusActivity = {
+  state?: string;
+  currentTool?: string;
+  lastActivityAt?: number;
+  currentToolStartedAt?: number;
+  turnCount?: number;
+  toolCount?: number;
+};
+
+export type SubagentStatusNode = {
+  id: string;
+  kind: "subagent" | "workflow" | "step";
+  label: string;
+  state: SubagentStatusState;
+  startedAt?: number;
+  updatedAt?: number;
+  endedAt?: number;
+  activity?: SubagentStatusActivity;
+  children?: SubagentStatusNode[];
+};
+
+export type SubagentFleetEntry = {
+  key: string;
+  agent: string;
+  role?: string;
+  model?: string;
+  effort?: string;
+  startedAt: number;
+  tokens: { input: number; output: number; total: number };
+  goal?: string;
+};
+
+export type SubagentsStatusSnapshot = {
+  version: 1;
+  available: boolean;
+  generatedAt: number;
+  totalActive: number;
+  omitted: number;
+  fleet: SubagentFleetEntry[];
+  runs: SubagentStatusNode[];
+};
+
 /** Stage an interrupted provider mutation had reached. */
 export type ProviderMutationStage = "prepared" | "committed";
 

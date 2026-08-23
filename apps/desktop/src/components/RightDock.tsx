@@ -8,6 +8,7 @@ import {
   Globe2,
   ListTodo,
   LoaderCircle,
+  Users,
   Plus,
   RotateCcw,
   SquareTerminal,
@@ -32,6 +33,7 @@ import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
 import { TodoPanel } from "../features/dock/TodoPanel";
+import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { extractLatestTodos } from "../features/dock/todo-model";
 import { subscribeDockBrowser } from "../lib/dock-browser";
 import { subscribeChangesPanel } from "../lib/dock-changes";
@@ -44,6 +46,7 @@ export type DockTabId =
   | "tree"
   | "changes"
   | "todo"
+  | "subagents"
   | `browser:${number}`
   | `shell:${number}`
   | `extension:${string}`;
@@ -140,6 +143,7 @@ export function RightDock() {
   const panel = useAppStore((state) => state.extensionTerminal);
   const workspaceCwd = useAppStore((state) => state.workspace?.canonicalCwd ?? null);
   const session = useAppStore((state) => state.session);
+  const subagentsStatus = useAppStore((state) => state.subagentsStatus);
   const todoCount = extractLatestTodos(session).filter(
     (item) => item.status !== "completed",
   ).length;
@@ -162,6 +166,10 @@ export function RightDock() {
   const todoAvailabilityRef = useRef({
     sessionId: session?.sessionId ?? null,
     hasTodos: todoCount > 0,
+  });
+  const subagentsAvailabilityRef = useRef({
+    sessionId: session?.sessionId ?? null,
+    hasBeenUsed: false,
   });
   const nextShellId = useRef(1);
   const nextShellGeneration = useRef(1);
@@ -349,6 +357,12 @@ export function RightDock() {
     setAddMenuOpen(false);
   };
 
+  const createSubagents = () => {
+    setTabOrder((current) => (current.includes("subagents") ? current : [...current, "subagents"]));
+    setActiveTab("subagents");
+    setAddMenuOpen(false);
+  };
+
   useEffect(() => {
     const sessionId = session?.sessionId ?? null;
     const availability = todoAvailabilityRef.current;
@@ -362,6 +376,32 @@ export function RightDock() {
     setDockOpen(true);
     setSidebarPref("pideck.dock.open", true);
   }, [session, session?.sessionId, todoCount, setDockOpen]);
+
+  useEffect(() => {
+    const sessionId = session?.sessionId ?? null;
+    const availability = subagentsAvailabilityRef.current;
+    const sessionChanged = availability.sessionId !== sessionId;
+    if (sessionChanged) {
+      availability.sessionId = sessionId;
+      availability.hasBeenUsed = false;
+    }
+    const hasSubagentActivity = subagentsStatus.totalActive > 0 || subagentsStatus.runs.length > 0;
+    if (!hasSubagentActivity || availability.hasBeenUsed) return;
+
+    availability.hasBeenUsed = true;
+    setTabOrder((current) => (current.includes("subagents") ? current : [...current, "subagents"]));
+    setActiveTab("subagents");
+    if (!dockOpen) {
+      setDockOpen(true);
+      setSidebarPref("pideck.dock.open", true);
+    }
+  }, [
+    dockOpen,
+    session?.sessionId,
+    setDockOpen,
+    subagentsStatus.runs.length,
+    subagentsStatus.totalActive,
+  ]);
 
   useEffect(
     () =>
@@ -486,7 +526,13 @@ export function RightDock() {
   };
 
   const closeTab = (tabId: DockTabId) => {
-    if (tabId === "files" || tabId === "tree" || tabId === "changes" || tabId === "todo") {
+    if (
+      tabId === "files" ||
+      tabId === "tree" ||
+      tabId === "changes" ||
+      tabId === "todo" ||
+      tabId === "subagents"
+    ) {
       closeOrderTab(tabId);
       return;
     }
@@ -506,6 +552,7 @@ export function RightDock() {
     if (tabId === "tree") return { label: t("dockTree"), Icon: GitBranch };
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId === "todo") return { label: t("dockTodo"), Icon: ListTodo };
+    if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
@@ -848,6 +895,15 @@ export function RightDock() {
                   <button
                     type="button"
                     role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
+                    onClick={createSubagents}
+                  >
+                    <Users size={14} />
+                    {t("dockSubagents")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     className="flex w-full items-center justify-start gap-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-overlay"
                     onClick={createTodo}
                   >
@@ -901,6 +957,16 @@ export function RightDock() {
             className={`min-h-0 min-w-0 flex-1 ${activeTab === "todo" ? "flex" : "hidden"}`}
           >
             <TodoPanel />
+          </div>
+        )}
+        {tabOrder.includes("subagents") && (
+          <div
+            role="tabpanel"
+            id="dock-panel-subagents"
+            aria-labelledby="dock-tab-subagents"
+            className={`min-h-0 min-w-0 flex-1 ${activeTab === "subagents" ? "flex" : "hidden"}`}
+          >
+            <SubagentsPanel />
           </div>
         )}
         {browserTabs.map((tab) => (
@@ -989,6 +1055,15 @@ export function RightDock() {
                   <ListTodo size={17} className="shrink-0" />
                   <span className="min-w-0 flex-1">{t("dockTodo")}</span>
                   {todoCount > 0 && <span className="text-xs text-accent">{todoCount}</span>}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("dockOpenNamed", { label: t("dockSubagents") })}
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm text-muted transition-colors hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+                  onClick={createSubagents}
+                >
+                  <Users size={17} className="shrink-0" />
+                  <span>{t("dockSubagents")}</span>
                 </button>
                 <button
                   type="button"

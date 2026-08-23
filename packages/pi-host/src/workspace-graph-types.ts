@@ -23,6 +23,7 @@ import type {
 } from "@pideck/protocol";
 import type { ResourceIdMap } from "./package-snapshot.js";
 import type { AttachmentStore } from "./attachment-store.js";
+import type { SubagentStatusBridge } from "./subagent-status-extension.js";
 
 export type WorkspaceGraph = {
   workspaceId: string;
@@ -55,6 +56,8 @@ export type WorkspaceGraph = {
   providerOwner?: ProviderOwnerToken | null;
   /** Extension providers unregistered while this graph is parked. */
   suspendedProviders?: SuspendedProviders;
+  /** Optional PiDeck inline bridge for pi-subagents status projection. */
+  subagentStatusBridge?: SubagentStatusBridge;
 };
 
 export type BackgroundSessionRuntime = {
@@ -71,6 +74,7 @@ export type BackgroundSessionRuntime = {
   extensionUiCleanup: (() => void) | null;
   extensionUiUpdateIdentity: ((identity: HostIdentity) => void) | null;
   extensionUiReplayState: (() => void) | null;
+  subagentStatusBridge?: SubagentStatusBridge;
 };
 
 export type ManagedSessionInfo = SessionInfo & { archived: boolean };
@@ -105,4 +109,11 @@ export type GraphFactoryDeps = {
    */
   recordMigrationMilestone?: (milestone: MigrationMilestone) => Promise<void>;
   packageUpdateCheck: boolean;
+  subagentStatusBridgeFactory?: (
+    emit: (
+      identity: HostIdentity,
+      snapshot: import("@pideck/protocol").SubagentsStatusSnapshot,
+    ) => void,
+    options?: { sessionsDir?: string },
+  ) => SubagentStatusBridge;
 };

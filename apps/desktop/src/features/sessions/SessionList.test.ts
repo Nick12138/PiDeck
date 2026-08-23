@@ -189,13 +189,13 @@ describe("canRenameSession", () => {
     ).toBe(true);
   });
 
-  it("blocks active or retained Sessions while their Runtime is busy", () => {
+  it("allows the foreground Session while it is running but blocks retained Sessions", () => {
     expect(
       canRenameSession(
         { ...item, sessionId: active.sessionId, runtimeState: "running" },
         { ...active, isIdle: false },
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(canRenameSession({ ...item, runtimeState: "running" }, active)).toBe(false);
     expect(canRenameSession({ ...item, runtimeState: "idle" }, active)).toBe(false);
   });

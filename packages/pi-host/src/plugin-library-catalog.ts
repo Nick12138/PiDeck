@@ -153,11 +153,17 @@ export async function getPluginLibraryCatalog(
     return { catalog: cache.catalog };
   }
   const fetchImpl: CatalogFetcher = args.fetchImpl ?? fetch;
+  const registryUrl = args.refresh
+    ? `${PLUGIN_LIBRARY_REGISTRY_URL}?_pideck_refresh=${encodeURIComponent(String(nowMs))}`
+    : PLUGIN_LIBRARY_REGISTRY_URL;
   let text: string;
   try {
-    const response = await fetchImpl(PLUGIN_LIBRARY_REGISTRY_URL, {
+    const response = await fetchImpl(registryUrl, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        ...(args.refresh ? { "cache-control": "no-cache" } : {}),
+      },
     });
     if (!response.ok) {
       return {

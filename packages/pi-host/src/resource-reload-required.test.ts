@@ -378,6 +378,21 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     });
   });
 
+  it("session.setName remains available while the Agent is running", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    factory.getGraph()!.agentSession!.isIdle = false;
+    const out = await createSessionHandlers(factory)["session.setName"]!({
+      ...promptCtx,
+      id: "req-session-name-busy",
+      params: { name: "Renamed while running" },
+    } as never);
+
+    expect("error" in out).toBe(false);
+    expect(factory.getGraph()!.agentSession!.setSessionName).toHaveBeenCalledWith(
+      "Renamed while running",
+    );
+  });
+
   it("package.reloadResources success path clears flag then agent.prompt accepts", async () => {
     const factory = mockFactory({ resourceReloadRequired: true });
     const g = factory.getGraph()!;

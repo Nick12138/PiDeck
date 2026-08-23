@@ -47,6 +47,7 @@ import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
 import { createPiSettingsHandlers } from "./pi-settings-controller.js";
 import { createSkillHandlers } from "./skill-controller.js";
+import { createSubagentStatusBridge } from "./subagent-status-extension.js";
 
 function resolveAgentDir(): string {
   const envDir = process.env.PI_CODING_AGENT_DIR;
@@ -216,6 +217,7 @@ async function main(): Promise<void> {
 
   const graphFactory = new WorkspaceGraphFactory({
     agentDir,
+    subagentStatusBridgeFactory: (emit) => createSubagentStatusBridge(emit),
     attachmentStore,
     credentialStore,
     modelRuntime,

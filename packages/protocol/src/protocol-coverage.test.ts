@@ -752,6 +752,15 @@ describe("protocol coverage — events", () => {
     "agent.queueChanged": { revision: 0, steering: [], followUp: [] },
     "agent.compactionChanged": { active: false },
     "agent.retryChanged": { active: false },
+    "subagents.statusChanged": {
+      version: 1,
+      available: false,
+      generatedAt: 0,
+      totalActive: 0,
+      omitted: 0,
+      fleet: [],
+      runs: [],
+    },
     "model.changed": { thinkingLevel: "off", availableThinkingLevels: ["off"] },
     "provider.loginEvent": {
       loginId: "login-1",

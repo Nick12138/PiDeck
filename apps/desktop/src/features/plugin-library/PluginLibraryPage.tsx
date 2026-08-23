@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, ExternalLink, RefreshCw, Settings2, Tag } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  ExternalLink,
+  Minus,
+  Plus,
+  RefreshCw,
+  Settings2,
+  Tag,
+} from "lucide-react";
 import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
@@ -31,6 +40,7 @@ import {
   pluginCardState,
   repoExtensionPattern,
   visionModelOption,
+  wantsVisionFallbackModelOptions,
   wantsVisionModelOptions,
 } from "./plugin-library-model";
 import { PACKAGE_LIST_PARAMS, buildResourcePreferenceUpdates } from "../packages/packages-model";
@@ -107,6 +117,96 @@ function useVisionModels(enabled: boolean): readonly ModelSummary[] | null {
 }
 
 /** Shared configuration dialog: one instance serves every plugin card. */
+function fallbackRows(value: string): string[] {
+  const rows = value.split(",").map((part) => part.trim());
+  return rows.length > 0 ? rows : [""];
+}
+
+function VisionFallbackModelsControl({
+  item,
+  value,
+  models,
+  onChange,
+}: {
+  item: PluginLibraryConfigItem;
+  value: string;
+  models: readonly ModelSummary[] | null;
+  onChange: (value: string) => void;
+}) {
+  const t = useT();
+  const rows = fallbackRows(value);
+  const options = [
+    { value: "", label: t("pluginsVisionFallbackChoose") },
+    ...(models ?? []).map(visionModelOption),
+  ];
+  const knownValues = new Set(options.map((option) => option.value));
+  for (const row of rows) {
+    if (row && !knownValues.has(row)) {
+      options.push({ value: row, label: row });
+      knownValues.add(row);
+    }
+  }
+  const loading = models === null;
+  const noModels = models !== null && models.length === 0;
+
+  function updateRow(index: number, next: string) {
+    const nextRows = [...rows];
+    nextRows[index] = next;
+    onChange(nextRows.join(","));
+  }
+
+  function removeRow(index: number) {
+    const nextRows = rows.filter((_, rowIndex) => rowIndex !== index);
+    onChange(nextRows.join(","));
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5" data-vision-fallback-models={item.env}>
+      {rows.map((row, index) => {
+        const rowOptions = options.some((option) => option.value === row)
+          ? options
+          : [...options, { value: row, label: row }];
+        return (
+          <div className="flex items-center gap-1.5" key={`${index}-${row}`}>
+            <Select
+              className="h-8 min-w-0 flex-1"
+              ariaLabel={`${item.label} ${index + 1}`}
+              value={row}
+              disabled={loading || (noModels && !row)}
+              onChange={(next) => updateRow(index, next)}
+              options={rowOptions}
+            />
+            <button
+              type="button"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={t("pluginsVisionFallbackRemove")}
+              disabled={rows.length === 1 && !row}
+              onClick={() => removeRow(index)}
+            >
+              <Minus size={14} />
+            </button>
+            {index === rows.length - 1 && (
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground"
+                aria-label={t("pluginsVisionFallbackAdd")}
+                onClick={() => onChange([...rows, ""].join(","))}
+              >
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {noModels && (
+        <p className="text-[11px] leading-4 text-muted">
+          {t("pluginsVisionFallbackNoModels")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PluginConfigDialog({
   entry,
   onClose,
@@ -123,7 +223,9 @@ function PluginConfigDialog({
   );
   const [saving, setSaving] = useState(false);
 
-  const needsVisionModels = (entry.config ?? []).some(wantsVisionModelOptions);
+  const needsVisionModels = (entry.config ?? []).some(
+    (item) => wantsVisionModelOptions(item) || wantsVisionFallbackModelOptions(item),
+  );
   const visionModels = useVisionModels(needsVisionModels);
 
   async function save() {
@@ -134,15 +236,27 @@ function PluginConfigDialog({
     }
     setSaving(true);
     try {
+      const persistedValues = { ...values };
+      for (const item of entry.config ?? []) {
+        if (wantsVisionFallbackModelOptions(item)) {
+          persistedValues[item.env] = fallbackRows(values[item.env] ?? "")
+            .filter(Boolean)
+            .join(",");
+        }
+      }
       await persistDesktopSettings({
-        pluginEnv: buildPluginEnvPatch(desktopSettings?.pluginEnv, entry.id, values),
+        pluginEnv: buildPluginEnvPatch(
+          desktopSettings?.pluginEnv,
+          entry.id,
+          persistedValues,
+        ),
       });
       // Extensions run inside the Host process, so env vars land live; the
       // desktop-settings copy is what the next Host spawn re-injects.
       if (host) {
         const vars: Record<string, string | null> = {};
         for (const item of entry.config ?? []) {
-          const value = values[item.env] ?? "";
+          const value = persistedValues[item.env] ?? "";
           vars[item.env] = value.length > 0 ? value : null;
         }
         if (Object.keys(vars).length > 0) {
@@ -225,7 +339,21 @@ function PluginConfigDialog({
       );
     }
 
-    // 2. Static select with options (or unknown optionsSource that has static fallback options).
+    // 2. Ordered fallback vision model list. The env-name check keeps older
+    // catalogs working while the registry migrates this item from text to the
+    // dynamic source declaration.
+    if (wantsVisionFallbackModelOptions(item)) {
+      return (
+        <VisionFallbackModelsControl
+          item={item}
+          value={values[item.env] ?? item.default ?? ""}
+          models={visionModels}
+          onChange={(next) => setValues((prev) => ({ ...prev, [item.env]: next }))}
+        />
+      );
+    }
+
+    // 3. Static select with options (or unknown optionsSource that has static fallback options).
     if (item.type === "select" && (item.options?.length ?? 0) > 0) {
       return (
         <Select
@@ -241,7 +369,7 @@ function PluginConfigDialog({
       );
     }
 
-    // 3. Fallback for unknown optionsSource without static options or regular text items.
+    // 4. Fallback for unknown optionsSource without static options or regular text items.
     return (
       <input
         id={id}
@@ -347,27 +475,29 @@ function PluginCard({
           </div>
           <p className="truncate text-[11px] text-muted">{entry.author ?? entry.id}</p>
         </div>
-        {installed && configurable && (
-          <button
-            type="button"
-            data-plugin-config-button
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
-            title={t("pluginsConfigOpen")}
-            aria-label={t("pluginsConfigOpen")}
-            disabled={pending}
-            onClick={() => onConfigure(entry)}
-          >
-            <Settings2 size={14} />
-          </button>
-        )}
-        {/* The switch itself carries the state; a separate badge is redundant. */}
         {installed && (
-          <Switch
-            checked={enabled}
-            disabled={pending}
-            label={t("pluginStatusEnabled")}
-            onChange={(next) => void handleToggle(next)}
-          />
+          <div className="flex shrink-0 items-center gap-3">
+            {configurable && (
+              <button
+                type="button"
+                data-plugin-config-button
+                className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
+                title={t("pluginsConfigOpen")}
+                aria-label={t("pluginsConfigOpen")}
+                disabled={pending}
+                onClick={() => onConfigure(entry)}
+              >
+                <Settings2 size={14} />
+              </button>
+            )}
+            {/* The switch itself carries the state; a separate badge is redundant. */}
+            <Switch
+              checked={enabled}
+              disabled={pending}
+              label={t("pluginStatusEnabled")}
+              onChange={(next) => void handleToggle(next)}
+            />
+          </div>
         )}
       </div>
 
@@ -662,7 +792,7 @@ export function PluginLibraryPage() {
       <SettingsTopBarActions title={t("navPlugins")} subtitle={t("pluginsSubtitle")}>
         <button
           type="button"
-          className={secondaryButton}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground disabled:opacity-50"
           title={t("pluginsRefresh")}
           aria-label={t("pluginsRefresh")}
           disabled={catalogState === "loading" || packagesLoading}

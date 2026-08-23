@@ -117,6 +117,7 @@ export function repoExtensionPattern(path: string): string {
 /** Well-known dynamic option source for select config items. Unknown sources
  *  must be rendered like a regular static select / text input. */
 export const OPTIONS_SOURCE_VISION_MODELS = "pi:vision-models";
+export const OPTIONS_SOURCE_VISION_FALLBACK_MODELS = "pi:vision-models-fallback";
 
 export function isVisionCapable(model: ModelSummary): boolean {
   return Array.isArray(model.input) && model.input.includes("image");
@@ -135,6 +136,14 @@ export function visionModelOption(model: ModelSummary): { value: string; label: 
 /** True when this config item wants runtime-generated vision model options. */
 export function wantsVisionModelOptions(item: PluginLibraryConfigItem): boolean {
   return item.type === "select" && item.optionsSource === OPTIONS_SOURCE_VISION_MODELS;
+}
+
+/** True when this item stores an ordered, comma-separated vision fallback list. */
+export function wantsVisionFallbackModelOptions(item: PluginLibraryConfigItem): boolean {
+  return (
+    (item.type === "select" && item.optionsSource === OPTIONS_SOURCE_VISION_FALLBACK_MODELS) ||
+    item.env === "PI_VISION_FALLBACK_MODELS"
+  );
 }
 
 /** Posix-normalized absolute path used for substring matching. */

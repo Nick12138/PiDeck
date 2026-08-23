@@ -12,7 +12,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
-import { ModelControls } from "./ModelControls";
+import { ModelControls, ThinkingControls } from "./ModelControls";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -106,6 +106,35 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
     result,
   } as HostResponseEnvelope;
 }
+
+describe("ThinkingControls", () => {
+  beforeEach(() => {
+    useAppStore.getState().setHost(host());
+    useAppStore.getState().setWorkspace(workspace());
+    useAppStore.getState().applySessionSnapshot({ ...session(), isIdle: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useAppStore.getState().setHost(null);
+    useAppStore.getState().setWorkspace(null);
+    useAppStore.getState().applySessionSnapshot(null);
+  });
+
+  it("keeps the thinking-level control available while the current run is active", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue(
+      envelope("model.setThinkingLevel", session()) as never,
+    );
+    render(<ThinkingControls />);
+    const control = screen.getByTitle("Thinking level for muapi/Grok 4.5");
+    expect(control).not.toBeDisabled();
+
+    const user = userEvent.setup();
+    await user.click(control);
+    expect(screen.getByRole("menuitemradio", { name: "High" })).toBeInTheDocument();
+  });
+});
 
 describe("ModelControls model menu width", () => {
   const initialInnerWidth = window.innerWidth;

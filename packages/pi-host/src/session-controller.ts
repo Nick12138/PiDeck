@@ -210,10 +210,9 @@ export function createSessionHandlers(
         if (!g?.sessionManager || !g.agentSession) {
           return { error: createHostError("AGENT_NOT_READY", "No active session") };
         }
-        if (factory.getSessionOperationLock(g.agentSession).isHeld() || !g.agentSession.isIdle) {
-          return { error: createHostError("AGENT_BUSY", "Agent is busy", { retryable: true }) };
-        }
-
+        // Renaming only updates Session metadata. It does not alter the
+        // running model request, tools, resource graph, or conversation tree;
+        // the graph lock above is sufficient serialization for this mutation.
         const params = ctx.params as { name: string };
         const snapshot = factory.setActiveSessionName(params.name);
         if (!snapshot) {

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   DesktopSettings,
   ExtensionMessageRenderSnapshot,
+  SubagentsStatusSnapshot,
   ExtensionUiGroupStatus,
   HostStatusSnapshot,
   PackageMutationResult,
@@ -69,6 +70,16 @@ export type NavPage = "chat" | "packages" | "settings";
 /** Frozen empty map shared as the initial `providerNames` value so unrelated
  *  sessions don't reallocate a new Map on every reset. */
 const EMPTY_PROVIDER_NAMES: ReadonlyMap<string, string> = new Map<string, string>();
+
+const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
+  version: 1,
+  available: false,
+  generatedAt: 0,
+  totalActive: 0,
+  omitted: 0,
+  fleet: [],
+  runs: [],
+};
 
 /** Live view of the single in-flight builtin Provider login flow. */
 type ProviderLoginUiState = {
@@ -204,6 +215,8 @@ export type AppState = EpochState & {
   extensionWidgetsOpen: boolean;
   lastExtensionWidgetAttentionRunId: string | null;
   extensionTerminal: ExtensionTerminalState | null;
+  /** Live pi-subagents projection for the active Pi session. */
+  subagentsStatus: SubagentsStatusSnapshot;
   /** Right dock visibility. Auto-opens for extension panels; manual toggles persist. */
   dockOpen: boolean;
   /** Dock state to restore when the auto-opened panel closes (null = user took over). */
@@ -279,6 +292,7 @@ export type AppState = EpochState & {
     entryId: string,
     render: ExtensionMessageRenderSnapshot | null,
   ) => void;
+  setSubagentsStatus: (status: SubagentsStatusSnapshot) => void;
   setExtensionWidget: (widget: ExtensionWidgetState) => void;
   toggleExtensionWidgetCollapsed: (key: string) => void;
   setExtensionWidgetsOpen: (open: boolean) => void;
@@ -383,6 +397,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensionWidgetsOpen: false,
   lastExtensionWidgetAttentionRunId: null,
   extensionTerminal: null,
+  subagentsStatus: EMPTY_SUBAGENTS_STATUS,
   dockOpen: sidebarPref("pideck.dock.open"),
   dockRestoreOnPanelClose: null,
   sidebarCollapsed: sidebarPref("pideck.sidebar.collapsed"),
@@ -524,6 +539,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       desyncReason: undefined,
       rehydrating: false,
       providerLogin: null,
+      subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },
 
@@ -588,6 +604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       packageProgress: null,
       packageRetry: null,
       thinkingLevels: [],
+      subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },
 
@@ -625,11 +642,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? upsertCatalogSnapshot(baseCatalog, current.workspace.id, session)
         : baseCatalog;
     let sessionTerminalStates = current.sessionTerminalStates;
-    if (
-      previousSession &&
-      previousSession.sessionId !== session?.sessionId &&
-      current.workspace
-    ) {
+    if (previousSession && previousSession.sessionId !== session?.sessionId && current.workspace) {
       const prevTerminal = sessionTerminalStates[current.workspace.id]?.[previousSession.sessionId];
       if (prevTerminal && !prevTerminal.acknowledged) {
         sessionTerminalStates = mergeTerminalState(
@@ -639,7 +652,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           {
             state: prevTerminal.state,
             acknowledged: true,
-            ...(prevTerminal.generation !== undefined ? { generation: prevTerminal.generation } : {}),
+            ...(prevTerminal.generation !== undefined
+              ? { generation: prevTerminal.generation }
+              : {}),
           },
         );
       }
@@ -676,6 +691,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             packageProgress: null,
             packageRetry: null,
             thinkingLevels: [],
+            subagentsStatus: EMPTY_SUBAGENTS_STATUS,
           }
         : {}),
     });
@@ -946,6 +962,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         extensionStatus: values.length > 0 ? values[values.length - 1] : null,
       };
     }),
+  setSubagentsStatus: (subagentsStatus) => set({ subagentsStatus }),
   setExtensionMessageRender: (entryId, render) =>
     set((state) => {
       if (!state.session) return {};
@@ -1265,6 +1282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...resetExtensionTerminal(current),
       packageProgress: null,
       packageRetry: null,
+      subagentsStatus: EMPTY_SUBAGENTS_STATUS,
     });
   },
 

@@ -94,11 +94,19 @@ describe("getPluginLibraryCatalog", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("bypasses the cache when refresh is requested", async () => {
+  it("bypasses the cache and the remote URL cache when refresh is requested", async () => {
     const fetchImpl = fetchJson(VALID_REGISTRY);
     await getPluginLibraryCatalog({ fetchImpl, nowMs: 1_000 });
     await getPluginLibraryCatalog({ fetchImpl, refresh: true, nowMs: 1_001 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      `${PLUGIN_LIBRARY_REGISTRY_URL}?_pideck_refresh=1001`,
+    );
+    expect(fetchImpl.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: { accept: "application/json", "cache-control": "no-cache" },
+      }),
+    );
   });
 
   it("propagates HTTP failures as retryable errors", async () => {

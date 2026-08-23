@@ -99,6 +99,7 @@ export class PiHostServer {
       this.sequence += 1;
       return this.sequence;
     },
+    getCurrentIdentity: () => this.identity.snapshot(),
   });
 
   constructor(deps: HostRuntimeDeps) {

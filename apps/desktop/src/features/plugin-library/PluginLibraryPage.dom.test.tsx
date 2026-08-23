@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type {
   HostResponseEnvelope,
   HostStatusSnapshot,
+  ModelSummary,
   PackageMutationResult,
   PackageRecord,
   PackageSnapshot,
@@ -30,6 +31,29 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 const REPO_SOURCE = "git:github.com/Nick12138/my-pi-plugins";
+const VISION_MODELS: ModelSummary[] = [
+  {
+    provider: "openai",
+    providerName: "OpenAI",
+    modelId: "gpt-4o-mini",
+    name: "GPT-4o mini",
+    input: ["text", "image"],
+  },
+  {
+    provider: "anthropic",
+    providerName: "Anthropic",
+    modelId: "claude-sonnet-45",
+    name: "Claude Sonnet 4.5",
+    input: ["text", "image"],
+  },
+  {
+    provider: "openai",
+    providerName: "OpenAI",
+    modelId: "gpt-text",
+    name: "GPT Text",
+    input: ["text"],
+  },
+];
 
 function host(overrides: Partial<HostStatusSnapshot> = {}): HostStatusSnapshot {
   return {
@@ -94,6 +118,55 @@ function catalog(): PluginLibraryCatalog {
         ],
       },
     ],
+  };
+}
+
+function catalogWithVision(includeUnknownSource = false): PluginLibraryCatalog {
+  const visionPlugin: PluginLibraryCatalog["plugins"][number] = {
+    id: "pi-vision",
+    name: "pi-vision",
+    description: "Vision model support.",
+    icon: "👁️",
+    version: "0.1.0",
+    install: { type: "repo", path: "packages/pi-vision" },
+    config: [
+      {
+        key: "visionModel",
+        type: "select",
+        label: "Default vision model",
+        env: "PI_VISION_MODEL",
+        default: "",
+        optionsSource: "pi:vision-models",
+      },
+      {
+        key: "fallbackModels",
+        type: "select",
+        label: "Fallback models",
+        env: "PI_VISION_FALLBACK_MODELS",
+        optionsSource: "pi:vision-models-fallback",
+      }
+    ],
+  };
+  const unknownPlugin: PluginLibraryCatalog["plugins"][number] = {
+    id: "pi-unknown-options",
+    name: "Unknown options source",
+    description: "Unknown options source fallback.",
+    icon: "?",
+    version: "0.1.0",
+    install: { type: "repo", path: "packages/pi-unknown-options" },
+    config: [
+      {
+        key: "customValue",
+        type: "select",
+        label: "Custom value",
+        env: "PI_UNKNOWN_VALUE",
+        optionsSource: "pi:everything",
+      },
+    ],
+  };
+  return {
+    ...catalog(),
+    plugins: [...catalog().plugins, visionPlugin, ...(includeUnknownSource ? [unknownPlugin] : [])],
   };
 }
 
@@ -181,6 +254,34 @@ function snapshotWithRepo(webEnabled: boolean): PackageSnapshot {
   };
 }
 
+function snapshotWithVision(): PackageSnapshot {
+  const repoPkg = packageRecord({
+    id: "pkg-repo",
+    identity: REPO_SOURCE,
+    source: REPO_SOURCE,
+    kind: "git",
+    displayName: "my-pi-plugins",
+  });
+  return {
+    ...emptySnapshot(),
+    configured: [repoPkg],
+    resources: [
+      resource({
+        id: "res-vision",
+        packageId: "pkg-repo",
+        path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/pi-vision/extensions/pi-vision.ts",
+        enabled: true,
+      }),
+      resource({
+        id: "res-unknown-options",
+        packageId: "pkg-repo",
+        path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/pi-unknown-options/extensions/index.ts",
+        enabled: true,
+      }),
+    ],
+  };
+}
+
 function envelope<M extends string, R>(method: M, result: R): HostResponseEnvelope {
   return {
     protocolVersion: 1,
@@ -210,9 +311,15 @@ function mutationResult(current: PackageSnapshot): PackageMutationResult {
 describe("PluginLibraryPage DOM workflows", () => {
   let request: MockInstance<typeof hostClient.request>;
   let currentSnapshot: PackageSnapshot;
+  let currentCatalog: PluginLibraryCatalog;
+  let visionModels: readonly ModelSummary[] | null;
+  let visionModelsShouldFail: boolean;
 
   beforeEach(() => {
     currentSnapshot = emptySnapshot();
+    currentCatalog = catalog();
+    visionModels = VISION_MODELS;
+    visionModelsShouldFail = false;
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applyPackageSnapshot(null);
     useAppStore.getState().setHost(host());
@@ -242,7 +349,11 @@ describe("PluginLibraryPage DOM workflows", () => {
       throw new Error(`Unexpected invoke ${command}`);
     });
     request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
-      if (method === "pluginLibrary.catalog") return envelope(method, catalog());
+      if (method === "pluginLibrary.catalog") return envelope(method, currentCatalog);
+      if (method === "piSettings.get") {
+        if (visionModelsShouldFail) throw new Error("piSettings unavailable");
+        return envelope(method, { models: visionModels });
+      }
       if (method === "package.list") return envelope(method, currentSnapshot);
       if (
         method === "package.install" ||
@@ -487,5 +598,150 @@ describe("PluginLibraryPage DOM workflows", () => {
       ),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("shows only human-readable vision model options and injects the selected model id", async () => {
+    currentCatalog = catalogWithVision();
+    currentSnapshot = snapshotWithVision();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+    const trigger = within(dialog).getByRole("button", { name: "Default vision model" });
+    await waitFor(() => expect(trigger).not.toBeDisabled());
+    await user.click(trigger);
+
+    const listbox = await screen.findByRole("listbox", { name: "Default vision model" });
+    expect(listbox).toHaveClass("fixed", "overflow-y-auto");
+    expect(listbox.style.maxHeight).toBeTruthy();
+    expect(within(listbox).getByRole("option", { name: /Automatic/ })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" })).toBeInTheDocument();
+    expect(listbox).not.toHaveTextContent("GPT Text");
+    expect(listbox).not.toHaveTextContent("openai/gpt-4o-mini");
+
+    await user.click(within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(tauriMocks.invoke).toHaveBeenCalledWith(
+      "desktop_settings_patch",
+      expect.objectContaining({
+        patch: { pluginEnv: { "pi-vision": { PI_VISION_MODEL: "openai/gpt-4o-mini" } } },
+      }),
+    ));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "pluginLibrary.setEnv",
+      expect.objectContaining({ expectedHostInstanceId: "h1" }),
+      { vars: { PI_VISION_MODEL: "openai/gpt-4o-mini", PI_VISION_FALLBACK_MODELS: null } },
+      expect.any(Number),
+    ));
+  });
+
+  it("uses null for the live env value when automatic vision model selection is chosen", async () => {
+    currentCatalog = catalogWithVision();
+    currentSnapshot = snapshotWithVision();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+    const trigger = within(dialog).getByRole("button", { name: "Default vision model" });
+    await waitFor(() => expect(trigger).not.toBeDisabled());
+    await user.click(trigger);
+    const listbox = await screen.findByRole("listbox", { name: "Default vision model" });
+    await user.click(within(listbox).getByRole("option", { name: /Automatic/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(tauriMocks.invoke).toHaveBeenCalledWith(
+      "desktop_settings_patch",
+      expect.objectContaining({ patch: { pluginEnv: {} } }),
+    ));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "pluginLibrary.setEnv",
+      expect.objectContaining({ expectedHostInstanceId: "h1" }),
+      { vars: { PI_VISION_MODEL: null, PI_VISION_FALLBACK_MODELS: null } },
+      expect.any(Number),
+    ));
+  });
+
+  it("falls back to text input when no vision models are available", async () => {
+    currentCatalog = catalogWithVision();
+    currentSnapshot = snapshotWithVision();
+    visionModels = [];
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+    const input = await within(dialog).findByRole("textbox", { name: /Default vision model/ });
+    expect(input).toHaveAttribute("type", "text");
+    expect(dialog).toHaveTextContent("No usable vision model detected. You can enter provider/modelId manually");
+    await user.type(input, "anthropic/claude-sonnet-45");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "pluginLibrary.setEnv",
+      expect.objectContaining({ expectedHostInstanceId: "h1" }),
+      { vars: { PI_VISION_MODEL: "anthropic/claude-sonnet-45", PI_VISION_FALLBACK_MODELS: null } },
+      expect.any(Number),
+    ));
+  });
+
+  it("adds and removes ordered fallback vision model rows", async () => {
+    currentCatalog = catalogWithVision();
+    currentSnapshot = snapshotWithVision();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findAllByText("pi-vision"))[0]!.closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+    const add = within(dialog).getByRole("button", { name: "Add fallback model" });
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(1);
+    await user.click(add);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(2);
+    await user.click(within(dialog).getAllByRole("button", { name: "Remove fallback model" })[0]!);
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(1);
+    await user.click(within(dialog).getByRole("button", { name: "Add fallback model" }));
+    expect(within(dialog).getAllByRole("button", { name: "Remove fallback model" })).toHaveLength(2);
+
+    const fallbackSelects = within(dialog).getAllByRole("button", { name: /Fallback models/ });
+    await user.click(fallbackSelects[0]!);
+    const listbox = await screen.findByRole("listbox", { name: "Fallback models 1" });
+    await user.click(within(listbox).getByRole("option", { name: "OpenAI · GPT-4o mini" }));
+    const secondSelect = within(dialog).getByRole("button", { name: "Fallback models 2" });
+    await user.click(secondSelect);
+    const secondListbox = await screen.findByRole("listbox", { name: "Fallback models 2" });
+    await user.click(within(secondListbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }));
+
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "pluginLibrary.setEnv",
+      expect.objectContaining({ expectedHostInstanceId: "h1" }),
+      { vars: { PI_VISION_MODEL: null, PI_VISION_FALLBACK_MODELS: "openai/gpt-4o-mini,anthropic/claude-sonnet-45" } },
+      expect.any(Number),
+    ));
+  });
+
+  it("falls back to text input for an unknown options source", async () => {
+    currentCatalog = catalogWithVision(true);
+    currentSnapshot = snapshotWithVision();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findByText("Unknown options source")).closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: /Custom value/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("listbox", { name: /Custom value/ })).toBeNull();
   });
 });

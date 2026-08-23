@@ -293,17 +293,12 @@ export async function renameSession(
       factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath),
     );
     if (isActive) {
-      if (
-        !g.agentSession ||
-        !g.agentSession.isIdle ||
-        factory.getSessionOperationLock(g.agentSession).isHeld()
-      ) {
-        return {
-          error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
-            retryable: true,
-          }),
-        };
+      if (!g.agentSession) {
+        return { error: createHostError("AGENT_NOT_READY", "No active session") };
       }
+      // A rename changes Session metadata only. The graph lock held by
+      // withSessionFileMutation serializes the snapshot update; it does not
+      // need to wait for the model request to finish.
       await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
       const snapshot = factory.setActiveSessionName(name);
       if (!snapshot) {
@@ -420,6 +415,7 @@ async function createSessionResourceLoader(
     cwd: g.canonicalCwd,
     agentDir: factory.deps.agentDir,
     settingsManager: g.settingsManager!,
+    ...(g.subagentStatusBridge ? { extensionFactories: [g.subagentStatusBridge.extension] } : {}),
   });
   // Session create/open must not reach the network. Without this the SDK would
   // npm-install or git-clone any configured package missing from disk, in a
@@ -548,6 +544,7 @@ export async function createSession(
     factory.onModelHealthChanged?.();
     markStep("refreshModelHealth");
     const candidateResourceLoader = await createSessionResourceLoader(factory, g);
+    const candidateStatusBridge = g.subagentStatusBridge;
     markStep("resourceLoader.reload");
 
     const created = await createHostAgentSession({
@@ -644,9 +641,11 @@ export async function createSession(
       extensionUiUpdateIdentity,
       extensionUiReplayState,
       unsubscribeAgent,
+      subagentStatusBridge: candidateStatusBridge,
       sessionId,
       sessionRevision,
     });
+    candidateStatusBridge?.setIdentity(candidateIdentity);
 
     let publishExtensionUi = () => {};
     try {
@@ -683,6 +682,7 @@ export async function createSession(
     // Extension cleanup cannot delay the visible conversation (openSession
     // publishes in the same order).
     server.emit("session.snapshot", sessionSnapshot);
+    candidateStatusBridge?.markReady();
     server.emit("agent.toolsChanged", sessionSnapshot.tools);
     if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
     publishExtensionUi();
@@ -874,6 +874,7 @@ export async function openSession(
       factory.onModelHealthChanged?.();
       markStep("refreshModelHealth");
       const candidateResourceLoader = await createSessionResourceLoader(factory, g);
+      const candidateStatusBridge = g.subagentStatusBridge;
       markStep("resourceLoader.reload");
 
       const created = await createHostAgentSession({
@@ -920,6 +921,7 @@ export async function openSession(
       });
       operation.signal.throwIfAborted();
       markStep("bindExtensionUi");
+      candidateStatusBridge?.setIdentity(candidateIdentity);
       const sessionSnapshot = buildSessionSnapshot({
         session,
         sessionManager,
@@ -947,9 +949,11 @@ export async function openSession(
         extensionUiUpdateIdentity: candidateExtensionUiUpdateIdentity,
         extensionUiReplayState: candidateExtensionUiReplayState,
         unsubscribeAgent: candidateUnsubscribeAgent,
+        subagentStatusBridge: candidateStatusBridge,
         sessionId,
         sessionRevision,
       });
+      candidateStatusBridge?.setIdentity(candidateIdentity);
 
       let publishExtensionUi = () => {};
       try {
@@ -984,6 +988,7 @@ export async function openSession(
       // cannot hold the visible conversation on the previous Session.
       markStep("activateExtensionUi");
       server.emit("session.snapshot", sessionSnapshot);
+      candidateStatusBridge?.markReady();
       server.emit("agent.toolsChanged", sessionSnapshot.tools);
       if (retainedPrevious) factory.announceRetainedRuntime(retainedPrevious);
       publishExtensionUi();

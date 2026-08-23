@@ -88,6 +88,108 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
 
+function isSubagentStatusActivity(value: unknown): boolean {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(
+      value,
+      [],
+      ["state", "currentTool", "lastActivityAt", "currentToolStartedAt", "turnCount", "toolCount"],
+    )
+  )
+    return false;
+  return (
+    isOptionalString(value.state) &&
+    isOptionalString(value.currentTool) &&
+    (value.lastActivityAt === undefined || isNonNegativeNumber(value.lastActivityAt)) &&
+    (value.currentToolStartedAt === undefined || isNonNegativeNumber(value.currentToolStartedAt)) &&
+    (value.turnCount === undefined || isSafeRevision(value.turnCount)) &&
+    (value.toolCount === undefined || isSafeRevision(value.toolCount))
+  );
+}
+
+function isSubagentStatusNode(value: unknown, depth = 0): boolean {
+  if (
+    depth > 4 ||
+    !isPlainObject(value) ||
+    !hasExactKeys(
+      value,
+      ["id", "kind", "label", "state"],
+      ["startedAt", "updatedAt", "endedAt", "activity", "children"],
+    )
+  )
+    return false;
+  return (
+    isBoundedNonEmptyString(value.id, 160) &&
+    ["subagent", "workflow", "step"].includes(String(value.kind)) &&
+    isBoundedNonEmptyString(value.label, 160) &&
+    ["queued", "running", "complete", "failed", "paused", "stopped", "rejected"].includes(
+      String(value.state),
+    ) &&
+    (value.startedAt === undefined || isNonNegativeNumber(value.startedAt)) &&
+    (value.updatedAt === undefined || isNonNegativeNumber(value.updatedAt)) &&
+    (value.endedAt === undefined || isNonNegativeNumber(value.endedAt)) &&
+    (value.activity === undefined || isSubagentStatusActivity(value.activity)) &&
+    (value.children === undefined ||
+      (Array.isArray(value.children) &&
+        value.children.length <= 32 &&
+        value.children.every((child) => isSubagentStatusNode(child, depth + 1))))
+  );
+}
+
+function isSubagentFleetEntry(value: unknown): boolean {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(
+      value,
+      ["key", "agent", "startedAt", "tokens"],
+      ["role", "model", "effort", "goal"],
+    )
+  )
+    return false;
+  const tokens = value.tokens;
+  return (
+    isBoundedNonEmptyString(value.key, 160) &&
+    isBoundedNonEmptyString(value.agent, 160) &&
+    isOptionalBoundedString(value.role, 160) &&
+    isOptionalBoundedString(value.model, 160) &&
+    isOptionalBoundedString(value.effort, 160) &&
+    isNonNegativeNumber(value.startedAt) &&
+    isOptionalBoundedString(value.goal, 512) &&
+    isPlainObject(tokens) &&
+    hasExactKeys(tokens, ["input", "output", "total"]) &&
+    isNonNegativeNumber(tokens.input) &&
+    isNonNegativeNumber(tokens.output) &&
+    isNonNegativeNumber(tokens.total)
+  );
+}
+
+function isSubagentsStatusSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "version",
+      "available",
+      "generatedAt",
+      "totalActive",
+      "omitted",
+      "fleet",
+      "runs",
+    ]) &&
+    value.version === 1 &&
+    isBoolean(value.available) &&
+    isNonNegativeNumber(value.generatedAt) &&
+    isSafeRevision(value.totalActive) &&
+    isSafeRevision(value.omitted) &&
+    Array.isArray(value.fleet) &&
+    value.fleet.length <= 32 &&
+    value.fleet.every(isSubagentFleetEntry) &&
+    Array.isArray(value.runs) &&
+    value.runs.length <= 32 &&
+    value.runs.every((run) => isSubagentStatusNode(run))
+  );
+}
+
 function isJsonValue(value: unknown): boolean {
   if (
     value === null ||
@@ -240,7 +342,11 @@ export function isWorkspaceSnapshot(value: unknown): boolean {
 function isModelSummary(value: unknown): boolean {
   return (
     isPlainObject(value) &&
-    hasExactKeys(value, ["provider", "modelId", "name"], ["thinkingLevels", "providerName", "input"]) &&
+    hasExactKeys(
+      value,
+      ["provider", "modelId", "name"],
+      ["thinkingLevels", "providerName", "input"],
+    ) &&
     isString(value.provider) &&
     isString(value.modelId) &&
     isString(value.name) &&
@@ -2431,6 +2537,8 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
         isOptionalString(payload.errorMessage)
         ? null
         : "invalid agent.retryChanged payload";
+    case "subagents.statusChanged":
+      return isSubagentsStatusSnapshot(payload) ? null : "invalid subagents.statusChanged payload";
     case "model.changed":
       return isPlainObject(payload) &&
         hasExactKeys(payload, ["thinkingLevel", "availableThinkingLevels"], ["model"]) &&

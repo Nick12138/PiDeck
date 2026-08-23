@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
-import { createTauriTransport, replayActiveHostReady, acknowledgeSessionTerminal } from "../lib/bridge/tauri-transport";
+import {
+  createTauriTransport,
+  replayActiveHostReady,
+  acknowledgeSessionTerminal,
+} from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
@@ -465,6 +469,9 @@ export function handleHostEvent(
       }
       break;
     }
+    case "subagents.statusChanged":
+      store.setSubagentsStatus(event.payload);
+      break;
     case "agent.retryChanged": {
       const cur = useAppStore.getState().session;
       if (cur) {

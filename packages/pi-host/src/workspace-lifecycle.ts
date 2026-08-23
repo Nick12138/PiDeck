@@ -29,6 +29,7 @@ import type { SessionRuntimeCache } from "./session-runtime-cache.js";
 import type { PiHostServer } from "./server.js";
 import type { GraphFactoryDeps, WorkspaceGraph } from "./workspace-graph-types.js";
 import { createHostAgentSession } from "./agent-session-factory.js";
+import { sessionStorageDirs } from "./session-storage.js";
 
 export type WorkspaceLifecycleContext = {
   deps: GraphFactoryDeps;
@@ -326,6 +327,8 @@ export class WorkspaceLifecycle {
       server.setLastError(undefined);
       const workspace = this.buildWorkspaceSnapshot(built.graph);
       this.publishWorkspaceSnapshots(server, built.graph, workspace);
+      built.graph.subagentStatusBridge?.setIdentity(server.getIdentity());
+      built.graph.subagentStatusBridge?.markReady();
       publishExtensionUi();
       return {
         workspace,
@@ -606,6 +609,8 @@ export class WorkspaceLifecycle {
     server.setLastError(undefined);
     const workspace = this.buildWorkspaceSnapshot(graph);
     this.publishWorkspaceSnapshots(server, graph, workspace);
+    graph.subagentStatusBridge?.setIdentity(server.getIdentity());
+    graph.subagentStatusBridge?.markReady();
     publishExtensionUi();
     return {
       workspace,
@@ -702,10 +707,35 @@ export class WorkspaceLifecycle {
         agentDir,
         settingsManager,
       });
+      const statusBridge = this.context.deps.subagentStatusBridgeFactory?.(
+        (identity, snapshot) => {
+          const current = this.context.getServer()?.getIdentity();
+          if (
+            !current ||
+            identity.hostInstanceId !== current.hostInstanceId ||
+            identity.workspaceId !== current.workspaceId ||
+            identity.workspaceRevision !== current.workspaceRevision ||
+            identity.sessionId !== current.sessionId ||
+            identity.sessionRevision !== current.sessionRevision ||
+            identity.packageRevision !== current.packageRevision
+          ) {
+            return;
+          }
+          try {
+            this.context
+              .getServer()
+              ?.emitForIdentity(identity, "subagents.statusChanged", snapshot);
+          } catch {
+            // Ignore status polls racing workspace/session replacement.
+          }
+        },
+        { sessionsDir: sessionStorageDirs(agentDir, args.canonicalCwd).activeDir },
+      );
       const resourceLoader = new DefaultResourceLoader({
         cwd: args.canonicalCwd,
         agentDir,
         settingsManager,
+        ...(statusBridge ? { extensionFactories: [statusBridge.extension] } : {}),
       });
       // Workspace selection (including the startup preload) must not reach the
       // network; see withoutImplicitPackageInstall.
@@ -766,6 +796,7 @@ export class WorkspaceLifecycle {
         resourceReloadRequired: false,
         backgroundSessions: new Map(),
         providerOwner,
+        ...(statusBridge ? { subagentStatusBridge: statusBridge } : {}),
       };
       const candidateIdentity: HostIdentity = {
         hostInstanceId: server.identity.hostInstanceId,

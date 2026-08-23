@@ -712,7 +712,7 @@ export function ThinkingControls() {
             ? "bg-surface-overlay text-foreground"
             : "text-muted hover:bg-surface-overlay hover:text-foreground"
         } disabled:cursor-default disabled:opacity-40`}
-        disabled={!session.isIdle && !session.isCompacting}
+        disabled={!session}
         aria-haspopup="menu"
         aria-expanded={open}
         title={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
