@@ -22,6 +22,21 @@ function roleFromSessionName(name: string | undefined): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+/** Extracts the real run id from a pi subagent session name such as
+ * `subagent-worker-<runId>-1`. Fork-context children (worker/oracle) write
+ * their transcript under a generic `forks/` folder whose directory name is
+ * the fork session id, not the run id, so the name-encoded run id must win
+ * over any directory-derived token. */
+function subagentSessionRunToken(name: string | undefined): string | undefined {
+  if (!name) return undefined;
+  const uuid = name.match(
+    /^subagent-[^-]+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:-\d+)?$/i,
+  );
+  if (uuid) return uuid[1];
+  const short = name.match(/^subagent-[^-]+-(.+?)(?:-\d+)?$/i);
+  return short?.[1] || undefined;
+}
+
 function isJsonValue(value: unknown, depth = 0): value is JsonValue {
   if (depth > 8) return false;
   if (value === null || typeof value === "boolean" || typeof value === "string") return true;
@@ -118,8 +133,12 @@ function displayName(
   if (normalized) return normalized.slice(0, 120);
   const task = firstUserText(entries);
   if (!task) return undefined;
-  const taskLine = task.match(/(?:^|\n)task:\s*([^\n]+)/i)?.[1] ?? task;
-  const clean = (taskLine.split(/[。！？!?]/, 1)[0] ?? taskLine)
+  // Forked workers prepend delegation boilerplate ("Task: [Read from: …]") to
+  // the real assignment; skip that source line so the display name reflects the
+  // actual task instead of an inherited parent-session message.
+  const taskBody = task.replace(/^\s*(?:task:\s*)?\[read from:[^\n]*\]\s*$/gim, "").trim();
+  const taskLine = taskBody.match(/(?:^|\n)task:\s*([^\n]+)/i)?.[1] ?? taskBody;
+  const clean = (taskLine.split(/[。！？!?，,；;]/, 1)[0] ?? taskLine)
     .replace(/\s+/g, " ")
     .replace(/^(请帮我|请|帮我)\s*/i, "")
     .trim();
@@ -173,12 +192,14 @@ function readEntries(path: string): {
   } catch {
     return { entries: [], truncated: false };
   }
+  const startIndex = forkStartIndex(lines);
   const entries: SerializableSessionEntry[] = [];
   const budget = { value: MAX_TOTAL_TEXT };
   let sessionName: string | undefined;
-  let truncated = lines.length > MAX_ENTRIES;
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  let truncated = lines.length - startIndex > MAX_ENTRIES;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined || !line.trim()) continue;
     let raw: unknown;
     try {
       raw = JSON.parse(line);
@@ -215,13 +236,105 @@ function readEntries(path: string): {
   };
 }
 
+/** Fork-context subagent transcripts (worker/oracle) begin with a full copy of
+ * the parent session history because pi forks the parent context. The actual
+ * child content starts at the child's own `subagent-*` session_info entry.
+ * Skipping everything before it keeps the parent conversation out of the
+ * subagent panel. Returns the first line index to include (0 when the file is
+ * not such a fork or no child marker is found). The last `subagent-*` marker
+ * wins so nested forks resolve to the innermost child. */
+function forkStartIndex(lines: string[]): number {
+  if (lines.length === 0) return 0;
+  const firstLine = lines[0];
+  if (firstLine === undefined) return 0;
+  let header: unknown;
+  try {
+    header = JSON.parse(firstLine);
+  } catch {
+    return 0;
+  }
+  if (!header || typeof header !== "object") return 0;
+  const first = header as { type?: unknown; parentSession?: unknown };
+  if (first.type !== "session" || typeof first.parentSession !== "string") return 0;
+  let start = 0;
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined || !line.trim()) continue;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!raw || typeof raw !== "object") continue;
+    const record = raw as { type?: unknown; name?: unknown };
+    if (
+      record.type === "session_info" &&
+      typeof record.name === "string" &&
+      subagentSessionRunToken(record.name) !== undefined
+    ) {
+      start = index;
+    }
+  }
+  return start;
+}
+
 function matchesNode(path: string, nodeId: string, sessionId: string): boolean {
   const normalized = nodeId.trim().toLowerCase();
   const token = normalized.startsWith("external:")
     ? normalized.split(":").filter(Boolean).at(-1)
     : normalized;
   if (!token) return false;
-  return `${path}\n${sessionId}`.toLowerCase().includes(token);
+  if (`${path}\n${sessionId}`.toLowerCase().includes(token)) return true;
+  // Fork transcripts live under a `forks/` directory that is not named after
+  // the run, so fall back to the run id encoded in the child session name.
+  return sessionFileHasRunToken(path, token);
+}
+
+/** True when a session file contains a pi `subagent-<role>-<runId>-<n>` name
+ * whose run id matches the token. Only fork transcripts carry the run id
+ * inside their content (under a generic `forks/` folder); everything else
+ * matches via path/session id. Only session/session_info headers are inspected
+ * (never tool-result payloads) so the parent session itself can never match.
+ * Reading is bounded to keep unrelated sessions cheap. */
+function sessionFileHasRunToken(path: string, token: string): boolean {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return false;
+  }
+  const firstLineEnd = text.indexOf("\n");
+  const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd);
+  let header: unknown;
+  try {
+    header = JSON.parse(firstLine);
+  } catch {
+    return false;
+  }
+  if (
+    !header ||
+    typeof header !== "object" ||
+    (header as { type?: unknown }).type !== "session" ||
+    typeof (header as { parentSession?: unknown }).parentSession !== "string"
+  ) {
+    return false;
+  }
+  if (text.length > 512 * 1024) text = text.slice(0, 512 * 1024);
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.includes("session_info") && !line.includes('"type":"session"')) continue;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!raw || typeof raw !== "object") continue;
+    const record = raw as { type?: unknown; name?: unknown };
+    if (typeof record.name !== "string") continue;
+    if (subagentSessionRunToken(record.name) === token) return true;
+  }
+  return false;
 }
 
 function findSession(sessionsDir: string, nodeId: string): SessionInfo | null {
@@ -303,12 +416,15 @@ export function listSubagentSessions(
   for (const path of allJsonlFiles(parentDirectory)) {
     const childRelative = relative(parentDirectory, path);
     if (!childRelative || childRelative.startsWith("..") || childRelative === path) continue;
-    const runToken = childRelative.split(sep)[0];
-    if (!runToken || runToken === "run-0" || !path.endsWith(".jsonl")) continue;
+    const directoryToken = childRelative.split(sep)[0];
+    if (!directoryToken || directoryToken === "run-0" || !path.endsWith(".jsonl")) continue;
     const first = sessionHeader(path);
     if (!first?.id) continue;
     const parsed = readEntries(path);
     const sourceName = parsed.sessionName ?? first.name;
+    // The run id encoded in the child session name is authoritative; fork
+    // transcripts live under a generic `forks/` folder that is not the run id.
+    const runToken = subagentSessionRunToken(sourceName) ?? directoryToken;
     const name = displayName(sourceName, parsed.entries);
     const role = roleFromSessionName(sourceName);
     discovered.set(runToken, {
@@ -409,6 +525,18 @@ function stateForNode(sessionsDir: string, nodeId: string): SubagentStatusState 
   const parts = nodeId.split(":");
   const parentSessionId = parts[1];
   const runId = parts.slice(2).join(":");
+  return resolveExternalRunState(sessionsDir, parentSessionId, runId);
+}
+
+/** Resolve a subagent run's state from every source available to a file-only
+ * bridge: async-run status files, parent-session completion notifications, and
+ * the mission record embedded in the parent's `subagent` tool result (which is
+ * what foreground runs produce instead of a notification). */
+export function resolveExternalRunState(
+  sessionsDir: string,
+  parentSessionId: string | null | undefined,
+  runId: string | null | undefined,
+): SubagentStatusState {
   if (!parentSessionId || !runId) return "running";
   const asyncState = statusFromAsyncRuns(sessionsDir, parentSessionId, runId);
   if (asyncState) return asyncState;
@@ -419,20 +547,94 @@ function stateForNode(sessionsDir: string, nodeId: string): SubagentStatusState 
   if (!parent) return "running";
   try {
     for (const line of readFileSync(parent, "utf8").split(/\r?\n/)) {
-      if (!line.includes('"customType":"subagent-notify"')) continue;
-      const content = (JSON.parse(line) as { content?: unknown }).content;
-      if (typeof content !== "string") continue;
-      const notifiedRunId = content.match(/\"runId\"\s*:\s*\"([^\"\\r\\n]+)\"/)?.[1];
-      if (notifiedRunId !== runId) continue;
-      if (/Background task stopped|Workflow stopped|stopped by user/i.test(content))
-        return "stopped";
-      if (/Background task failed|Workflow failed/i.test(content)) return "failed";
-      if (/Background task completed|Workflow completed/i.test(content)) return "complete";
+      if (!line.trim()) continue;
+      if (
+        !line.includes('"customType":"subagent-notify"') &&
+        !line.includes('"toolName":"subagent"')
+      )
+        continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!raw || typeof raw !== "object") continue;
+      const record = raw as {
+        type?: unknown;
+        customType?: unknown;
+        content?: unknown;
+        message?: { role?: unknown; toolName?: unknown; details?: unknown };
+      };
+      if (record.type === "custom_message" && record.customType === "subagent-notify") {
+        const content = record.content;
+        if (typeof content !== "string") continue;
+        const notifiedRunId = content.match(/"runId"\s*:\s*"([^"\r\n]+)"/)?.[1];
+        if (notifiedRunId !== runId) continue;
+        if (/Background task stopped|Workflow stopped|stopped by user/i.test(content))
+          return "stopped";
+        if (/Background task failed|Workflow failed/i.test(content)) return "failed";
+        if (/Background task completed|Workflow completed/i.test(content)) return "complete";
+        continue;
+      }
+      const message = record.message;
+      if (
+        !message ||
+        typeof message !== "object" ||
+        message.role !== "toolResult" ||
+        message.toolName !== "subagent"
+      )
+        continue;
+      const details =
+        message.details !== undefined && typeof message.details === "object"
+          ? (message.details as Record<string, unknown>)
+          : undefined;
+      if (!details) continue;
+      const mission =
+        typeof details.mission === "object" && details.mission !== null
+          ? (details.mission as Record<string, unknown>)
+          : undefined;
+      if (mission) {
+        const runs = mission.runs;
+        if (Array.isArray(runs)) {
+          for (const run of runs) {
+            if (!run || typeof run !== "object") continue;
+            const candidate = run as Record<string, unknown>;
+            if (candidate.runId !== runId) continue;
+            const status = normalizeMissionState(candidate.status);
+            if (status) return status;
+          }
+        }
+        if (details.runId === runId) {
+          const status = normalizeMissionState(mission.status);
+          if (status) return status;
+        }
+      }
     }
   } catch {
     return "running";
   }
   return "running";
+}
+
+function normalizeMissionState(value: unknown): SubagentStatusState | undefined {
+  switch (value) {
+    case "completed":
+    case "complete":
+      return "complete";
+    case "failed":
+      return "failed";
+    case "stopped":
+    case "cancelled":
+      return "stopped";
+    case "queued":
+    case "pending":
+      return "queued";
+    case "paused":
+      return "paused";
+    default:
+      return undefined;
+  }
 }
 
 export function readSubagentSession(

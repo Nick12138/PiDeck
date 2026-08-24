@@ -907,10 +907,6 @@ export const TranscriptRowView = memo(function TranscriptRowView({
               onClick={() => onRetry(row)}
             />
           )}
-          <CopyMessageButton
-            text={stripAttachmentReferenceBlocks(row.copyText)}
-            className="opacity-0 group-hover:opacity-100"
-          />
         </div>
       </div>
     );
@@ -973,10 +969,6 @@ export const TranscriptRowView = memo(function TranscriptRowView({
               className="opacity-0 group-hover/assistant:opacity-100"
             />
           )}
-          <CopyMessageButton
-            text={row.copyText}
-            className="opacity-0 group-hover/assistant:opacity-100"
-          />
           <UsageLabel usage={row.usage} />
         </div>
       </div>
@@ -2075,30 +2067,5 @@ function UsageLabel({ usage }: { usage?: TranscriptRow["usage"] }) {
       {formatTokenCount(usage.totalTokens)} {t("transcriptTokenShort")}
       {cost ? ` / ${cost}` : ""}
     </span>
-  );
-}
-
-function CopyMessageButton({ text, className = "" }: { text: string; className?: string }) {
-  const t = useT();
-  const [copied, setCopied] = useState(false);
-  if (!text) return null;
-  return (
-    <button
-      type="button"
-      title={copied ? t("transcriptCopied") : t("transcriptCopyMessage")}
-      aria-label={copied ? t("transcriptCopied") : t("transcriptCopyMessage")}
-      className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-opacity hover:bg-surface-overlay hover:text-foreground ${className}`}
-      onClick={() => {
-        void navigator.clipboard
-          .writeText(text)
-          .then(() => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1400);
-          })
-          .catch(() => undefined);
-      }}
-    >
-      <Copy size={13} />
-    </button>
   );
 }

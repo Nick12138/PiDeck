@@ -158,4 +158,146 @@ describe("readSubagentSession", () => {
     expect(content).toBe("answer\n\n");
     expect(content).not.toContain("acceptance-report");
   });
+
+  it("truncates the display name at the first comma or semicolon", () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-subagent-session-"));
+    roots.push(root);
+    const runDir = join(root, "run-trim");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, "session.jsonl"),
+      [
+        JSON.stringify({ type: "session", version: 3, id: "trim-session", cwd: root }),
+        JSON.stringify({
+          type: "message",
+          id: "u1",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "检查磁盘空间，清理缓存；然后报告结果。别的内容不应该出现",
+              },
+            ],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const snapshot = readSubagentSession(root, "trim");
+
+    expect(snapshot?.name).toBe("检查磁盘空间");
+  });
+});
+
+describe("forked subagent transcripts", () => {
+  it("discovers fork-context workers by their encoded run id instead of the forks directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-subagent-session-"));
+    roots.push(root);
+    const parentId = "parent-session";
+    const parentFile = join(root, "parent-file.jsonl");
+    writeFileSync(
+      parentFile,
+      JSON.stringify({ type: "session", version: 3, id: parentId, cwd: root }) + "\n",
+    );
+    const forksDir = join(root, "parent-file", "forks");
+    mkdirSync(forksDir, { recursive: true });
+    const runId = "d03f2971-8aa8-4da8-977f-8ac6f152f075";
+    writeFileSync(
+      join(forksDir, "fork-session.jsonl"),
+      [
+        JSON.stringify({
+          type: "session",
+          version: 3,
+          id: "fork-session",
+          parentSession: parentFile,
+          cwd: root,
+        }),
+        JSON.stringify({ type: "model_change", id: "m1", provider: "1", modelId: "x" }),
+        JSON.stringify({ type: "session_info", id: "parent-info", name: "🌐 检查磁盘" }),
+        JSON.stringify({
+          type: "message",
+          id: "parent-msg",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          message: { role: "user", content: [{ type: "text", text: "检查磁盘" }] },
+        }),
+        JSON.stringify({ type: "session_info", id: "child-info", name: `subagent-worker-${runId}-1` }),
+        JSON.stringify({
+          type: "message",
+          id: "child-msg",
+          timestamp: "2026-01-01T00:00:01.000Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Task: [Read from: C:\\context.md]\n\nYou are a delegated subagent.\n\nTask:\n检查磁盘空间\n\n---`,
+              },
+            ],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const sessions = listSubagentSessions(root, parentId);
+
+    expect(sessions).toEqual([
+      {
+        nodeId: `external:${parentId}:${runId}`,
+        sessionId: "fork-session",
+        name: "检查磁盘空间",
+        role: "worker",
+      },
+    ]);
+    const snapshot = readSubagentSession(root, sessions[0]!.nodeId);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.entries.map((entry) => entry.id)).toEqual(["child-info", "child-msg"]);
+    expect(snapshot?.entries.find((entry) => entry.id === "parent-msg")).toBeUndefined();
+  });
+
+  it("resolves the state of a foreground run from the parent tool-result mission", () => {
+    const root = mkdtempSync(join(tmpdir(), "pideck-subagent-session-"));
+    roots.push(root);
+    const parentId = "parent-session";
+    const parentFile = join(root, "parent-file.jsonl");
+    const runId = "d03f2971-8aa8-4da8-977f-8ac6f152f075";
+    writeFileSync(
+      parentFile,
+      [
+        JSON.stringify({ type: "session", version: 3, id: parentId, cwd: root }),
+        JSON.stringify({
+          type: "message",
+          id: "tool-result",
+          message: {
+            role: "toolResult",
+            toolName: "subagent",
+            content: [],
+            details: {
+              runId,
+              mission: { status: "completed", runs: [{ runId, status: "completed" }] },
+            },
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    const childDir = join(root, "parent-file", runId, "run-0");
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(
+      join(childDir, "session.jsonl"),
+      [
+        JSON.stringify({ type: "session", version: 3, id: "child-session", cwd: root }),
+        JSON.stringify({
+          type: "message",
+          id: "m1",
+          message: { role: "user", content: [{ type: "text", text: "Task: 干活" }] },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const snapshot = readSubagentSession(root, `external:${parentId}:${runId}`);
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.state).toBe("complete");
+  });
 });

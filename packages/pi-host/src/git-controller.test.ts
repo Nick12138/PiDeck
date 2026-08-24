@@ -111,7 +111,7 @@ function context(method: string, params: unknown): HandlerContext {
 
 describe("Git controller", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("reads status for the active canonical workspace", async () => {
@@ -305,7 +305,7 @@ describe("Git controller", () => {
       }),
       expect.objectContaining({
         apiKey: "key",
-        maxTokens: 300,
+        maxTokens: 2000,
         reasoning: "minimal",
         maxRetries: 0,
       }),
@@ -382,5 +382,165 @@ describe("Git controller", () => {
     ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
     expect(result).toMatchObject({ error: { code: "AUTH_REQUIRED" } });
     expect(completeSimple).not.toHaveBeenCalled();
+  });
+
+  it("retries without reasoning when the model returns only thinking content", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts\n+line",
+      truncated: false,
+    });
+    vi.mocked(completeSimple)
+      .mockResolvedValueOnce({
+        content: [{ type: "thinking", thinking: "The user wants a commit message..." }],
+        stopReason: "length",
+      } as never)
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "feat: 更新应用" }],
+        stopReason: "stop",
+      } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(completeSimple).toHaveBeenCalledTimes(2);
+    expect(completeSimple).toHaveBeenLastCalledWith(
+      { provider: "anthropic", id: "claude-sonnet-4-5" },
+      expect.objectContaining({ systemPrompt: expect.stringContaining("Simplified Chinese") }),
+      expect.objectContaining({ maxTokens: 4000 }),
+    );
+    expect(result).toEqual({ result: { message: "feat: 更新应用" } });
+  });
+
+  it("falls back to a patch-derived message when both attempts are empty", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: [
+        "diff --git a/src/app.ts b/src/app.ts",
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -1,3 +1,4 @@",
+        " line",
+        "+added",
+        "-removed",
+        "diff --git a/README.md b/README.md",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/README.md",
+        "@@ -0,0 +1,2 @@",
+        "+hello",
+        "+world",
+      ].join("\n"),
+      truncated: false,
+    });
+    vi.mocked(completeSimple).mockResolvedValue({
+      content: [],
+      stopReason: "length",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(result).toEqual({
+      result: {
+        message: [
+          "chore: 更新 2 个文件",
+          "",
+          "- 修改 src/app.ts（+1 -1）",
+          "- 新增 README.md（+2）",
+        ].join("\n"),
+        fallback: true,
+      },
+    });
+  });
+
+  it("strips a leading <think> block from the model output", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts\n+line",
+      truncated: false,
+    });
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "<think>Analyze the diff.</think>\nfeat: 更新应用" },
+      ],
+      stopReason: "stop",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ result: { message: "feat: 更新应用" } });
+  });
+
+  it("uses partial text when the model hit the token limit", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "diff --git a/src/app.ts b/src/app.ts\n+line",
+      truncated: false,
+    });
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      content: [{ type: "text", text: "feat: 更新应用" }],
+      stopReason: "length",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ result: { message: "feat: 更新应用" } });
+  });
+
+  it("falls back to a generic message when the patch has no parseable files", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: "Binary files differ",
+      truncated: false,
+    });
+    vi.mocked(completeSimple).mockResolvedValue({
+      content: [],
+      stopReason: "length",
+    } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(result).toEqual({ result: { message: "chore: 更新代码", fallback: true } });
   });
 });

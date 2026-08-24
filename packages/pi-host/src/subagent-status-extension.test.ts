@@ -86,6 +86,53 @@ describe("externalCompletedRuns", () => {
     ]);
   });
 
+  it("hides terminal runs that never produced a child session file", () => {
+    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
+    roots.push(directory);
+    writeFileSync(
+      join(directory, "active.jsonl"),
+      [
+        JSON.stringify({ type: "session", version: 3, id: "active-session", cwd: directory }),
+        // A launch-stage failure leaves only a notification; no session.jsonl
+        // exists under the run directory (the child process never started).
+        JSON.stringify({
+          type: "custom_message",
+          customType: "subagent-notify",
+          content: 'Background task failed: { "runId": "orphan-run", "agent": "delegate" }',
+        }),
+        // A real completed run keeps a session file and must stay visible.
+        JSON.stringify({
+          type: "custom_message",
+          customType: "subagent-notify",
+          content:
+            'Background task completed: { "runId": "real-run", "agent": "delegate", "output": "done" }',
+        }),
+      ].join("\n") + "\n",
+    );
+    const realChild = join(directory, "active-session", "real-run", "run-0");
+    mkdirSync(realChild, { recursive: true });
+    writeFileSync(
+      join(realChild, "session.jsonl"),
+      [
+        JSON.stringify({ type: "session", version: 3, id: "real-session", cwd: directory }),
+        JSON.stringify({
+          type: "session_info",
+          id: "real-info",
+          name: "subagent-delegate-real-run-1",
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "m1",
+          message: { role: "user", content: [{ type: "text", text: "ok" }] },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const runs = externalCompletedRuns(directory, "active-session");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ id: expect.stringContaining("real-run"), state: "complete" });
+  });
+
   it("recovers the configured role from a live child session name", () => {
     const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
     roots.push(directory);

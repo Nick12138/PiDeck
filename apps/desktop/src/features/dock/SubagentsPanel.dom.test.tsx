@@ -2,9 +2,18 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
+import { hostClient } from "../../lib/bridge/host-client";
 import { SubagentsPanel } from "./SubagentsPanel";
+
+const host = { hostInstanceId: "00000000-0000-4000-8000-000000000101" } as HostStatusSnapshot;
+const workspace = {
+  id: "00000000-0000-4000-8000-000000000201",
+  revision: 3,
+  canonicalCwd: "/repo/apps/desktop",
+} as WorkspaceSnapshot;
 
 const baseStatus = {
   version: 1 as const,
@@ -158,5 +167,104 @@ describe("SubagentsPanel", () => {
     });
     render(<SubagentsPanel />);
     expect(screen.getByText("No active subagents.")).toBeVisible();
+  });
+
+  it("collapses intermediate operations for finished subagents and expands on click", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "subagents.getSession") {
+        return {
+          protocolVersion: 1,
+          id: crypto.randomUUID(),
+          method,
+          hostInstanceId: host.hostInstanceId,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          sessionId: null,
+          sessionRevision: 0,
+          packageRevision: 0,
+          ok: true,
+          result: {
+            nodeId: "run-collapse",
+            sessionId: "s1",
+            state: "complete",
+            truncated: false,
+            updatedAt: 1787545104000,
+            entries: [
+              {
+                type: "message",
+                id: "u1",
+                timestamp: "2026-01-01T00:00:00.000Z",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: "Do the task" }],
+                },
+              },
+              {
+                type: "message",
+                id: "a1",
+                timestamp: "2026-01-01T00:00:30.000Z",
+                message: {
+                  role: "assistant",
+                  content: [
+                    { type: "thinking", thinking: "secret thinking" },
+                    { type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } },
+                    { type: "text", text: "Let me check" },
+                  ],
+                },
+              },
+              {
+                type: "message",
+                id: "t1",
+                timestamp: "2026-01-01T00:00:31.000Z",
+                message: {
+                  role: "toolResult",
+                  toolCallId: "c1",
+                  toolName: "bash",
+                  content: [{ type: "text", text: "output" }],
+                  isError: false,
+                },
+              },
+              {
+                type: "message",
+                id: "a2",
+                timestamp: "2026-01-01T00:02:00.000Z",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "Final answer" }],
+                },
+              },
+            ],
+          },
+        } as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          { id: "run-collapse", kind: "subagent", label: "Collapse task", state: "complete" },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse task" }));
+
+    // Only the user message, the collapsed summary, and the final result show.
+    expect(await screen.findByText("Do the task")).toBeVisible();
+    expect(screen.getByText("Completed after 2 min")).toBeVisible();
+    expect(screen.getByText("Final answer")).toBeVisible();
+    expect(screen.queryByText("Let me check")).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret thinking/)).not.toBeInTheDocument();
+
+    // Clicking the summary expands the intermediate operations.
+    fireEvent.click(screen.getByText("Completed after 2 min").closest("button") as HTMLElement);
+    expect(await screen.findByText("Let me check")).toBeVisible();
+
+    request.mockRestore();
   });
 });

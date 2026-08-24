@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { CircleAlert, LoaderCircle, Square, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, CircleAlert, Copy, LoaderCircle, Square } from "lucide-react";
 import type {
   SubagentSessionSnapshot,
   SubagentStatusNode,
@@ -9,6 +9,8 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { hostClient } from "../../lib/bridge/host-client";
 import { workspaceContext } from "../../lib/bridge/host-context";
+import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
+import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTranscriptRows, type TranscriptRow } from "../chat/transcript-model";
 import { TranscriptRowView } from "../chat/Transcript";
 
@@ -69,18 +71,130 @@ function flattenNodes(
   ]);
 }
 
+/** Human-readable elapsed time between the first user turn and the final
+ * assistant turn, e.g. "2分钟" / "under 1 min". */
+function runDurationLabel(
+  start: number | undefined,
+  end: number | undefined,
+  t: ReturnType<typeof useT>,
+): string | undefined {
+  if (
+    typeof start !== "number" ||
+    typeof end !== "number" ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end)
+  ) {
+    return undefined;
+  }
+  const diffMs = Math.max(0, end - start);
+  if (diffMs < 60_000) return t("subagentsRunUnderMinute");
+  return t("subagentsRunMinutes", { count: Math.round(diffMs / 60_000) });
+}
+
+/** Collapsed summary for a finished run, e.g. "执行2分钟后已完成". */
+function runSummaryLabel(
+  state: SubagentSessionSnapshot["state"],
+  duration: string | undefined,
+  t: ReturnType<typeof useT>,
+): string {
+  if (!duration) return t("subagentsRunSummaryFallback");
+  switch (state) {
+    case "complete":
+      return t("subagentsRunSummaryComplete", { duration });
+    case "failed":
+      return t("subagentsRunSummaryFailed", { duration });
+    case "stopped":
+      return t("subagentsRunSummaryStopped", { duration });
+    default:
+      return t("subagentsRunSummaryFallback");
+  }
+}
+
+function isMessageEntry(entry: { type: string; message?: unknown }): entry is {
+  type: "message";
+  message?: { role?: string };
+} {
+  return entry.type === "message" && typeof entry.message === "object" && entry.message !== null;
+}
+
+function entryTimeMs(entry: { timestamp?: unknown }): number | undefined {
+  const ts = entry.timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts)) return ts;
+  if (typeof ts === "string") {
+    const parsed = Date.parse(ts);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
 function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const t = useT();
   const [expandedUserRows, setExpandedUserRows] = useState<ReadonlySet<string>>(new Set());
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const entries = snapshot.entries;
   const rows = useMemo(
     () =>
       buildTranscriptRows([], {
-        entries: snapshot.entries,
+        entries,
         turnActive: snapshot.state === "running",
       }),
-    [snapshot.entries, snapshot.state],
+    [entries, snapshot.state],
   );
   const firstUserRowKey = useMemo(() => rows.find((row) => row.role === "user")?.key, [rows]);
+
+  // Only finished runs collapse their intermediate tool/thinking history.
+  // Splitting happens at the entry level: consecutive assistant messages are
+  // merged into one transcript row, so the row model alone cannot separate
+  // the intermediate operations from the final answer.
+  const collapsible = snapshot.state !== "running";
+  const firstUserIndex = useMemo(
+    () => entries.findIndex((entry) => isMessageEntry(entry) && entry.message?.role === "user"),
+    [entries],
+  );
+  const lastAssistantIndex = useMemo(() => {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (isMessageEntry(entry) && entry.message?.role === "assistant") return index;
+    }
+    return -1;
+  }, [entries]);
+  const collapsedMode =
+    collapsible && firstUserIndex >= 0 && lastAssistantIndex > firstUserIndex;
+
+  const userRows = useMemo(
+    () =>
+      collapsedMode
+        ? buildTranscriptRows([], { entries: entries.slice(0, firstUserIndex + 1), turnActive: false })
+        : [],
+    [collapsedMode, entries, firstUserIndex],
+  );
+  const middleRows = useMemo(
+    () =>
+      collapsedMode
+        ? buildTranscriptRows([], {
+            entries: entries.slice(firstUserIndex + 1, lastAssistantIndex),
+            turnActive: false,
+          })
+        : [],
+    [collapsedMode, entries, firstUserIndex, lastAssistantIndex],
+  );
+  const resultRows = useMemo(
+    () =>
+      collapsedMode
+        ? buildTranscriptRows([], { entries: entries.slice(lastAssistantIndex), turnActive: false })
+        : [],
+    [collapsedMode, entries, lastAssistantIndex],
+  );
+  const firstUserRow = [...userRows].reverse().find((row) => row.role === "user");
+  const resultRow = [...resultRows].reverse().find((row) => row.role === "assistant");
+  const duration = runDurationLabel(
+    firstUserIndex >= 0 ? entryTimeMs(entries[firstUserIndex] as { timestamp?: unknown }) : undefined,
+    lastAssistantIndex >= 0
+      ? entryTimeMs(entries[lastAssistantIndex] as { timestamp?: unknown })
+      : undefined,
+    t,
+  );
+  const summary = runSummaryLabel(snapshot.state, duration, t);
 
   useEffect(() => {
     setExpandedUserRows((current) => {
@@ -91,6 +205,34 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
       return current.has(firstUserRowKey) ? new Set([firstUserRowKey]) : new Set();
     });
   }, [firstUserRowKey]);
+
+  const renderRow = (row: TranscriptRow, isFirstUser = row.key === firstUserRowKey) => {
+    return (
+      <div className="transcript-row" data-row-key={row.key} key={row.key}>
+        <TranscriptRowView
+          row={row}
+          mode="static"
+          showCaret={false}
+          working={false}
+          retryableTurn={undefined}
+          retryVisible={false}
+          goOnVisible={false}
+          onRetry={async () => undefined}
+          readOnly
+          userCollapsible={isFirstUser}
+          userExpanded={isFirstUser && expandedUserRows.has(row.key)}
+          onToggleUser={
+            isFirstUser
+              ? () =>
+                  setExpandedUserRows((current) =>
+                    current.has(row.key) ? new Set() : new Set([row.key]),
+                  )
+              : undefined
+          }
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="border-t border-border bg-surface/60">
@@ -104,35 +246,23 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
           <div className="flex min-h-20 items-center justify-center text-center text-xs text-muted">
             {t("subagentsNoConversation")}
           </div>
+        ) : collapsedMode && firstUserRow && resultRow ? (
+          <>
+            {renderRow(firstUserRow, true)}
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-surface-overlay px-3 py-2 text-xs text-muted transition-colors hover:text-foreground"
+              aria-expanded={historyExpanded}
+              onClick={() => setHistoryExpanded((current) => !current)}
+            >
+              <span className="font-medium">{summary}</span>
+              {historyExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            {historyExpanded && middleRows.map((row) => renderRow(row, false))}
+            {renderRow(resultRow, false)}
+          </>
         ) : (
-          rows.map((row: TranscriptRow) => {
-            const isFirstUser = row.key === firstUserRowKey;
-            return (
-              <div className="transcript-row" data-row-key={row.key} key={row.key}>
-                <TranscriptRowView
-                  row={row}
-                  mode="static"
-                  showCaret={false}
-                  working={false}
-                  retryableTurn={undefined}
-                  retryVisible={false}
-                  goOnVisible={false}
-                  onRetry={async () => undefined}
-                  readOnly
-                  userCollapsible={isFirstUser}
-                  userExpanded={isFirstUser && expandedUserRows.has(row.key)}
-                  onToggleUser={
-                    isFirstUser
-                      ? () =>
-                          setExpandedUserRows((current) =>
-                            current.has(row.key) ? new Set() : new Set([row.key]),
-                          )
-                      : undefined
-                  }
-                />
-              </div>
-            );
-          })
+          rows.map((row) => renderRow(row))
         )}
       </div>
     </div>
@@ -149,6 +279,7 @@ function InlineNode({
   stopping,
   onToggle,
   onStop,
+  onRetry,
 }: {
   node: SubagentStatusNode;
   depth: number;
@@ -159,6 +290,7 @@ function InlineNode({
   stopping: boolean;
   onToggle: () => void;
   onStop: () => void;
+  onRetry: () => void;
 }) {
   const t = useT();
   const displayName = node.name ?? node.label;
@@ -166,7 +298,28 @@ function InlineNode({
   const localizedRole = roleLabel(role, t);
   const showRole = Boolean(localizedRole && role !== displayName);
   return (
-    <div className="group" data-subagent-node={node.id}>
+    <div
+      className="group"
+      data-subagent-node={node.id}
+      onContextMenu={(event) => {
+        if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          trigger: contextMenuTrigger(event.target),
+          items: [
+            {
+              id: "subagents.copyId",
+              label: t("subagentsCopyId"),
+              icon: Copy,
+              onSelect: () => navigator.clipboard.writeText(node.id),
+            },
+          ],
+        });
+      }}
+    >
       <div
         className={`flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay ${expanded ? "bg-surface-overlay" : ""}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
@@ -230,10 +383,23 @@ function InlineNode({
           {snapshot ? (
             <TranscriptView snapshot={snapshot} />
           ) : (
-            <div className="border-t border-border px-6 py-4 text-xs text-muted">
-              {loading || loadError
-                ? t("subagentsLoadingConversation")
-                : t("subagentsLoadingConversation")}
+            <div className="border-t border-border px-6 py-4 text-xs">
+              {loading ? (
+                <div className="text-muted">{t("subagentsLoadingConversation")}</div>
+              ) : loadError ? (
+                <div className="flex flex-col items-start gap-2">
+                  <span className="text-danger">{t("subagentsLoadFailed")}</span>
+                  <button
+                    type="button"
+                    className="rounded border border-border px-2 py-1 text-muted hover:bg-surface-overlay hover:text-foreground"
+                    onClick={onRetry}
+                  >
+                    {t("transcriptRetryMessage")}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-muted">{t("subagentsLoadingConversation")}</div>
+              )}
             </div>
           )}
         </div>
@@ -250,6 +416,7 @@ export function SubagentsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, SubagentSessionSnapshot>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [errorId, setErrorId] = useState<string | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
   const hasRuns = status.runs.length > 0;
   const activeCount = useMemo(
@@ -264,12 +431,9 @@ export function SubagentsPanel() {
     }
   }, [expandedId, nodes]);
 
-  useEffect(() => {
-    if (!expandedId || !host || !workspace) return;
-    const target = nodes.find(({ node }) => node.id === expandedId)?.node;
-    if (!target) return;
-    let cancelled = false;
-    const load = async () => {
+  const loadSession = useCallback(
+    async (target: SubagentStatusNode) => {
+      if (!host || !workspace) return;
       setLoadingId(target.id);
       try {
         const response = await hostClient.request(
@@ -278,22 +442,32 @@ export function SubagentsPanel() {
           { nodeId: target.id },
           15_000,
         );
-        if (cancelled) return;
         if (response.ok) {
           setSnapshots((current) => ({ ...current, [target.id]: response.result }));
+          setErrorId((current) => (current === target.id ? null : current));
+        } else {
+          setErrorId(target.id);
         }
+      } catch {
+        setErrorId(target.id);
       } finally {
-        if (!cancelled) setLoadingId(null);
+        setLoadingId((current) => (current === target.id ? null : current));
       }
-    };
-    void load();
+    },
+    [host, workspace],
+  );
+
+  useEffect(() => {
+    if (!expandedId || !host || !workspace) return;
+    const target = nodes.find(({ node }) => node.id === expandedId)?.node;
+    if (!target) return;
+    void loadSession(target);
     const interval =
-      target.state === "running" ? window.setInterval(() => void load(), 1_500) : undefined;
+      target.state === "running" ? window.setInterval(() => void loadSession(target), 1_500) : undefined;
     return () => {
-      cancelled = true;
       if (interval !== undefined) window.clearInterval(interval);
     };
-  }, [expandedId, host, nodes, workspace]);
+  }, [expandedId, host, nodes, workspace, loadSession]);
 
   const stopNode = async (node: SubagentStatusNode) => {
     if (!host || !workspace || node.state !== "running") return;
@@ -316,12 +490,8 @@ export function SubagentsPanel() {
       aria-label={t("dockSubagents")}
       data-subagents-panel
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Users size={14} className="shrink-0 text-accent" />
-          <span className="truncate text-xs font-semibold">{t("subagentsTitle")}</span>
-        </div>
-        <span className="text-[10px] text-accent">
+      <div className="flex shrink-0 items-center border-b border-border px-3 py-2">
+        <span className="text-[10px] text-white">
           {t("subagentsActiveCount", { count: activeCount })}
         </span>
       </div>
@@ -335,7 +505,7 @@ export function SubagentsPanel() {
           {t("subagentsEmpty")}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto border-b border-border p-1.5">
+        <div className="min-h-0 flex-1 overflow-auto p-1.5">
           {nodes.map(({ node, depth }) => (
             <InlineNode
               key={node.id}
@@ -344,10 +514,11 @@ export function SubagentsPanel() {
               expanded={expandedId === node.id}
               snapshot={snapshots[node.id] ?? null}
               loading={loadingId === node.id}
-              loadError={false}
+              loadError={errorId === node.id}
               stopping={stoppingId === node.id}
               onToggle={() => setExpandedId((current) => (current === node.id ? null : node.id))}
               onStop={() => void stopNode(node)}
+              onRetry={() => void loadSession(node)}
             />
           ))}
         </div>

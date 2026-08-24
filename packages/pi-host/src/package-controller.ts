@@ -660,6 +660,13 @@ async function mutatePackageUnderLock(
           await g.agentSession.reload();
           const sessionRevision = server.identity.bumpSessionRevision();
           g.extensionUiUpdateIdentity?.(server.getIdentity());
+          // agentSession.reload() re-invokes the subagent status bridge
+          // extension with a fresh generation; re-commit the post-bump
+          // identity (re-arming the bridge generation gate) so its next
+          // publish survives the identity match. markReady is deferred until
+          // after session.snapshot below, mirroring session create/open
+          // ordering.
+          g.subagentStatusBridge?.setIdentity(server.getIdentity());
           g.toolRevision = 1;
           sessionSnap = buildSessionSnapshot({
             session: g.agentSession,
@@ -744,6 +751,9 @@ async function mutatePackageUnderLock(
     if (sessionChanged && sessionSnap) {
       server.emit("session.snapshot", sessionSnap);
       server.emit("agent.toolsChanged", sessionSnap.tools);
+      // The reloaded bridge must observe the new session snapshot identity
+      // before its status event reaches the desktop.
+      g.subagentStatusBridge?.markReady();
     }
 
     const result: PackageMutationResult = {

@@ -1,5 +1,9 @@
 import { createHostError, type GitStatusSnapshot, type HostError } from "@pideck/protocol";
-import { completeSimple, type Context } from "@earendil-works/pi-ai/compat";
+import {
+  completeSimple,
+  type AssistantMessage,
+  type Context,
+} from "@earendil-works/pi-ai/compat";
 import { GitService, GitServiceError } from "./git-service.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import type { MethodHandler } from "./server.js";
@@ -17,6 +21,127 @@ function hostError(error: unknown): HostError {
 
 function workspace(factory: WorkspaceGraphFactory): string | null {
   return factory.getGraph()?.canonicalCwd ?? null;
+}
+
+/**
+ * Output-token budget for the commit-message call. Reasoning models spend a
+ * large share of the budget on hidden thinking; 300 tokens were frequently
+ * exhausted before any visible answer, producing an empty message.
+ */
+const COMMIT_MESSAGE_MAX_TOKENS = 2_000;
+
+/** Budget used when retrying a commit-message call that came back empty. */
+const COMMIT_MESSAGE_RETRY_MAX_TOKENS = 4_000;
+
+/**
+ * Extract the model's visible answer from an assistant message. Some models
+ * emit their deliberation inside a leading `<think>…</think>` block (or as an
+ * unterminated `<think>` when truncated); that preamble is not a commit
+ * message, so it is stripped when it precedes real text, and treated as empty
+ * when it is all the model produced.
+ */
+function commitMessageText(response: AssistantMessage): string {
+  const text = response.content
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+  if (!text) return "";
+  const closed = /^<think>[\s\S]*?<\/think>\s*/u.exec(text);
+  if (closed) return text.slice(closed[0].length).trim();
+  if (/^<think>/u.test(text)) return "";
+  return text;
+}
+
+/**
+ * Deterministic fallback for when the model produces no usable text at all.
+ * Derives a Conventional Commits message from the staged patch file headers,
+ * so the user always gets something editable instead of a hard error.
+ */
+function fallbackCommitMessage(patch: string): string {
+  const files: Array<{
+    path: string;
+    kind: "modified" | "added" | "deleted" | "renamed";
+    fromPath?: string;
+    additions: number;
+    deletions: number;
+  }> = [];
+  let current: (typeof files)[number] | null = null;
+  let renameFrom: string | null = null;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      const match =
+        /^diff --git a\/(.*?) b\/(.*)$/u.exec(line) ??
+        /^diff --git (.*?) (.*)$/u.exec(line);
+      if (!match) continue;
+      const fromPath = match[1] === "/dev/null" ? undefined : match[1];
+      const toPath = match[2] === "/dev/null" ? undefined : match[2];
+      if (current) files.push(current);
+      current = {
+        path: toPath ?? fromPath ?? match[2] ?? "",
+        kind: "modified",
+        fromPath,
+        additions: 0,
+        deletions: 0,
+      };
+      renameFrom = null;
+      continue;
+    }
+    if (!current) continue;
+    if (line.startsWith("new file mode")) {
+      current.kind = "added";
+    } else if (line.startsWith("deleted file mode")) {
+      current.kind = "deleted";
+    } else if (line.startsWith("rename from ")) {
+      renameFrom = line.slice("rename from ".length);
+      current.kind = "renamed";
+      current.fromPath = renameFrom;
+    } else if (line.startsWith("rename to ")) {
+      current.path = line.slice("rename to ".length);
+      current.kind = "renamed";
+      current.fromPath = renameFrom ?? current.fromPath;
+    } else if (/^\+(?!\+)/u.test(line)) {
+      current.additions += 1;
+    } else if (/^-(?!-)/u.test(line)) {
+      current.deletions += 1;
+    }
+  }
+  if (current) files.push(current);
+
+  if (files.length === 0) return "chore: 更新代码";
+
+  const kindLabel = (kind: (typeof files)[number]["kind"]): string => {
+    switch (kind) {
+      case "added":
+        return "新增";
+      case "deleted":
+        return "删除";
+      case "renamed":
+        return "重命名";
+      default:
+        return "修改";
+    }
+  };
+  const MAX_LISTED = 10;
+  const bullets = files.slice(0, MAX_LISTED).map((file) => {
+    const name =
+      file.kind === "renamed" && file.fromPath
+        ? `${file.fromPath} → ${file.path}`
+        : file.path;
+    const stats =
+      file.additions > 0 && file.deletions > 0
+        ? `（+${file.additions} -${file.deletions}）`
+        : file.additions > 0
+          ? `（+${file.additions}）`
+          : file.deletions > 0
+            ? `（-${file.deletions}）`
+            : "";
+    return `- ${kindLabel(file.kind)} ${name}${stats}`;
+  });
+  const hidden = files.length - MAX_LISTED;
+  if (hidden > 0) bullets.push(`- 以及其他 ${hidden} 个文件`);
+
+  return [`chore: 更新 ${files.length} 个文件`, "", ...bullets].join("\n");
 }
 
 export function createGitHandlers(
@@ -291,36 +416,52 @@ export function createGitHandlers(
             },
           ],
         };
-        const response = await completeSimple(model, context, {
-          apiKey: auth.apiKey,
-          headers: auth.headers,
-          env: auth.env,
-          maxTokens: 300,
-          reasoning: "minimal",
-          timeoutMs: 30_000,
-          maxRetries: 0,
-        });
+        const attempt = async (options: {
+          maxTokens: number;
+          reasoning?: "minimal";
+        }): Promise<AssistantMessage> =>
+          completeSimple(model, context, {
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            env: auth.env,
+            timeoutMs: 30_000,
+            maxRetries: 0,
+            ...options,
+          });
+        const fail = (response: AssistantMessage): HostError =>
+          createHostError(
+            "INTERNAL_ERROR",
+            response.errorMessage ?? `Commit message generation ${response.stopReason}`,
+          );
+        let response = await attempt({ maxTokens: COMMIT_MESSAGE_MAX_TOKENS, reasoning: "minimal" });
         if (response.stopReason === "error" || response.stopReason === "aborted") {
-          return {
-            error: createHostError(
-              "INTERNAL_ERROR",
-              response.errorMessage ?? `Commit message generation ${response.stopReason}`,
-            ),
-          };
+          return { error: fail(response) };
         }
-        const message = response.content
-          .filter((part): part is { type: "text"; text: string } => part.type === "text")
-          .map((part) => part.text)
-          .join("\n")
-          .trim();
+        let message = commitMessageText(response);
         if (!message) {
-          return {
-            error: createHostError("INTERNAL_ERROR", "The model returned an empty commit message"),
-          };
+          // Reasoning models sometimes spend the whole token budget on hidden
+          // thinking and emit no answer text. Retry once without the reasoning
+          // hint and with a larger budget before falling back.
+          response = await attempt({ maxTokens: COMMIT_MESSAGE_RETRY_MAX_TOKENS });
+          if (response.stopReason === "error" || response.stopReason === "aborted") {
+            return { error: fail(response) };
+          }
+          message = commitMessageText(response);
+        }
+        let fallback = false;
+        if (!message) {
+          message = fallbackCommitMessage(patch);
+          fallback = true;
         }
         const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
         if (staleAfter) return { error: staleAfter };
-        return { result: { message, ...(truncated ? { truncated: true } : {}) } };
+        return {
+          result: {
+            message,
+            ...(truncated ? { truncated: true } : {}),
+            ...(fallback ? { fallback: true } : {}),
+          },
+        };
       } catch (error) {
         return { error: hostError(error) };
       }

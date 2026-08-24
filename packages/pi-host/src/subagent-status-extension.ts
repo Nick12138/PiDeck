@@ -6,6 +6,7 @@ import type { HostIdentity, SubagentStatusNode, SubagentsStatusSnapshot } from "
 import {
   findSubagentSessionInfo,
   listSubagentSessions,
+  resolveExternalRunState,
   type DiscoveredSubagentSession,
 } from "./subagent-session.js";
 
@@ -123,11 +124,24 @@ export function externalCompletedRuns(
         state,
         activity: output ? { state: output } : undefined,
       });
-      if (runs.length >= MAX_EXTERNAL_RUNS) return runs;
+      if (runs.length >= MAX_EXTERNAL_RUNS)
+        return runs.filter((run) => !isOrphanedTerminalRun(run, sessionsDir));
     }
-    if (runs.length > 0) return runs;
+    if (runs.length > 0) return runs.filter((run) => !isOrphanedTerminalRun(run, sessionsDir));
   }
   return [];
+}
+
+/** Runs that ended in failure (or were stopped/rejected) without producing any
+ * child session file cannot be opened (subagents.getSession returns
+ * SESSION_NOT_FOUND) and are hidden from the panel entirely. Active runs keep
+ * showing even before a session file exists. */
+function isOrphanedTerminalRun(node: SubagentStatusNode, sessionsDir?: string): boolean {
+  if (!sessionsDir) return false;
+  if (node.state !== "failed" && node.state !== "stopped" && node.state !== "rejected") {
+    return false;
+  }
+  return findSubagentSessionInfo(sessionsDir, node.id) === null;
 }
 
 const BUILTIN_ROLES = new Set([
@@ -602,9 +616,15 @@ function statusBackedExternalRuns(
   const agents = externalRunAgents(sessionsDir, preferredSessionId);
   for (const session of sessions) {
     const runId = session.nodeId.split(":").at(-1) ?? "";
-    if (!states.has(runId)) states.set(runId, "running");
+    if (!states.has(runId)) {
+      // Foreground runs never write an async status file nor emit a
+      // notification; their completion is recorded in the parent session's
+      // subagent tool-result mission, so resolve from there instead of leaving
+      // a finished run stuck in "running".
+      states.set(runId, resolveExternalRunState(sessionsDir, preferredSessionId, runId));
+    }
   }
-  return [...new Set([...states.keys(), ...byRunId.keys()])]
+  const mapped: SubagentStatusNode[] = [...new Set([...states.keys(), ...byRunId.keys()])]
     .slice(0, MAX_EXTERNAL_RUNS)
     .map((runId) => {
       const session = byRunId.get(runId);
@@ -619,6 +639,7 @@ function statusBackedExternalRuns(
         state: states.get(runId) ?? "running",
       };
     });
+  return mapped.filter((run) => !isOrphanedTerminalRun(run, sessionsDir));
 }
 
 function liveExternalRuns(
@@ -643,9 +664,9 @@ function normalizeSnapshot(
       ? asyncRunAgents(sessionsDir, preferredSessionId)
       : new Map<string, string>();
   const runs = Array.isArray(data?.asyncSnapshot?.runs)
-    ? data.asyncSnapshot.runs.map((run) =>
-        enrichNode(run, sessionsDir, fleetRoles, { value: 0 }, runAgents),
-      )
+    ? data.asyncSnapshot.runs
+        .map((run) => enrichNode(run, sessionsDir, fleetRoles, { value: 0 }, runAgents))
+        .filter((run) => !isOrphanedTerminalRun(run, sessionsDir))
     : [];
   return {
     version: 1,
@@ -728,8 +749,23 @@ export function createSubagentStatusBridge(
   let stopActiveExtension: (() => void) | null = null;
   const extension: ExtensionFactory = (pi: ExtensionAPI) => {
     stopActiveExtension?.();
+    // The SDK re-invokes inline extension factories whenever the resource
+    // loader reloads (package install/remove/update, skill mutation). For an
+    // already-live session the lifecycle only calls setIdentity/markReady on
+    // session create/open, so without inheriting the previous instance's sync
+    // markers every publish after the reload is dropped by the generation gate
+    // below and the desktop panel freezes on its last snapshot (e.g. the
+    // pre-install "pi-subagents not detected" state).
+    const inheritsLiveSession =
+      identity !== null &&
+      identityGeneration === activeGeneration &&
+      readyGeneration === activeGeneration;
     const generation = ++nextGeneration;
     activeGeneration = generation;
+    if (inheritsLiveSession) {
+      identityGeneration = generation;
+      readyGeneration = generation;
+    }
     let interval: ReturnType<typeof setInterval> | undefined;
     let externalInterval: ReturnType<typeof setInterval> | undefined;
     let sessionDisposed = false;
@@ -807,6 +843,22 @@ export function createSubagentStatusBridge(
       external = unavailable();
       publish(generation, unavailable());
     });
+
+    // A resource-loader reload of an already-live session is not followed by
+    // a session_start (only a full agentSession.reload is), so resume polling
+    // here; the session_start handler clears and rebuilds these intervals
+    // when a full session reload does fire.
+    if (inheritsLiveSession) {
+      sessionDisposed = false;
+      scanExternal(generation);
+      interval = setInterval(request, POLL_MS);
+      interval.unref?.();
+      externalInterval = options.sessionsDir
+        ? setInterval(() => scanExternal(generation), EXTERNAL_SCAN_MS)
+        : undefined;
+      externalInterval?.unref?.();
+      request();
+    }
   };
 
   return {

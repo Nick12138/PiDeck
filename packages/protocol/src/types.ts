@@ -264,6 +264,8 @@ export type GitCommitMessageResult = {
   message: string;
   /** True when the staged diff was truncated before it reached the model. */
   truncated?: boolean;
+  /** True when the model produced no usable text and the message was derived from the staged patch instead. */
+  fallback?: boolean;
 };
 
 export type SessionSummary = {

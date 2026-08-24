@@ -1,0 +1,170 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { HostIdentity, SubagentsStatusSnapshot } from "@pideck/protocol";
+import { createSubagentStatusBridge } from "./subagent-status-extension.js";
+
+const RPC_READY_EVENT = "subagents:rpc:v1:ready";
+const RPC_REQUEST_EVENT = "subagents:rpc:v1:request";
+
+/**
+ * Regression: installing pi-subagents mid-session triggers an SDK
+ * agentSession.reload(), which re-invokes the inline bridge extension factory
+ * (bumping its generation). The session lifecycle only calls setIdentity /
+ * markReady on create/open, so without re-arming the generation gate every
+ * publish after the reload was dropped and the panel stayed on the stale
+ * pre-install "pi-subagents not detected" state.
+ */
+describe("createSubagentStatusBridge reload resilience", () => {
+  function harness() {
+    const eventListeners = new Map<string, Array<(data: unknown) => void>>();
+    const lifecycle = new Map<string, Array<(data: unknown) => void>>();
+    const requests: Array<{ event: string; data: unknown }> = [];
+    const api: ExtensionAPI = {
+      events: {
+        on(event: string, cb: (data: unknown) => void) {
+          const list = eventListeners.get(event) ?? [];
+          list.push(cb);
+          eventListeners.set(event, list);
+          return () => {
+            const cur = eventListeners.get(event) ?? [];
+            eventListeners.set(
+              event,
+              cur.filter((fn) => fn !== cb),
+            );
+          };
+        },
+        emit(event: string, data: unknown) {
+          requests.push({ event, data });
+          for (const cb of eventListeners.get(event) ?? []) cb(data);
+        },
+      },
+      on(event: string, cb: (data: unknown) => void) {
+        const list = lifecycle.get(event) ?? [];
+        list.push(cb);
+        lifecycle.set(event, list);
+        return () => {
+          const cur = lifecycle.get(event) ?? [];
+          lifecycle.set(
+            event,
+            cur.filter((fn) => fn !== cb),
+          );
+        };
+      },
+    } as unknown as ExtensionAPI;
+
+    const fire = (event: string, data: unknown) => {
+      for (const cb of lifecycle.get(event) ?? []) cb(data);
+    };
+    // pi-subagents announces RPC readiness over the shared extension event bus.
+    const emitReady = () => api.events.emit(RPC_READY_EVENT, { version: 1, methods: ["status"] });
+    const replyToLastRequest = (available: boolean) => {
+      const lastRequest = [...requests].reverse().find((r) => r.event === RPC_REQUEST_EVENT);
+      expect(lastRequest).toBeDefined();
+      const requestId = (lastRequest!.data as { requestId: string }).requestId;
+      const replyEvent = `subagents:rpc:v1:reply:${requestId}`;
+      for (const cb of eventListeners.get(replyEvent) ?? []) {
+        cb(
+          available
+            ? {
+                success: true,
+                data: { fleet: { entries: [], totalActive: 0, omitted: 0 } },
+              }
+            : { success: false },
+        );
+      }
+    };
+    return { api, fire, emitReady, replyToLastRequest, requests };
+  }
+
+  const identity = (): HostIdentity => ({
+    hostInstanceId: "h",
+    workspaceId: "w",
+    workspaceRevision: 1,
+    sessionId: "s",
+    sessionRevision: 1,
+    packageRevision: 0,
+  });
+
+  it("re-arms the generation gate and resumes polling after a mid-session factory re-invocation", () => {
+    const emitted: Array<{ identity: HostIdentity; snapshot: SubagentsStatusSnapshot }> = [];
+    const bridge = createSubagentStatusBridge((identity, snapshot) => {
+      emitted.push({ identity, snapshot });
+    });
+    const h = harness();
+
+    // Session create: factory invoked once, identity committed, ready.
+    bridge.extension(h.api);
+    bridge.setIdentity(identity());
+    bridge.markReady();
+    h.fire("session_start", { type: "session_start", reason: "startup" });
+    expect(emitted.at(-1)?.snapshot).toMatchObject({ available: false });
+
+    // pi-subagents is now installed. The SDK reloads: session_shutdown on the
+    // old runner, factory re-invocation (generation bump), then a reloaded
+    // session_start during which pi-subagents announces RPC readiness. The
+    // package controller then bumps the session revision and re-commits the
+    // bridge identity (setIdentity) before publishing session.snapshot, and
+    // calls markReady afterwards.
+    h.fire("session_shutdown", {});
+    bridge.extension(h.api);
+    h.fire("session_start", { type: "session_start", reason: "reload" });
+    h.emitReady();
+    h.replyToLastRequest(true);
+    const bumped = { ...identity(), sessionRevision: 2 };
+    bridge.setIdentity(bumped);
+    bridge.markReady();
+
+    // The availability flip must reach the desktop, stamped with the current
+    // identity so the workspace-level identity match accepts it.
+    const last = emitted.at(-1);
+    expect(last?.snapshot).toMatchObject({ available: true });
+    expect(last?.identity).toEqual(bumped);
+  });
+
+  it("keeps polling after a resource-loader-only reload (no session_start follows)", () => {
+    const emitted: SubagentsStatusSnapshot[] = [];
+    const bridge = createSubagentStatusBridge((_identity, snapshot) => {
+      emitted.push(snapshot);
+    });
+    const h = harness();
+
+    bridge.extension(h.api);
+    bridge.setIdentity(identity());
+    bridge.markReady();
+    h.fire("session_start", { type: "session_start", reason: "startup" });
+    h.emitReady();
+    h.replyToLastRequest(true);
+    expect(emitted.at(-1)).toMatchObject({ available: true });
+
+    // Skill-mutation style reload: the resource loader re-invokes the factory
+    // but the running session is not rebuilt, so no session_start fires.
+    bridge.extension(h.api);
+    const requestsBefore = h.requests.filter((r) => r.event === RPC_REQUEST_EVENT).length;
+    h.emitReady();
+    h.replyToLastRequest(true);
+
+    expect(h.requests.filter((r) => r.event === RPC_REQUEST_EVENT).length).toBeGreaterThan(
+      requestsBefore,
+    );
+    expect(emitted.at(-1)).toMatchObject({ available: true });
+  });
+
+  it("does not re-arm the gate when the previous instance was never live (fresh graph)", () => {
+    const emit = vi.fn();
+    const bridge = createSubagentStatusBridge((_identity, snapshot) => {
+      emit(snapshot);
+    });
+    const h = harness();
+
+    // First invocation with no session yet: must not emit.
+    bridge.extension(h.api);
+    expect(emit).not.toHaveBeenCalled();
+
+    // A second invocation before any session lifecycle (e.g. reload with no
+    // active session) must also stay silent: identity is null.
+    bridge.extension(h.api);
+    h.emitReady();
+    h.replyToLastRequest(true);
+    expect(emit).not.toHaveBeenCalled();
+  });
+});

@@ -734,6 +734,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
       if (response.result.truncated) {
         pushNotification(t("gitGenerateCommitMessageTruncated"), "warning");
       }
+      if (response.result.fallback) {
+        pushNotification(t("gitGenerateCommitMessageFallback"), "warning");
+      }
     } catch (requestError) {
       if (requestGeneration === generation.current) {
         setError(

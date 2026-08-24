@@ -2118,10 +2118,11 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isGitMutationResult(result, true) ? null : "invalid git.commit result";
     case "git.generateCommitMessage":
       return isPlainObject(result) &&
-        hasExactKeys(result, ["message"], ["truncated"]) &&
+        hasExactKeys(result, ["message"], ["truncated", "fallback"]) &&
         isString(result.message) &&
         result.message.trim().length > 0 &&
-        (result.truncated === undefined || isBoolean(result.truncated))
+        (result.truncated === undefined || isBoolean(result.truncated)) &&
+        (result.fallback === undefined || isBoolean(result.fallback))
         ? null
         : "invalid git.generateCommitMessage result";
     case "session.getCommands":

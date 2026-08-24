@@ -531,44 +531,48 @@ export function App() {
       const store = useAppStore.getState();
       store.setConnecting(true);
       try {
+        const browserDefaults = {
+          theme: "dark" as const,
+          themeFamily: "pideck" as const,
+          restoreLastSession: false,
+          autoRestartHostOnce: false,
+          extensionDecisionPresentation: "auto" as const,
+          terminalProfile: "auto" as const,
+        };
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const snapshot = await invoke<DesktopSettingsSnapshot>("desktop_settings_get");
-          if (!cancelled && snapshot.settings) {
-            store.setDesktopSettings(snapshot.settings);
-            applyTheme(snapshot.settings.theme, { family: snapshot.settings.themeFamily });
-            applyAppearancePreferences(snapshot.settings);
-            if (snapshot.warning) {
-              store.pushNotification(
-                snapshot.recoveredFrom
-                  ? `${snapshot.warning}. ${tCurrent("notifBackupFrom", { path: snapshot.recoveredFrom })}`
-                  : snapshot.warning,
-                "warning",
-              );
+          const { invoke, isTauri } = await import("@tauri-apps/api/core");
+          if (!isTauri()) {
+            store.setDesktopSettings(browserDefaults);
+            applyTheme(browserDefaults.theme, { family: browserDefaults.themeFamily });
+            applyAppearancePreferences(browserDefaults);
+          } else {
+            const snapshot = await invoke<DesktopSettingsSnapshot>("desktop_settings_get");
+            if (!cancelled && snapshot.settings) {
+              store.setDesktopSettings(snapshot.settings);
+              applyTheme(snapshot.settings.theme, { family: snapshot.settings.themeFamily });
+              applyAppearancePreferences(snapshot.settings);
+              if (snapshot.warning) {
+                store.pushNotification(
+                  snapshot.recoveredFrom
+                    ? `${snapshot.warning}. ${tCurrent("notifBackupFrom", { path: snapshot.recoveredFrom })}`
+                    : snapshot.warning,
+                  "warning",
+                );
+              }
             }
           }
         } catch (error) {
-          store.setDesktopSettings({
-            theme: "dark",
-            restoreLastSession: true,
-            autoRestartHostOnce: true,
-            extensionDecisionPresentation: "auto",
-            terminalProfile: "auto",
-          });
-          applyTheme("dark");
-          applyAppearancePreferences({
-            theme: "dark",
-            restoreLastSession: true,
-            autoRestartHostOnce: true,
-            extensionDecisionPresentation: "auto",
-            terminalProfile: "auto",
-          });
-          store.pushNotification(
-            tCurrent("notifDesktopSettingsLoadFailed", {
-              error: error instanceof Error ? error.message : String(error),
-            }),
-            "error",
-          );
+          store.setDesktopSettings(browserDefaults);
+          applyTheme(browserDefaults.theme, { family: browserDefaults.themeFamily });
+          applyAppearancePreferences(browserDefaults);
+          if (nativeWindowAvailable) {
+            store.pushNotification(
+              tCurrent("notifDesktopSettingsLoadFailed", {
+                error: error instanceof Error ? error.message : String(error),
+              }),
+              "error",
+            );
+          }
         }
 
         const transport = await createTauriTransport();
