@@ -273,7 +273,12 @@ export type HostRequestParams = {
     steering: string[];
     followUp: string[];
   };
-  "agent.runNow": { expectedRevision: number; followUpIndex: number };
+  /** Run one queued item now: exactly one of followUpIndex / steeringIndex. */
+  "agent.runNow": {
+    expectedRevision: number;
+    followUpIndex?: number;
+    steeringIndex?: number;
+  };
   "agent.compact": { instructions?: string } | null;
   "agent.abortCompaction": null;
   "agent.navigateTree": { targetId: string };

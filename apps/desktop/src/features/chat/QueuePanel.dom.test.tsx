@@ -213,4 +213,44 @@ describe("QueuePanel Run Now", () => {
     expect(queued.followUp[0]).toContain("<pideck-attachments");
     expect(queued.followUp[0]).toContain("brief.pdf");
   });
+
+  it("offers Send Now on steering items only while the session is idle", async () => {
+    const request = vi.spyOn(hostClient, "request").mockResolvedValue({
+      ok: true,
+      result: { queue: { revision: 8, steering: ["steer"], followUp: ["later"] } },
+    } as never);
+    const user = userEvent.setup();
+    render(<QueuePanel />);
+
+    // Busy session (default fixture): steering items have no Send Now button.
+    expect(screen.queryByRole("button", { name: "Send this message now" })).toBeNull();
+
+    cleanup();
+    const idle = session(SESSION_A, ["later"]);
+    idle.isIdle = true;
+    useAppStore.getState().applySessionSnapshot(idle);
+    render(<QueuePanel />);
+
+    // Idle session: steering item gains Send Now, follow-up keeps Run Now.
+    expect(
+      screen.getByRole("button", { name: "Send this message now" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Interrupt current run and run this now" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send this message now" }));
+    await waitFor(() => expect(request).toHaveBeenCalledOnce());
+    expect(request).toHaveBeenCalledWith(
+      "agent.runNow",
+      {
+        expectedHostInstanceId: HOST_ID,
+        expectedWorkspaceId: WORKSPACE_ID,
+        expectedWorkspaceRevision: 1,
+        expectedSessionId: SESSION_A,
+        expectedSessionRevision: 3,
+      },
+      { expectedRevision: 7, steeringIndex: 0 },
+    );
+  });
 });

@@ -543,12 +543,24 @@ export function validateRequestParams<M extends HostMethod>(
         params.followUp.every(isNonEmptyString)
         ? ok(params)
         : fail("invalid agent.setQueue params", { method });
-    case "agent.runNow":
-      return exactObject(params, ["expectedRevision", "followUpIndex"]) &&
-        isSafeRevision(params.expectedRevision) &&
-        isSafeRevision(params.followUpIndex)
+    case "agent.runNow": {
+      if (
+        !exactObject(params, ["expectedRevision"], ["followUpIndex", "steeringIndex"]) ||
+        !isSafeRevision(params.expectedRevision)
+      ) {
+        return fail("invalid agent.runNow params", { method });
+      }
+      const hasFollowUp = params.followUpIndex !== undefined;
+      const hasSteering = params.steeringIndex !== undefined;
+      if (hasFollowUp === hasSteering) {
+        // Exactly one queue kind must be targeted.
+        return fail("invalid agent.runNow params", { method });
+      }
+      const targetIndex = hasFollowUp ? params.followUpIndex : params.steeringIndex;
+      return isSafeRevision(targetIndex)
         ? ok(params)
         : fail("invalid agent.runNow params", { method });
+    }
     case "agent.compact":
       return params === null ||
         (exactObject(params, [], ["instructions"]) &&

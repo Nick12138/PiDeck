@@ -714,8 +714,13 @@ export function createAgentHandlers(
       }
       const params = ctx.params as {
         expectedRevision: number;
-        followUpIndex: number;
+        followUpIndex?: number;
+        steeringIndex?: number;
       };
+      const runNowTarget =
+        params.steeringIndex !== undefined
+          ? ({ kind: "steering", index: params.steeringIndex } as const)
+          : ({ kind: "followUp", index: params.followUpIndex! } as const);
       const out = await withStableGraphRead({
         requestId: ctx.id,
         identity: server.identity,
@@ -733,12 +738,15 @@ export function createAgentHandlers(
             factory.syncQueueState(session, true);
             return { error: queueConflictError(params.expectedRevision, current) };
           }
-          const item = current.followUp[params.followUpIndex];
+          const item =
+            runNowTarget.kind === "steering"
+              ? current.steering[runNowTarget.index]
+              : current.followUp[runNowTarget.index];
           if (!item) {
             return {
               error: createHostError(
                 "INVALID_REQUEST",
-                "Run Now item is no longer present in the follow-up queue",
+                `Run Now item is no longer present in the ${runNowTarget.kind} queue`,
                 { retryable: true, details: { queue: current } },
               ),
             };
@@ -750,10 +758,20 @@ export function createAgentHandlers(
           };
           pruneQueuedImages(session, [...originalQueue.steering, ...originalQueue.followUp]);
           const originalAttachments = snapshotQueuedImages(session);
-          const remaining: QueueTexts = {
-            steering: [...originalQueue.steering],
-            followUp: originalQueue.followUp.filter((_, index) => index !== params.followUpIndex),
-          };
+          const remaining: QueueTexts =
+            runNowTarget.kind === "steering"
+              ? {
+                  steering: originalQueue.steering.filter(
+                    (_, index) => index !== runNowTarget.index,
+                  ),
+                  followUp: [...originalQueue.followUp],
+                }
+              : {
+                  steering: [...originalQueue.steering],
+                  followUp: originalQueue.followUp.filter(
+                    (_, index) => index !== runNowTarget.index,
+                  ),
+                };
 
           factory.beginQueueTransaction(session);
           session.clearQueue();

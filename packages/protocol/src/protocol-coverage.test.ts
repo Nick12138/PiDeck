@@ -145,7 +145,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "agent.abort": null,
   "agent.clearQueue": { expectedRevision: 0 },
   "agent.setQueue": { expectedRevision: 0, steering: [], followUp: ["next task"] },
-  "agent.runNow": { expectedRevision: 0, followUpIndex: 0 },
+  "agent.runNow": { expectedRevision: 0, steeringIndex: 0 },
   "agent.compact": null,
   "agent.abortCompaction": null,
   "agent.navigateTree": { targetId: "55555555-5555-4555-8555-555555555555" },
@@ -369,8 +369,9 @@ function invalidParams(method: HostMethod): unknown {
       return {};
     case "agent.clearQueue":
     case "agent.setQueue":
-    case "agent.runNow":
       return { steering: "x", followUp: [] };
+    case "agent.runNow":
+      return { expectedRevision: 0, followUpIndex: 0, steeringIndex: 0 }; // both indexes
     case "agent.compact":
       return "x";
     case "agent.navigateTree":

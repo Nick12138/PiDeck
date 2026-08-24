@@ -792,6 +792,63 @@ describe("agent.runNow transaction", () => {
     runGate.resolve();
     await vi.waitFor(() => expect(fixture.sessionOperationLock.isHeld()).toBe(false));
   });
+
+  it("runs a steering item immediately when idle and keeps the rest of the queue", async () => {
+    const runGate = deferred();
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const session = fixture.session as unknown as Record<string, unknown>;
+    const steering = ["run this steer", "keep"];
+    const followUp = ["later"];
+    session.isIdle = true;
+    session.getSteeringMessages = () => steering;
+    session.getFollowUpMessages = () => followUp;
+    session.clearQueue = vi.fn(() => {
+      const cleared = { steering: [...steering], followUp: [...followUp] };
+      steering.length = 0;
+      followUp.length = 0;
+      return cleared;
+    });
+    session.steer = vi.fn(async (text: string) => {
+      steering.push(text);
+    });
+    session.followUp = vi.fn(async (text: string) => {
+      followUp.push(text);
+    });
+    session.prompt = vi.fn(() => runGate.promise);
+
+    const handler = createAgentHandlers(fixture.factory)["agent.runNow"]!;
+    const outcome = await handler({
+      id: "run-now-steer",
+      context: {},
+      params: { expectedRevision: 0, steeringIndex: 0 },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    if (!("result" in outcome)) return;
+    expect(session.abort).not.toHaveBeenCalled();
+    expect(session.prompt).toHaveBeenCalledWith(
+      "run this steer",
+      expect.objectContaining({ streamingBehavior: undefined }),
+    );
+    expect(steering).toEqual(["keep"]);
+    expect(followUp).toEqual(["later"]);
+    expect(outcome.result).toEqual(
+      expect.objectContaining({
+        started: true,
+        settled: true,
+        queueRestored: true,
+        partialFailure: false,
+        queue: {
+          revision: 1,
+          steering: ["keep"],
+          followUp: ["later"],
+        },
+      }),
+    );
+
+    runGate.resolve();
+    await vi.waitFor(() => expect(fixture.sessionOperationLock.isHeld()).toBe(false));
+  });
 });
 
 describe("agent.compact concurrency", () => {

@@ -91,9 +91,9 @@ export function QueuePanel() {
     }
   }
 
-  async function runNow(index: number) {
+  async function runNow(kind: "followUp" | "steering", index: number) {
     if (!host || !workspace || !session || busyOp) return;
-    if (!followUp[index]) return;
+    if ((kind === "followUp" ? followUp[index] : steering[index]) === undefined) return;
     const targetSessionId = session.sessionId;
     const targetSessionRevision = session.revision;
     setBusyOp(true);
@@ -101,7 +101,9 @@ export function QueuePanel() {
       const context = activeSessionContext(host, workspace, session);
       const response = await hostClient.request("agent.runNow", context, {
         expectedRevision: session.pending.revision,
-        followUpIndex: index,
+        ...(kind === "followUp"
+          ? { followUpIndex: index }
+          : { steeringIndex: index }),
       });
       if (!response.ok) {
         pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
@@ -146,12 +148,27 @@ export function QueuePanel() {
       {!collapsed && (
         <ul className="border-t border-border px-1.5 py-1">
           {steering.map((text, index) => (
-            <li key={`steer:${index}`} className="group flex items-start gap-2 rounded px-1.5 py-1">
+            <li
+              key={`steer:${index}`}
+              className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-surface-overlay/50"
+            >
               <span className="mt-0.5 shrink-0 rounded bg-warning/15 px-1 text-[10px] font-medium leading-none text-warning">
                 {t("queueSteering")}
               </span>
               <QueueText raw={text} />
-              <span className="shrink-0 opacity-0 group-hover:opacity-100">
+              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                {session.isIdle && (
+                  <button
+                    type="button"
+                    title={t("queueRunNowSteering")}
+                    aria-label={t("queueRunNowSteering")}
+                    className={itemButton}
+                    disabled={busyOp}
+                    onClick={() => void runNow("steering", index)}
+                  >
+                    <Play size={12} />
+                  </button>
+                )}
                 <button
                   type="button"
                   title={t("queueRemove")}
@@ -271,7 +288,7 @@ export function QueuePanel() {
                     aria-label={t("queueRunNow")}
                     className={itemButton}
                     disabled={busyOp}
-                    onClick={() => void runNow(index)}
+                    onClick={() => void runNow("followUp", index)}
                   >
                     <Play size={12} />
                   </button>
