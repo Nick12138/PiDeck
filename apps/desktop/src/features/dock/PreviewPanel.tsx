@@ -202,7 +202,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
                 <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
               </div>
             ) : (
-              <pre className="h-full overflow-auto whitespace-pre p-3 font-mono text-xs leading-relaxed text-foreground/90">
+              <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground/90">
                 {preview.content ?? ""}
               </pre>
             )}

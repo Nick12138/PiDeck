@@ -54,6 +54,10 @@ describe("PreviewPanel", () => {
     render(<PreviewPanel path="src/hello.ts" visible />);
 
     expect(await screen.findByText(/export \{\};\s*$/)).toBeInTheDocument();
+    const code = screen.getByText(/export \{\};\s*$/);
+    expect(code.tagName).toBe("PRE");
+    expect(code.className).toContain("whitespace-pre-wrap");
+    expect(code.className).toContain("break-words");
     expect(screen.getByText("hello.ts")).toBeInTheDocument();
     expect(screen.getByText(/11 B/)).toBeInTheDocument();
     expect(request).toHaveBeenCalledWith(
