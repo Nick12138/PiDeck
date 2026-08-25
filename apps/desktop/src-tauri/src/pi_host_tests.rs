@@ -5,11 +5,12 @@ mod tests {
     #[cfg(windows)]
     use crate::pi_host::WindowsHostJob;
     use crate::pi_host::{
-        build_shutdown_line, drain_complete_lines, extract_host_instance_id, finish_monitor_task,
-        is_current_child_generation, node_executable_name, node_runtime_candidates,
-        push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line, should_auto_restart,
-        strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch, HostChildSession,
-        APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE, MAX_HOST_STDOUT_LINE_BYTES,
+        build_host_path, build_shutdown_line, drain_complete_lines, extract_host_instance_id,
+        finish_monitor_task, is_current_child_generation, node_executable_name,
+        node_runtime_candidates, push_stderr_tail, read_bounded_lossy_line, read_bounded_utf8_line,
+        should_auto_restart, strip_verbatim_prefix, write_host_stdin, AutoRestartEpoch,
+        HostChildSession, APP_EXIT_HOST_SHUTDOWN_GRACE, HOST_SHUTDOWN_GRACE,
+        MAX_HOST_STDOUT_LINE_BYTES,
     };
     #[cfg(unix)]
     use crate::pi_host::{is_executable_file, unix_child_exited_without_reaping};
@@ -236,6 +237,88 @@ rl.on('line', (line) => {
                 candidate.file_name().and_then(|name| name.to_str()),
                 Some(expected)
             );
+        }
+    }
+
+    #[test]
+    fn build_host_path_keeps_user_path_first_then_bundled_fallback() {
+        let user_path = std::env::join_paths([
+            PathBuf::from("C:\\Users\\me\\AppData\\Local\\mise\\shims"),
+            PathBuf::from("C:\\Program Files\\Git\\cmd"),
+        ])
+        .expect("join user path");
+        let host_path = build_host_path(
+            Some(user_path.as_os_str()),
+            Some(std::path::Path::new(r"C:\PiDeck\resources\node")),
+            Some(std::path::Path::new(r"C:\PiDeck\resources\git\cmd")),
+            Some(r"C:\Windows"),
+        )
+        .expect("build host path");
+        let entries: Vec<String> = std::env::split_paths(&host_path)
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        // User PATH entries come first, so Agent Bash sees mise/system git.
+        assert_eq!(
+            entries[0],
+            "C:\\Users\\me\\AppData\\Local\\mise\\shims"
+        );
+        assert_eq!(entries[1], "C:\\Program Files\\Git\\cmd");
+        // Bundled Node/Git are appended as a fallback.
+        assert_eq!(entries[2], "C:\\PiDeck\\resources\\node");
+        assert_eq!(entries[3], "C:\\PiDeck\\resources\\git\\cmd");
+        assert!(entries.contains(&"C:\\PiDeck\\resources\\git\\bin".to_string()));
+        assert!(entries.contains(&"C:\\Windows\\System32".to_string()));
+    }
+
+    #[test]
+    fn build_host_path_without_user_path_only_appends_bundled() {
+        let host_path = build_host_path(
+            None,
+            Some(std::path::Path::new(r"C:\PiDeck\resources\node")),
+            None,
+            None,
+        )
+        .expect("build host path");
+        let entries: Vec<String> = std::env::split_paths(&host_path)
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(entries, vec!["C:\\PiDeck\\resources\\node"]);
+    }
+
+    #[test]
+    fn bundled_bash_from_git_resolves_portable_git_bash() {
+        #[cfg(windows)]
+        {
+            use crate::pi_host::PiHostManager;
+            // Fake layout: <root>/cmd/git.exe -> <root>/bin/bash.exe
+            let temp = std::env::temp_dir().join(format!(
+                "pideck-bash-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let git_cmd = temp.join("cmd");
+            std::fs::create_dir_all(&git_cmd).expect("create git cmd dir");
+            let git_exe = git_cmd.join("git.exe");
+            std::fs::write(&git_exe, b"fixture").expect("write git.exe");
+            let bash = temp.join("bin").join("bash.exe");
+            std::fs::create_dir_all(bash.parent().expect("bin dir"))
+                .expect("create bin dir");
+            std::fs::write(&bash, b"fixture").expect("write bash.exe");
+
+            let resolved = PiHostManager::bundled_bash_from_git(&git_exe);
+            assert_eq!(resolved, Some(bash.clone()));
+
+            // Missing bash -> None; non-`cmd` layout -> None.
+            std::fs::remove_file(&bash).expect("remove bash");
+            assert_eq!(PiHostManager::bundled_bash_from_git(&git_exe), None);
+            assert_eq!(
+                PiHostManager::bundled_bash_from_git(&temp.join("bin").join("bash.exe")),
+                None
+            );
+            std::fs::remove_dir_all(&temp).expect("cleanup temp");
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(true); // layout is Windows-only
         }
     }
 

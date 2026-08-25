@@ -108,15 +108,17 @@ function assertStagedHostUnchanged() {
   );
 }
 
-const controlledPath = [dirname(nodePath)];
+// Host inherits the desktop user PATH (mise, nvm, system git, …); bundled
+// Node/Git dirs are appended as a fallback, and the exact bundled executables
+// are advertised via PIDECK_BUNDLED_* like the real launcher does.
+const hostPath = [process.env.PATH];
+hostPath.push(dirname(nodePath));
 if (existsSync(portableGit)) {
   const gitRoot = dirname(dirname(portableGit));
-  controlledPath.push(dirname(portableGit), join(gitRoot, "bin"), join(gitRoot, "mingw64", "bin"));
+  hostPath.push(dirname(portableGit), join(gitRoot, "bin"), join(gitRoot, "mingw64", "bin"));
 }
 if (process.platform === "win32" && process.env.SystemRoot) {
-  controlledPath.push(join(process.env.SystemRoot, "System32"));
-} else if (process.env.PATH) {
-  controlledPath.push(process.env.PATH);
+  hostPath.push(join(process.env.SystemRoot, "System32"));
 }
 
 const child = spawn(nodePath, [hostEntry], {
@@ -125,7 +127,9 @@ const child = spawn(nodePath, [hostEntry], {
     ...process.env,
     PI_CODING_AGENT_DIR: agentDir,
     PIDECK_HOST_CACHE_DIR: hostCacheDir,
-    PATH: controlledPath.join(delimiter),
+    PIDECK_BUNDLED_NODE: nodePath,
+    ...(existsSync(portableGit) ? { PIDECK_BUNDLED_GIT: portableGit } : {}),
+    PATH: hostPath.filter(Boolean).join(delimiter),
   },
   stdio: ["pipe", "pipe", "pipe"],
   windowsHide: true,

@@ -1710,6 +1710,23 @@ impl PiHostManager {
         }
     }
 
+    /// Portable Git layout: `<root>/cmd/git.exe` → `<root>/bin/bash.exe`.
+    /// The result is stripped of `\\?\` so later spawn sites can use it.
+    pub(crate) fn bundled_bash_from_git(git_exe: &Path) -> Option<PathBuf> {
+        let cmd_dir = git_exe.parent()?;
+        let cmd_name = cmd_dir.file_name()?.to_str()?;
+        if !cmd_name.eq_ignore_ascii_case("cmd") {
+            return None;
+        }
+        let bash = cmd_dir.parent()?.join("bin").join("bash.exe");
+        if bash.is_file() {
+            Some(strip_verbatim_prefix(bash))
+        } else {
+            None
+        }
+    }
+
+
     fn resolve_host_entry(app: &AppHandle) -> Result<PathBuf, String> {
         // Dev first: monorepo built host (most reliable during tauri:dev)
         #[cfg(debug_assertions)]
@@ -1827,12 +1844,15 @@ impl PiHostManager {
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
         cmd.env("PIDECK_HOST_CACHE_DIR", &host_cache_dir);
         // Reserved names belong to the launcher; plugin config must not shadow them.
-        const RESERVED_ENV: [&str; 5] = [
+        const RESERVED_ENV: [&str; 8] = [
             "PATH",
             "NODE_PATH",
             "NODE",
             "PI_CODING_AGENT_DIR",
             "PIDECK_HOST_CACHE_DIR",
+            "PIDECK_BUNDLED_NODE",
+            "PIDECK_BUNDLED_GIT",
+            "PIDECK_BUNDLED_BASH",
         ];
         for vars in self.plugin_env.values() {
             for (name, value) in vars {
@@ -1842,33 +1862,28 @@ impl PiHostManager {
             }
         }
 
-        let mut controlled_path = Vec::<PathBuf>::new();
-        if let Some(node_dir) = node.parent() {
-            controlled_path.push(node_dir.to_path_buf());
-        }
+        // Host inherits the desktop user PATH so Agent Bash and internal
+        // children see the user's own environment (mise, nvm, system git, …).
+        // Bundled Node/Git dirs are appended as a fallback only, and the
+        // exact bundled executables are advertised via PIDECK_BUNDLED_* so the
+        // Host can use them without depending on PATH placement.
+        let host_path = build_host_path(
+            std::env::var_os("PATH").as_deref(),
+            node.parent(),
+            portable_git_cmd.as_deref(),
+            std::env::var("SystemRoot").ok().as_deref(),
+        )?;
+        cmd.env("PATH", host_path);
+
+        // Explicit bundled runtime descriptors for internal children.
+        cmd.env("PIDECK_BUNDLED_NODE", &node);
         if let Some(git_cmd) = portable_git_cmd.as_ref() {
-            controlled_path.push(git_cmd.clone());
-            if let Some(git_root) = git_cmd.parent() {
-                controlled_path.push(git_root.join("bin"));
-                controlled_path.push(git_root.join("mingw64").join("bin"));
+            let git_exe = git_cmd.join("git.exe");
+            cmd.env("PIDECK_BUNDLED_GIT", &git_exe);
+            if let Some(bash) = Self::bundled_bash_from_git(&git_exe) {
+                cmd.env("PIDECK_BUNDLED_BASH", bash);
             }
         }
-        if let Ok(system_root) = std::env::var("SystemRoot") {
-            controlled_path.push(PathBuf::from(system_root).join("System32"));
-        }
-        #[cfg(not(windows))]
-        if let Some(existing) = std::env::var_os("PATH") {
-            controlled_path.extend(std::env::split_paths(&existing));
-        }
-        #[cfg(all(windows, debug_assertions))]
-        if portable_git_cmd.is_none() {
-            if let Some(existing) = std::env::var_os("PATH") {
-                controlled_path.extend(std::env::split_paths(&existing));
-            }
-        }
-        let controlled_path = std::env::join_paths(controlled_path)
-            .map_err(|e| format!("build controlled Host PATH: {e}"))?;
-        cmd.env("PATH", controlled_path);
 
         // Help Node resolve monorepo deps when running dist from packages/pi-host
         if let Some(host_pkg) = entry.parent().and_then(|p| p.parent()) {
@@ -2572,6 +2587,36 @@ pub fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
         return PathBuf::from(rest);
     }
     p
+}
+
+/// Host PATH = user PATH first (mise, nvm, system git, …), then bundled
+/// Node/Git dirs as a fallback, then System32. Returns a platform PATH string.
+pub(crate) fn build_host_path(
+    existing_path: Option<&std::ffi::OsStr>,
+    node_dir: Option<&Path>,
+    git_cmd: Option<&Path>,
+    system_root: Option<&str>,
+) -> Result<PathBuf, String> {
+    let mut host_path = Vec::<PathBuf>::new();
+    if let Some(existing) = existing_path {
+        host_path.extend(std::env::split_paths(existing));
+    }
+    if let Some(node_dir) = node_dir {
+        host_path.push(node_dir.to_path_buf());
+    }
+    if let Some(git_cmd) = git_cmd {
+        host_path.push(git_cmd.to_path_buf());
+        if let Some(git_root) = git_cmd.parent() {
+            host_path.push(git_root.join("bin"));
+            host_path.push(git_root.join("mingw64").join("bin"));
+        }
+    }
+    if let Some(system_root) = system_root {
+        host_path.push(PathBuf::from(system_root).join("System32"));
+    }
+    std::env::join_paths(host_path)
+        .map(PathBuf::from)
+        .map_err(|e| format!("build Host PATH: {e}"))
 }
 
 /// Extract hostInstanceId from a host.ready JSON line (best-effort).

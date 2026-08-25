@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import { bundledGitExecutable } from "./internal-runtime.js";
 import {
   MAX_GIT_DIFF_LINES,
   MAX_GIT_DIFF_OUTPUT_BYTES,
@@ -497,7 +498,7 @@ export class GitService {
   private watchGeneration = 0;
   private watchAbortController: AbortController | null = null;
 
-  constructor(private readonly executable = "git") {}
+  constructor(private readonly executable = bundledGitExecutable() ?? "git") {}
 
   async getStatus(workspace: string, signal?: AbortSignal): Promise<GitStatusSnapshot> {
     const key = process.platform === "win32" ? win32.normalize(workspace).toLowerCase() : workspace;
