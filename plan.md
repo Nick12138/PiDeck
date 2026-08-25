@@ -25,7 +25,15 @@
   - `packages/pi-host/src/internal-runtime.ts` + 测试;`git-service.ts` 默认 executable 优先 bundled git
   - `scripts/smoke-staged-host.mjs` 同步新 PATH/描述符行为
   - Rust 测试 76 全过(新增 3 个)、TS 测试 742 全过
-- [ ] 第 1 项:Pi SDK 0.82.1 → 0.84.2 — **暂缓,不做**
+- [x] 第 1 项:Pi SDK 0.82.1 → 0.84.2 — **已完成**(在分支 `pideck-sdk-0.84.2`)
+  - 新 patch `patches/@earendil-works__pi-coding-agent@0.84.2.patch`(14 文件,253+/85-):移植全部本地补丁
+    - clearModel + NO_MODEL、ExtensionInvocationRunner/invokeExtension(与上游 0.84.2 patch 合并)
+    - package-manager setOperationSignal + update scope + signal 传递、sdk model:null、resource-loader 缓存
+    - 上游 shell.js bundled bash 回退
+  - `pi-ai`/`pi-coding-agent`/`pi-tui` → 0.84.2;overrides 固定 `pi-agent-core`/`pi-ai` 到 0.84.2(上游 lockfile 一致);undici 8.5.0 → 8.9.0(上游 v0.2.1 依赖安全)
+  - 源码适配:TUI → TuiMainScreen(pi-tui 0.84.2 TUI 变 interface)、ProviderHeaders 新类型(provider-controller/session-title)、auth-compatibility 测试更新 null 哨兵语义
+  - 证据刷新:release-runtime.lock.json(patch/lock sha256)
+  - 验证:pi-host 742 + desktop 960 + protocol 565 全过,typecheck/lint/build/Rust 76/verify:release-metadata 全过
 
 ---
 
