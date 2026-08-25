@@ -113,9 +113,24 @@ function configuredModel(id: string): ProviderDraft["models"][number] {
 }
 
 function runtimeSession(model: Model<Api>, isIdle: boolean) {
+  const NO_MODEL_FIXTURE = Object.freeze({
+    id: "unknown",
+    name: "unknown",
+    api: "unknown",
+    provider: "unknown",
+    baseUrl: "",
+    reasoning: false,
+    input: [],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 0,
+    maxTokens: 0,
+  });
   const state = { model };
   const setModel = vi.fn(async (next: Model<Api>) => {
     state.model = next;
+  });
+  const clearModel = vi.fn(async () => {
+    state.model = NO_MODEL_FIXTURE;
   });
   const session = {
     isIdle,
@@ -126,8 +141,9 @@ function runtimeSession(model: Model<Api>, isIdle: boolean) {
     thinkingLevel: "off",
     setThinkingLevel: vi.fn(),
     setModel,
+    clearModel,
   } as unknown as AgentSession;
-  return { session, setModel, state };
+  return { session, setModel, clearModel, state };
 }
 
 function attachRuntimeGraph(
@@ -1894,9 +1910,11 @@ describe("Provider login", () => {
     } as never);
 
     expect("error" in outcome ? outcome.error.message : null).toBeNull();
-    // SDK has no clearModel API; model stays on the previously-active provider.
-    expect(active.state.model?.provider).toBe("custom");
-    expect(active.state.model?.id).toBe("primary");
+    // All Providers disabled: the idle session is cleared to the no-model
+    // sentinel instead of silently keeping the now-disabled model.
+    expect(active.state.model?.provider).toBe("unknown");
+    expect(active.state.model?.id).toBe("unknown");
+    expect(active.clearModel).toHaveBeenCalled();
     const persisted = JSON.parse(readFileSync(join(layout.agentDir, "models.json"), "utf8"));
     expect(persisted.pideckEnabledProviders).toEqual([]);
   });

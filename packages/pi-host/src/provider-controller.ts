@@ -38,6 +38,7 @@ import { logger } from "./logger.js";
 import type { MethodHandler, PiHostServer } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { rebindCurrentSessionModel } from "./model-thinking.js";
+import { clearSessionModel, publishIdleActiveSessionSnapshot } from "./no-model.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
 import { withStableGraphRead } from "./stable-graph-read.js";
 import { ProviderMutationJournal } from "./provider-journal.js";
@@ -501,7 +502,8 @@ async function reconcileIdleActiveSessionModel(
   const model = candidates[0];
   if (!model) {
     if (options.allowNoModel) {
-      // No SDK API to clear a model once set; the session keeps its current model.
+      await clearSessionModel(session);
+      publishIdleActiveSessionSnapshot(factory);
       return;
     }
     throw new Error("Enable at least one Provider model before changing the current Provider");
