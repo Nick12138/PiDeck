@@ -39,7 +39,11 @@ function writeRun(runId: string, sessionLines: string[], status = "running"): vo
   );
   writeFileSync(join(dir, "status.json"), JSON.stringify({ status }), "utf8");
   if (sessionLines.length > 0) {
-    writeFileSync(join(dir, "sessions", `0_run_${runId}.jsonl`), sessionLines.join("\n") + "\n", "utf8");
+    writeFileSync(
+      join(dir, "sessions", `0_run_${runId}.jsonl`),
+      sessionLines.join("\n") + "\n",
+      "utf8",
+    );
   }
 }
 
@@ -75,7 +79,13 @@ describe("subagent-runs", () => {
     expect(transcript!.entries).toHaveLength(2);
     expect(transcript!.entries[1]).toMatchObject({
       type: "message",
-      message: { role: "assistant", content: [{ type: "thinking", thinking: "plan" }] },
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "plan" },
+          { type: "text", text: "Done" },
+        ],
+      },
     });
   });
 
@@ -98,6 +108,7 @@ describe("subagent-runs", () => {
 
   it("maps plugin statuses to panel states", () => {
     expect(mapSubagentRunState("pending")).toBe("queued");
+    expect(mapSubagentRunState("queued")).toBe("queued");
     expect(mapSubagentRunState("running")).toBe("running");
     expect(mapSubagentRunState("paused")).toBe("paused");
     expect(mapSubagentRunState("completed")).toBe("complete");

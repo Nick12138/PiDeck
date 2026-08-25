@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,9 +17,8 @@ afterEach(() => {
 function writeSession(sessionId: string, lines: Array<Record<string, unknown>>): void {
   writeFileSync(
     join(sessionsDir, `2026-08-25T00-00-00-000Z_${sessionId}.jsonl`),
-    lines
-      .map((line) => JSON.stringify({ type: "session", id: sessionId, ...line }))
-      .join("\n") + "\n",
+    lines.map((line) => JSON.stringify({ type: "session", id: sessionId, ...line })).join("\n") +
+      "\n",
     "utf8",
   );
 }
@@ -37,7 +36,9 @@ describe("collectSessionRunIds", () => {
         type: "message",
         message: {
           role: "assistant",
-          content: [{ type: "toolCall", name: "subagent", arguments: { agent: "worker", task: "x" } }],
+          content: [
+            { type: "toolCall", name: "subagent", arguments: { agent: "worker", task: "x" } },
+          ],
         },
       },
       {

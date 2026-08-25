@@ -117,7 +117,7 @@ export function repoExtensionPattern(path: string): string {
 /** Well-known dynamic option source for select config items. Unknown sources
  *  must be rendered like a regular static select / text input. */
 export const OPTIONS_SOURCE_VISION_MODELS = "pi:vision-models";
-export const OPTIONS_SOURCE_VISION_FALLBACK_MODELS = "pi:vision-models-fallback";
+const OPTIONS_SOURCE_VISION_FALLBACK_MODELS = "pi:vision-models-fallback";
 
 export function isVisionCapable(model: ModelSummary): boolean {
   return Array.isArray(model.input) && model.input.includes("image");

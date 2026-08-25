@@ -49,7 +49,6 @@ import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import { piWorkingVariants } from "../../lib/i18n";
 import { PiMark } from "../../components/PiMark";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
-import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import {
   buildTranscriptRows,
   computeRetryableTurns,

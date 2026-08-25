@@ -10,11 +10,7 @@ import {
   RotateCcw,
   Square,
 } from "lucide-react";
-import type {
-  SubagentSessionSnapshot,
-  SubagentStatusNode,
-  SubagentsStatusSnapshot,
-} from "@pideck/protocol";
+import type { SubagentSessionSnapshot, SubagentStatusNode } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { hostClient } from "../../lib/bridge/host-client";
@@ -184,13 +180,15 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
     }
     return -1;
   }, [entries]);
-  const collapsedMode =
-    collapsible && firstUserIndex >= 0 && lastAssistantIndex > firstUserIndex;
+  const collapsedMode = collapsible && firstUserIndex >= 0 && lastAssistantIndex > firstUserIndex;
 
   const userRows = useMemo(
     () =>
       collapsedMode
-        ? buildTranscriptRows([], { entries: entries.slice(0, firstUserIndex + 1), turnActive: false })
+        ? buildTranscriptRows([], {
+            entries: entries.slice(0, firstUserIndex + 1),
+            turnActive: false,
+          })
         : [],
     [collapsedMode, entries, firstUserIndex],
   );
@@ -214,7 +212,9 @@ function TranscriptView({ snapshot }: { snapshot: SubagentSessionSnapshot }) {
   const firstUserRow = [...userRows].reverse().find((row) => row.role === "user");
   const resultRow = [...resultRows].reverse().find((row) => row.role === "assistant");
   const duration = runDurationLabel(
-    firstUserIndex >= 0 ? entryTimeMs(entries[firstUserIndex] as { timestamp?: unknown }) : undefined,
+    firstUserIndex >= 0
+      ? entryTimeMs(entries[firstUserIndex] as { timestamp?: unknown })
+      : undefined,
     lastAssistantIndex >= 0
       ? entryTimeMs(entries[lastAssistantIndex] as { timestamp?: unknown })
       : undefined,
@@ -357,12 +357,14 @@ function InlineNode({
           aria-expanded={expanded}
           aria-label={displayName}
           onClick={onToggle}
-          title={[
-            node.label !== displayName ? node.label : undefined,
-            node.model ? t("subagentsModel", { model: node.model }) : undefined,
-          ]
-            .filter(Boolean)
-            .join("\n") || undefined}
+          title={
+            [
+              node.label !== displayName ? node.label : undefined,
+              node.model ? t("subagentsModel", { model: node.model }) : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n") || undefined
+          }
         >
           {showRole && (
             <span
@@ -544,27 +546,27 @@ export function SubagentsPanel() {
     if (!target) return;
     void loadSession(target);
     const interval =
-      target.state === "running" ? window.setInterval(() => void loadSession(target), 1_500) : undefined;
+      target.state === "running"
+        ? window.setInterval(() => void loadSession(target), 1_500)
+        : undefined;
     return () => {
       if (interval !== undefined) window.clearInterval(interval);
     };
   }, [expandedId, host, nodes, workspace, loadSession]);
 
   const runControl = useCallback(
-    async (
-      node: SubagentStatusNode,
-      action: "stop" | "pause" | "continue" | "resume",
-    ) => {
+    async (node: SubagentStatusNode, action: "stop" | "pause" | "continue" | "resume") => {
       if (!host || !workspace) return;
       const key = `${node.id}:${action}`;
       setPendingActions((current) => new Set(current).add(key));
       try {
-        const method = ({
+        const method = {
           stop: "subagents.stop",
           pause: "subagents.pause",
           continue: "subagents.continue",
           resume: "subagents.resume",
-        })[action] as "subagents.stop" | "subagents.pause" | "subagents.continue" | "subagents.resume";
+        }[action] as
+          "subagents.stop" | "subagents.pause" | "subagents.continue" | "subagents.resume";
         await hostClient.request(
           method,
           workspaceContext(host, workspace),

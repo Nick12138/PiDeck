@@ -920,7 +920,7 @@ export function App() {
       unsubTransportError();
       hostClient.detach("application unmounted");
     };
-  }, []);
+  }, [nativeWindowAvailable]);
 
   useEffect(() => {
     if (desktopSettings?.theme) {

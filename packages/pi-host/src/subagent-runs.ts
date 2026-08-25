@@ -11,11 +11,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type {
-  JsonValue,
-  SerializableSessionEntry,
-  SubagentStatusState,
-} from "@pideck/protocol";
+import type { JsonValue, SerializableSessionEntry, SubagentStatusState } from "@pideck/protocol";
 
 const MAX_ENTRIES = 160;
 const MAX_STRING_LENGTH = 16_000;
@@ -64,9 +60,9 @@ export function subagentRunExists(runId: string): boolean {
 /** Read the run's task title (used as the transcript display name). */
 export function readSubagentRunTitle(runId: string): string | undefined {
   try {
-    const task = JSON.parse(
-      readFileSync(join(subagentRunDir(runId), "task.json"), "utf8"),
-    ) as { title?: unknown };
+    const task = JSON.parse(readFileSync(join(subagentRunDir(runId), "task.json"), "utf8")) as {
+      title?: unknown;
+    };
     return typeof task.title === "string" && task.title.trim() ? task.title.trim() : undefined;
   } catch {
     return undefined;
@@ -76,9 +72,9 @@ export function readSubagentRunTitle(runId: string): string | undefined {
 /** Read the run's live status (status.json) when it is not on the wire yet. */
 export function readSubagentRunStatus(runId: string): string | undefined {
   try {
-    const status = JSON.parse(
-      readFileSync(join(subagentRunDir(runId), "status.json"), "utf8"),
-    ) as { status?: unknown };
+    const status = JSON.parse(readFileSync(join(subagentRunDir(runId), "status.json"), "utf8")) as {
+      status?: unknown;
+    };
     return typeof status.status === "string" ? status.status : undefined;
   } catch {
     return undefined;
@@ -89,6 +85,7 @@ export function readSubagentRunStatus(runId: string): string | undefined {
 export function mapSubagentRunState(status: string | undefined): SubagentStatusState {
   switch (status) {
     case "pending":
+    case "queued":
       return "queued";
     case "running":
       return "running";
@@ -231,6 +228,7 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
     if (record.type === "session") {
       if (typeof record.id === "string" && record.id) sessionId = record.id;
       if (typeof record.name === "string" && record.name) name = record.name;
+      continue;
     }
     if (typeof record.id !== "string" || typeof record.type !== "string") continue;
     const bounded = boundedJson(record, budget);
