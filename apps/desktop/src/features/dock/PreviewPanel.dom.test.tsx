@@ -56,6 +56,7 @@ describe("PreviewPanel", () => {
     expect(await screen.findByText(/export \{\};\s*$/)).toBeInTheDocument();
     const code = screen.getByText(/export \{\};\s*$/);
     expect(code.tagName).toBe("PRE");
+    expect(code.closest("[data-dock-panel]")?.className).toContain("preview-panel");
     expect(code.className).toContain("whitespace-pre-wrap");
     expect(code.className).toContain("break-words");
     expect(screen.getByText("hello.ts")).toBeInTheDocument();

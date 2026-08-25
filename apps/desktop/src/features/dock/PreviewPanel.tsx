@@ -115,7 +115,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
 
   return (
     <section
-      className="flex min-h-0 flex-1 flex-col bg-surface"
+      className="preview-panel flex min-h-0 flex-1 flex-col bg-surface"
       aria-label={t("dockPreviewRegion")}
       data-dock-panel
     >

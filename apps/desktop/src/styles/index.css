@@ -2302,26 +2302,36 @@ svg[data-pideck-mermaid-theme="neutral"] {
   overflow-wrap: normal;
 }
 
-/* Preview panel: wide tables scroll horizontally inside the narrow dock, so
-   keep their scrollbar always visible and clearly interactive. Without this
-   the thin default thumb (--color-border) is easy to miss and tables look
-   truncated. */
-.preview-markdown [data-streamdown="table-wrapper"] > div {
+/* Preview panel: every scroll container (markdown body, table scroller, code
+   pre) gets a high-contrast scrollbar. The app default thumb uses
+   --color-border which is nearly invisible against --color-surface in the
+   dark theme, so wide tables / long files look truncated instead of
+   scrollable. These rules keep the track and thumb clearly visible. */
+.preview-panel {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) var(--color-surface-overlay);
 }
-.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar {
+.preview-panel * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) var(--color-surface-overlay);
+}
+.preview-panel::-webkit-scrollbar,
+.preview-panel *::-webkit-scrollbar {
+  width: 10px;
   height: 10px;
 }
-.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-track {
+.preview-panel::-webkit-scrollbar-track,
+.preview-panel *::-webkit-scrollbar-track {
   background: var(--color-surface-overlay);
   border-radius: 5px;
 }
-.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-thumb {
+.preview-panel::-webkit-scrollbar-thumb,
+.preview-panel *::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
   border-radius: 5px;
 }
-.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-thumb:hover {
+.preview-panel::-webkit-scrollbar-thumb:hover,
+.preview-panel *::-webkit-scrollbar-thumb:hover {
   background: var(--color-muted);
 }
 
