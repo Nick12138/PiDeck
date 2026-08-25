@@ -11,6 +11,9 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceAbsolutePath } from "./FilesPanel";
 
 const MARKDOWN_PATTERN = /\.(?:md|markdown|mdx)$/i;
+/** Horizontal scrollers rendered inside markdown (wide tables and code blocks). */
+const H_SCROLL_SELECTOR =
+  '[data-streamdown="table-wrapper"] > div, [data-streamdown="code-block"]';
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
@@ -24,6 +27,21 @@ function formatSize(bytes: number): string {
 
 type PreviewStatus = "idle" | "loading" | "ready" | "error";
 
+type ThumbState = { visible: boolean; ratio: number; offset: number };
+
+const HIDDEN_THUMB: ThumbState = { visible: false, ratio: 0, offset: 0 };
+
+type ScrollDrag = {
+  axis: "v" | "h";
+  pointerId: number;
+  startClient: number;
+  startScroll: number;
+};
+
+/** The Windows build runs in a transparent WebView (acrylic), where WebView2
+ *  renders no native scrollbars at all. The preview therefore draws its own
+ *  always-visible sliders for the outer vertical scroller and for any wide
+ *  table/code scroller inside the markdown content. */
 export function PreviewPanel({ path, visible }: { path: string | null; visible: boolean }) {
   const t = useT();
   const workspace = useAppStore((state) => state.workspace);
@@ -32,6 +50,118 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hTargetRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<ScrollDrag | null>(null);
+  const [vThumb, setVThumb] = useState<ThumbState>(HIDDEN_THUMB);
+  const [hThumb, setHThumb] = useState<ThumbState>(HIDDEN_THUMB);
+
+  const updateThumbs = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxV = el.scrollHeight - el.clientHeight;
+    setVThumb({
+      visible: maxV > 1,
+      ratio: el.clientHeight / el.scrollHeight,
+      offset: maxV > 0 ? el.scrollTop / maxV : 0,
+    });
+    let hTarget: HTMLElement | null = null;
+    for (const candidate of el.querySelectorAll<HTMLElement>(H_SCROLL_SELECTOR)) {
+      if (candidate.scrollWidth > candidate.clientWidth + 1) {
+        hTarget = candidate;
+        break;
+      }
+    }
+    hTargetRef.current = hTarget;
+    if (!hTarget) {
+      setHThumb(HIDDEN_THUMB);
+      return;
+    }
+    const maxH = hTarget.scrollWidth - hTarget.clientWidth;
+    setHThumb({
+      visible: maxH > 1,
+      ratio: hTarget.clientWidth / hTarget.scrollWidth,
+      offset: maxH > 0 ? hTarget.scrollLeft / maxH : 0,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // scroll does not bubble, so capture the outer scroller plus any scroll
+    // happening inside Streamdown's table/code scrollers.
+    el.addEventListener("scroll", updateThumbs, { capture: true, passive: true });
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => updateThumbs());
+      observer.observe(el);
+      return () => {
+        el.removeEventListener("scroll", updateThumbs, true);
+        observer.disconnect();
+      };
+    }
+    return () => el.removeEventListener("scroll", updateThumbs, true);
+  }, [updateThumbs, status, path]);
+
+  const onTrackPointerDown = (axis: "v" | "h", event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const el = scrollRef.current;
+    if (!el) return;
+    if (axis === "v") {
+      if (vThumb.ratio >= 1) return;
+      const rect = el.getBoundingClientRect();
+      const thumbPx = Math.max(vThumb.ratio * rect.height, 28);
+      const ratio = (event.clientY - rect.top - thumbPx / 2) / rect.height;
+      el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
+    } else {
+      const target = hTargetRef.current;
+      if (!target || hThumb.ratio >= 1) return;
+      const rect = target.getBoundingClientRect();
+      const thumbPx = Math.max(hThumb.ratio * rect.width, 28);
+      const ratio = (event.clientX - rect.left - thumbPx / 2) / rect.width;
+      target.scrollLeft = ratio * (target.scrollWidth - target.clientWidth);
+    }
+  };
+
+  const onThumbPointerDown = (axis: "v" | "h", event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = axis === "v" ? el : hTargetRef.current;
+    if (!target) return;
+    dragRef.current = {
+      axis,
+      pointerId: event.pointerId,
+      startClient: axis === "v" ? event.clientY : event.clientX,
+      startScroll: axis === "v" ? target.scrollTop : target.scrollLeft,
+    };
+    el.setPointerCapture(event.pointerId);
+  };
+
+  const onScrollPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = drag.axis === "v" ? el : hTargetRef.current;
+    if (!target) return;
+    const delta = (drag.axis === "v" ? event.clientY : event.clientX) - drag.startClient;
+    const ratio =
+      drag.axis === "v"
+        ? el.clientHeight / el.scrollHeight
+        : target.clientWidth / target.scrollWidth;
+    if (drag.axis === "v") {
+      target.scrollTop = drag.startScroll + delta / ratio;
+    } else {
+      target.scrollLeft = drag.startScroll + delta / ratio;
+    }
+  };
+
+  const endScrollDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    scrollRef.current?.releasePointerCapture(event.pointerId);
+  };
 
   const load = useCallback(
     async (target: string) => {
@@ -59,13 +189,16 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
         }
         setPreview(response.result);
         setStatus("ready");
+        setVThumb(HIDDEN_THUMB);
+        setHThumb(HIDDEN_THUMB);
+        window.setTimeout(updateThumbs, 0);
       } catch (readError) {
         if (id !== generation.current) return;
         setStatus("error");
         setError(readError instanceof Error ? readError.message : t("dockPreviewReadFailed"));
       }
     },
-    [t],
+    [t, updateThumbs],
   );
 
   useEffect(() => {
@@ -175,36 +308,83 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
               {t("dockPreviewTruncated", { size: formatSize(DEFAULT_PREVIEW_MAX_BYTES) })}
             </div>
           )}
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {preview.kind === "image" ? (
-              <div className="flex h-full items-center justify-center overflow-auto p-3">
-                <img
-                  alt={name}
-                  src={`data:${preview.mimeType ?? "image/png"};base64,${preview.content ?? ""}`}
-                  className="max-h-full max-w-full object-contain"
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div
+              ref={scrollRef}
+              className="h-full overflow-auto"
+              data-preview-scroll
+              onPointerMove={onScrollPointerMove}
+              onPointerUp={endScrollDrag}
+              onPointerCancel={endScrollDrag}
+            >
+              {preview.kind === "image" ? (
+                <div className="flex min-h-full items-center justify-center p-3">
+                  <img
+                    alt={name}
+                    src={`data:${preview.mimeType ?? "image/png"};base64,${preview.content ?? ""}`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              ) : preview.kind === "binary" ? (
+                <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                  <FileQuestion size={28} className="text-muted" />
+                  <p className="text-xs text-muted">{t("dockPreviewBinary")}</p>
+                  <p className="text-[10px] text-muted/70">{formatSize(preview.size)}</p>
+                  <button
+                    type="button"
+                    className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-overlay"
+                    onClick={() => void openExternal()}
+                  >
+                    {t("dockPreviewOpenExternal")}
+                  </button>
+                </div>
+              ) : isMarkdown ? (
+                <div className="preview-markdown chat-markdown px-4 py-3">
+                  <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground/90">
+                  {preview.content ?? ""}
+                </pre>
+              )}
+            </div>
+            {vThumb.visible && (
+              <div
+                role="scrollbar"
+                aria-orientation="vertical"
+                aria-label={t("dockPreviewVerticalScroll")}
+                title={t("dockPreviewVerticalScroll")}
+                className="absolute bottom-2 right-1 top-2 w-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
+                onPointerDown={(event) => onTrackPointerDown("v", event)}
+              >
+                <div
+                  className="absolute right-0.5 w-1.5 rounded-full bg-border-strong hover:bg-muted"
+                  style={{
+                    top: `${vThumb.offset * 100}%`,
+                    height: `${Math.max(vThumb.ratio * 100, 6)}%`,
+                  }}
+                  onPointerDown={(event) => onThumbPointerDown("v", event)}
                 />
               </div>
-            ) : preview.kind === "binary" ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <FileQuestion size={28} className="text-muted" />
-                <p className="text-xs text-muted">{t("dockPreviewBinary")}</p>
-                <p className="text-[10px] text-muted/70">{formatSize(preview.size)}</p>
-                <button
-                  type="button"
-                  className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-overlay"
-                  onClick={() => void openExternal()}
-                >
-                  {t("dockPreviewOpenExternal")}
-                </button>
+            )}
+            {hThumb.visible && (
+              <div
+                role="scrollbar"
+                aria-orientation="horizontal"
+                aria-label={t("dockPreviewHorizontalScroll")}
+                title={t("dockPreviewHorizontalScroll")}
+                className="absolute bottom-1 left-2 right-2 h-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
+                onPointerDown={(event) => onTrackPointerDown("h", event)}
+              >
+                <div
+                  className="absolute bottom-0.5 h-1.5 rounded-full bg-border-strong hover:bg-muted"
+                  style={{
+                    left: `${hThumb.offset * 100}%`,
+                    width: `${Math.max(hThumb.ratio * 100, 6)}%`,
+                  }}
+                  onPointerDown={(event) => onThumbPointerDown("h", event)}
+                />
               </div>
-            ) : isMarkdown ? (
-              <div className="preview-markdown chat-markdown h-full overflow-auto px-4 py-3">
-                <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
-              </div>
-            ) : (
-              <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground/90">
-                {preview.content ?? ""}
-              </pre>
             )}
           </div>
         </>
