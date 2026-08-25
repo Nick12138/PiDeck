@@ -36,12 +36,14 @@ import { useT } from "../../lib/i18n/use-t";
 import {
   buildPluginEnvPatch,
   initialConfigValues,
+  isVisionCapable,
   missingRequiredConfig,
+  modelOption,
+  modelOptionsKind,
   pluginCardState,
   repoExtensionPattern,
-  visionModelOption,
-  wantsVisionFallbackModelOptions,
-  wantsVisionModelOptions,
+  wantsModelListOptions,
+  wantsModelOptions,
 } from "./plugin-library-model";
 import { PACKAGE_LIST_PARAMS, buildResourcePreferenceUpdates } from "../packages/packages-model";
 import {
@@ -72,9 +74,11 @@ function PluginIcon({ icon, name }: { icon: string; name: string }) {
   );
 }
 
-/** Hook fetching the runtime's available vision models for dynamic select
- *  config items (`optionsSource: "pi:vision-models"`). */
-function useVisionModels(enabled: boolean): readonly ModelSummary[] | null {
+/** Hook fetching the runtime's available models for dynamic select config
+ *  items (`optionsSource: "pi:vision-models" | "pi:models"`). Returns the
+ *  full list; the caller filters by `modelOptionsKind` when it needs the
+ *  vision-only subset. */
+function useRuntimeModels(enabled: boolean): readonly ModelSummary[] | null {
   const host = useAppStore((s) => s.host);
   const hostId = host?.hostInstanceId;
   const [models, setModels] = useState<readonly ModelSummary[] | null>(null);
@@ -100,10 +104,7 @@ function useVisionModels(enabled: boolean): readonly ModelSummary[] | null {
           return;
         }
         const raw = response.result?.models;
-        const visionList = Array.isArray(raw)
-          ? raw.filter((m) => Array.isArray(m.input) && m.input.includes("image"))
-          : [];
-        setModels(visionList);
+        setModels(Array.isArray(raw) ? raw : []);
       })
       .catch(() => {
         if (!cancelled) setModels([]);
@@ -117,27 +118,32 @@ function useVisionModels(enabled: boolean): readonly ModelSummary[] | null {
 }
 
 /** Shared configuration dialog: one instance serves every plugin card. */
-function fallbackRows(value: string): string[] {
+function listRows(value: string): string[] {
   const rows = value.split(",").map((part) => part.trim());
   return rows.length > 0 ? rows : [""];
 }
 
-function VisionFallbackModelsControl({
+/** Ordered fallback-model list control (one Select row per fallback entry).
+ *  `models` must already be filtered to the config item's kind
+ *  (`modelOptionsKind`); `loading` drives the disabled placeholder state. */
+function ModelFallbackListControl({
   item,
   value,
   models,
+  loading,
   onChange,
 }: {
   item: PluginLibraryConfigItem;
   value: string;
-  models: readonly ModelSummary[] | null;
+  models: readonly ModelSummary[];
+  loading: boolean;
   onChange: (value: string) => void;
 }) {
   const t = useT();
-  const rows = fallbackRows(value);
+  const rows = listRows(value);
   const options = [
-    { value: "", label: t("pluginsVisionFallbackChoose") },
-    ...(models ?? []).map(visionModelOption),
+    { value: "", label: t("pluginsModelFallbackChoose") },
+    ...models.map(modelOption),
   ];
   const knownValues = new Set(options.map((option) => option.value));
   for (const row of rows) {
@@ -146,8 +152,7 @@ function VisionFallbackModelsControl({
       knownValues.add(row);
     }
   }
-  const loading = models === null;
-  const noModels = models !== null && models.length === 0;
+  const noModels = !loading && models.length === 0;
 
   function updateRow(index: number, next: string) {
     const nextRows = [...rows];
@@ -161,7 +166,7 @@ function VisionFallbackModelsControl({
   }
 
   return (
-    <div className="flex flex-col gap-1.5" data-vision-fallback-models={item.env}>
+    <div className="flex flex-col gap-1.5" data-model-fallback-models={item.env}>
       {rows.map((row, index) => {
         const rowOptions = options.some((option) => option.value === row)
           ? options
@@ -179,7 +184,7 @@ function VisionFallbackModelsControl({
             <button
               type="button"
               className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={t("pluginsVisionFallbackRemove")}
+              aria-label={t("pluginsModelFallbackRemove")}
               disabled={rows.length === 1 && !row}
               onClick={() => removeRow(index)}
             >
@@ -189,7 +194,7 @@ function VisionFallbackModelsControl({
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-surface-overlay hover:text-foreground"
-                aria-label={t("pluginsVisionFallbackAdd")}
+                aria-label={t("pluginsModelFallbackAdd")}
                 onClick={() => onChange([...rows, ""].join(","))}
               >
                 <Plus size={14} />
@@ -200,7 +205,7 @@ function VisionFallbackModelsControl({
       })}
       {noModels && (
         <p className="text-[11px] leading-4 text-muted">
-          {t("pluginsVisionFallbackNoModels")}
+          {t("pluginsModelFallbackNoModels")}
         </p>
       )}
     </div>
@@ -223,10 +228,10 @@ function PluginConfigDialog({
   );
   const [saving, setSaving] = useState(false);
 
-  const needsVisionModels = (entry.config ?? []).some(
-    (item) => wantsVisionModelOptions(item) || wantsVisionFallbackModelOptions(item),
+  const needsRuntimeModels = (entry.config ?? []).some(
+    (item) => wantsModelOptions(item) || wantsModelListOptions(item),
   );
-  const visionModels = useVisionModels(needsVisionModels);
+  const runtimeModels = useRuntimeModels(needsRuntimeModels);
 
   async function save() {
     const missing = missingRequiredConfig(entry, values);
@@ -238,8 +243,8 @@ function PluginConfigDialog({
     try {
       const persistedValues = { ...values };
       for (const item of entry.config ?? []) {
-        if (wantsVisionFallbackModelOptions(item)) {
-          persistedValues[item.env] = fallbackRows(values[item.env] ?? "")
+        if (wantsModelListOptions(item)) {
+          persistedValues[item.env] = listRows(values[item.env] ?? "")
             .filter(Boolean)
             .join(",");
         }
@@ -285,9 +290,16 @@ function PluginConfigDialog({
 
   function renderControl(item: PluginLibraryConfigItem) {
     const id = `plugin-${entry.id}-${item.key}`;
-    // 1. Dynamic vision models select.
-    if (wantsVisionModelOptions(item)) {
-      if (visionModels === null) {
+    // Runtime model list narrowed to the config item's kind (vision / all).
+    const kindModels = (model: readonly ModelSummary[] | null): readonly ModelSummary[] =>
+      modelOptionsKind(item) === "vision"
+        ? (model ?? []).filter(isVisionCapable)
+        : (model ?? []);
+    // 1. Dynamic model single-select.
+    if (wantsModelOptions(item)) {
+      const loading = runtimeModels === null;
+      const filtered = kindModels(runtimeModels);
+      if (loading) {
         return (
           <Select
             className="h-8"
@@ -299,7 +311,7 @@ function PluginConfigDialog({
           />
         );
       }
-      if (visionModels.length === 0) {
+      if (filtered.length === 0) {
         return (
           <>
             <input
@@ -314,7 +326,9 @@ function PluginConfigDialog({
               }
             />
             <p className="text-[11px] leading-4 text-muted">
-              {t("pluginsVisionModelFallbackHelp")}
+              {modelOptionsKind(item) === "vision"
+                ? t("pluginsVisionModelFallbackHelp")
+                : t("pluginsModelFallbackHelp")}
             </p>
           </>
         );
@@ -322,7 +336,7 @@ function PluginConfigDialog({
       const current = values[item.env] ?? item.default ?? "";
       const options = [
         { value: "", label: t("pluginsVisionModelAuto") },
-        ...visionModels.map(visionModelOption),
+        ...filtered.map(modelOption),
       ];
       // Keep a previously-persisted custom/stale value visible in the dropdown.
       if (current && !options.some((opt) => opt.value === current)) {
@@ -339,15 +353,16 @@ function PluginConfigDialog({
       );
     }
 
-    // 2. Ordered fallback vision model list. The env-name check keeps older
-    // catalogs working while the registry migrates this item from text to the
-    // dynamic source declaration.
-    if (wantsVisionFallbackModelOptions(item)) {
+    // 2. Ordered fallback model list. The env-name check keeps older catalogs
+    // working while the registry migrates items from text to the dynamic
+    // source declaration.
+    if (wantsModelListOptions(item)) {
       return (
-        <VisionFallbackModelsControl
+        <ModelFallbackListControl
           item={item}
           value={values[item.env] ?? item.default ?? ""}
-          models={visionModels}
+          models={kindModels(runtimeModels)}
+          loading={runtimeModels === null}
           onChange={(next) => setValues((prev) => ({ ...prev, [item.env]: next }))}
         />
       );

@@ -834,8 +834,11 @@ export type PluginLibraryConfigItem = {
    *  tells the renderer to build the options dynamically at runtime. */
   options?: PluginLibraryConfigOption[];
   /** Select only: well-known dynamic option source. Known sources:
-   *  `pi:vision-models` — options come from the runtime's vision-capable
-   *  models. Unknown sources must be ignored (static options/text input). */
+   *  - `pi:vision-models` — runtime vision-capable models (single select)
+   *  - `pi:models` — every runtime-configured model (single select)
+   *  - `pi:vision-models-fallback` — ordered vision fallback list
+   *  - `pi:models-fallback` — ordered fallback list over all models
+   *  Unknown sources must be ignored (static options/text input). */
   optionsSource?: string;
   description?: string;
 };

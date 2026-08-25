@@ -111,39 +111,78 @@ export function repoExtensionPattern(path: string): string {
 }
 
 /* ------------------------------------------------------------ */
-/* Dynamic config options: pi:vision-models                     */
+/* Dynamic config options: pi:vision-models / pi:models         */
 /* ------------------------------------------------------------ */
 
 /** Well-known dynamic option source for select config items. Unknown sources
- *  must be rendered like a regular static select / text input. */
+ *  must be rendered like a regular static select / text input.
+ *
+ *  Single-select sources (one runtime model):
+ *    - `pi:vision-models` — vision-capable models only
+ *    - `pi:models`        — every configured model
+ *  Ordered fallback-list sources (one row per fallback entry):
+ *    - `pi:vision-models-fallback` — vision-capable models only
+ *    - `pi:models-fallback`        — every configured model
+ */
 export const OPTIONS_SOURCE_VISION_MODELS = "pi:vision-models";
-const OPTIONS_SOURCE_VISION_FALLBACK_MODELS = "pi:vision-models-fallback";
+export const OPTIONS_SOURCE_MODELS = "pi:models";
+export const OPTIONS_SOURCE_VISION_FALLBACK_MODELS = "pi:vision-models-fallback";
+export const OPTIONS_SOURCE_MODELS_FALLBACK = "pi:models-fallback";
+
+/** Env names that store an ordered fallback model list. Catalogs that still
+ *  declare the item as a plain text input are recognized by env name so the
+ *  list UI keeps working before the registry migrates to `optionsSource`. */
+const FALLBACK_LIST_ENVS = new Set(["PI_VISION_FALLBACK_MODELS", "SUBAGENT_FALLBACK_MODELS"]);
+
+/** Which runtime model list a config item needs. */
+export type ModelOptionsKind = "vision" | "all";
 
 export function isVisionCapable(model: ModelSummary): boolean {
   return Array.isArray(model.input) && model.input.includes("image");
 }
 
-/** Select option for a vision-capable model: the persisted value keeps the
- *  provider/modelId form (it becomes PI_VISION_MODEL), the label shows the
- *  human-readable provider and model names. */
-export function visionModelOption(model: ModelSummary): { value: string; label: string } {
+/** Select option for a model: the persisted value keeps the provider/modelId
+ *  form (it becomes the plugin's env var), the label shows the human-readable
+ *  provider and model names. */
+export function modelOption(model: ModelSummary): { value: string; label: string } {
   return {
     value: `${model.provider}/${model.modelId}`,
     label: `${model.providerName ?? model.provider} · ${model.name ?? model.modelId}`,
   };
 }
 
-/** True when this config item wants runtime-generated vision model options. */
-export function wantsVisionModelOptions(item: PluginLibraryConfigItem): boolean {
-  return item.type === "select" && item.optionsSource === OPTIONS_SOURCE_VISION_MODELS;
+/** True when this config item wants a runtime-generated model single-select. */
+export function wantsModelOptions(item: PluginLibraryConfigItem): boolean {
+  return (
+    item.type === "select" &&
+    (item.optionsSource === OPTIONS_SOURCE_VISION_MODELS ||
+      item.optionsSource === OPTIONS_SOURCE_MODELS)
+  );
 }
 
-/** True when this item stores an ordered, comma-separated vision fallback list. */
-export function wantsVisionFallbackModelOptions(item: PluginLibraryConfigItem): boolean {
+/** True when this item stores an ordered, comma-separated fallback model list. */
+export function wantsModelListOptions(item: PluginLibraryConfigItem): boolean {
   return (
-    (item.type === "select" && item.optionsSource === OPTIONS_SOURCE_VISION_FALLBACK_MODELS) ||
-    item.env === "PI_VISION_FALLBACK_MODELS"
+    (item.type === "select" &&
+      (item.optionsSource === OPTIONS_SOURCE_VISION_FALLBACK_MODELS ||
+        item.optionsSource === OPTIONS_SOURCE_MODELS_FALLBACK)) ||
+    FALLBACK_LIST_ENVS.has(item.env)
   );
+}
+
+/** Which runtime model list this config item needs: "vision" filters to
+ *  image-capable models, "all" uses every configured model. */
+export function modelOptionsKind(item: PluginLibraryConfigItem): ModelOptionsKind {
+  if (
+    item.optionsSource === OPTIONS_SOURCE_MODELS ||
+    item.optionsSource === OPTIONS_SOURCE_MODELS_FALLBACK ||
+    // Legacy catalogs declare the subagent fallback list as a plain text
+    // input; its env name still means the full model list.
+    item.env === "SUBAGENT_FALLBACK_MODELS"
+  ) {
+    return "all";
+  }
+  return "vision";
 }
 
 /** Posix-normalized absolute path used for substring matching. */

@@ -170,6 +170,38 @@ function catalogWithVision(includeUnknownSource = false): PluginLibraryCatalog {
   };
 }
 
+function catalogWithSubagent(): PluginLibraryCatalog {
+  const subagentPlugin: PluginLibraryCatalog["plugins"][number] = {
+    id: "pi-subagent",
+    name: "pi-subagent",
+    description: "Subagent runtime.",
+    icon: "🤖",
+    version: "0.1.0",
+    install: { type: "repo", path: "packages/pi-subagent" },
+    config: [
+      {
+        key: "defaultModel",
+        type: "select",
+        label: "Default model",
+        env: "SUBAGENT_DEFAULT_MODEL",
+        default: "",
+        optionsSource: "pi:models",
+      },
+      {
+        key: "fallbackModels",
+        type: "select",
+        label: "Fallback models",
+        env: "SUBAGENT_FALLBACK_MODELS",
+        optionsSource: "pi:models-fallback",
+      },
+    ],
+  };
+  return {
+    ...catalog(),
+    plugins: [...catalog().plugins, subagentPlugin],
+  };
+}
+
 function packageRecord(overrides: Partial<PackageRecord> = {}): PackageRecord {
   return {
     id: "pkg-browser",
@@ -276,6 +308,28 @@ function snapshotWithVision(): PackageSnapshot {
         id: "res-unknown-options",
         packageId: "pkg-repo",
         path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/pi-unknown-options/extensions/index.ts",
+        enabled: true,
+      }),
+    ],
+  };
+}
+
+function snapshotWithSubagent(): PackageSnapshot {
+  const repoPkg = packageRecord({
+    id: "pkg-repo",
+    identity: REPO_SOURCE,
+    source: REPO_SOURCE,
+    kind: "git",
+    displayName: "my-pi-plugins",
+  });
+  return {
+    ...emptySnapshot(),
+    configured: [repoPkg],
+    resources: [
+      resource({
+        id: "res-subagent",
+        packageId: "pkg-repo",
+        path: "C:/agent/git/github.com/Nick12138/my-pi-plugins/packages/pi-subagent/extensions/pi-subagent.ts",
         enabled: true,
       }),
     ],
@@ -785,5 +839,59 @@ describe("PluginLibraryPage DOM workflows", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("textbox", { name: /Custom value/ })).toBeInTheDocument();
     expect(within(dialog).queryByRole("listbox", { name: /Custom value/ })).toBeNull();
+  });
+
+  it("renders subagent model config from the full model list (text-only included)", async () => {
+    currentCatalog = catalogWithSubagent();
+    currentSnapshot = snapshotWithSubagent();
+    useAppStore.getState().applyPackageSnapshot(currentSnapshot);
+    const user = userEvent.setup();
+    render(<PluginLibraryPage />);
+
+    const card = (await screen.findAllByText("pi-subagent"))[0]!.closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // pi:models single-select lists every configured model, text-only too.
+    const defaultTrigger = within(dialog).getByRole("button", { name: "Default model" });
+    await waitFor(() => expect(defaultTrigger).not.toBeDisabled());
+    await user.click(defaultTrigger);
+    const defaultListbox = await screen.findByRole("listbox", { name: "Default model" });
+    expect(
+      within(defaultListbox).getByRole("option", { name: "OpenAI · GPT-4o mini" }),
+    ).toBeInTheDocument();
+    expect(
+      within(defaultListbox).getByRole("option", { name: "OpenAI · GPT Text" }),
+    ).toBeInTheDocument();
+    // Pick the text-only model to prove the full list is used.
+    await user.click(within(defaultListbox).getByRole("option", { name: "OpenAI · GPT Text" }));
+
+    // pi:models-fallback rows use the same full list.
+    await user.click(within(dialog).getByRole("button", { name: "Fallback models 1" }));
+    const fallbackListbox = await screen.findByRole("listbox", { name: "Fallback models 1" });
+    expect(
+      within(fallbackListbox).getByRole("option", { name: "OpenAI · GPT Text" }),
+    ).toBeInTheDocument();
+    expect(
+      within(fallbackListbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(fallbackListbox).getByRole("option", { name: "Anthropic · Claude Sonnet 4.5" }),
+    );
+
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "pluginLibrary.setEnv",
+        expect.objectContaining({ expectedHostInstanceId: "h1" }),
+        {
+          vars: {
+            SUBAGENT_DEFAULT_MODEL: "openai/gpt-text",
+            SUBAGENT_FALLBACK_MODELS: "anthropic/claude-sonnet-45",
+          },
+        },
+        expect.any(Number),
+      ),
+    );
   });
 });

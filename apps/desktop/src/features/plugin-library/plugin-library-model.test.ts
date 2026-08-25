@@ -11,12 +11,17 @@ import {
   initialConfigValues,
   isVisionCapable,
   missingRequiredConfig,
+  modelOption,
+  modelOptionsKind,
   normalizeInstallIdentity,
+  OPTIONS_SOURCE_MODELS,
+  OPTIONS_SOURCE_MODELS_FALLBACK,
   OPTIONS_SOURCE_VISION_MODELS,
+  OPTIONS_SOURCE_VISION_FALLBACK_MODELS,
   pluginCardState,
   repoExtensionPattern,
-  visionModelOption,
-  wantsVisionModelOptions,
+  wantsModelListOptions,
+  wantsModelOptions,
 } from "./plugin-library-model";
 
 const CATALOG: PluginLibraryCatalog = {
@@ -282,7 +287,7 @@ describe("config helpers", () => {
 
     it("formats options with human-readable provider and model names", () => {
       expect(
-        visionModelOption({
+        modelOption({
           provider: "openai",
           providerName: "OpenAI",
           modelId: "gpt-4o-mini",
@@ -296,7 +301,7 @@ describe("config helpers", () => {
 
       // Falls back to IDs when display names are omitted.
       expect(
-        visionModelOption({
+        modelOption({
           provider: "custom",
           modelId: "raw-model",
           name: "raw-model",
@@ -307,9 +312,9 @@ describe("config helpers", () => {
       });
     });
 
-    it("detects when a config item requests runtime vision models", () => {
+    it("detects when a config item requests a runtime model single-select", () => {
       expect(
-        wantsVisionModelOptions({
+        wantsModelOptions({
           key: "visionModel",
           type: "select",
           label: "l",
@@ -318,7 +323,16 @@ describe("config helpers", () => {
         }),
       ).toBe(true);
       expect(
-        wantsVisionModelOptions({
+        wantsModelOptions({
+          key: "defaultModel",
+          type: "select",
+          label: "l",
+          env: "SUBAGENT_DEFAULT_MODEL",
+          optionsSource: OPTIONS_SOURCE_MODELS,
+        }),
+      ).toBe(true);
+      expect(
+        wantsModelOptions({
           key: "engine",
           type: "select",
           label: "l",
@@ -327,7 +341,7 @@ describe("config helpers", () => {
         }),
       ).toBe(false);
       expect(
-        wantsVisionModelOptions({
+        wantsModelOptions({
           key: "custom",
           type: "select",
           label: "l",
@@ -336,13 +350,78 @@ describe("config helpers", () => {
         }),
       ).toBe(false);
       expect(
-        wantsVisionModelOptions({
+        wantsModelOptions({
           key: "apiKey",
           type: "text",
           label: "l",
           env: "KEY",
         }),
       ).toBe(false);
+    });
+
+    it("detects ordered fallback model lists by optionsSource and legacy env", () => {
+      expect(
+        wantsModelListOptions({
+          key: "fallbackModels",
+          type: "select",
+          label: "l",
+          env: "PI_VISION_FALLBACK_MODELS",
+          optionsSource: OPTIONS_SOURCE_VISION_FALLBACK_MODELS,
+        }),
+      ).toBe(true);
+      expect(
+        wantsModelListOptions({
+          key: "fallbackModels",
+          type: "select",
+          label: "l",
+          env: "SUBAGENT_FALLBACK_MODELS",
+          optionsSource: OPTIONS_SOURCE_MODELS_FALLBACK,
+        }),
+      ).toBe(true);
+      // Legacy catalogs still declare these as plain text inputs; the env
+      // name alone must trigger the list UI.
+      expect(
+        wantsModelListOptions({
+          key: "fallbackModels",
+          type: "text",
+          label: "l",
+          env: "PI_VISION_FALLBACK_MODELS",
+        }),
+      ).toBe(true);
+      expect(
+        wantsModelListOptions({
+          key: "fallbackModels",
+          type: "text",
+          label: "l",
+          env: "SUBAGENT_FALLBACK_MODELS",
+        }),
+      ).toBe(true);
+      expect(
+        wantsModelListOptions({
+          key: "other",
+          type: "select",
+          label: "l",
+          env: "X",
+          options: [{ value: "a", label: "A" }],
+        }),
+      ).toBe(false);
+    });
+
+    it("maps config items to the model list kind they need", () => {
+      const visionSelect = { key: "visionModel", type: "select" as const, label: "l", env: "PI_VISION_MODEL", optionsSource: OPTIONS_SOURCE_VISION_MODELS };
+      const allSelect = { key: "defaultModel", type: "select" as const, label: "l", env: "SUBAGENT_DEFAULT_MODEL", optionsSource: OPTIONS_SOURCE_MODELS };
+      const visionFallback = { key: "fallbackModels", type: "select" as const, label: "l", env: "PI_VISION_FALLBACK_MODELS", optionsSource: OPTIONS_SOURCE_VISION_FALLBACK_MODELS };
+      const allFallback = { key: "fallbackModels", type: "select" as const, label: "l", env: "SUBAGENT_FALLBACK_MODELS", optionsSource: OPTIONS_SOURCE_MODELS_FALLBACK };
+      const legacyVision = { key: "fallbackModels", type: "text" as const, label: "l", env: "PI_VISION_FALLBACK_MODELS" };
+      const legacySubagent = { key: "fallbackModels", type: "text" as const, label: "l", env: "SUBAGENT_FALLBACK_MODELS" };
+      expect(modelOptionsKind(visionSelect)).toBe("vision");
+      expect(modelOptionsKind(allSelect)).toBe("all");
+      expect(modelOptionsKind(visionFallback)).toBe("vision");
+      expect(modelOptionsKind(allFallback)).toBe("all");
+      // Legacy env-only items default to the vision list except the subagent
+      // env, which is all models.
+      expect(modelOptionsKind(legacyVision)).toBe("vision");
+      expect(modelOptionsKind(legacySubagent)).toBe("all");
     });
   });
 });
