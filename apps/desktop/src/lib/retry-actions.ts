@@ -6,6 +6,7 @@ import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error"
 import { tCurrent } from "./i18n/use-t";
 import {
   buildAttachedFileBlock,
+  buildAttachedPathBlock,
   parseUserAttachments,
   type TranscriptRow,
 } from "../features/chat/transcript-model";
@@ -79,11 +80,12 @@ async function promptActiveSession(params: ActiveSessionPromptParams): Promise<b
  */
 export async function requestRetry(row: TranscriptRow): Promise<boolean> {
   const parsed = parseUserAttachments(row.copyText);
-  const outgoingText = parsed.files.reduce(
-    (text, file) =>
-      `${text}${text ? "\n\n" : ""}${buildAttachedFileBlock(file.name, file.content)}`,
-    parsed.text,
-  );
+  const outgoingText = parsed.files.reduce((text, file) => {
+    const block = file.pathOnly
+      ? buildAttachedPathBlock(file.name, file.path ?? "")
+      : buildAttachedFileBlock(file.name, file.content, file.path);
+    return `${text}${text ? "\n\n" : ""}${block}`;
+  }, parsed.text);
   const images: SerializableImage[] = row.blocks.flatMap((block) =>
     block.kind === "image" ? [{ mediaType: block.mimeType, data: block.data }] : [],
   );

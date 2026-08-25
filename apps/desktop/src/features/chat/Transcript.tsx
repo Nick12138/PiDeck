@@ -857,7 +857,7 @@ export const TranscriptRowView = memo(function TranscriptRowView({
                   <span className="max-w-48 truncate">{file.name}</span>
                 </summary>
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border px-2 py-1.5 text-[11px] leading-5">
-                  {file.content}
+                  {file.pathOnly ? (file.path ?? "") : file.content}
                 </pre>
               </details>
             ))}

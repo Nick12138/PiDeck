@@ -1241,11 +1241,7 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
  * Text-file attachments travel inside the prompt text as tagged blocks so any
  * model (and the CLI) sees them; the transcript folds them back into chips.
  */
-export function buildAttachedFileBlock(
-  name: string,
-  content: string,
-  sourcePath?: string,
-): string {
+export function buildAttachedFileBlock(name: string, content: string, sourcePath?: string): string {
   const safeName = name.replace(/"/g, "'");
   const safePath = sourcePath ? ` path="${sourcePath.replace(/"/g, "'")}"` : "";
   const body = content.endsWith("\n") ? content.slice(0, -1) : content;
@@ -1266,21 +1262,44 @@ export function buildAttachedImageBlock(name: string, sourcePath: string): strin
   return `<attached-image name="${safeName}" path="${safePath}"/>`;
 }
 
+export type ParsedFileAttachment = {
+  name: string;
+  content: string;
+  /** Absolute path of the original source file carried by the block, when present. */
+  path?: string;
+  /** True for <attached-path> blocks: content was not read; the agent operates on the source file. */
+  pathOnly?: boolean;
+};
+
 export type ParsedUserText = {
   text: string;
-  files: { name: string; content: string }[];
+  files: ParsedFileAttachment[];
   documents: AttachmentReference[];
 };
+
+// Builders always emit `name` first, then an optional `path="..."` attribute.
+const ATTACHED_FILE_PATTERN =
+  /<attached-file name="([^"]*)"(?: path="([^"]*)")?>\n?([\s\S]*?)\n?<\/attached-file>/g;
+const ATTACHED_PATH_PATTERN = /<attached-path name="([^"]*)"(?: path="([^"]*)")?\/>/g;
+const ATTACHED_IMAGE_PATTERN = /<attached-image name="([^"]*)"(?: path="([^"]*)")?\/>/g;
 
 export function parseUserAttachments(raw: string): ParsedUserText {
   const files: ParsedUserText["files"] = [];
   const documents = parseAttachmentReferences(raw);
-  const pattern = /<attached-file name="([^"]*)">\n?([\s\S]*?)\n?<\/attached-file>/g;
   const text = stripAttachmentReferenceBlocks(raw)
-    .replace(pattern, (_match, name: string, content: string) => {
-      files.push({ name, content });
+    .replace(
+      ATTACHED_FILE_PATTERN,
+      (_match, name: string, path: string | undefined, content: string) => {
+        files.push({ name, content, ...(path ? { path } : {}) });
+        return "";
+      },
+    )
+    .replace(ATTACHED_PATH_PATTERN, (_match, name: string, path: string | undefined) => {
+      files.push({ name, content: "", pathOnly: true, ...(path ? { path } : {}) });
       return "";
     })
+    // Image content travels via the images channel; the marker is display-only.
+    .replace(ATTACHED_IMAGE_PATTERN, () => "")
     .trim();
   return { text, files, documents };
 }

@@ -27,6 +27,36 @@ describe("attached file blocks", () => {
     ]);
   });
 
+  it("folds attached-file blocks carrying a source path back into chips", () => {
+    const raw = `查看这个文件\n\n${buildAttachedFileBlock("123.md", "你好\n", "C:\\Users\\liu\\Desktop\\123.md")}`;
+    const parsed = parseUserAttachments(raw);
+    expect(parsed.text).toBe("查看这个文件");
+    expect(parsed.files).toEqual([
+      { name: "123.md", content: "你好", path: "C:\\Users\\liu\\Desktop\\123.md" },
+    ]);
+  });
+
+  it("folds path-only attachments into chips without reading content", () => {
+    const raw = `打开这个\n\n<attached-path name="CC Switch.lnk" path="C:\\Users\\liu\\Desktop\\CC Switch.lnk"/>`;
+    const parsed = parseUserAttachments(raw);
+    expect(parsed.text).toBe("打开这个");
+    expect(parsed.files).toEqual([
+      {
+        name: "CC Switch.lnk",
+        content: "",
+        pathOnly: true,
+        path: "C:\\Users\\liu\\Desktop\\CC Switch.lnk",
+      },
+    ]);
+  });
+
+  it("hides attached-image markers (content travels via the images channel)", () => {
+    const raw = `看图\n\n<attached-image name="photo.png" path="D:\\pics\\photo.png"/>`;
+    const parsed = parseUserAttachments(raw);
+    expect(parsed.text).toBe("看图");
+    expect(parsed.files).toEqual([]);
+  });
+
   it("passes through plain text untouched", () => {
     const parsed = parseUserAttachments("just a message");
     expect(parsed).toEqual({ text: "just a message", files: [], documents: [] });
