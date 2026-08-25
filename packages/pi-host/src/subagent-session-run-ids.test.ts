@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collectSessionRunIds } from "./subagent-status-extension.js";
+import { collectSessionRunIds, resetSessionRunIdCache } from "./subagent-status-extension.js";
 
 let sessionsDir: string;
 
@@ -11,6 +11,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetSessionRunIdCache();
   rmSync(sessionsDir, { recursive: true, force: true });
 });
 

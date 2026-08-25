@@ -57,9 +57,7 @@ export function mapSubagentHttpRun(run: SubagentHttpRunSummary): SubagentStatusN
         : typeof run.startedAt === "number"
           ? run.startedAt
           : Date.now(),
-    ...(run.outputPreview
-      ? { activity: { state: run.outputPreview.slice(0, 200) } }
-      : {}),
+    ...(run.outputPreview ? { activity: { state: run.outputPreview.slice(0, 200) } } : {}),
   };
 }
 
@@ -94,6 +92,11 @@ export function normalizeSubagentRuns(
 }
 
 let sessionRunIdCache: { sessionId: string; mtime: number; ids: Set<string> } | null = null;
+
+/** Clear the per-session mtime cache (test isolation). */
+export function resetSessionRunIdCache(): void {
+  sessionRunIdCache = null;
+}
 
 /** Extract the run ids the given session spawned by scanning its transcript.
  * Only `subagent` tool RESULTS that report a successful submission ("已提交")
@@ -131,7 +134,11 @@ export function collectSessionRunIds(
   } catch {
     return null;
   }
-  if (sessionRunIdCache && sessionRunIdCache.sessionId === sessionId && sessionRunIdCache.mtime === mtime) {
+  if (
+    sessionRunIdCache &&
+    sessionRunIdCache.sessionId === sessionId &&
+    sessionRunIdCache.mtime === mtime
+  ) {
     return sessionRunIdCache.ids;
   }
   const ids = new Set<string>();

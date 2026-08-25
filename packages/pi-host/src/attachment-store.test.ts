@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ZipFile } from "yazl";
@@ -287,7 +287,9 @@ describe("AttachmentStore", () => {
       unit: "page",
       unitCount: 1,
     });
-    expect(ready.sourcePath).toBe(source);
+    // The store resolves the requested path (realpath), which on Windows CI
+    // can expand an 8.3 short name (RUNNER~1) to the long user path.
+    expect(ready.sourcePath).toBe(await realpath(source));
     const result = await store.read({
       attachmentId: ready.id,
       sessionId: SESSION_ID,
