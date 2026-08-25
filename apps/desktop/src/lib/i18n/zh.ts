@@ -465,7 +465,9 @@ export const zh: Record<MessageKey, string> = {
   skillsPathsTitle: "技能目录",
   skillsPathsDesc:
     "对应 settings.json 中的 skills 数组，可写入用户（~/.pi/agent/settings.json）或项目（.pi/settings.json）设置。",
-  skillsPathPlaceholder: "例如 ../.claude/skills 或 ~/.codex/skills",
+  skillsBrowseDirectory: "选择文件夹…",
+  skillsPickDirectoryPlaceholder: "点击选择技能文件夹…",
+  skillsEnterPath: "请输入技能目录路径",
   skillsScopeProject: "项目设置",
   skillsScopeUser: "用户设置",
   skillsAddPath: "添加",
@@ -958,6 +960,7 @@ export const zh: Record<MessageKey, string> = {
   composerFileTooLarge: "{name}：文件过大（最大 {max} KB）",
   composerImageLimit: "每条消息最多添加 {max} 张图片",
   composerBinaryUnsupported: "{name}：不支持二进制文件",
+  composerPathFolder: "文件夹",
   composerReadFileFailed: "{name}：无法读取文件",
   composerReadFileFailedDetail: "{name}：无法读取文件（{error}）",
   composerFilePickerFailed: "无法打开文件选择器",

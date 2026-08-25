@@ -22,6 +22,7 @@ import {
   matchesResourcePattern,
   setPackageResourceFilter,
   setTopLevelPathEnabled,
+  toPosixPath,
   resourceTypeToSettingsKey,
   type PackageSource,
   type PackageSourceObject,
@@ -1011,10 +1012,18 @@ export function applyResourcePreferences(
         paths.push(`${update.preference === "enabled" ? "+" : "-"}${pattern}`);
       }
     } else {
+      // The SDK resolves top-level settings-path resources with baseDir =
+      // <cwd>/.pi (project) or agentDir (user), so it can only match patterns
+      // that are the full path or a path relative to that baseDir. The bare
+      // resource-relative path (e.g. "SKILL.md") never matches, which made
+      // per-skill toggles for directory-configured skills silently ineffective
+      // (the switch flipped but the skill stayed loaded). Write the full posix
+      // path, mirroring the project-override branch above.
+      const pattern = toPosixPath(metadata.path);
       paths =
         update.preference === "inherit"
-          ? stripExactPreference(paths, metadata.relativePath)
-          : setTopLevelPathEnabled(paths, metadata.relativePath, update.preference === "enabled");
+          ? stripExactPreference(paths, pattern)
+          : setTopLevelPathEnabled(paths, pattern, update.preference === "enabled");
     }
     pathChanges.set(changeKey, { scope: update.targetScope, key, paths });
   }

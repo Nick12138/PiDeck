@@ -10,6 +10,8 @@ export type AttachmentReference = {
   mediaType: string;
   unit: AttachmentUnit;
   unitCount: number;
+  /** Absolute path of the original source file, when the attachment has one. */
+  path?: string;
 };
 
 function isReference(value: unknown): value is AttachmentReference {
@@ -24,7 +26,8 @@ function isReference(value: unknown): value is AttachmentReference {
     (item.unit === "page" || item.unit === "chunk") &&
     typeof item.unitCount === "number" &&
     Number.isSafeInteger(item.unitCount) &&
-    item.unitCount >= 0
+    item.unitCount >= 0 &&
+    (item.path === undefined || typeof item.path === "string")
   );
 }
 
@@ -35,6 +38,7 @@ export function buildAttachmentReferenceBlock(attachments: readonly AttachmentSn
     mediaType: attachment.mediaType,
     unit: attachment.unit ?? (attachment.mediaType === "application/pdf" ? "page" : "chunk"),
     unitCount: attachment.unitCount ?? 0,
+    ...(attachment.sourcePath ? { path: attachment.sourcePath } : {}),
   }));
   return `${OPEN_TAG}\n${JSON.stringify(items)}\n${CLOSE_TAG}`;
 }

@@ -155,6 +155,7 @@ pub fn run() {
             commands::desktop_drafts_apply,
             commands::desktop_open_path,
             commands::desktop_read_small_file,
+            commands::desktop_file_info,
             commands::pi_host_send,
             commands::pi_host_activate,
             commands::pi_host_prepare_switch,

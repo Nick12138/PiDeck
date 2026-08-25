@@ -58,6 +58,8 @@ type AttachmentMetadata = {
   committed: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Absolute path of the original source file (set for path attachments). */
+  sourcePath?: string;
 };
 
 export type AttachmentReadResult = {
@@ -102,6 +104,7 @@ function metadataSnapshot(metadata: AttachmentMetadata): AttachmentSnapshot {
     ...(metadata.unitCount !== undefined ? { unitCount: metadata.unitCount } : {}),
     ...(metadata.processedUnits !== undefined ? { processedUnits: metadata.processedUnits } : {}),
     ...(metadata.error ? { error: metadata.error } : {}),
+    ...(metadata.sourcePath ? { sourcePath: metadata.sourcePath } : {}),
   };
 }
 
@@ -195,7 +198,8 @@ function validateMetadata(value: unknown, expectedId: string): AttachmentMetadat
     !item.references.every((reference) => typeof reference === "string") ||
     typeof item.committed !== "boolean" ||
     typeof item.createdAt !== "number" ||
-    typeof item.updatedAt !== "number"
+    typeof item.updatedAt !== "number" ||
+    (item.sourcePath !== undefined && typeof item.sourcePath !== "string")
   ) {
     throw new Error("Attachment metadata is incomplete");
   }
@@ -312,6 +316,7 @@ export class AttachmentStore {
       committed: false,
       createdAt: now,
       updatedAt: now,
+      sourcePath,
     };
     await this.saveMetadata(metadata);
     this.publishChange(metadata, args.onChange);

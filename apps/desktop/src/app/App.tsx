@@ -816,9 +816,17 @@ export function App() {
                 // startupSettled=false forever) and the fatal panel's
                 // Settings → Restart Host path becomes reachable.
                 useAppStore.getState().settleHostFailure(message);
-                useAppStore
-                  .getState()
-                  .pushNotification(tCurrent("notifHostRecoveryFailed", { message }), "error");
+                // The initial bootstrap recovery is a startup race, not a
+                // product failure: the Host is still booting and the live
+                // `host.ready` event (or a subsequent recovery) takes over as
+                // soon as it appears. Only surface a toast for recoveries that
+                // happen after the app settled, and never leak the internal
+                // "bootstrap hello" reason string into the UI.
+                if (reason !== "bootstrap hello") {
+                  useAppStore
+                    .getState()
+                    .pushNotification(tCurrent("notifHostRecoveryFailed", { message }), "error");
+                }
               }
             }
           })().finally(() => {
@@ -891,7 +899,7 @@ export function App() {
         await replayActiveHostReady();
 
         window.setTimeout(() => {
-          if (!hostClient.getHostInstanceId()) {
+          if (!cancelled && !hostClient.getHostInstanceId()) {
             scheduleRecovery(null, "bootstrap hello");
           }
         }, 1500);

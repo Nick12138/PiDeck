@@ -14,6 +14,7 @@ export function createReadAttachmentTool(store: AttachmentStore): ToolDefinition
     promptGuidelines: [
       "Use read_attachment for document attachments instead of guessing their contents.",
       "Read only the page or chunk ranges needed and continue with the returned hasMore flag.",
+      "The attachment reference may include the original absolute path; when it does, you may read or modify the file at that path directly with your filesystem tools instead of the read-only attachment content.",
     ],
     parameters: Type.Object(
       {

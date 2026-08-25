@@ -78,6 +78,36 @@ pub fn desktop_read_small_file(path: String) -> Result<DesktopSmallFile, String>
     read_small_file(&path)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopFileInfo {
+    name: String,
+    size_bytes: u64,
+    path: String,
+    is_directory: bool,
+}
+
+#[tauri::command]
+pub fn desktop_file_info(path: String) -> Result<DesktopFileInfo, String> {
+    let resolved = validate_local_path(&path)?;
+    let metadata = std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Err("path is not a regular file or directory".to_string());
+    }
+    let name = resolved
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "file name is not valid UTF-8".to_string())?
+        .to_string();
+    Ok(DesktopFileInfo {
+        name,
+        size_bytes: metadata.len(),
+        path: resolved.to_string_lossy().into_owned(),
+        is_directory: metadata.is_dir(),
+    })
+}
+
 fn read_small_file(raw: &str) -> Result<DesktopSmallFile, String> {
     let path = validate_local_file(raw)?;
     let metadata = std::fs::metadata(&path).map_err(|e| format!("file is not accessible: {e}"))?;
@@ -127,7 +157,7 @@ fn read_small_file(raw: &str) -> Result<DesktopSmallFile, String> {
     })
 }
 
-fn validate_local_file(raw: &str) -> Result<PathBuf, String> {
+fn validate_local_path(raw: &str) -> Result<PathBuf, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err("path is empty".into());
@@ -146,6 +176,12 @@ fn validate_local_file(raw: &str) -> Result<PathBuf, String> {
     if resolved.to_string_lossy().starts_with(r"\\") {
         return Err("network (UNC) paths are not allowed".into());
     }
+    std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
+    Ok(resolved)
+}
+
+fn validate_local_file(raw: &str) -> Result<PathBuf, String> {
+    let resolved = validate_local_path(raw)?;
     let metadata =
         std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
     if !metadata.is_file() {

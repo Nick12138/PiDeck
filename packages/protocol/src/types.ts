@@ -1134,6 +1134,8 @@ export type AttachmentSnapshot = {
   unitCount?: number;
   processedUnits?: number;
   error?: string;
+  /** Absolute path of the original source file (path attachments only). */
+  sourcePath?: string;
 };
 
 export type SerializableCompactionResult = {

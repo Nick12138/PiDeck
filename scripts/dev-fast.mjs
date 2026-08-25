@@ -75,12 +75,29 @@ function latestMtimeMs(directory, accept) {
   return latest;
 }
 
+function latestTsbuildinfoMtime(packageRoot) {
+  let latest = 0;
+  for (const name of readdirSync(packageRoot)) {
+    if (name.endsWith(".tsbuildinfo")) {
+      latest = Math.max(latest, statSync(join(packageRoot, name)).mtimeMs);
+    }
+  }
+  return latest;
+}
+
 function ensurePackageBuild({ label, packageName, sourceDirectory, entry, dependencyMtime = 0 }) {
   const sourceMtime = Math.max(
     latestMtimeMs(sourceDirectory, (path) => path.endsWith(".ts")),
     dependencyMtime,
   );
-  const builtMtime = existsSync(entry) ? statSync(entry).mtimeMs : 0;
+  // tsc composite builds write a .tsbuildinfo on every successful build and may
+  // skip re-emitting unchanged entry files (incremental emit), so the entry
+  // mtime alone is not a reliable freshness marker. Also consider the latest
+  // .tsbuildinfo mtime to avoid rebuilding on every launch.
+  const builtMtime = Math.max(
+    existsSync(entry) ? statSync(entry).mtimeMs : 0,
+    latestTsbuildinfoMtime(dirname(sourceDirectory)),
+  );
   if (builtMtime >= sourceMtime) return builtMtime;
 
   console.log(`[dev:fast] Building changed ${label} sources...`);

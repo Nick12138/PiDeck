@@ -487,7 +487,9 @@ export const en = {
   skillsPathsTitle: "Skill paths",
   skillsPathsDesc:
     "Entries of the `skills` array in settings.json. Added to user (~/.pi/agent/settings.json) or project (.pi/settings.json) settings.",
-  skillsPathPlaceholder: "e.g. ../.claude/skills or ~/.codex/skills",
+  skillsBrowseDirectory: "Choose folder…",
+  skillsPickDirectoryPlaceholder: "Choose a skills folder…",
+  skillsEnterPath: "Enter the skill directory path",
   skillsScopeProject: "Project settings",
   skillsScopeUser: "User settings",
   skillsAddPath: "Add",
@@ -998,6 +1000,7 @@ export const en = {
   composerFileTooLarge: "{name}: file too large (max {max} KB)",
   composerImageLimit: "Up to {max} images per message",
   composerBinaryUnsupported: "{name}: binary files are not supported",
+  composerPathFolder: "Folder",
   composerReadFileFailed: "{name}: could not read file",
   composerReadFileFailedDetail: "{name}: could not read file ({error})",
   composerFilePickerFailed: "Could not open the file picker",

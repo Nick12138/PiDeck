@@ -276,6 +276,20 @@ export function SkillsSettings() {
     }
   }
 
+  async function pickSkillDirectory() {
+    if (!host || busy) return;
+    let picked: string | null = null;
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === "string") picked = selected;
+    } catch {
+      // Non-desktop / test environment: fall back to a textual prompt.
+      picked = window.prompt(t("skillsEnterPath")) || null;
+    }
+    if (picked) setNewPath(picked);
+  }
+
   async function openPath(path: string) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -537,13 +551,19 @@ export function SkillsSettings() {
                 ))}
               </ul>
               <div className="flex min-w-0 items-center gap-2">
-                <input
-                  type="text"
-                  value={newPath}
-                  onChange={(event) => setNewPath(event.target.value)}
-                  placeholder={t("skillsPathPlaceholder")}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2.5 text-xs focus:border-focus focus:outline-none"
-                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void pickSkillDirectory()}
+                  title={newPath || t("skillsBrowseDirectory")}
+                  aria-label={t("skillsBrowseDirectory")}
+                  className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs transition-colors hover:bg-surface-overlay/60 focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <FolderOpen size={14} className="shrink-0 text-muted" />
+                  <span className={`min-w-0 flex-1 truncate text-left ${newPath ? "text-foreground" : "text-muted"}`}>
+                    {newPath || t("skillsPickDirectoryPlaceholder")}
+                  </span>
+                </button>
                 <Select
                   className="min-w-32"
                   ariaLabel={t("skillsPathsTitle")}

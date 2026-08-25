@@ -19,6 +19,9 @@ import { SkillsSettings } from "./SkillsSettings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
+const dialogMock = vi.hoisted(() => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => dialogMock);
+
 function host(overrides: Partial<HostStatusSnapshot> = {}): HostStatusSnapshot {
   return {
     protocolVersion: 1,
@@ -140,6 +143,8 @@ describe("SkillsSettings", () => {
   let request: MockInstance<typeof hostClient.request>;
 
   beforeEach(() => {
+    dialogMock.open.mockReset();
+    dialogMock.open.mockResolvedValue(null);
     currentSkills = skillSnapshot();
     currentResources = [skillResource()];
     useAppStore.getState().setHost(null);
@@ -264,16 +269,17 @@ describe("SkillsSettings", () => {
     expect(globalHeader).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("adds a skill directory to project settings", async () => {
+  it("adds a skill directory picked from the folder dialog to project settings", async () => {
+    dialogMock.open.mockResolvedValue("C:/team/skills");
     const user = userEvent.setup();
     render(<SkillsSettings />);
     await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
-    const input = screen.getByPlaceholderText("e.g. ../.claude/skills or ~/.codex/skills");
-    await user.type(input, "../team-skills");
+    await user.click(screen.getByRole("button", { name: "Choose folder…" }));
+    expect(dialogMock.open).toHaveBeenCalledWith({ directory: true, multiple: false });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() => {
       const call = request.mock.calls.find(([method]) => method === "skill.addPath");
-      expect(call?.[2]).toEqual({ path: "../team-skills", scope: "project" });
+      expect(call?.[2]).toEqual({ path: "C:/team/skills", scope: "project" });
     });
   });
 });

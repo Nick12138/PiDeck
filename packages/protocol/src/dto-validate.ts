@@ -1675,7 +1675,7 @@ function isAttachmentSnapshot(value: unknown): value is AttachmentSnapshot {
     hasExactKeys(
       value,
       ["id", "name", "mediaType", "sizeBytes", "status"],
-      ["unit", "unitCount", "processedUnits", "error"],
+      ["unit", "unitCount", "processedUnits", "error", "sourcePath"],
     ) &&
     isUuid(value.id) &&
     isBoundedNonEmptyString(value.name, 1_024) &&
@@ -1689,7 +1689,8 @@ function isAttachmentSnapshot(value: unknown): value is AttachmentSnapshot {
     (value.unit === undefined || value.unit === "page" || value.unit === "chunk") &&
     (value.unitCount === undefined || isSafeRevision(value.unitCount)) &&
     (value.processedUnits === undefined || isSafeRevision(value.processedUnits)) &&
-    isOptionalString(value.error)
+    isOptionalString(value.error) &&
+    isOptionalString(value.sourcePath)
   );
 }
 

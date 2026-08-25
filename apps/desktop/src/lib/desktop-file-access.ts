@@ -26,51 +26,25 @@ export async function pickDesktopAttachmentPaths(): Promise<string[] | null> {
     directory: false,
     filters: [
       {
-        name: "Documents and images",
-        extensions: [
-          "pdf",
-          "docx",
-          "png",
-          "jpg",
-          "jpeg",
-          "gif",
-          "webp",
-          "txt",
-          "md",
-          "mdx",
-          "json",
-          "jsonl",
-          "yaml",
-          "yml",
-          "toml",
-          "csv",
-          "tsv",
-          "xml",
-          "html",
-          "css",
-          "js",
-          "jsx",
-          "ts",
-          "tsx",
-          "py",
-          "rs",
-          "go",
-          "java",
-          "kt",
-          "swift",
-          "c",
-          "h",
-          "cpp",
-          "hpp",
-          "sh",
-          "sql",
-          "log",
-        ],
+        name: "All files",
+        extensions: ["*"],
       },
     ],
   });
   if (!selected) return [];
   return Array.isArray(selected) ? selected : [selected];
+}
+
+export type DesktopFileInfo = {
+  name: string;
+  sizeBytes: number;
+  path: string;
+  isDirectory: boolean;
+};
+
+export async function getDesktopFileInfo(path: string): Promise<DesktopFileInfo> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<DesktopFileInfo>("desktop_file_info", { path });
 }
 
 export async function readDesktopSmallFile(path: string): Promise<DesktopSmallFile> {

@@ -679,3 +679,42 @@ index e91e38f8bedfabb6e67305f9739277d1ebacde22..68745dcb5cdd88b4c382ad29d2ba953b
  export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.ts";
  export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
  export { convertToLlm } from "./core/messages.ts";
+diff --git a/dist/core/resource-loader.js b/dist/core/resource-loader.js
+index 5973072..34140ab 100644
+--- a/dist/core/resource-loader.js
++++ b/dist/core/resource-loader.js
+@@ -251,6 +251,7 @@ export class DefaultResourceLoader {
+         const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
+         const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
+         const enabledThemes = getEnabledPaths(resolvedPaths.themes);
++        this._resolvedMetadataByPath = metadataByPath;
+         const enabledSkills = enabledSkillResources.map((resource) => this.mapSkillPath(resource, metadataByPath));
+         // Add CLI paths metadata
+         for (const r of cliExtensionPaths.extensions) {
+@@ -458,7 +459,7 @@ export class DefaultResourceLoader {
+         const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
+         this.skills = resolvedSkills.skills.map((skill) => ({
+             ...skill,
+-            sourceInfo: this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, metadataByPath) ??
++            sourceInfo: this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, metadataByPath ?? this._resolvedMetadataByPath) ??
+                 skill.sourceInfo ??
+                 this.getDefaultSourceInfoForPath(skill.filePath),
+         }));
+@@ -481,7 +482,7 @@ export class DefaultResourceLoader {
+         const resolvedPrompts = this.promptsOverride ? this.promptsOverride(promptsResult) : promptsResult;
+         this.prompts = resolvedPrompts.prompts.map((prompt) => ({
+             ...prompt,
+-            sourceInfo: this.findSourceInfoForPath(prompt.filePath, this.extensionPromptSourceInfos, metadataByPath) ??
++            sourceInfo: this.findSourceInfoForPath(prompt.filePath, this.extensionPromptSourceInfos, metadataByPath ?? this._resolvedMetadataByPath) ??
+                 prompt.sourceInfo ??
+                 this.getDefaultSourceInfoForPath(prompt.filePath),
+         }));
+@@ -501,7 +502,7 @@ export class DefaultResourceLoader {
+         this.themes = resolvedThemes.themes.map((theme) => {
+             const sourcePath = theme.sourcePath;
+             theme.sourceInfo = sourcePath
+-                ? (this.findSourceInfoForPath(sourcePath, this.extensionThemeSourceInfos, metadataByPath) ??
++                ? (this.findSourceInfoForPath(sourcePath, this.extensionThemeSourceInfos, metadataByPath ?? this._resolvedMetadataByPath) ??
+                     theme.sourceInfo ??
+                     this.getDefaultSourceInfoForPath(sourcePath))
+                 : theme.sourceInfo;

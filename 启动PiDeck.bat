@@ -3,6 +3,29 @@ chcp 65001 >nul
 title PiDeck
 cd /d "%~dp0"
 
+rem ============================================================
+rem  Startup option: minimize to taskbar after launch
+rem  (window is minimized to the taskbar, NOT hidden)
+rem  MINIMIZE=1 -> auto-minimize to taskbar (default)
+rem  MINIMIZE=0 -> start in a normal window
+rem  Command line: --mini force minimize; --nomini force normal
+rem ============================================================
+set "MINIMIZE=1"
+
+if /i "%~1"=="--mini"   set "MINIMIZE=1"
+if /i "%~1"=="--nomini" set "MINIMIZE=0"
+
+rem On first launch, relaunch self in a minimized window
+if "%MINIMIZE%"=="1" (
+    if /i not "%~1"=="--minimized" (
+        start "PiDeck" /min "%~f0" --minimized
+        exit /b 0
+    )
+)
+
+if "%MINIMIZE%"=="0" echo Launch mode: normal window
+if "%MINIMIZE%"=="1" echo Launch mode: minimized to taskbar
+
 echo Starting PiDeck...
 call pnpm dev:fast
 set "EXIT_CODE=%ERRORLEVEL%"

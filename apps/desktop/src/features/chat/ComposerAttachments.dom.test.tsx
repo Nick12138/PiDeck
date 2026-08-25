@@ -18,6 +18,8 @@ import { MenuHost } from "../../components/Menu";
 const desktopMocks = vi.hoisted(() => ({
   pick: vi.fn(),
   isDesktop: vi.fn(),
+  readSmall: vi.fn(),
+  fileInfo: vi.fn(),
 }));
 
 vi.mock("../../lib/desktop-file-access", async (importOriginal) => {
@@ -26,6 +28,8 @@ vi.mock("../../lib/desktop-file-access", async (importOriginal) => {
     ...original,
     isDesktopRuntime: desktopMocks.isDesktop,
     pickDesktopAttachmentPaths: desktopMocks.pick,
+    readDesktopSmallFile: desktopMocks.readSmall,
+    getDesktopFileInfo: desktopMocks.fileInfo,
   };
 });
 
@@ -140,6 +144,15 @@ describe("Composer managed documents", () => {
   beforeEach(() => {
     desktopMocks.pick.mockReset().mockResolvedValue(["/documents/manual.pdf"]);
     desktopMocks.isDesktop.mockReset().mockResolvedValue(false);
+    desktopMocks.readSmall.mockReset();
+    desktopMocks.fileInfo
+      .mockReset()
+      .mockResolvedValue({
+        name: "manual.pdf",
+        sizeBytes: 1024,
+        path: "/documents/manual.pdf",
+        isDirectory: false,
+      });
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applySessionSnapshot(null);
@@ -615,5 +628,106 @@ describe("Composer managed documents", () => {
     fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
     expect(await screen.findByText("src/fresh.ts")).toBeVisible();
     expect(fileRequests).toBe(2);
+  });
+
+  it("keeps unreadable files as path-only attachments and injects their absolute path", async () => {
+    desktopMocks.pick.mockResolvedValue(["/documents/data.bin"]);
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.readSmall.mockRejectedValue(new Error("binary file type is not supported"));
+    desktopMocks.fileInfo.mockResolvedValue({
+      name: "data.bin",
+      sizeBytes: 2048,
+      path: "/documents/data.bin",
+      isDirectory: false,
+    });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    expect(await screen.findByText("data.bin")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(request).toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.objectContaining({ expectedSessionId: SESSION_ID }),
+      {
+        text: expect.stringContaining(
+          '<attached-path name="data.bin" path="/documents/data.bin"/>',
+        ),
+      },
+      null,
+    );
+  });
+
+  it("injects the source path into inlined text files and image markers", async () => {
+    desktopMocks.pick.mockResolvedValue(["/documents/note.ts", "/documents/photo.png"]);
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.readSmall.mockImplementation(async (path: string) => {
+      if (path === "/documents/note.ts") {
+        return { kind: "text", name: "note.ts", sizeBytes: 42, text: "const x = 1;" };
+      }
+      return {
+        kind: "image",
+        name: "photo.png",
+        sizeBytes: 512,
+        mediaType: "image/png",
+        data: "aGVsbG8=",
+      };
+    });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    expect(await screen.findByText("note.ts")).toBeVisible();
+    expect(await screen.findByRole("img")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    const promptCall = request.mock.calls.find(([method]) => method === "agent.prompt");
+    const params = promptCall?.[2] as { text: string; images?: unknown[] };
+    expect(params.text).toContain('path="/documents/note.ts"');
+    expect(params.text).toContain('const x = 1;');
+    expect(params.text).toContain('<attached-image name="photo.png" path="/documents/photo.png"/>');
+    expect(params.images).toEqual([{ mediaType: "image/png", data: "aGVsbG8=" }]);
+  });
+
+  it("keeps dropped folders as path-only attachments and injects the folder path", async () => {
+    desktopMocks.pick.mockResolvedValue(["/documents/project"]);
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    desktopMocks.fileInfo.mockResolvedValue({
+      name: "project",
+      sizeBytes: 0,
+      path: "/documents/project",
+      isDirectory: true,
+    });
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      if (method === "agent.prompt") return { ok: true, result: { accepted: true } } as never;
+      return { ok: true, result: null } as never;
+    });
+    const user = userEvent.setup();
+    render(<Composer />);
+
+    await user.click(screen.getByRole("button", { name: "Attach PDF, DOCX, image, or text file" }));
+    expect(await screen.findByText("project")).toBeVisible();
+    expect(screen.getByTitle(/\/documents\/project/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(request).toHaveBeenCalledWith(
+      "agent.prompt",
+      expect.objectContaining({ expectedSessionId: SESSION_ID }),
+      {
+        text: expect.stringContaining(
+          '<attached-path name="project" path="/documents/project"/>',
+        ),
+      },
+      null,
+    );
   });
 });

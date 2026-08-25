@@ -44,8 +44,18 @@ function fixture(layout: TempAgentLayout, skills: Skill[] = []) {
       isProjectTrusted: () => true,
       reload: vi.fn(async () => undefined),
     },
+    packageManager: {
+      listConfiguredPackages: () => [],
+      getInstalledPath: () => undefined,
+      resolve: async () => ({ extensions: [], skills: [], prompts: [], themes: [] }),
+    },
+    packageSnapshot: null,
+    resourceIdMap: new Map(),
     resourceLoader: {
+      getExtensions: () => ({ extensions: [], errors: [] }),
       getSkills: () => ({ skills, diagnostics: [] }),
+      getPrompts: () => ({ prompts: [], diagnostics: [] }),
+      getThemes: () => ({ themes: [], diagnostics: [] }),
       reload: vi.fn(async () => undefined),
     },
   };
@@ -54,13 +64,14 @@ function fixture(layout: TempAgentLayout, skills: Skill[] = []) {
     identity: {
       snapshot: () => ({ ...identity }),
       workspaceRevision: identity.workspaceRevision,
+      packageRevision: identity.packageRevision,
     },
   };
   const factory = {
     getGraph: () => graph,
     getServer: () => server,
     checkIdentity: vi.fn(() => null),
-    deps: { agentDir: layout.agentDir },
+    deps: { agentDir: layout.agentDir, packageUpdateCheck: false },
   } as unknown as WorkspaceGraphFactory;
   return { factory, graph };
 }
@@ -120,6 +131,41 @@ describe("skill-controller", () => {
     ]);
   });
 
+  it("hides resource-preference patterns from configured paths", async () => {
+    // Regression: disabling a skill writes a `-<path>` exclusion pattern into
+    // the settings skills array. It is not a path, so it must not surface in
+    // configuredPaths as a missing path (e.g. the WPS cloud drive case).
+    const skillPath = join(layout.agentDir, "extra-skills");
+    mkdirSync(skillPath, { recursive: true });
+    writeFileSync(
+      join(layout.agentDir, "settings.json"),
+      JSON.stringify(
+        {
+          skills: [
+            "./extra-skills",
+            `-${skillPath.replace(/\\/g, "/")}/example/SKILL.md`,
+            `+${skillPath.replace(/\\/g, "/")}/other/SKILL.md`,
+            `!${skillPath.replace(/\\/g, "/")}/blocked/SKILL.md`,
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { factory } = fixture(layout);
+    handlers = createSkillHandlers(factory);
+
+    const outcome = (await handlers["skill.list"]!(context("skill.list", null))) as {
+      result?: SkillSnapshot;
+      error?: { message: string };
+    };
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.result!.configuredPaths).toEqual([
+      { path: "./extra-skills", scope: "user", exists: true },
+    ]);
+  });
+
   it("adds a user-scope skill path and dedupes repeats", async () => {
     const { factory } = fixture(layout);
     handlers = createSkillHandlers(factory);
@@ -176,5 +222,42 @@ describe("skill-controller", () => {
     expect(outcome.error).toBeUndefined();
     expect(outcome.result!.resourceReloadRequired).toBe(true);
     expect(graph.resourceReloadRequired).toBe(true);
+  });
+
+  it("rebuilds the canonical resource ID map so newly added skills are toggleable", async () => {
+    // Regression: after adding a skill directory (e.g. a WPS cloud drive
+    // folder), resource.setPreference resolved against the stale canonical
+    // resourceIdMap and failed with "Resource not found: res_...".
+    const wpsSkill = makeSkill({
+      name: "bid-origin-check",
+      filePath: "/wps/云盘/.claude/skills/bid-origin-check/SKILL.md",
+      baseDir: "/wps/云盘/.claude/skills/bid-origin-check",
+      sourceInfo: {
+        path: "/wps/云盘/.claude/skills/bid-origin-check",
+        source: "/wps/云盘/.claude/skills",
+        scope: "project",
+        origin: "top-level",
+      },
+    });
+    const { factory, graph } = fixture(layout, [wpsSkill]);
+    handlers = createSkillHandlers(factory);
+
+    expect(graph.resourceIdMap.size).toBe(0);
+    const added = (await handlers["skill.addPath"]!(
+      context("skill.addPath", { path: "../.claude/skills", scope: "project" }),
+    )) as { result?: SkillSnapshot; error?: { message: string } };
+    expect(added.error).toBeUndefined();
+
+    // The canonical map must now contain the skill resource discovered by the
+    // reloaded loader, keyed by its stable res_... id.
+    expect(graph.resourceIdMap.size).toBeGreaterThan(0);
+    const skillResource = [...graph.resourceIdMap.values()].find(
+      (metadata) => metadata.type === "skill" && metadata.path.endsWith("SKILL.md"),
+    );
+    expect(skillResource).toBeDefined();
+    expect(skillResource!.scope).toBe("project");
+    expect([...graph.resourceIdMap.keys()].some((id) => id.startsWith("res_"))).toBe(true);
+    // The rebuilt package snapshot is attached to the graph for future reads.
+    expect(graph.packageSnapshot).not.toBeNull();
   });
 });

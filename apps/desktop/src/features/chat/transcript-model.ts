@@ -1241,10 +1241,29 @@ function rowEquivalent(a: TranscriptRow, b: TranscriptRow): boolean {
  * Text-file attachments travel inside the prompt text as tagged blocks so any
  * model (and the CLI) sees them; the transcript folds them back into chips.
  */
-export function buildAttachedFileBlock(name: string, content: string): string {
+export function buildAttachedFileBlock(
+  name: string,
+  content: string,
+  sourcePath?: string,
+): string {
   const safeName = name.replace(/"/g, "'");
+  const safePath = sourcePath ? ` path="${sourcePath.replace(/"/g, "'")}"` : "";
   const body = content.endsWith("\n") ? content.slice(0, -1) : content;
-  return `<attached-file name="${safeName}">\n${body}\n</attached-file>`;
+  return `<attached-file name="${safeName}"${safePath}>\n${body}\n</attached-file>`;
+}
+
+/** Path-only attachment: the file is not read or parsed, only its absolute path is injected. */
+export function buildAttachedPathBlock(name: string, sourcePath: string): string {
+  const safeName = name.replace(/"/g, "'");
+  const safePath = sourcePath.replace(/"/g, "'");
+  return `<attached-path name="${safeName}" path="${safePath}"/>`;
+}
+
+/** Image attachment path marker: content travels via the images channel, the path is injected as text. */
+export function buildAttachedImageBlock(name: string, sourcePath: string): string {
+  const safeName = name.replace(/"/g, "'");
+  const safePath = sourcePath.replace(/"/g, "'");
+  return `<attached-image name="${safeName}" path="${safePath}"/>`;
 }
 
 export type ParsedUserText = {

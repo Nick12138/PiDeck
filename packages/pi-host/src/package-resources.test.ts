@@ -719,6 +719,56 @@ describe("resource preference batches", () => {
     expect(fixture.setProjectPackages).toHaveBeenCalledTimes(1);
     expect(fixture.setProjectPackages).toHaveBeenCalledWith([]);
   });
+
+  it("writes full-path patterns for top-level skill toggles so the SDK can match them", () => {
+    // Regression: a directory-configured skill (e.g. a WPS cloud drive folder)
+    // has relativePath "SKILL.md" (relative to its own skill dir). The SDK
+    // resolves top-level entries with baseDir = <cwd>/.pi, so that pattern
+    // never matched and disabling a single skill silently did nothing.
+    const setProjectSkillPaths = vi.fn();
+    const graph = {
+      canonicalCwd: "C:/workspace",
+      resourceIdMap: new Map([
+        [
+          "res_wps-skill",
+          {
+            type: "skill",
+            scope: "project",
+            path: "C:/wps/.claude/skills/bid-origin-check/SKILL.md",
+            baseDir: "C:/wps/.claude/skills/bid-origin-check",
+            relativePath: "SKILL.md",
+            origin: "top-level",
+            configurableScopes: ["project"],
+          },
+        ],
+      ]),
+      settingsManager: {
+        getGlobalSettings: () => ({}),
+        getProjectSettings: () => ({ skills: ["C:/wps/.claude/skills"] }),
+        setProjectSkillPaths,
+      },
+    };
+
+    applyResourcePreferences(graph as never, [
+      { resourceId: "res_wps-skill", targetScope: "project", preference: "disabled" },
+    ]);
+
+    expect(setProjectSkillPaths).toHaveBeenCalledTimes(1);
+    expect(setProjectSkillPaths).toHaveBeenCalledWith([
+      "C:/wps/.claude/skills",
+      "-C:/wps/.claude/skills/bid-origin-check/SKILL.md",
+    ]);
+
+    // Enabling removes the exact exclusion again.
+    setProjectSkillPaths.mockClear();
+    graph.settingsManager.getProjectSettings = () => ({
+      skills: ["C:/wps/.claude/skills", "-C:/wps/.claude/skills/bid-origin-check/SKILL.md"],
+    });
+    applyResourcePreferences(graph as never, [
+      { resourceId: "res_wps-skill", targetScope: "project", preference: "enabled" },
+    ]);
+    expect(setProjectSkillPaths).toHaveBeenCalledWith(["C:/wps/.claude/skills"]);
+  });
 });
 
 describe("package identity normalization", () => {

@@ -12,7 +12,9 @@ import {
   CircleAlert,
   CircleCheck,
   ClipboardPaste,
+  FileArchive,
   FileText,
+  Folder,
   LoaderCircle,
   MessageCircleQuestion,
   Paperclip,
@@ -39,7 +41,11 @@ import {
   type JsonValue,
   type SerializableImage,
 } from "@pideck/protocol";
-import { buildAttachedFileBlock } from "./transcript-model";
+import {
+  buildAttachedFileBlock,
+  buildAttachedImageBlock,
+  buildAttachedPathBlock,
+} from "./transcript-model";
 import { ContextUsageRing, ModelControls, ThinkingControls } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import {
@@ -66,10 +72,12 @@ import { useImeComposition } from "../../lib/use-ime-composition";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
 import {
+  getDesktopFileInfo,
   isDesktopRuntime,
   isDocumentPath,
   pickDesktopAttachmentPaths,
   readDesktopSmallFile,
+  type DesktopFileInfo,
 } from "../../lib/desktop-file-access";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
@@ -106,8 +114,16 @@ function ExtensionStatusStrip() {
   );
 }
 
-type PendingImage = SerializableImage & { id: string };
-type PendingFile = { id: string; name: string; size: number; text: string };
+type PendingImage = SerializableImage & { id: string; name?: string; sourcePath?: string };
+type PendingFile = {
+  id: string;
+  name: string;
+  size: number;
+  kind: "text" | "path";
+  text?: string;
+  sourcePath?: string;
+  isDirectory?: boolean;
+};
 type PasteRecovery = {
   sessionId: string;
   text: string;
@@ -986,6 +1002,23 @@ export function Composer({
 
   async function addLocalPaths(paths: readonly string[]) {
     for (const path of paths) {
+      let info: DesktopFileInfo;
+      try {
+        info = await getDesktopFileInfo(path);
+      } catch (error) {
+        pushNotification(
+          t("composerReadFileFailedDetail", {
+            name: localPathName(path),
+            error: error instanceof Error ? error.message : String(error),
+          }),
+          "warning",
+        );
+        continue;
+      }
+      if (info.isDirectory) {
+        await addPathOnlyAttachment(path, info);
+        continue;
+      }
       if (isDocumentPath(path)) {
         await addDocumentPath(path);
         continue;
@@ -1007,6 +1040,8 @@ export function Composer({
                 id: crypto.randomUUID(),
                 mediaType: file.mediaType,
                 data: file.data,
+                name: file.name,
+                sourcePath: path,
               },
             ];
           });
@@ -1022,23 +1057,59 @@ export function Composer({
                 id: crypto.randomUUID(),
                 name: file.name,
                 size: file.sizeBytes,
+                kind: "text" as const,
                 text: file.text,
+                sourcePath: path,
               },
             ];
           });
         }
-      } catch (error) {
-        pushNotification(
-          t("composerReadFileFailedDetail", {
-            name: localPathName(path),
-            error: error instanceof Error ? error.message : String(error),
-          }),
-          "warning",
-        );
+      } catch {
+        // Unknown/binary/oversized file: keep it as a path-only attachment
+        // (no content read, no parsing) so the agent can still operate on it.
+        await addPathOnlyAttachment(path, info);
       }
     }
   }
   addLocalPathsCallbackRef.current = addLocalPaths;
+
+  async function addPathOnlyAttachment(path: string, info?: DesktopFileInfo) {
+    let name: string;
+    let size: number;
+    let isDirectory: boolean;
+    try {
+      const resolved = info ?? (await getDesktopFileInfo(path));
+      name = resolved.name;
+      size = resolved.sizeBytes;
+      isDirectory = resolved.isDirectory;
+    } catch (error) {
+      pushNotification(
+        t("composerReadFileFailedDetail", {
+          name: localPathName(path),
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "warning",
+      );
+      return;
+    }
+    setFiles((current) => {
+      if (current.length >= MAX_FILES) {
+        pushNotification(t("composerFileLimit", { max: MAX_FILES }), "warning");
+        return current;
+      }
+      return [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          name,
+          size,
+          kind: "path" as const,
+          sourcePath: path,
+          ...(isDirectory ? { isDirectory: true as const } : {}),
+        },
+      ];
+    });
+  }
 
   async function chooseAttachments() {
     try {
@@ -1116,6 +1187,7 @@ export function Composer({
             id: crypto.randomUUID(),
             name: file.name,
             size: file.size,
+            kind: "text",
             text,
           });
         } catch {
@@ -1281,11 +1353,19 @@ export function Composer({
     documentsRef.current = [];
     setDocuments([]);
     const context = activeSessionContext(host, workspace, session);
+    const attachmentBlocks: string[] = sentFiles.map((f) =>
+      f.kind === "path"
+        ? buildAttachedPathBlock(f.name, f.sourcePath ?? "")
+        : buildAttachedFileBlock(f.name, f.text ?? "", f.sourcePath),
+    );
+    for (const image of sentImages) {
+      if (image.name && image.sourcePath) {
+        attachmentBlocks.push(buildAttachedImageBlock(image.name, image.sourcePath));
+      }
+    }
     const outgoingText =
-      sentFiles.length > 0
-        ? [value.trimEnd(), ...sentFiles.map((f) => buildAttachedFileBlock(f.name, f.text))]
-            .filter(Boolean)
-            .join("\n\n")
+      attachmentBlocks.length > 0
+        ? [value.trimEnd(), ...attachmentBlocks].filter(Boolean).join("\n\n")
         : value;
     const imageParams =
       sentImages.length > 0
@@ -1575,9 +1655,21 @@ export function Composer({
                 <div
                   key={file.id}
                   className="group flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs"
-                  title={`${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB`}
+                  title={`${file.name} · ${
+                    file.isDirectory
+                      ? t("composerPathFolder")
+                      : `${Math.max(1, Math.round(file.size / 1024))} KB`
+                  }${file.sourcePath ? `\n${file.sourcePath}` : ""}`}
                 >
-                  <FileText size={12} className="shrink-0 text-muted" />
+                  {file.kind === "path" ? (
+                    file.isDirectory ? (
+                      <Folder size={12} className="shrink-0 text-muted" />
+                    ) : (
+                      <FileArchive size={12} className="shrink-0 text-muted" />
+                    )
+                  ) : (
+                    <FileText size={12} className="shrink-0 text-muted" />
+                  )}
                   <span className="max-w-40 truncate">{file.name}</span>
                   <button
                     type="button"
@@ -1750,7 +1842,7 @@ export function Composer({
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/*,.pdf,.docx,text/*,.md,.mdx,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.sh,.sql,.log"
+              accept="image/*,.pdf,.docx,text/*,.md,.mdx,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.sh,.sql,.log,*"
               className="hidden"
               onChange={(event) => {
                 if (event.target.files) void addFiles(event.target.files);

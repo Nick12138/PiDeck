@@ -41,6 +41,17 @@ function readSkillEntries(path: string): string[] {
   return skills.filter((entry): entry is string => typeof entry === "string");
 }
 
+/**
+ * Settings `skills` entries are paths or resource-preference patterns
+ * (`-`/`+`/`!` prefixes written by the skill toggles). Only plain paths are
+ * user-facing directory entries; patterns must not surface in the configured
+ * paths list as "missing paths" (e.g. `-D:/.../SKILL.md` would show as
+ * `exists=false` and mislead the user into thinking a path is broken).
+ */
+function isSkillPatternEntry(entry: string): boolean {
+  return entry.startsWith("!") || entry.startsWith("+") || entry.startsWith("-");
+}
+
 function writeSkillEntries(path: string, entries: string[]): void {
   mkdirSync(dirname(path), { recursive: true });
   const current = readSettingsObject(path);
@@ -81,6 +92,7 @@ function collectConfiguredPaths(agentDir: string, cwd: string): SkillConfiguredP
   const result: SkillConfiguredPath[] = [];
   const userEntries = readSkillEntries(globalSettingsPath(agentDir));
   for (const entry of userEntries) {
+    if (isSkillPatternEntry(entry)) continue;
     result.push({
       path: entry,
       scope: "user",
@@ -90,6 +102,7 @@ function collectConfiguredPaths(agentDir: string, cwd: string): SkillConfiguredP
   const projectSettingsDir = join(cwd, ".pi");
   const projectEntries = readSkillEntries(projectSettingsPath(cwd));
   for (const entry of projectEntries) {
+    if (isSkillPatternEntry(entry)) continue;
     result.push({
       path: entry,
       scope: "project",
@@ -175,6 +188,35 @@ async function mutateSkillPaths(
         logger.warn("Skill resource reload failed after settings mutation", {
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+      // The canonical resource ID map that `resource.setPreference` (skill
+      // toggles in the Skills settings) resolves against is only rebuilt during
+      // graph publication or package mutations. Rebuild it here too: resources
+      // discovered by the just-reloaded loader (e.g. a newly added skill
+      // directory) would otherwise fail the toggle lookup with
+      // RESOURCE_NOT_FOUND ("Resource not found: res_...").
+      if (g.packageManager && g.settingsManager) {
+        try {
+          const { buildPackageSnapshot } = await import("./package-snapshot.js");
+          g.packageSnapshot = await buildPackageSnapshot({
+            revision: server.identity.packageRevision,
+            workspaceId: g.workspaceId,
+            scope: "all",
+            packageManager: g.packageManager,
+            settingsManager: g.settingsManager,
+            resourceLoader: g.resourceLoader,
+            cwd: g.canonicalCwd,
+            agentDir: factory.deps.agentDir,
+            packageUpdateCheck: factory.deps.packageUpdateCheck,
+            resourceIdMap: g.resourceIdMap,
+            resourceReloadRequired: g.resourceReloadRequired,
+          });
+        } catch (error) {
+          g.resourceReloadRequired = true;
+          logger.warn("Package snapshot rebuild failed after skill path mutation", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       return buildSkillSnapshot(factory, g, server.identity.workspaceRevision, g.workspaceId);
     },

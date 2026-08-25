@@ -287,6 +287,7 @@ describe("AttachmentStore", () => {
       unit: "page",
       unitCount: 1,
     });
+    expect(ready.sourcePath).toBe(source);
     const result = await store.read({
       attachmentId: ready.id,
       sessionId: SESSION_ID,

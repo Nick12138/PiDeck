@@ -40,6 +40,29 @@ describe("attachment reference blocks", () => {
     expect(parseAttachmentReferences(next)).toHaveLength(1);
   });
 
+  it("injects the source path into the reference block when present", () => {
+    const block = buildAttachmentReferenceBlock([
+      { ...attachment, sourcePath: "C:\\docs\\report Q2.pdf" },
+    ]);
+    const parsed = parseAttachmentReferences(`x\n\n${block}`);
+    expect(parsed).toEqual([
+      {
+        id: attachment.id,
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        unit: "page",
+        unitCount: 12,
+        path: "C:\\docs\\report Q2.pdf",
+      },
+    ]);
+  });
+
+  it("omits the path when the attachment has no source path", () => {
+    const block = buildAttachmentReferenceBlock([attachment]);
+    expect(block).not.toContain("path");
+    expect(parseAttachmentReferences(`x\n\n${block}`)[0]).not.toHaveProperty("path");
+  });
+
   it("ignores malformed and non-UUID reference data", () => {
     const text = '<pideck-attachments version="1">[{"id":"bad"}]</pideck-attachments>';
     expect(parseAttachmentReferences(text)).toEqual([]);
