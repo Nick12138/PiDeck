@@ -221,7 +221,7 @@ describe("SkillsSettings", () => {
     });
   });
 
-  it("disables the switch for extension-owned temporary skills", async () => {
+  it("keeps packages & extensions view-only without toggle switches", async () => {
     currentSkills = skillSnapshot({
       skills: [
         loadedSkill({
@@ -246,14 +246,94 @@ describe("SkillsSettings", () => {
       }),
     ];
     render(<SkillsSettings />);
-    // The bundle group starts collapsed; expand it to reach the switch.
+    // The bundle group starts collapsed; expand it to reveal the view-only rows.
     const bundleHeader = await screen.findByRole("button", { name: /Packages & Extensions/ });
     expect(bundleHeader).toHaveAttribute("aria-expanded", "false");
     const user = userEvent.setup();
     await user.click(bundleHeader);
     expect(bundleHeader).toHaveAttribute("aria-expanded", "true");
-    const toggle = await screen.findByRole("switch", { name: "Toggle skill runtime" });
-    expect(toggle).toBeDisabled();
+    expect(await screen.findByText("runtime")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Toggle skill runtime" })).not.toBeInTheDocument();
+    expect(screen.getByText(/view-only/)).toBeInTheDocument();
+  });
+
+  it("keeps user-installed package skills view-only in the skills page", async () => {
+    currentSkills = skillSnapshot({ skills: [] });
+    currentResources = [
+      skillResource({
+        id: "resource:skill:pkg",
+        name: "pkg-skill",
+        path: "C:/agent/npm/node_modules/pi-x/skills/pkg-skill/SKILL.md",
+        relativePath: "skills/pkg-skill/SKILL.md",
+        scope: "user",
+        origin: "package",
+        source: "npm:pi-x",
+        packageId: "package:user:npm:pi-x",
+        control: { kind: "preference", scopes: ["user", "project"] },
+      }),
+    ];
+    const user = userEvent.setup();
+    render(<SkillsSettings />);
+    const bundleHeader = await screen.findByRole("button", { name: /Packages & Extensions/ });
+    await user.click(bundleHeader);
+    expect(await screen.findByText("pkg-skill")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "Toggle skill pkg-skill" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("toggles a project skill at project scope", async () => {
+    currentSkills = skillSnapshot({
+      skills: [
+        loadedSkill({
+          name: "project-review",
+          filePath: "C:/workspace/.pi/skills/project-review/SKILL.md",
+          baseDir: "C:/workspace/.pi/skills/project-review",
+          source: "project",
+          scope: "project",
+        }),
+      ],
+    });
+    currentResources = [
+      skillResource({
+        id: "resource:skill:project-review",
+        name: "project-review",
+        path: "C:/workspace/.pi/skills/project-review/SKILL.md",
+        relativePath: "project-review",
+        scope: "project",
+        origin: "top-level",
+        source: "project",
+        preferences: { project: "inherit" },
+        control: { kind: "preference", scopes: ["project"] },
+      }),
+    ];
+    const user = userEvent.setup();
+    render(<SkillsSettings />);
+    const toggle = await screen.findByRole("switch", { name: "Toggle skill project-review" });
+    await user.click(toggle);
+    await waitFor(() => {
+      const call = request.mock.calls.find(([method]) => method === "resource.setPreference");
+      expect(call?.[2]).toEqual({
+        resourceId: "resource:skill:project-review",
+        targetScope: "project",
+        preference: "disabled",
+      });
+    });
+  });
+
+  it("refreshes the skill list when the workspace changes", async () => {
+    render(<SkillsSettings />);
+    await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    const listCalls = () => request.mock.calls.filter(([method]) => method === "skill.list").length;
+    const before = listCalls();
+    useAppStore.getState().setWorkspace({
+      ...workspace(),
+      id: "w2",
+      revision: 2,
+      cwd: "C:/other",
+      canonicalCwd: "C:\\other",
+    });
+    await waitFor(() => expect(listCalls()).toBeGreaterThan(before));
   });
 
   it("keeps global and project groups expanded by default and collapsible", async () => {
@@ -267,6 +347,21 @@ describe("SkillsSettings", () => {
     expect(globalHeader).toHaveAttribute("aria-expanded", "false");
     await user.click(globalHeader);
     expect(globalHeader).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens the skill's own folder rather than the SKILL.md file", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as MockInstance).mockClear();
+    const user = userEvent.setup();
+    render(<SkillsSettings />);
+    const openButton = await screen.findByRole("button", { name: "Open review" });
+    await user.click(openButton);
+    // The skill's baseDir is handed to the host, not the SKILL.md document,
+    // so the file manager opens the skill folder (a bare directory arg — no
+    // `/select,` prefix — which also survives spaces in WPS cloud paths).
+    expect(invoke).toHaveBeenCalledWith("desktop_open_path", {
+      path: "C:/agent/skills/review",
+    });
   });
 
   it("adds a skill directory picked from the folder dialog to project settings", async () => {

@@ -54,6 +54,13 @@ function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLocaleLowerCase();
 }
 
+/** Parent directory of a file path, keeping Windows drive letters intact. */
+function parentDir(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index > 0 ? normalized.slice(0, index) : path;
+}
+
 function groupIdOf(skill?: SkillInfo, resource?: ResourceRecord): SkillGroupId {
   const origin = skill?.origin ?? resource?.origin;
   const scope = skill?.scope ?? resource?.scope;
@@ -96,13 +103,9 @@ function buildRows(skills: SkillInfo[], resources: ResourceRecord[]): SkillRow[]
   return [...rows.values()];
 }
 
-/** Scope the toggle writes to: the resource's own scope when plausible. */
-function toggleTargetScope(resource: ResourceRecord): "user" | "project" | null {
-  if (resource.control.kind !== "preference") return null;
-  const scopes = resource.control.scopes;
-  if (resource.scope === "project" && scopes.includes("project")) return "project";
-  if (scopes.includes("user")) return "user";
-  return scopes.includes("project") ? "project" : null;
+/** Toggle write scope by group: user skills → user, project skills → project, packages & extensions → view-only. */
+function toggleScopeForGroup(groupId: SkillGroupId): "user" | "project" | null {
+  return groupId === "user" ? "user" : groupId === "project" ? "project" : null;
 }
 
 /** Effective state after user and project preferences are layered. */
@@ -157,6 +160,12 @@ export function SkillsSettings() {
     const request = ++refreshRequest.current;
     setLoadState("loading");
     setLoadError("");
+    // Workspace switched: drop the previous workspace's snapshot so stale
+    // project skills do not linger while the new workspace loads.
+    if (snapshot && workspace && snapshot.workspaceId !== workspace.id) {
+      setSnapshot(null);
+      setResources([]);
+    }
     try {
       const [skillResponse, packageResponse] = await Promise.all([
         hostClient.request("skill.list", workspaceContext(host, workspace), null, 30_000),
@@ -235,13 +244,10 @@ export function SkillsSettings() {
     }
   }
 
-  async function toggleResource(resource: ResourceRecord) {
+  async function toggleResource(resource: ResourceRecord, groupId: SkillGroupId) {
     if (!host || !workspace || busy) return;
-    const targetScope = toggleTargetScope(resource);
-    if (!targetScope) {
-      pushNotification(t("notifSkillReadonly"), "warning");
-      return;
-    }
+    const targetScope = toggleScopeForGroup(groupId);
+    if (!targetScope) return; // Packages & extensions are view-only in this page.
     const params: ResourcePreferenceUpdate = {
       resourceId: resource.id,
       targetScope,
@@ -302,6 +308,11 @@ export function SkillsSettings() {
     }
   }
 
+  /** Open the skill's own directory (not its SKILL.md document) in the file manager. */
+  async function openSkillFolder(row: SkillRow) {
+    await openPath(row.skill?.baseDir ?? parentDir(row.filePath));
+  }
+
   const rows = snapshot ? buildRows(snapshot.skills, resources) : [];
   // Every group stays visible so empty scopes are discoverable.
   const groups: Array<{ id: SkillGroupId; rows: SkillRow[] }> = (
@@ -329,7 +340,7 @@ export function SkillsSettings() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-skills-settings>
       <div className="min-h-0 flex-1 overflow-auto p-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-muted">
               {snapshot
@@ -434,73 +445,94 @@ export function SkillsSettings() {
                       <span className="text-[11px] text-muted">{group.rows.length}</span>
                     </button>
                     <CollapsibleRegion open={!isCollapsed} id={listId}>
-                      <ul className="flex flex-col divide-y divide-border border-t border-border">
-                        {group.rows.length === 0 && (
-                          <li className="px-4 py-3 text-xs text-muted">{t("skillsGroupEmpty")}</li>
-                        )}
-                        {group.rows.map((row) => {
-                          const toggleable = row.resource
-                            ? toggleTargetScope(row.resource) !== null
-                            : false;
-                          const enabled = row.resource ? effectiveEnabled(row.resource) : true;
-                          return (
-                            <li key={row.key} className="flex items-start gap-3 px-4 py-3">
-                              <span className={`min-w-0 flex-1 ${enabled ? "" : "opacity-60"}`}>
-                                <span className="flex flex-wrap items-center gap-2">
-                                  <span className="break-all text-sm font-medium">{row.name}</span>
-                                  {row.skill?.disableModelInvocation && (
-                                    <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
-                                      {t("skillsBadgeCommandOnly")}
+                      {group.id === "bundle" && (
+                        <p className="border-b border-border px-4 py-2 text-[11px] text-muted">
+                          {t("skillsBundleReadonly")}
+                        </p>
+                      )}
+                      {group.rows.length === 0 ? (
+                        <p className="border-t border-border px-4 py-3 text-xs text-muted">
+                          {t("skillsGroupEmpty")}
+                        </p>
+                      ) : (
+                        <ul className="grid gap-3 border-t border-border p-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+                          {group.rows.map((row) => {
+                            const toggleable = group.id !== "bundle" && Boolean(row.resource);
+                            const enabled = row.resource ? effectiveEnabled(row.resource) : true;
+                            return (
+                              <li
+                                key={row.key}
+                                className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-3"
+                              >
+                                <div
+                                  className={`flex min-w-0 flex-col gap-2 ${enabled ? "" : "opacity-60"}`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                      <span className="break-all text-sm font-medium">
+                                        {row.name}
+                                      </span>
+                                      {row.skill?.disableModelInvocation && (
+                                        <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
+                                          {t("skillsBadgeCommandOnly")}
+                                        </span>
+                                      )}
+                                      {row.skill?.origin === "package" && (
+                                        <span className="max-w-40 truncate rounded-full bg-selection/40 px-2 py-0.5 text-[11px] text-muted">
+                                          {row.skill.source}
+                                        </span>
+                                      )}
+                                      {row.resource && !enabled && (
+                                        <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">
+                                          {t("skillsBadgeDisabled")}
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-1">
+                                      <button
+                                        type="button"
+                                        className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+                                        title={t("skillsOpen")}
+                                        aria-label={`${t("skillsOpen")} ${row.name}`}
+                                        onClick={() => void openSkillFolder(row)}
+                                      >
+                                        <FolderOpen size={14} />
+                                      </button>
+                                      {toggleable ? (
+                                        <span
+                                          title={t(enabled ? "skillsDisable" : "skillsEnable")}
+                                          className="flex shrink-0 items-center"
+                                        >
+                                          <Switch
+                                            checked={enabled}
+                                            disabled={busy}
+                                            label={t("skillsToggleAria", { name: row.name })}
+                                            onChange={() =>
+                                              row.resource &&
+                                              void toggleResource(row.resource, group.id)
+                                            }
+                                          />
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </div>
+                                  {row.description && (
+                                    <span className="line-clamp-2 break-words text-xs text-muted">
+                                      {row.description}
                                     </span>
                                   )}
-                                  {row.skill?.origin === "package" && (
-                                    <span className="max-w-40 truncate rounded-full bg-selection/40 px-2 py-0.5 text-[11px] text-muted">
-                                      {row.skill.source}
-                                    </span>
-                                  )}
-                                  {row.resource && !enabled && (
-                                    <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">
-                                      {t("skillsBadgeDisabled")}
-                                    </span>
-                                  )}
-                                </span>
-                                {row.description && (
-                                  <span className="mt-0.5 block break-words text-xs text-muted">
-                                    {row.description}
+                                  <span
+                                    className="truncate font-mono text-[11px] text-muted"
+                                    title={row.filePath}
+                                  >
+                                    {row.filePath}
                                   </span>
-                                )}
-                                <span className="mt-1 block truncate font-mono text-[11px] text-muted">
-                                  {row.filePath}
-                                </span>
-                              </span>
-                              <span
-                                title={
-                                  toggleable
-                                    ? t(enabled ? "skillsDisable" : "skillsEnable")
-                                    : t("skillsReadonly")
-                                }
-                                className="mt-1 flex shrink-0 items-center"
-                              >
-                                <Switch
-                                  checked={enabled}
-                                  disabled={!toggleable || busy}
-                                  label={t("skillsToggleAria", { name: row.name })}
-                                  onChange={() => row.resource && void toggleResource(row.resource)}
-                                />
-                              </span>
-                              <button
-                                type="button"
-                                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
-                                title={t("skillsOpen")}
-                                aria-label={`${t("skillsOpen")} ${row.name}`}
-                                onClick={() => void openPath(row.filePath)}
-                              >
-                                <FolderOpen size={14} />
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                     </CollapsibleRegion>
                   </div>
                 );
@@ -560,7 +592,9 @@ export function SkillsSettings() {
                   className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs transition-colors hover:bg-surface-overlay/60 focus:border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <FolderOpen size={14} className="shrink-0 text-muted" />
-                  <span className={`min-w-0 flex-1 truncate text-left ${newPath ? "text-foreground" : "text-muted"}`}>
+                  <span
+                    className={`min-w-0 flex-1 truncate text-left ${newPath ? "text-foreground" : "text-muted"}`}
+                  >
                     {newPath || t("skillsPickDirectoryPlaceholder")}
                   </span>
                 </button>

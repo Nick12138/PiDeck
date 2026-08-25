@@ -112,6 +112,20 @@ function collectConfiguredPaths(agentDir: string, cwd: string): SkillConfiguredP
   return result;
 }
 
+/**
+ * Diagnostics emitted by Pi's skill-name validation (e.g. a directory named
+ * with underscores like `baidu_ocr`). Directory-based skills legitimately
+ * deviate from the slug convention, so these name messages are suppressed
+ * from the snapshot instead of surfacing as warnings in the UI.
+ */
+function isNameValidationDiagnostic(diagnostic: { message: string }): boolean {
+  return (
+    diagnostic.message.startsWith("name contains invalid characters") ||
+    diagnostic.message.startsWith("name exceeds ") ||
+    diagnostic.message.startsWith("name must not start or end with a hyphen")
+  );
+}
+
 function buildSkillSnapshot(
   factory: WorkspaceGraphFactory,
   g: WorkspaceGraph,
@@ -125,14 +139,16 @@ function buildSkillSnapshot(
     cwd: g.canonicalCwd,
     projectTrusted: g.settingsManager?.isProjectTrusted() ?? false,
     skills: loaded.skills.map(toSkillInfo),
-    diagnostics: loaded.diagnostics.map((diagnostic) => {
-      const entry: SkillSnapshot["diagnostics"][number] = {
-        severity: diagnostic.type,
-        message: diagnostic.message,
-      };
-      if (diagnostic.path !== undefined) entry.path = diagnostic.path;
-      return entry;
-    }),
+    diagnostics: loaded.diagnostics
+      .filter((diagnostic) => !isNameValidationDiagnostic(diagnostic))
+      .map((diagnostic) => {
+        const entry: SkillSnapshot["diagnostics"][number] = {
+          severity: diagnostic.type,
+          message: diagnostic.message,
+        };
+        if (diagnostic.path !== undefined) entry.path = diagnostic.path;
+        return entry;
+      }),
     configuredPaths: collectConfiguredPaths(factory.deps.agentDir, g.canonicalCwd),
     resourceReloadRequired: g.resourceReloadRequired === true,
   };

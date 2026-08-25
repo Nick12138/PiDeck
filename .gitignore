@@ -30,3 +30,7 @@ artifacts/
 
 # Tauri generates this platform copy; desktop-schema.json is the tracked canonical schema
 /apps/desktop/src-tauri/gen/schemas/macOS-schema.json
+
+# CI build logs (temporary)
+/ghlogs2/
+/logs2.zip

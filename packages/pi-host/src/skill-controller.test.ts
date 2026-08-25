@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostIdentity, SkillSnapshot } from "@pideck/protocol";
-import type { Skill } from "@earendil-works/pi-coding-agent";
+import type { Skill, ResourceDiagnostic } from "@earendil-works/pi-coding-agent";
 import type { HandlerContext } from "./server.js";
 import { TryMutex } from "./locks.js";
 import { createSkillHandlers } from "./skill-controller.js";
@@ -53,7 +53,10 @@ function fixture(layout: TempAgentLayout, skills: Skill[] = []) {
     resourceIdMap: new Map(),
     resourceLoader: {
       getExtensions: () => ({ extensions: [], errors: [] }),
-      getSkills: () => ({ skills, diagnostics: [] }),
+      getSkills: (): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } => ({
+        skills,
+        diagnostics: [],
+      }),
       getPrompts: () => ({ prompts: [], diagnostics: [] }),
       getThemes: () => ({ themes: [], diagnostics: [] }),
       reload: vi.fn(async () => undefined),
@@ -259,5 +262,45 @@ describe("skill-controller", () => {
     expect([...graph.resourceIdMap.keys()].some((id) => id.startsWith("res_"))).toBe(true);
     // The rebuilt package snapshot is attached to the graph for future reads.
     expect(graph.packageSnapshot).not.toBeNull();
+  });
+
+  it("suppresses skill-name validation diagnostics from the snapshot", async () => {
+    // A directory like `baidu_ocr` fails Pi's slug name validation; the
+    // resulting messages are noise for directory-based skills and must not
+    // surface in the UI diagnostics list.
+    const { factory, graph } = fixture(layout, [makeSkill()]);
+    graph.resourceLoader.getSkills = () => ({
+      skills: [makeSkill()],
+      diagnostics: [
+        {
+          type: "warning" as const,
+          message: "name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)",
+          path: "/wps/baidu_ocr/SKILL.md",
+        },
+        {
+          type: "warning" as const,
+          message: "name exceeds 50 characters (60)",
+          path: "/skills/very-long-name/SKILL.md",
+        },
+        {
+          type: "warning" as const,
+          message: "name must not start or end with a hyphen",
+          path: "/skills/example-/SKILL.md",
+        },
+        {
+          type: "error" as const,
+          message: "skill file not found",
+          path: "/skills/missing/SKILL.md",
+        },
+      ],
+    });
+    handlers = createSkillHandlers(factory);
+
+    const outcome = (await handlers["skill.list"]!(context("skill.list", null))) as {
+      result?: SkillSnapshot;
+    };
+    expect(outcome.result!.diagnostics).toEqual([
+      { severity: "error", message: "skill file not found", path: "/skills/missing/SKILL.md" },
+    ]);
   });
 });
