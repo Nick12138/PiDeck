@@ -88,18 +88,27 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // scroll does not bubble, so capture the outer scroller plus any scroll
-    // happening inside Streamdown's table/code scrollers.
+    // Recompute whenever the content or layout changes. scroll does not
+    // bubble, so capture the outer scroller plus any scroll happening inside
+    // Streamdown's table/code scrollers; MutationObserver catches late async
+    // markdown renders, ResizeObserver catches tab show/hide size changes.
+    updateThumbs();
     el.addEventListener("scroll", updateThumbs, { capture: true, passive: true });
+    const observer = new MutationObserver(() => updateThumbs());
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
     if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => updateThumbs());
-      observer.observe(el);
+      const resizeObserver = new ResizeObserver(() => updateThumbs());
+      resizeObserver.observe(el);
       return () => {
         el.removeEventListener("scroll", updateThumbs, true);
         observer.disconnect();
+        resizeObserver.disconnect();
       };
     }
-    return () => el.removeEventListener("scroll", updateThumbs, true);
+    return () => {
+      el.removeEventListener("scroll", updateThumbs, true);
+      observer.disconnect();
+    };
   }, [updateThumbs, status, path]);
 
   const onTrackPointerDown = (axis: "v" | "h", event: React.PointerEvent<HTMLDivElement>) => {
@@ -191,7 +200,11 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
         setStatus("ready");
         setVThumb(HIDDEN_THUMB);
         setHThumb(HIDDEN_THUMB);
-        window.setTimeout(updateThumbs, 0);
+        // Give React (and Streamdown's internal state) a few frames to commit
+        // the rendered content before measuring scroll geometry.
+        for (const delay of [0, 50, 200]) {
+          window.setTimeout(updateThumbs, delay);
+        }
       } catch (readError) {
         if (id !== generation.current) return;
         setStatus("error");
@@ -248,7 +261,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
 
   return (
     <section
-      className="preview-panel flex min-h-0 flex-1 flex-col bg-surface"
+      className="preview-panel relative flex min-h-0 flex-1 flex-col bg-surface"
       aria-label={t("dockPreviewRegion")}
       data-dock-panel
     >
@@ -308,85 +321,83 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
               {t("dockPreviewTruncated", { size: formatSize(DEFAULT_PREVIEW_MAX_BYTES) })}
             </div>
           )}
-          <div className="relative min-h-0 flex-1 overflow-hidden">
-            <div
-              ref={scrollRef}
-              className="h-full overflow-auto"
-              data-preview-scroll
-              onPointerMove={onScrollPointerMove}
-              onPointerUp={endScrollDrag}
-              onPointerCancel={endScrollDrag}
-            >
-              {preview.kind === "image" ? (
-                <div className="flex min-h-full items-center justify-center p-3">
-                  <img
-                    alt={name}
-                    src={`data:${preview.mimeType ?? "image/png"};base64,${preview.content ?? ""}`}
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              ) : preview.kind === "binary" ? (
-                <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                  <FileQuestion size={28} className="text-muted" />
-                  <p className="text-xs text-muted">{t("dockPreviewBinary")}</p>
-                  <p className="text-[10px] text-muted/70">{formatSize(preview.size)}</p>
-                  <button
-                    type="button"
-                    className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-overlay"
-                    onClick={() => void openExternal()}
-                  >
-                    {t("dockPreviewOpenExternal")}
-                  </button>
-                </div>
-              ) : isMarkdown ? (
-                <div className="preview-markdown chat-markdown px-4 py-3">
-                  <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
-                </div>
-              ) : (
-                <pre className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground/90">
-                  {preview.content ?? ""}
-                </pre>
-              )}
-            </div>
-            {vThumb.visible && (
-              <div
-                role="scrollbar"
-                aria-orientation="vertical"
-                aria-label={t("dockPreviewVerticalScroll")}
-                title={t("dockPreviewVerticalScroll")}
-                className="absolute bottom-2 right-1 top-2 w-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
-                onPointerDown={(event) => onTrackPointerDown("v", event)}
-              >
-                <div
-                  className="absolute right-0.5 w-1.5 rounded-full bg-border-strong hover:bg-muted"
-                  style={{
-                    top: `${vThumb.offset * 100}%`,
-                    height: `${Math.max(vThumb.ratio * 100, 6)}%`,
-                  }}
-                  onPointerDown={(event) => onThumbPointerDown("v", event)}
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 overflow-auto"
+            data-preview-scroll
+            onPointerMove={onScrollPointerMove}
+            onPointerUp={endScrollDrag}
+            onPointerCancel={endScrollDrag}
+          >
+            {preview.kind === "image" ? (
+              <div className="flex min-h-full items-center justify-center p-3">
+                <img
+                  alt={name}
+                  src={`data:${preview.mimeType ?? "image/png"};base64,${preview.content ?? ""}`}
+                  className="max-h-full max-w-full object-contain"
                 />
               </div>
-            )}
-            {hThumb.visible && (
-              <div
-                role="scrollbar"
-                aria-orientation="horizontal"
-                aria-label={t("dockPreviewHorizontalScroll")}
-                title={t("dockPreviewHorizontalScroll")}
-                className="absolute bottom-1 left-2 right-2 h-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
-                onPointerDown={(event) => onTrackPointerDown("h", event)}
-              >
-                <div
-                  className="absolute bottom-0.5 h-1.5 rounded-full bg-border-strong hover:bg-muted"
-                  style={{
-                    left: `${hThumb.offset * 100}%`,
-                    width: `${Math.max(hThumb.ratio * 100, 6)}%`,
-                  }}
-                  onPointerDown={(event) => onThumbPointerDown("h", event)}
-                />
+            ) : preview.kind === "binary" ? (
+              <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <FileQuestion size={28} className="text-muted" />
+                <p className="text-xs text-muted">{t("dockPreviewBinary")}</p>
+                <p className="text-[10px] text-muted/70">{formatSize(preview.size)}</p>
+                <button
+                  type="button"
+                  className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-overlay"
+                  onClick={() => void openExternal()}
+                >
+                  {t("dockPreviewOpenExternal")}
+                </button>
               </div>
+            ) : isMarkdown ? (
+              <div className="preview-markdown chat-markdown px-4 py-3">
+                <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground/90">
+                {preview.content ?? ""}
+              </pre>
             )}
           </div>
+          {vThumb.visible && (
+            <div
+              role="scrollbar"
+              aria-orientation="vertical"
+              aria-label={t("dockPreviewVerticalScroll")}
+              title={t("dockPreviewVerticalScroll")}
+              className="absolute bottom-2 right-1 top-10 w-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
+              onPointerDown={(event) => onTrackPointerDown("v", event)}
+            >
+              <div
+                className="absolute right-0.5 w-1.5 rounded-full bg-border-strong hover:bg-muted"
+                style={{
+                  top: `${vThumb.offset * 100}%`,
+                  height: `${Math.max(vThumb.ratio * 100, 6)}%`,
+                }}
+                onPointerDown={(event) => onThumbPointerDown("v", event)}
+              />
+            </div>
+          )}
+          {hThumb.visible && (
+            <div
+              role="scrollbar"
+              aria-orientation="horizontal"
+              aria-label={t("dockPreviewHorizontalScroll")}
+              title={t("dockPreviewHorizontalScroll")}
+              className="absolute bottom-1 left-2 right-2 h-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
+              onPointerDown={(event) => onTrackPointerDown("h", event)}
+            >
+              <div
+                className="absolute bottom-0.5 h-1.5 rounded-full bg-border-strong hover:bg-muted"
+                style={{
+                  left: `${hThumb.offset * 100}%`,
+                  width: `${Math.max(hThumb.ratio * 100, 6)}%`,
+                }}
+                onPointerDown={(event) => onThumbPointerDown("h", event)}
+              />
+            </div>
+          )}
         </>
       )}
     </section>
