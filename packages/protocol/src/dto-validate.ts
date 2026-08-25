@@ -115,7 +115,7 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     !hasExactKeys(
       value,
       ["id", "kind", "label", "state"],
-      ["name", "role", "startedAt", "updatedAt", "endedAt", "activity", "children"],
+      ["name", "role", "model", "startedAt", "updatedAt", "endedAt", "activity", "children"],
     )
   )
     return false;
@@ -125,6 +125,7 @@ function isSubagentStatusNode(value: unknown, depth = 0): boolean {
     isBoundedNonEmptyString(value.label, 160) &&
     isOptionalBoundedString(value.name, 160) &&
     isOptionalBoundedString(value.role, 160) &&
+    isOptionalBoundedString(value.model, 160) &&
     ["queued", "running", "complete", "failed", "paused", "stopped", "rejected"].includes(
       String(value.state),
     ) &&
@@ -2041,6 +2042,18 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
       return isPlainObject(result) && hasExactKeys(result, ["stopped"]) && isBoolean(result.stopped)
         ? null
         : "invalid subagent stop result";
+    case "subagents.pause":
+      return isPlainObject(result) && hasExactKeys(result, ["paused"]) && isBoolean(result.paused)
+        ? null
+        : "invalid subagent pause result";
+    case "subagents.continue":
+      return isPlainObject(result) && hasExactKeys(result, ["continued"]) && isBoolean(result.continued)
+        ? null
+        : "invalid subagent continue result";
+    case "subagents.resume":
+      return isPlainObject(result) && hasExactKeys(result, ["resumed"]) && isBoolean(result.resumed)
+        ? null
+        : "invalid subagent resume result";
     case "session.getTree":
       return isPlainObject(result) &&
         hasExactKeys(result, ["tree", "leafId"]) &&

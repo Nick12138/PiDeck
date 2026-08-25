@@ -387,7 +387,7 @@ describe("Git controller", () => {
   it("retries without reasoning when the model returns only thinking content", async () => {
     const state = fixture();
     state.graph.agentSession = {
-      model: { provider: "anthropic", id: "claude-sonnet-4-5" },
+      model: { provider: "anthropic", id: "claude-sonnet-4-5", api: "openai-completions" },
     } as never;
     state.factory.deps.modelRegistry = {
       getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
@@ -412,11 +412,70 @@ describe("Git controller", () => {
 
     expect(completeSimple).toHaveBeenCalledTimes(2);
     expect(completeSimple).toHaveBeenLastCalledWith(
-      { provider: "anthropic", id: "claude-sonnet-4-5" },
+      {
+        provider: "anthropic",
+        id: "claude-sonnet-4-5",
+        api: "openai-completions",
+        compat: { thinkingFormat: "deepseek" },
+      },
       expect.objectContaining({ systemPrompt: expect.stringContaining("Simplified Chinese") }),
-      expect.objectContaining({ maxTokens: 4000 }),
+      expect.objectContaining({ maxTokens: 2000 }),
     );
     expect(result).toEqual({ result: { message: "feat: 更新应用" } });
+  });
+
+  it("falls back when the no-thinking retry errors instead of hard-failing", async () => {
+    const state = fixture();
+    state.graph.agentSession = {
+      model: { provider: "anthropic", id: "claude-sonnet-4-5", api: "openai-completions" },
+    } as never;
+    state.factory.deps.modelRegistry = {
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "key" })),
+    } as never;
+    vi.mocked(state.service.getStagedPatch).mockResolvedValueOnce({
+      patch: [
+        "diff --git a/src/app.ts b/src/app.ts",
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -1,3 +1,4 @@",
+        " line",
+        "+added",
+        "diff --git a/README.md b/README.md",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/README.md",
+        "@@ -0,0 +1,2 @@",
+        "+hello",
+      ].join("\n"),
+      truncated: false,
+    });
+    vi.mocked(completeSimple)
+      .mockResolvedValueOnce({
+        content: [{ type: "thinking", thinking: "The user wants a commit message..." }],
+        stopReason: "length",
+      } as never)
+      .mockResolvedValueOnce({
+        content: [],
+        stopReason: "error",
+        errorMessage: "400 status code (no body)",
+      } as never);
+
+    const result = await createGitHandlers(state.factory, state.service)[
+      "git.generateCommitMessage"
+    ]!(context("git.generateCommitMessage", { expectedIndexGeneration: "b".repeat(64) }));
+
+    expect(completeSimple).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      result: {
+        message: [
+          "chore: 更新 2 个文件",
+          "",
+          "- 修改 src/app.ts（+1）",
+          "- 新增 README.md（+1）",
+        ].join("\n"),
+        fallback: true,
+      },
+    });
   });
 
   it("falls back to a patch-derived message when both attempts are empty", async () => {

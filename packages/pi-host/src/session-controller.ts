@@ -3,16 +3,26 @@ import {
   createHostError,
   stripAttachmentReferenceBlocks,
   toJsonValue,
+  type HostError,
   type JsonValue,
 } from "@pideck/protocol";
-import type { MethodHandler } from "./server.js";
+import type { HandlerContext, MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { buildSessionUsageReport } from "./session-usage-report.js";
 import { searchSessions } from "./session-search.js";
 import { isObject, readModelsConfig } from "./provider-models-config.js";
-import { sessionStorageDirs } from "./session-storage.js";
-import { readSubagentSession, subagentSessionNodeIdCandidates } from "./subagent-session.js";
-import { resolveSubagentStopRunId } from "./subagent-status-extension.js";
+import {
+  postSubagentApi,
+  type SubagentHttpControlResponse,
+} from "./subagent-api.js";
+import {
+  mapSubagentRunState,
+  readSubagentRunStatus,
+  readSubagentRunTitle,
+  readSubagentRunTranscript,
+  resolveSubagentRunId,
+  subagentRunExists,
+} from "./subagent-runs.js";
 
 type SdkSessionTreeNode = {
   entry: unknown;
@@ -32,6 +42,39 @@ function toWireTreeNode(node: SdkSessionTreeNode): JsonValue {
     ...(node.label !== undefined ? { label: node.label } : {}),
     ...(node.labelTimestamp !== undefined ? { labelTimestamp: node.labelTimestamp } : {}),
   };
+}
+
+/** Forward a subagent control action to the pi-subagent HTTP API. */
+async function controlSubagentRun(
+  factory: WorkspaceGraphFactory,
+  ctx: HandlerContext,
+  action: "stop" | "pause" | "continue" | "resume",
+  resultKey: "stopped" | "paused" | "continued" | "resumed",
+): Promise<{ result: unknown } | { error: HostError }> {
+  const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+  if (stale) return { error: stale };
+  const { nodeId } = ctx.params as { nodeId: string };
+  const runId = resolveSubagentRunId(nodeId);
+  const outcome = await postSubagentApi<SubagentHttpControlResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/${action}`,
+  );
+  if (!outcome) {
+    return {
+      error: createHostError("HOST_NOT_READY", "pi-subagent API unavailable", {
+        retryable: true,
+      }),
+    };
+  }
+  if (!outcome.ok) {
+    return {
+      error: createHostError(
+        "AGENT_BUSY",
+        outcome.error ?? `Unable to ${action} subagent`,
+        { retryable: true },
+      ),
+    };
+  }
+  return { result: { [resultKey]: true } };
 }
 
 export function createSessionHandlers(
@@ -168,73 +211,56 @@ export function createSessionHandlers(
     "subagents.getSession": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
       if (stale) return { error: stale };
-      const graph = factory.getGraph();
-      if (!graph) return { error: createHostError("HOST_NOT_READY", "No workspace") };
-      const { activeDir } = sessionStorageDirs(factory.deps.agentDir, graph.canonicalCwd);
       const { nodeId } = ctx.params as { nodeId: string };
-      for (const candidate of subagentSessionNodeIdCandidates(nodeId)) {
-        const snapshot = readSubagentSession(activeDir, candidate);
-        if (snapshot) return { result: snapshot };
-      }
-      return {
-        error: createHostError(
-          "SESSION_NOT_FOUND",
-          "Subagent session transcript is not available",
-          {
-            retryable: true,
-          },
-        ),
-      };
-    },
-
-    "subagents.stop": async (ctx) => {
-      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
-      if (stale) return { error: stale };
-      const graph = factory.getGraph();
-      const nodeId = (ctx.params as { nodeId: string }).nodeId;
-      const requestedRunId = nodeId.match(/^external:[^:]+:(.+)$/)?.[1];
-      if (!graph?.agentSession || !requestedRunId) {
-        return { error: createHostError("SESSION_NOT_FOUND", "Subagent run is not stoppable") };
-      }
-      const tool = graph.agentSession.extensionRunner.getToolDefinition("subagent");
-      if (!tool) {
-        return { error: createHostError("HOST_NOT_READY", "Subagent control is unavailable") };
-      }
-      const runId = resolveSubagentStopRunId(
-        sessionStorageDirs(factory.deps.agentDir, graph.canonicalCwd).activeDir,
-        graph.sessionManager?.getSessionId() ?? "",
-        requestedRunId,
-      );
-      try {
-        const result = await tool.execute(
-          `pideck-stop-${ctx.id}`,
-          { action: "stop", id: runId },
-          new AbortController().signal,
-          undefined,
-          graph.agentSession.extensionRunner.createContext(),
-        );
-        if ("isError" in result && result.isError) {
-          const message = result.content
-            .filter((part): part is { type: "text"; text: string } => part.type === "text")
-            .map((part) => part.text)
-            .join("\n");
-          return {
-            error: createHostError("AGENT_BUSY", message || "Unable to stop subagent", {
-              retryable: true,
-            }),
-          };
-        }
-        return { result: { stopped: true } };
-      } catch (error) {
+      const runId = resolveSubagentRunId(nodeId);
+      if (!subagentRunExists(runId)) {
         return {
           error: createHostError(
-            "AGENT_BUSY",
-            error instanceof Error ? error.message : String(error),
-            { retryable: true },
+            "SESSION_NOT_FOUND",
+            "Subagent run transcript is not available",
+            {
+              retryable: true,
+            },
           ),
         };
       }
+      const title = readSubagentRunTitle(runId);
+      const state = mapSubagentRunState(readSubagentRunStatus(runId));
+      const transcript = readSubagentRunTranscript(runId);
+      if (!transcript) {
+        // The run exists but its pi session file has not been flushed yet
+        // (child still starting, or the run never produced an assistant turn).
+        // Return an empty snapshot instead of an error so the panel renders
+        // the no-conversation state rather than a load failure.
+        return {
+          result: {
+            nodeId,
+            sessionId: `sub-${runId}`,
+            ...(title ? { name: title } : {}),
+            state,
+            entries: [],
+            truncated: false,
+            updatedAt: Date.now(),
+          },
+        };
+      }
+      return {
+        result: {
+          nodeId,
+          sessionId: transcript.sessionId,
+          ...(transcript.name || title ? { name: transcript.name ?? title } : {}),
+          state,
+          entries: transcript.entries,
+          truncated: transcript.truncated,
+          updatedAt: transcript.updatedAt,
+        },
+      };
     },
+
+    "subagents.stop": async (ctx) => controlSubagentRun(factory, ctx, "stop", "stopped"),
+    "subagents.pause": async (ctx) => controlSubagentRun(factory, ctx, "pause", "paused"),
+    "subagents.continue": async (ctx) => controlSubagentRun(factory, ctx, "continue", "continued"),
+    "subagents.resume": async (ctx) => controlSubagentRun(factory, ctx, "resume", "resumed"),
 
     "session.getSnapshot": async (ctx) => {
       const server = factory.getServer();

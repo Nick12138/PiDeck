@@ -385,7 +385,10 @@ export function RightDock() {
       availability.sessionId = sessionId;
       availability.hasBeenUsed = false;
     }
-    const hasSubagentActivity = subagentsStatus.totalActive > 0 || subagentsStatus.runs.length > 0;
+    // With the my-pi-plugins pi-subagent bridge the run list includes
+    // historical runs from previous sessions, so only auto-open the panel for
+    // genuinely active runs (manual open is always available via the add menu).
+    const hasSubagentActivity = subagentsStatus.totalActive > 0;
     if (!hasSubagentActivity || availability.hasBeenUsed) return;
 
     availability.hasBeenUsed = true;

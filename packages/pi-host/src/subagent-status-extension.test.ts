@@ -1,169 +1,131 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { externalCompletedRuns, externalRunAgents } from "./subagent-status-extension.js";
-import { listSubagentSessions } from "./subagent-session.js";
+import { describe, expect, it } from "vitest";
+import type { SubagentHttpRunSummary } from "./subagent-api.js";
+import { mapSubagentHttpRun, normalizeSubagentRuns } from "./subagent-status-extension.js";
 
-const roots: string[] = [];
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-function writeSession(
-  directory: string,
-  filename: string,
-  sessionId: string,
-  runId: string,
-  agent: string,
-): void {
-  const notification = `Background task completed: Workflow completed with 1 child run(s). Return: {\n  \"runId\": \"${runId}\",\n  \"agent\": \"${agent}\",\n  \"output\": \"done\"\n}`;
-  writeFileSync(
-    join(directory, filename),
-    [
-      JSON.stringify({ type: "session", version: 3, id: sessionId, cwd: directory }),
-      JSON.stringify({
-        type: "custom_message",
-        customType: "subagent-notify",
-        content: notification,
-      }),
-    ].join("\n") + "\n",
-  );
+function run(overrides: Partial<SubagentHttpRunSummary> = {}): SubagentHttpRunSummary {
+  return {
+    id: "run_abc",
+    title: "认证探索",
+    agent: "scout",
+    sessionId: "session-1",
+    status: "running",
+    statusLabel: "运行中",
+    createdAt: 1000,
+    startedAt: 2000,
+    model: "openai/gpt-5",
+    resumeCount: 0,
+    retryLeft: 1,
+    worktree: false,
+    outputPreview: "",
+    cost: 0,
+    turns: 0,
+    ...overrides,
+  };
 }
 
-describe("externalCompletedRuns", () => {
-  it("prefers the active named session when another session is newer", () => {
-    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
-    roots.push(directory);
-    writeSession(directory, "newer.jsonl", "newer-session", "newer-run", "reviewer");
-    writeSession(directory, "active.jsonl", "active-session", "active-run", "delegate");
+describe("mapSubagentHttpRun", () => {
+  it("maps every plugin status to the panel state set", () => {
+    const cases: Array<[string, string]> = [
+      ["pending", "queued"],
+      ["running", "running"],
+      ["paused", "paused"],
+      ["completed", "complete"],
+      ["failed", "failed"],
+      ["stopped", "stopped"],
+      ["interrupted", "stopped"],
+    ];
+    for (const [status, expected] of cases) {
+      expect(mapSubagentHttpRun(run({ status })).state).toBe(expected);
+    }
+  });
 
-    const runs = externalCompletedRuns(directory, "active-session");
-
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({
-      id: expect.stringContaining("active-run"),
-      label: "delegate",
-      role: "delegate",
-      state: "complete",
+  it("carries title/agent/model/timestamps through", () => {
+    const node = mapSubagentHttpRun(run());
+    expect(node).toMatchObject({
+      id: "run_abc",
+      kind: "subagent",
+      label: "认证探索",
+      role: "scout",
+      model: "openai/gpt-5",
+      state: "running",
+      startedAt: 2000,
     });
-    expect(externalRunAgents(directory, "active-session")).toEqual(
-      new Map([["active-run", "delegate"]]),
-    );
+    expect(node.endedAt).toBeUndefined();
+    expect(node.updatedAt).toBe(2000);
   });
 
-  it("preserves the role for a failed notification without an agent field", () => {
-    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
-    roots.push(directory);
-    const childDir = join(directory, "active-session", "failed-run", "run-0");
-    mkdirSync(childDir, { recursive: true });
-    writeFileSync(
-      join(directory, "active.jsonl"),
-      [
-        JSON.stringify({ type: "session", version: 3, id: "active-session", cwd: directory }),
-        JSON.stringify({
-          type: "custom_message",
-          customType: "subagent-notify",
-          content: 'Background task failed: { "runId": "failed-run" }',
-        }),
-      ].join("\n") + "\n",
-    );
-    writeFileSync(
-      join(childDir, "session.jsonl"),
-      [
-        JSON.stringify({ type: "session", version: 3, id: "failed-session", cwd: directory }),
-        JSON.stringify({
-          type: "session_info",
-          id: "failed-info",
-          name: "subagent-reviewer-failed-run-1",
-        }),
-      ].join("\n") + "\n",
-    );
-
-    expect(externalCompletedRuns(directory, "active-session")).toMatchObject([
-      { state: "failed", role: "reviewer" },
-    ]);
+  it("falls back to the run id when the title is empty", () => {
+    const node = mapSubagentHttpRun(run({ title: "   ", agent: "worker" }));
+    expect(node.label).toBe("run_abc");
+    expect(node.role).toBe("worker");
   });
 
-  it("hides terminal runs that never produced a child session file", () => {
-    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
-    roots.push(directory);
-    writeFileSync(
-      join(directory, "active.jsonl"),
-      [
-        JSON.stringify({ type: "session", version: 3, id: "active-session", cwd: directory }),
-        // A launch-stage failure leaves only a notification; no session.jsonl
-        // exists under the run directory (the child process never started).
-        JSON.stringify({
-          type: "custom_message",
-          customType: "subagent-notify",
-          content: 'Background task failed: { "runId": "orphan-run", "agent": "delegate" }',
-        }),
-        // A real completed run keeps a session file and must stay visible.
-        JSON.stringify({
-          type: "custom_message",
-          customType: "subagent-notify",
-          content:
-            'Background task completed: { "runId": "real-run", "agent": "delegate", "output": "done" }',
-        }),
-      ].join("\n") + "\n",
+  it("exposes the output preview as activity and the end time when finished", () => {
+    const node = mapSubagentHttpRun(
+      run({ status: "completed", finishedAt: 9000, outputPreview: "完成：已改 3 个文件" }),
     );
-    const realChild = join(directory, "active-session", "real-run", "run-0");
-    mkdirSync(realChild, { recursive: true });
-    writeFileSync(
-      join(realChild, "session.jsonl"),
-      [
-        JSON.stringify({ type: "session", version: 3, id: "real-session", cwd: directory }),
-        JSON.stringify({
-          type: "session_info",
-          id: "real-info",
-          name: "subagent-delegate-real-run-1",
-        }),
-        JSON.stringify({
-          type: "message",
-          id: "m1",
-          message: { role: "user", content: [{ type: "text", text: "ok" }] },
-        }),
-      ].join("\n") + "\n",
-    );
+    expect(node.state).toBe("complete");
+    expect(node.endedAt).toBe(9000);
+    expect(node.updatedAt).toBe(9000);
+    expect(node.activity).toEqual({ state: "完成：已改 3 个文件" });
+  });
+});
 
-    const runs = externalCompletedRuns(directory, "active-session");
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ id: expect.stringContaining("real-run"), state: "complete" });
+describe("normalizeSubagentRuns", () => {
+  it("scopes runs to the active session and counts only running runs as active", () => {
+    const snapshot = normalizeSubagentRuns(
+      [
+        run({ id: "a", sessionId: "session-1", status: "running" }),
+        run({ id: "b", sessionId: "session-1", status: "queued" }),
+        run({ id: "c", sessionId: "session-1", status: "completed" }),
+        // Other-session and legacy (no session id) runs must not leak in.
+        run({ id: "other", sessionId: "session-2", status: "running" }),
+        run({ id: "legacy", sessionId: null, status: "running" }),
+      ],
+      undefined,
+      "session-1",
+    );
+    expect(snapshot.available).toBe(true);
+    expect(snapshot.totalActive).toBe(1);
+    expect(snapshot.omitted).toBe(0);
+    expect(snapshot.fleet).toEqual([]);
+    expect(snapshot.runs.map((node) => node.id)).toEqual(["a", "b", "c"]);
   });
 
-  it("recovers the configured role from a live child session name", () => {
-    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
-    roots.push(directory);
-    const parent = join(directory, "active-session.jsonl");
-    const childDir = join(directory, "active-session", "child-run", "run-0");
-    mkdirSync(childDir, { recursive: true });
-    writeFileSync(
-      parent,
-      JSON.stringify({ type: "session", version: 3, id: "active-session", cwd: directory }) + "\n",
-    );
-    writeFileSync(
-      join(childDir, "session.jsonl"),
-      JSON.stringify({
-        type: "session",
-        version: 3,
-        id: "child-session",
-        name: "subagent-reviewer-child-run-1",
-        cwd: directory,
-      }) + "\n",
-    );
-
-    expect(listSubagentSessions(directory, "active-session")).toMatchObject([
-      { nodeId: "external:active-session:child-run", role: "reviewer" },
-    ]);
+  it("hides everything when no session is attached yet", () => {
+    const snapshot = normalizeSubagentRuns([run({ status: "running" })], undefined, null);
+    expect(snapshot.available).toBe(true);
+    expect(snapshot.runs).toEqual([]);
+    expect(snapshot.totalActive).toBe(0);
   });
 
-  it("keeps the bounded newest-session fallback without a preferred session", () => {
-    const directory = mkdtempSync(join(tmpdir(), "pideck-subagents-"));
-    roots.push(directory);
-    writeSession(directory, "session.jsonl", "session", "run", "worker");
+  it("shows legacy runs (no sessionId) when the active session spawned them", () => {
+    const owned = new Set(["legacy-run-1"]);
+    const snapshot = normalizeSubagentRuns(
+      [
+        run({ id: "legacy-run-1", sessionId: null, status: "running" }),
+        run({ id: "legacy-run-2", sessionId: null, status: "completed" }),
+        run({ id: "other-session", sessionId: "session-2", status: "running" }),
+      ],
+      undefined,
+      "session-1",
+      owned,
+    );
+    expect(snapshot.runs.map((node) => node.id)).toEqual(["legacy-run-1"]);
+    expect(snapshot.totalActive).toBe(1);
+  });
 
-    expect(externalCompletedRuns(directory)).toHaveLength(1);
+  it("caps the scoped runs array at 32 and reports the remainder as omitted", () => {
+    const many = Array.from({ length: 40 }, (_, index) =>
+      run({
+        id: `run_${index}`,
+        sessionId: "session-1",
+        status: index % 2 === 0 ? "running" : "completed",
+      }),
+    );
+    const snapshot = normalizeSubagentRuns(many, undefined, "session-1");
+    expect(snapshot.runs).toHaveLength(32);
+    expect(snapshot.omitted).toBe(8);
+    expect(snapshot.totalActive).toBe(16);
   });
 });

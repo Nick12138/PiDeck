@@ -36,6 +36,8 @@ export type SubagentStatusNode = {
   name?: string;
   /** Configured agent role when the status source exposes it. */
   role?: string;
+  /** Model used by the run when the status source exposes it. */
+  model?: string;
   state: SubagentStatusState;
   startedAt?: number;
   updatedAt?: number;

@@ -328,6 +328,9 @@ export function validateRequestParams<M extends HostMethod>(
       return params === null ? ok(null) : fail("params must be null", { method });
     case "subagents.getSession":
     case "subagents.stop":
+    case "subagents.pause":
+    case "subagents.continue":
+    case "subagents.resume":
       return exactObject(params, ["nodeId"], []) &&
         isNonEmptyString(params.nodeId) &&
         params.nodeId.length <= 160

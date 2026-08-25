@@ -132,6 +132,9 @@ export type HostContextMap = {
   "session.getCommands": ActiveSessionContext;
   "subagents.getSession": WorkspaceContext;
   "subagents.stop": WorkspaceContext;
+  "subagents.pause": WorkspaceContext;
+  "subagents.continue": WorkspaceContext;
+  "subagents.resume": WorkspaceContext;
   "agent.prompt": ActiveSessionContext;
   "agent.steer": ActiveSessionContext;
   "agent.followUp": ActiveSessionContext;
@@ -255,6 +258,9 @@ export type HostRequestParams = {
   "session.getCommands": null;
   "subagents.getSession": { nodeId: string };
   "subagents.stop": { nodeId: string };
+  "subagents.pause": { nodeId: string };
+  "subagents.continue": { nodeId: string };
+  "subagents.resume": { nodeId: string };
   "agent.prompt": {
     text: string;
     images?: SerializableImage[];
@@ -415,6 +421,9 @@ export type HostResultMap = {
   "session.getCommands": { commands: CommandSummary[] };
   "subagents.getSession": SubagentSessionSnapshot;
   "subagents.stop": { stopped: boolean };
+  "subagents.pause": { paused: boolean };
+  "subagents.continue": { continued: boolean };
+  "subagents.resume": { resumed: boolean };
   "agent.prompt": { accepted: true; runId: string };
   "agent.steer": { accepted: true };
   "agent.followUp": { accepted: true };

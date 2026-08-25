@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, CircleAlert, Copy, LoaderCircle, Square } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  Copy,
+  LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
+  Square,
+} from "lucide-react";
 import type {
   SubagentSessionSnapshot,
   SubagentStatusNode,
@@ -58,6 +68,22 @@ function roleLabel(role: string | undefined, t: ReturnType<typeof useT>): string
       return t("subagentsRoleAdvisor");
     default:
       return role?.trim() || undefined;
+  }
+}
+
+/** Badge glyphs: emoji for the built-in roles, undefined (fall back to the
+ * localized text label) for anything else. */
+function roleEmoji(role: string | undefined): string | undefined {
+  switch (role?.trim().toLowerCase()) {
+    case "scout":
+    case "researcher":
+      return "🕵️";
+    case "worker":
+      return "🧑‍💻";
+    case "reviewer":
+      return "👀";
+    default:
+      return undefined;
   }
 }
 
@@ -276,9 +302,9 @@ function InlineNode({
   snapshot,
   loading,
   loadError,
-  stopping,
+  pendingAction,
   onToggle,
-  onStop,
+  onAction,
   onRetry,
 }: {
   node: SubagentStatusNode;
@@ -287,16 +313,17 @@ function InlineNode({
   snapshot: SubagentSessionSnapshot | null;
   loading: boolean;
   loadError: boolean;
-  stopping: boolean;
+  pendingAction: (action: string) => boolean;
   onToggle: () => void;
-  onStop: () => void;
+  onAction: (action: "stop" | "pause" | "continue" | "resume") => void;
   onRetry: () => void;
 }) {
   const t = useT();
   const displayName = node.name ?? node.label;
   const role = node.role?.trim();
   const localizedRole = roleLabel(role, t);
-  const showRole = Boolean(localizedRole && role !== displayName);
+  const badge = roleEmoji(role) ?? localizedRole;
+  const showRole = Boolean(badge && role !== displayName);
   return (
     <div
       className="group"
@@ -330,15 +357,20 @@ function InlineNode({
           aria-expanded={expanded}
           aria-label={displayName}
           onClick={onToggle}
-          title={node.label !== displayName ? node.label : undefined}
+          title={[
+            node.label !== displayName ? node.label : undefined,
+            node.model ? t("subagentsModel", { model: node.model }) : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n") || undefined}
         >
           {showRole && (
             <span
-              className="max-w-24 shrink-0 truncate rounded border border-border px-1 py-0.5 text-[9px] text-muted"
+              className="max-w-24 shrink-0 truncate rounded px-1 py-0.5 text-[11px] text-muted"
               title={t("subagentsRole", { role: localizedRole ?? "" })}
               aria-label={t("subagentsRole", { role: localizedRole ?? "" })}
             >
-              {localizedRole}
+              {badge}
             </span>
           )}
           <span className="min-w-0 flex-1 truncate font-medium text-foreground">{displayName}</span>
@@ -363,12 +395,57 @@ function InlineNode({
           <button
             type="button"
             className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
-            title={t("subagentsStop")}
-            aria-label={t("subagentsStop")}
-            disabled={stopping}
+            title={t("subagentsPause")}
+            aria-label={t("subagentsPause")}
+            disabled={pendingAction("pause")}
             onClick={(event) => {
               event.stopPropagation();
-              onStop();
+              onAction("pause");
+            }}
+          >
+            <Pause size={12} fill="currentColor" />
+          </button>
+        )}
+        {node.state === "paused" && (
+          <button
+            type="button"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            title={t("subagentsContinue")}
+            aria-label={t("subagentsContinue")}
+            disabled={pendingAction("continue")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction("continue");
+            }}
+          >
+            <Play size={12} fill="currentColor" />
+          </button>
+        )}
+        {node.state === "failed" && (
+          <button
+            type="button"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            title={t("subagentsResume")}
+            aria-label={t("subagentsResume")}
+            disabled={pendingAction("resume")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction("resume");
+            }}
+          >
+            <RotateCcw size={12} />
+          </button>
+        )}
+        {(node.state === "running" || node.state === "paused" || node.state === "queued") && (
+          <button
+            type="button"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            title={t("subagentsStop")}
+            aria-label={t("subagentsStop")}
+            disabled={pendingAction("stop")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction("stop");
             }}
           >
             <Square size={12} fill="currentColor" />
@@ -417,7 +494,11 @@ export function SubagentsPanel() {
   const [snapshots, setSnapshots] = useState<Record<string, SubagentSessionSnapshot>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null);
-  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(new Set());
+  const isPending = useCallback(
+    (nodeId: string, action: string) => pendingActions.has(`${nodeId}:${action}`),
+    [pendingActions],
+  );
   const hasRuns = status.runs.length > 0;
   const activeCount = useMemo(
     () => flattenNodes(status.runs).filter(({ node }) => node.state === "running").length,
@@ -469,20 +550,37 @@ export function SubagentsPanel() {
     };
   }, [expandedId, host, nodes, workspace, loadSession]);
 
-  const stopNode = async (node: SubagentStatusNode) => {
-    if (!host || !workspace || node.state !== "running") return;
-    setStoppingId(node.id);
-    try {
-      await hostClient.request(
-        "subagents.stop",
-        workspaceContext(host, workspace),
-        { nodeId: node.id },
-        15_000,
-      );
-    } finally {
-      setStoppingId(null);
-    }
-  };
+  const runControl = useCallback(
+    async (
+      node: SubagentStatusNode,
+      action: "stop" | "pause" | "continue" | "resume",
+    ) => {
+      if (!host || !workspace) return;
+      const key = `${node.id}:${action}`;
+      setPendingActions((current) => new Set(current).add(key));
+      try {
+        const method = ({
+          stop: "subagents.stop",
+          pause: "subagents.pause",
+          continue: "subagents.continue",
+          resume: "subagents.resume",
+        })[action] as "subagents.stop" | "subagents.pause" | "subagents.continue" | "subagents.resume";
+        await hostClient.request(
+          method,
+          workspaceContext(host, workspace),
+          { nodeId: node.id },
+          15_000,
+        );
+      } finally {
+        setPendingActions((current) => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [host, workspace],
+  );
 
   return (
     <section
@@ -515,9 +613,9 @@ export function SubagentsPanel() {
               snapshot={snapshots[node.id] ?? null}
               loading={loadingId === node.id}
               loadError={errorId === node.id}
-              stopping={stoppingId === node.id}
+              pendingAction={(action) => isPending(node.id, action)}
               onToggle={() => setExpandedId((current) => (current === node.id ? null : node.id))}
-              onStop={() => void stopNode(node)}
+              onAction={(action) => void runControl(node, action)}
               onRetry={() => void loadSession(node)}
             />
           ))}

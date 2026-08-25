@@ -55,6 +55,9 @@ export const HOST_METHODS = [
   "session.getCommands",
   "subagents.getSession",
   "subagents.stop",
+  "subagents.pause",
+  "subagents.continue",
+  "subagents.resume",
   "agent.prompt",
   "agent.steer",
   "agent.followUp",
@@ -210,6 +213,10 @@ export type WorkspaceOnlyMethod =
   | "session.rename"
   | "session.usageReport"
   | "subagents.getSession"
+  | "subagents.stop"
+  | "subagents.pause"
+  | "subagents.continue"
+  | "subagents.resume"
   | "skill.list"
   | "skill.addPath"
   | "skill.removePath"
@@ -348,6 +355,9 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.getCommands": "activeSession",
   "subagents.getSession": "workspace",
   "subagents.stop": "workspace",
+  "subagents.pause": "workspace",
+  "subagents.continue": "workspace",
+  "subagents.resume": "workspace",
   "agent.prompt": "activeSession",
   "agent.steer": "activeSession",
   "agent.followUp": "activeSession",

@@ -139,6 +139,9 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.getCommands": null,
   "subagents.getSession": { nodeId: "run-1" },
   "subagents.stop": { nodeId: "run-1" },
+  "subagents.pause": { nodeId: "run-1" },
+  "subagents.continue": { nodeId: "run-1" },
+  "subagents.resume": { nodeId: "run-1" },
   "agent.prompt": { text: "hi" },
   "agent.steer": { text: "hi" },
   "agent.followUp": { text: "hi" },
@@ -362,7 +365,13 @@ function invalidParams(method: HostMethod): unknown {
         updatedAt: 1,
       };
     case "subagents.stop":
-      return { stopped: true };
+      return { nodeId: "run-1", stopped: true };
+    case "subagents.pause":
+      return { nodeId: "run-1", paused: true };
+    case "subagents.continue":
+      return { nodeId: "run-1", continued: true };
+    case "subagents.resume":
+      return { nodeId: "run-1", resumed: true };
     case "agent.prompt":
     case "agent.steer":
     case "agent.followUp":

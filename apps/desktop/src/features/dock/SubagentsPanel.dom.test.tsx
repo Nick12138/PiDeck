@@ -106,11 +106,12 @@ describe("SubagentsPanel", () => {
     render(<SubagentsPanel />);
 
     expect(screen.getByText("Active: 1")).toBeVisible();
-    const roleBadge = screen.getByText("Reviewer");
+    const roleBadge = screen.getByText("👀");
     const row = roleBadge.closest("button");
     expect(roleBadge).toBeVisible();
+    expect(roleBadge).toHaveAttribute("title", "Role: Reviewer");
     expect(row).not.toBeNull();
-    expect(row?.textContent?.indexOf("Reviewer")).toBeLessThan(
+    expect(row?.textContent?.indexOf("👀")).toBeLessThan(
       row?.textContent?.indexOf("running task") ?? -1,
     );
     expect(row?.querySelector("svg")).toBeInTheDocument();
@@ -155,6 +156,67 @@ describe("SubagentsPanel", () => {
     expect(screen.getByRole("button", { name: "Stop subagent" })).toBeVisible();
     fireEvent.mouseEnter(screen.getByText("Running task"));
     expect(screen.queryByRole("button", { name: "Stop subagent" })).toBeVisible();
+  });
+
+  it("exposes pause/continue/resume for the matching states", () => {
+    useAppStore.setState({
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          { id: "running", kind: "subagent", label: "Running task", state: "running" },
+          { id: "paused", kind: "subagent", label: "Paused task", state: "paused" },
+          { id: "failed", kind: "subagent", label: "Failed task", state: "failed" },
+          { id: "done", kind: "subagent", label: "Done task", state: "complete" },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    // running → pause + stop; paused → continue + stop; failed → resume.
+    expect(screen.getAllByRole("button", { name: "Pause subagent" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Continue subagent" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Resume subagent" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Stop subagent" })).toHaveLength(2);
+  });
+
+  it("routes control actions through the host client", async () => {
+    const request = vi.spyOn(hostClient, "request").mockImplementation(async (method) => {
+      return {
+        protocolVersion: 1,
+        id: crypto.randomUUID(),
+        method,
+        hostInstanceId: host.hostInstanceId,
+        workspaceId: workspace.id,
+        workspaceRevision: workspace.revision,
+        sessionId: null,
+        sessionRevision: 0,
+        packageRevision: 0,
+        ok: true,
+        result: {},
+      } as never;
+    });
+    useAppStore.setState({
+      host,
+      workspace,
+      desktopSettings: { language: "en" } as never,
+      subagentsStatus: {
+        ...baseStatus,
+        runs: [
+          { id: "run-ctl", kind: "subagent", label: "Ctl task", state: "running" },
+        ],
+      },
+    });
+
+    render(<SubagentsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause subagent" }));
+    expect(await screen.findByText("Ctl task")).toBeVisible();
+    expect(request).toHaveBeenCalledWith(
+      "subagents.pause",
+      expect.anything(),
+      { nodeId: "run-ctl" },
+      expect.anything(),
+    );
+    request.mockRestore();
   });
 
   it("shows a useful empty state when no child is active", () => {

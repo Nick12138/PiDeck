@@ -3,6 +3,8 @@ import {
   completeSimple,
   type AssistantMessage,
   type Context,
+  type Model,
+  type OpenAICompletionsCompat,
 } from "@earendil-works/pi-ai/compat";
 import { GitService, GitServiceError } from "./git-service.js";
 import { withRegisteredGraphMutation } from "./registered-graph-mutation.js";
@@ -31,7 +33,7 @@ function workspace(factory: WorkspaceGraphFactory): string | null {
 const COMMIT_MESSAGE_MAX_TOKENS = 2_000;
 
 /** Budget used when retrying a commit-message call that came back empty. */
-const COMMIT_MESSAGE_RETRY_MAX_TOKENS = 4_000;
+const COMMIT_MESSAGE_RETRY_MAX_TOKENS = 2_000;
 
 /**
  * Extract the model's visible answer from an assistant message. Some models
@@ -51,6 +53,21 @@ function commitMessageText(response: AssistantMessage): string {
   if (closed) return text.slice(closed[0].length).trim();
   if (/^<think>/u.test(text)) return "";
   return text;
+}
+
+/**
+ * Model override for the empty-result retry. Some OpenAI-compatible endpoints
+ * (DeepSeek-style `thinking` extension) spend the whole output budget on
+ * hidden reasoning and never emit an answer; forcing the extension off makes
+ * the model produce visible text. The override is inert for APIs that ignore
+ * the compat key, and endpoints that reject the param simply error out — the
+ * caller falls back to a patch-derived message in that case.
+ */
+function commitMessageRetryModel(model: Model<any>): Model<any> {
+  if (model.api !== "openai-completions") return model;
+  const compat = model.compat as OpenAICompletionsCompat | undefined;
+  if (compat?.thinkingFormat === "deepseek") return model;
+  return { ...model, compat: { ...compat, thinkingFormat: "deepseek" } };
 }
 
 /**
@@ -419,15 +436,18 @@ export function createGitHandlers(
         const attempt = async (options: {
           maxTokens: number;
           reasoning?: "minimal";
-        }): Promise<AssistantMessage> =>
-          completeSimple(model, context, {
+          model?: Model<any>;
+        }): Promise<AssistantMessage> => {
+          const { model: attemptModel, ...rest } = options;
+          return completeSimple(attemptModel ?? model, context, {
             apiKey: auth.apiKey,
             headers: auth.headers,
             env: auth.env,
             timeoutMs: 30_000,
             maxRetries: 0,
-            ...options,
+            ...rest,
           });
+        };
         const fail = (response: AssistantMessage): HostError =>
           createHostError(
             "INTERNAL_ERROR",
@@ -438,20 +458,27 @@ export function createGitHandlers(
           return { error: fail(response) };
         }
         let message = commitMessageText(response);
-        if (!message) {
-          // Reasoning models sometimes spend the whole token budget on hidden
-          // thinking and emit no answer text. Retry once without the reasoning
-          // hint and with a larger budget before falling back.
-          response = await attempt({ maxTokens: COMMIT_MESSAGE_RETRY_MAX_TOKENS });
-          if (response.stopReason === "error" || response.stopReason === "aborted") {
-            return { error: fail(response) };
-          }
-          message = commitMessageText(response);
-        }
         let fallback = false;
         if (!message) {
-          message = fallbackCommitMessage(patch);
-          fallback = true;
+          // Reasoning models sometimes spend the whole token budget on hidden
+          // thinking and emit no answer text. Retry once with the endpoint's
+          // thinking extension disabled so the model has to produce an answer.
+          response = await attempt({
+            maxTokens: COMMIT_MESSAGE_RETRY_MAX_TOKENS,
+            model: commitMessageRetryModel(model),
+          });
+          if (response.stopReason === "error" || response.stopReason === "aborted") {
+            // Never hard-fail on the retry: derive a message from the patch so
+            // the user always gets something editable.
+            message = fallbackCommitMessage(patch);
+            fallback = true;
+          } else {
+            message = commitMessageText(response);
+            if (!message) {
+              message = fallbackCommitMessage(patch);
+              fallback = true;
+            }
+          }
         }
         const staleAfter = factory.checkIdentity(ctx.context, { requireWorkspace: true });
         if (staleAfter) return { error: staleAfter };
