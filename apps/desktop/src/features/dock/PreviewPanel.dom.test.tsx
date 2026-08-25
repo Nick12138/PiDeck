@@ -14,11 +14,7 @@ vi.mock("../../lib/bridge/host-client", () => ({
 
 vi.mock("streamdown", () => ({
   Streamdown: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="streamdown">
-      <div data-streamdown="table-wrapper">
-        <div className="overflow-x-auto">{children}</div>
-      </div>
-    </div>
+    <div data-testid="streamdown">{children}</div>
   ),
 }));
 
@@ -161,31 +157,5 @@ describe("PreviewPanel", () => {
     });
     rerender(<PreviewPanel path="b.ts" visible />);
     expect(await screen.findByText("bb")).toBeInTheDocument();
-  });
-
-  it("shows a horizontal slider only when the table overflows", async () => {
-    okResult({
-      path: "narrow.md",
-      kind: "text",
-      size: 20,
-      truncated: false,
-      content: "# t\n\n| a |\n|---|\n| 1 |",
-      encoding: "utf-8",
-    });
-    const { container } = render(<PreviewPanel path="narrow.md" visible />);
-    await screen.findByTestId("streamdown");
-    expect(screen.queryByRole("scrollbar")).not.toBeInTheDocument();
-
-    const tableScroll = container.querySelector<HTMLDivElement>(
-      '[data-streamdown="table-wrapper"] > div',
-    );
-    expect(tableScroll).not.toBeNull();
-    Object.defineProperty(tableScroll!, "scrollWidth", { value: 800, configurable: true });
-    Object.defineProperty(tableScroll!, "clientWidth", { value: 300, configurable: true });
-    tableScroll!.dispatchEvent(new Event("scroll"));
-
-    expect(
-      await screen.findByRole("scrollbar", { name: /Scroll horizontally/ }),
-    ).toBeInTheDocument();
   });
 });

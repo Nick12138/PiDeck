@@ -1071,7 +1071,6 @@ export const zh: Record<MessageKey, string> = {
   dockPreviewRefresh: "刷新预览",
   dockPreviewBinary: "二进制文件，无法内联预览",
   dockPreviewTruncated: "预览已截断，仅显示前 {size}",
-  dockPreviewHorizontalScroll: "水平滚动",
   dockPreviewOpenFile: "预览文件",
   dockPreviewOpenFileNamed: "预览 {path}",
   dockTodo: "任务",

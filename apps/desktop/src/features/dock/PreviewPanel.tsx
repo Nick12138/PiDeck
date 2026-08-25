@@ -24,15 +24,6 @@ function formatSize(bytes: number): string {
 
 type PreviewStatus = "idle" | "loading" | "ready" | "error";
 
-type HThumbState = { visible: boolean; ratio: number; offset: number };
-
-const HIDDEN_H_THUMB: HThumbState = { visible: false, ratio: 0, offset: 0 };
-
-/** Streamdown renders wide tables inside `[data-streamdown="table-wrapper"] > div`
- *  (an overflow-x-auto scroller). The native horizontal scrollbar is an
- *  overlay in the desktop WebView and stays invisible until scrolled, so the
- *  table looks truncated. Draw one always-visible slider for it; the vertical
- *  scrollbar is left to the native one. */
 export function PreviewPanel({ path, visible }: { path: string | null; visible: boolean }) {
   const t = useT();
   const workspace = useAppStore((state) => state.workspace);
@@ -41,89 +32,6 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const hTargetRef = useRef<HTMLElement | null>(null);
-  const dragRef = useRef<{ pointerId: number; startClient: number; startScroll: number } | null>(
-    null,
-  );
-  const [hThumb, setHThumb] = useState<HThumbState>(HIDDEN_H_THUMB);
-
-  const updateHThumb = useCallback(() => {
-    const root = contentRef.current;
-    if (!root) return;
-    let target: HTMLElement | null = null;
-    for (const candidate of root.querySelectorAll<HTMLElement>(
-      '[data-streamdown="table-wrapper"] > div',
-    )) {
-      if (candidate.scrollWidth > candidate.clientWidth + 1) {
-        target = candidate;
-        break;
-      }
-    }
-    hTargetRef.current = target;
-    if (!target) {
-      setHThumb(HIDDEN_H_THUMB);
-      return;
-    }
-    const maxH = target.scrollWidth - target.clientWidth;
-    setHThumb({
-      visible: maxH > 1,
-      ratio: target.clientWidth / target.scrollWidth,
-      offset: maxH > 0 ? target.scrollLeft / maxH : 0,
-    });
-  }, []);
-
-  useEffect(() => {
-    const root = contentRef.current;
-    if (!root || status !== "ready") return;
-    // The table scroller appears after Streamdown commits; watch the subtree
-    // and measure once it is there (plus a couple of delay fallbacks).
-    updateHThumb();
-    root.addEventListener("scroll", updateHThumb, { capture: true, passive: true });
-    const observer = new MutationObserver(() => updateHThumb());
-    observer.observe(root, { childList: true, subtree: true, characterData: true });
-    for (const delay of [50, 200]) window.setTimeout(updateHThumb, delay);
-    return () => {
-      root.removeEventListener("scroll", updateHThumb, true);
-      observer.disconnect();
-    };
-  }, [updateHThumb, status, path]);
-
-  const onHTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const target = hTargetRef.current;
-    if (!target || hThumb.ratio >= 1) return;
-    const rect = target.getBoundingClientRect();
-    const thumbPx = Math.max(hThumb.ratio * rect.width, 28);
-    const ratio = (event.clientX - rect.left - thumbPx / 2) / rect.width;
-    target.scrollLeft = ratio * (target.scrollWidth - target.clientWidth);
-  };
-
-  const onHThumbPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const target = hTargetRef.current;
-    if (!target) return;
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startClient: event.clientX,
-      startScroll: target.scrollLeft,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const onHThumbPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    const target = hTargetRef.current;
-    if (!drag || !target || drag.pointerId !== event.pointerId) return;
-    const ratio = target.clientWidth / target.scrollWidth;
-    target.scrollLeft = drag.startScroll + (event.clientX - drag.startClient) / ratio;
-  };
-
-  const endHDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-  };
 
   const load = useCallback(
     async (target: string) => {
@@ -207,7 +115,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
 
   return (
     <section
-      className="preview-panel relative flex min-h-0 flex-1 flex-col bg-surface"
+      className="preview-panel flex min-h-0 flex-1 flex-col bg-surface"
       aria-label={t("dockPreviewRegion")}
       data-dock-panel
     >
@@ -290,7 +198,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
                 </button>
               </div>
             ) : isMarkdown ? (
-              <div ref={contentRef} className="preview-markdown chat-markdown px-4 py-3">
+              <div className="preview-markdown chat-markdown px-4 py-3">
                 <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
               </div>
             ) : (
@@ -299,28 +207,6 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
               </pre>
             )}
           </div>
-          {hThumb.visible && (
-            <div
-              role="scrollbar"
-              aria-orientation="horizontal"
-              aria-label={t("dockPreviewHorizontalScroll")}
-              title={t("dockPreviewHorizontalScroll")}
-              className="absolute bottom-1 left-2 right-2 h-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
-              onPointerDown={onHTrackPointerDown}
-              onPointerMove={onHThumbPointerMove}
-              onPointerUp={endHDrag}
-              onPointerCancel={endHDrag}
-            >
-              <div
-                className="absolute bottom-0.5 h-1.5 rounded-full bg-border-strong hover:bg-muted"
-                style={{
-                  left: `${hThumb.offset * 100}%`,
-                  width: `${Math.max(hThumb.ratio * 100, 6)}%`,
-                }}
-                onPointerDown={onHThumbPointerDown}
-              />
-            </div>
-          )}
         </>
       )}
     </section>
