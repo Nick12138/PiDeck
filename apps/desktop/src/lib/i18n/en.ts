@@ -1115,8 +1115,6 @@ export const en = {
   dockPreviewRefresh: "Refresh preview",
   dockPreviewBinary: "Binary file — cannot be previewed inline",
   dockPreviewTruncated: "Preview truncated to the first {size}",
-  dockPreviewVerticalScroll: "Scroll vertically",
-  dockPreviewHorizontalScroll: "Scroll horizontally",
   dockPreviewOpenFile: "Preview file",
   dockPreviewOpenFileNamed: "Preview {path}",
   dockTodo: "Tasks",

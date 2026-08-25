@@ -14,11 +14,7 @@ vi.mock("../../lib/bridge/host-client", () => ({
 
 vi.mock("streamdown", () => ({
   Streamdown: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="streamdown">
-      <div data-streamdown="table-wrapper">
-        <div className="overflow-x-auto">{children}</div>
-      </div>
-    </div>
+    <div data-testid="streamdown">{children}</div>
   ),
 }));
 
@@ -161,65 +157,5 @@ describe("PreviewPanel", () => {
     });
     rerender(<PreviewPanel path="b.ts" visible />);
     expect(await screen.findByText("bb")).toBeInTheDocument();
-  });
-
-  it("shows no custom sliders while the content fits", async () => {
-    okResult({
-      path: "short.txt",
-      kind: "text",
-      size: 4,
-      truncated: false,
-      content: "abcd",
-      encoding: "utf-8",
-    });
-    render(<PreviewPanel path="short.txt" visible />);
-    await screen.findByText("abcd");
-    expect(screen.queryByRole("scrollbar")).not.toBeInTheDocument();
-  });
-
-  it("renders a custom vertical slider when the content overflows", async () => {
-    okResult({
-      path: "long.txt",
-      kind: "text",
-      size: 9000,
-      truncated: true,
-      content: "y".repeat(4000),
-      encoding: "utf-8",
-    });
-    const { container } = render(<PreviewPanel path="long.txt" visible />);
-    await screen.findByText(/y{100}/);
-    const scroller = container.querySelector<HTMLDivElement>("[data-preview-scroll]");
-    expect(scroller).not.toBeNull();
-    Object.defineProperty(scroller!, "scrollHeight", { value: 2000, configurable: true });
-    Object.defineProperty(scroller!, "clientHeight", { value: 500, configurable: true });
-    scroller!.dispatchEvent(new Event("scroll"));
-
-    const slider = await screen.findByRole("scrollbar", { name: /Scroll vertically/ });
-    expect(slider).toBeInTheDocument();
-  });
-
-  it("renders a custom horizontal slider when the table overflows", async () => {
-    okResult({
-      path: "wide.md",
-      kind: "text",
-      size: 40,
-      truncated: false,
-      content: "# table\n\n| a | b |\n|---|---|\n| 1 | 2 |",
-      encoding: "utf-8",
-    });
-    const { container } = render(<PreviewPanel path="wide.md" visible />);
-    await screen.findByTestId("streamdown");
-    const scroller = container.querySelector<HTMLDivElement>("[data-preview-scroll]");
-    const tableScroll = container.querySelector<HTMLDivElement>(
-      '[data-streamdown="table-wrapper"] > div',
-    );
-    expect(scroller).not.toBeNull();
-    expect(tableScroll).not.toBeNull();
-    Object.defineProperty(tableScroll!, "scrollWidth", { value: 800, configurable: true });
-    Object.defineProperty(tableScroll!, "clientWidth", { value: 300, configurable: true });
-    scroller!.dispatchEvent(new Event("scroll"));
-
-    const slider = await screen.findByRole("scrollbar", { name: /Scroll horizontally/ });
-    expect(slider).toBeInTheDocument();
   });
 });

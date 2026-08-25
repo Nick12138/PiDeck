@@ -11,9 +11,6 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceAbsolutePath } from "./FilesPanel";
 
 const MARKDOWN_PATTERN = /\.(?:md|markdown|mdx)$/i;
-/** Horizontal scrollers rendered inside markdown (wide tables and code blocks). */
-const H_SCROLL_SELECTOR =
-  '[data-streamdown="table-wrapper"] > div, [data-streamdown="code-block"]';
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
@@ -27,21 +24,6 @@ function formatSize(bytes: number): string {
 
 type PreviewStatus = "idle" | "loading" | "ready" | "error";
 
-type ThumbState = { visible: boolean; ratio: number; offset: number };
-
-const HIDDEN_THUMB: ThumbState = { visible: false, ratio: 0, offset: 0 };
-
-type ScrollDrag = {
-  axis: "v" | "h";
-  pointerId: number;
-  startClient: number;
-  startScroll: number;
-};
-
-/** The Windows build runs in a transparent WebView (acrylic), where WebView2
- *  renders no native scrollbars at all. The preview therefore draws its own
- *  always-visible sliders for the outer vertical scroller and for any wide
- *  table/code scroller inside the markdown content. */
 export function PreviewPanel({ path, visible }: { path: string | null; visible: boolean }) {
   const t = useT();
   const workspace = useAppStore((state) => state.workspace);
@@ -50,127 +32,6 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const hTargetRef = useRef<HTMLElement | null>(null);
-  const dragRef = useRef<ScrollDrag | null>(null);
-  const [vThumb, setVThumb] = useState<ThumbState>(HIDDEN_THUMB);
-  const [hThumb, setHThumb] = useState<ThumbState>(HIDDEN_THUMB);
-
-  const updateThumbs = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const maxV = el.scrollHeight - el.clientHeight;
-    setVThumb({
-      visible: maxV > 1,
-      ratio: el.clientHeight / el.scrollHeight,
-      offset: maxV > 0 ? el.scrollTop / maxV : 0,
-    });
-    let hTarget: HTMLElement | null = null;
-    for (const candidate of el.querySelectorAll<HTMLElement>(H_SCROLL_SELECTOR)) {
-      if (candidate.scrollWidth > candidate.clientWidth + 1) {
-        hTarget = candidate;
-        break;
-      }
-    }
-    hTargetRef.current = hTarget;
-    if (!hTarget) {
-      setHThumb(HIDDEN_THUMB);
-      return;
-    }
-    const maxH = hTarget.scrollWidth - hTarget.clientWidth;
-    setHThumb({
-      visible: maxH > 1,
-      ratio: hTarget.clientWidth / hTarget.scrollWidth,
-      offset: maxH > 0 ? hTarget.scrollLeft / maxH : 0,
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Recompute whenever the content or layout changes. scroll does not
-    // bubble, so capture the outer scroller plus any scroll happening inside
-    // Streamdown's table/code scrollers; MutationObserver catches late async
-    // markdown renders, ResizeObserver catches tab show/hide size changes.
-    updateThumbs();
-    el.addEventListener("scroll", updateThumbs, { capture: true, passive: true });
-    const observer = new MutationObserver(() => updateThumbs());
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
-    if (typeof ResizeObserver !== "undefined") {
-      const resizeObserver = new ResizeObserver(() => updateThumbs());
-      resizeObserver.observe(el);
-      return () => {
-        el.removeEventListener("scroll", updateThumbs, true);
-        observer.disconnect();
-        resizeObserver.disconnect();
-      };
-    }
-    return () => {
-      el.removeEventListener("scroll", updateThumbs, true);
-      observer.disconnect();
-    };
-  }, [updateThumbs, status, path]);
-
-  const onTrackPointerDown = (axis: "v" | "h", event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const el = scrollRef.current;
-    if (!el) return;
-    if (axis === "v") {
-      if (vThumb.ratio >= 1) return;
-      const rect = el.getBoundingClientRect();
-      const thumbPx = Math.max(vThumb.ratio * rect.height, 28);
-      const ratio = (event.clientY - rect.top - thumbPx / 2) / rect.height;
-      el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
-    } else {
-      const target = hTargetRef.current;
-      if (!target || hThumb.ratio >= 1) return;
-      const rect = target.getBoundingClientRect();
-      const thumbPx = Math.max(hThumb.ratio * rect.width, 28);
-      const ratio = (event.clientX - rect.left - thumbPx / 2) / rect.width;
-      target.scrollLeft = ratio * (target.scrollWidth - target.clientWidth);
-    }
-  };
-
-  const onThumbPointerDown = (axis: "v" | "h", event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const el = scrollRef.current;
-    if (!el) return;
-    const target = axis === "v" ? el : hTargetRef.current;
-    if (!target) return;
-    dragRef.current = {
-      axis,
-      pointerId: event.pointerId,
-      startClient: axis === "v" ? event.clientY : event.clientX,
-      startScroll: axis === "v" ? target.scrollTop : target.scrollLeft,
-    };
-    el.setPointerCapture(event.pointerId);
-  };
-
-  const onScrollPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    const target = drag.axis === "v" ? el : hTargetRef.current;
-    if (!target) return;
-    const delta = (drag.axis === "v" ? event.clientY : event.clientX) - drag.startClient;
-    const ratio =
-      drag.axis === "v"
-        ? el.clientHeight / el.scrollHeight
-        : target.clientWidth / target.scrollWidth;
-    if (drag.axis === "v") {
-      target.scrollTop = drag.startScroll + delta / ratio;
-    } else {
-      target.scrollLeft = drag.startScroll + delta / ratio;
-    }
-  };
-
-  const endScrollDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    scrollRef.current?.releasePointerCapture(event.pointerId);
-  };
 
   const load = useCallback(
     async (target: string) => {
@@ -198,20 +59,13 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
         }
         setPreview(response.result);
         setStatus("ready");
-        setVThumb(HIDDEN_THUMB);
-        setHThumb(HIDDEN_THUMB);
-        // Give React (and Streamdown's internal state) a few frames to commit
-        // the rendered content before measuring scroll geometry.
-        for (const delay of [0, 50, 200]) {
-          window.setTimeout(updateThumbs, delay);
-        }
       } catch (readError) {
         if (id !== generation.current) return;
         setStatus("error");
         setError(readError instanceof Error ? readError.message : t("dockPreviewReadFailed"));
       }
     },
-    [t, updateThumbs],
+    [t],
   );
 
   useEffect(() => {
@@ -261,7 +115,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
 
   return (
     <section
-      className="preview-panel relative flex min-h-0 flex-1 flex-col bg-surface"
+      className="preview-panel flex min-h-0 flex-1 flex-col bg-surface"
       aria-label={t("dockPreviewRegion")}
       data-dock-panel
     >
@@ -321,14 +175,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
               {t("dockPreviewTruncated", { size: formatSize(DEFAULT_PREVIEW_MAX_BYTES) })}
             </div>
           )}
-          <div
-            ref={scrollRef}
-            className="min-h-0 flex-1 overflow-auto"
-            data-preview-scroll
-            onPointerMove={onScrollPointerMove}
-            onPointerUp={endScrollDrag}
-            onPointerCancel={endScrollDrag}
-          >
+          <div className="min-h-0 flex-1 overflow-auto">
             {preview.kind === "image" ? (
               <div className="flex min-h-full items-center justify-center p-3">
                 <img
@@ -360,44 +207,6 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
               </pre>
             )}
           </div>
-          {vThumb.visible && (
-            <div
-              role="scrollbar"
-              aria-orientation="vertical"
-              aria-label={t("dockPreviewVerticalScroll")}
-              title={t("dockPreviewVerticalScroll")}
-              className="absolute bottom-2 right-1 top-10 w-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
-              onPointerDown={(event) => onTrackPointerDown("v", event)}
-            >
-              <div
-                className="absolute right-0.5 w-1.5 rounded-full bg-border-strong hover:bg-muted"
-                style={{
-                  top: `${vThumb.offset * 100}%`,
-                  height: `${Math.max(vThumb.ratio * 100, 6)}%`,
-                }}
-                onPointerDown={(event) => onThumbPointerDown("v", event)}
-              />
-            </div>
-          )}
-          {hThumb.visible && (
-            <div
-              role="scrollbar"
-              aria-orientation="horizontal"
-              aria-label={t("dockPreviewHorizontalScroll")}
-              title={t("dockPreviewHorizontalScroll")}
-              className="absolute bottom-1 left-2 right-2 h-2.5 cursor-pointer touch-none rounded-full bg-surface-overlay/50 hover:bg-surface-overlay"
-              onPointerDown={(event) => onTrackPointerDown("h", event)}
-            >
-              <div
-                className="absolute bottom-0.5 h-1.5 rounded-full bg-border-strong hover:bg-muted"
-                style={{
-                  left: `${hThumb.offset * 100}%`,
-                  width: `${Math.max(hThumb.ratio * 100, 6)}%`,
-                }}
-                onPointerDown={(event) => onThumbPointerDown("h", event)}
-              />
-            </div>
-          )}
         </>
       )}
     </section>
