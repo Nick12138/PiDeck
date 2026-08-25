@@ -79,6 +79,8 @@ describe("PreviewPanel", () => {
     render(<PreviewPanel path="README.md" visible />);
 
     expect(await screen.findByTestId("streamdown")).toHaveTextContent("# Title");
+    const container = screen.getByTestId("streamdown").parentElement;
+    expect(container?.className).toContain("chat-markdown");
   });
 
   it("shows a truncated notice when the content was cut", async () => {
