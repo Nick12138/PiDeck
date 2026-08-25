@@ -35,10 +35,7 @@ function modelEntry(id: string, extra: Record<string, unknown> = {}) {
 function layoutWithProviders(providers: Record<string, unknown>): TempAgentLayout {
   const layout = createTempAgentLayout("pideck-auth-compat-");
   layouts.push(layout);
-  writeFileSync(
-    join(layout.agentDir, "models.json"),
-    JSON.stringify({ providers }, null, 2),
-  );
+  writeFileSync(join(layout.agentDir, "models.json"), JSON.stringify({ providers }, null, 2));
   return layout;
 }
 
@@ -169,12 +166,13 @@ describe("custom headers", () => {
     expect(headers["X-Provider-Only"]).toBe("keep");
   });
 
-  it("drops Model.headers deleted with the null sentinel from the request surface", async () => {
+  it("carries Model.headers null sentinels through to the request surface", async () => {
     // In models.json a null header value is a resolution error
     // (resolveHeadersOrThrow), so the sentinel only reaches a request through
     // a Model object that carries it — the shape extension-provided model
-    // definitions use to delete an inherited header. The compat surface must
-    // filter it rather than emit a literal "null" header value.
+    // definitions use to delete an inherited header. Since 0.84.2 the compat
+    // surface types these as ProviderHeaders (string | null) and keeps the
+    // sentinel; the provider layer filters nulls when building the request.
     const layout = layoutWithProviders({});
     const { modelRegistry } = await createTestModelServices(layout.agentDir);
     modelRegistry.registerProvider("nulled", {
@@ -197,7 +195,7 @@ describe("custom headers", () => {
     expect(auth.ok).toBe(true);
     if (auth.ok) {
       expect(auth.headers?.["X-Keep"]).toBe("1");
-      expect(auth.headers ?? {}).not.toHaveProperty("X-Drop");
+      expect(auth.headers?.["X-Drop"]).toBeNull();
     }
   });
 });

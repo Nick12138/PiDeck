@@ -20,7 +20,8 @@ import {
   KeybindingsManager,
   type OverlayHandle,
   type OverlayOptions,
-  TUI,
+  type TUI,
+  TuiMainScreen,
   TUI_KEYBINDINGS,
 } from "@earendil-works/pi-tui";
 import {
@@ -689,7 +690,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       if (typeof content === "function") {
         // Keep the prior snapshot visible until the replacement publishes its
         // first frame. A failed replacement clears it explicitly below.
-        const widgetTui = new TUI(
+        const widgetTui = new TuiMainScreen(
           new VirtualTerminal({
             cols: WIDGET_SNAPSHOT_WIDTH,
             onData: () => {},
@@ -828,7 +829,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
             if (!flushTimer) flushTimer = setTimeout(flushFrames, CUSTOM_FRAME_FLUSH_MS);
           },
         });
-        const tui = new TUI(vt);
+        const tui = new TuiMainScreen(vt);
         let component: (Component & { dispose?(): void }) | undefined;
         let closed = false;
         const teardown = () => {

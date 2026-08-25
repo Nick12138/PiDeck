@@ -4,6 +4,7 @@ import {
   type AssistantMessage,
   type Context,
   type Model,
+  type ProviderHeaders,
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 
@@ -18,11 +19,18 @@ const MAX_SESSION_TITLE_LENGTH = 28;
  */
 const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> = [
   // 修复与故障
-  { pattern: /修复|bug|错误|报错|崩溃|缺陷|异常|fix|error|crash|issue|exception|throw/i, emoji: "🐛" },
+  {
+    pattern: /修复|bug|错误|报错|崩溃|缺陷|异常|fix|error|crash|issue|exception|throw/i,
+    emoji: "🐛",
+  },
   // 测试
   { pattern: /测试|用例|覆盖|spec|test|coverage/i, emoji: "🧪" },
   // 安全与认证
-  { pattern: /安全|权限|登录|认证|漏洞|验证码|加密|解密|密码|密钥|哈希|auth|login|security|captcha|encrypt|token|hash/i, emoji: "🔒" },
+  {
+    pattern:
+      /安全|权限|登录|认证|漏洞|验证码|加密|解密|密码|密钥|哈希|auth|login|security|captcha|encrypt|token|hash/i,
+    emoji: "🔒",
+  },
   // 性能与并发
   { pattern: /性能|优化|提速|加速|并发|线程|perf|speed|parallel|thread/i, emoji: "⚡" },
   // 重构与清理
@@ -30,17 +38,34 @@ const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> 
   // 配置与设置
   { pattern: /配置|设置|选项|参数|环境变量|config|settings|option|env/i, emoji: "⚙️" },
   // 界面与样式
-  { pattern: /界面|样式|布局|组件|皮肤|主题|外观|深色|暗色|浅色|ui|design|style|css|tailwind|component|widget|theme|dark|light/i, emoji: "🎨" },
+  {
+    pattern:
+      /界面|样式|布局|组件|皮肤|主题|外观|深色|暗色|浅色|ui|design|style|css|tailwind|component|widget|theme|dark|light/i,
+    emoji: "🎨",
+  },
   // 数据库与存储
   { pattern: /数据库|存储|缓存|数据|内存|泄漏|db|sql|cache|storage|memory|leak/i, emoji: "🗄️" },
   // 网络与服务
-  { pattern: /网络|请求|接口|服务|远程|代理|在线|离线|套接字|api|http|server|proxy|socket|network|online|offline/i, emoji: "🌐" },
+  {
+    pattern:
+      /网络|请求|接口|服务|远程|代理|在线|离线|套接字|api|http|server|proxy|socket|network|online|offline/i,
+    emoji: "🌐",
+  },
   // Git 与版本控制
-  { pattern: /git|提交|分支|合并|仓库|回滚|版本控制|commit|branch|merge|rebase|github|vcs/i, emoji: "🌿" },
+  {
+    pattern: /git|提交|分支|合并|仓库|回滚|版本控制|commit|branch|merge|rebase|github|vcs/i,
+    emoji: "🌿",
+  },
   // 构建与发布
-  { pattern: /构建|编译|打包|发布|部署|上线|交付|build|compile|bundle|deploy|release/i, emoji: "🚀" },
+  {
+    pattern: /构建|编译|打包|发布|部署|上线|交付|build|compile|bundle|deploy|release/i,
+    emoji: "🚀",
+  },
   // 文档与说明
-  { pattern: /文档|注释|说明|手册|教程|readme|\bdoc(?:s|x)?\b|comment|guide|tutorial/i, emoji: "📝" },
+  {
+    pattern: /文档|注释|说明|手册|教程|readme|\bdoc(?:s|x)?\b|comment|guide|tutorial/i,
+    emoji: "📝",
+  },
   // 文件与路径
   { pattern: /文件|目录|路径|资源|folder|file|path|fs|asset/i, emoji: "📁" },
   // 依赖与模块
@@ -56,7 +81,10 @@ const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> 
   // 调试与日志
   { pattern: /调试|日志|排查|定位|追踪|debug|\blog(?:s)?\b|trace/i, emoji: "🧩" },
   // 校验与格式化
-  { pattern: /校验|验证|断言|格式化|规范|风格|validate|validation|schema|assert|format|lint/i, emoji: "✅" },
+  {
+    pattern: /校验|验证|断言|格式化|规范|风格|validate|validation|schema|assert|format|lint/i,
+    emoji: "✅",
+  },
   // 插件与扩展
   { pattern: /插件|扩展|市场|plugin|extension|addon|marketplace/i, emoji: "🔌" },
   // 容器
@@ -70,15 +98,25 @@ const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> 
   // 移动端
   { pattern: /移动|手机|响应式|mobile|ios|android|responsive/i, emoji: "📱" },
   // 终端与命令
-  { pattern: /终端|命令行|控制台|命令|本地|terminal|shell|cli|console|command|local/i, emoji: "💻" },
+  {
+    pattern: /终端|命令行|控制台|命令|本地|terminal|shell|cli|console|command|local/i,
+    emoji: "💻",
+  },
   // 快捷键与输入
-  { pattern: /快捷键|按键|热键|绑定|shortcut|keymap|hotkey|keyboard|bind|toggle|切换/i, emoji: "⌨️" },
+  {
+    pattern: /快捷键|按键|热键|绑定|shortcut|keymap|hotkey|keyboard|bind|toggle|切换/i,
+    emoji: "⌨️",
+  },
   // 菜单
   { pattern: /菜单|右键|menu|context/i, emoji: "🍔" },
   // 面板与布局
   { pattern: /面板|侧边栏|停靠|多实例|panel|sidebar|dock|multi-instance/i, emoji: "🗂️" },
   // 监控与统计
-  { pattern: /监控|统计|指标|状态|仪表盘|分析|可视化|monitor|metrics|telemetry|status|dashboard|analytics/i, emoji: "📊" },
+  {
+    pattern:
+      /监控|统计|指标|状态|仪表盘|分析|可视化|monitor|metrics|telemetry|status|dashboard|analytics/i,
+    emoji: "📊",
+  },
   // 图表
   { pattern: /图表|曲线|走势|chart|graph/i, emoji: "📈" },
   // 通知
@@ -96,7 +134,10 @@ const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> 
   // 视频与动画
   { pattern: /视频|录屏|媒体|动画|动效|video|media|stream|animation/i, emoji: "🎬" },
   // 图片与图标
-  { pattern: /图片|图像|图标|头像|渲染|绘制|image|icon|svg|logo|avatar|render|paint/i, emoji: "🖼️" },
+  {
+    pattern: /图片|图像|图标|头像|渲染|绘制|image|icon|svg|logo|avatar|render|paint/i,
+    emoji: "🖼️",
+  },
   // 截图
   { pattern: /截图|截屏|screenshot/i, emoji: "📸" },
   // 剪贴板
@@ -128,8 +169,9 @@ const TITLE_EMOJI_BY_KEYWORD: ReadonlyArray<{ pattern: RegExp; emoji: string }> 
 ];
 
 function pickEmojiForTitle(value: string): string {
-  return TITLE_EMOJI_BY_KEYWORD.find(({ pattern }) => pattern.test(value))?.emoji ??
-    DEFAULT_TITLE_EMOJI;
+  return (
+    TITLE_EMOJI_BY_KEYWORD.find(({ pattern }) => pattern.test(value))?.emoji ?? DEFAULT_TITLE_EMOJI
+  );
 }
 
 type TitleModelRegistry = {
@@ -137,7 +179,7 @@ type TitleModelRegistry = {
     | {
         ok: true;
         apiKey?: string;
-        headers?: Record<string, string>;
+        headers?: ProviderHeaders;
         env?: Record<string, string>;
       }
     | { ok: false; error: string }
@@ -184,10 +226,7 @@ function ensureLeadingEmoji(value: string): string {
   return startsWithEmoji(value) ? value : `${pickEmojiForTitle(value)} ${value}`;
 }
 
-export function sanitizeSessionTitle(
-  value: string,
-  fallback = DEFAULT_SESSION_TITLE,
-): string {
+export function sanitizeSessionTitle(value: string, fallback = DEFAULT_SESSION_TITLE): string {
   const firstLine = value
     .split(/\r?\n/)
     .map((line) => cleanTitle(line))
@@ -210,14 +249,13 @@ export function extractLatestAssistantText(messages: readonly unknown[]): string
     if (typeof message.content === "string") return message.content;
     if (!Array.isArray(message.content)) continue;
     return message.content
-      .filter(
-        (part): part is { type: "text"; text: string } =>
-          Boolean(
-            part &&
-              typeof part === "object" &&
-              (part as { type?: unknown }).type === "text" &&
-              typeof (part as { text?: unknown }).text === "string",
-          ),
+      .filter((part): part is { type: "text"; text: string } =>
+        Boolean(
+          part &&
+          typeof part === "object" &&
+          (part as { type?: unknown }).type === "text" &&
+          typeof (part as { text?: unknown }).text === "string",
+        ),
       )
       .map((part) => part.text)
       .join("\n");
@@ -249,9 +287,7 @@ export async function generateRefinedSessionTitle(args: {
         role: "user",
         content: [
           `User request:\n${args.userPrompt.slice(0, 2_000)}`,
-          args.assistantText
-            ? `Assistant response:\n${args.assistantText.slice(0, 2_000)}`
-            : "",
+          args.assistantText ? `Assistant response:\n${args.assistantText.slice(0, 2_000)}` : "",
         ]
           .filter(Boolean)
           .join("\n\n"),

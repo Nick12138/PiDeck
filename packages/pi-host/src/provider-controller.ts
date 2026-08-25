@@ -12,7 +12,13 @@ import {
   type AuthInteraction,
   type AuthPrompt,
 } from "@earendil-works/pi-ai";
-import { completeSimple, type Api, type Context, type Model } from "@earendil-works/pi-ai/compat";
+import {
+  completeSimple,
+  type Api,
+  type Context,
+  type Model,
+  type ProviderHeaders,
+} from "@earendil-works/pi-ai/compat";
 import {
   createHostError,
   DEFAULT_MODEL_CONTEXT_WINDOW,
@@ -593,9 +599,9 @@ function redactedProviderText(raw: string, sensitiveValues: string[]): string {
 
 function providerSensitiveValues(
   apiKey: string | undefined,
-  headers: Record<string, string>,
+  headers: ProviderHeaders | Record<string, string>,
 ): string[] {
-  const headerValues = Object.entries(headers)
+  const headerValues = Object.entries(stringRecord(headers))
     .filter(
       ([name, value]) =>
         value.length >= 6 || /authorization|api.?key|token|secret|cookie/i.test(name),
@@ -780,12 +786,14 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
 
 function headersForAuthMode(
   provider: ProviderSnapshot,
-  resolvedHeaders: Record<string, string> | undefined,
+  resolvedHeaders: ProviderHeaders | undefined,
   apiKey: string | undefined,
   authHeader: boolean,
 ): Record<string, string> {
   const headers = Object.fromEntries(
-    Object.entries(resolvedHeaders ?? {}).filter(([key]) => key.toLowerCase() !== "authorization"),
+    Object.entries(stringRecord(resolvedHeaders ?? {})).filter(
+      ([key]) => key.toLowerCase() !== "authorization",
+    ),
   );
   const explicitAuthorization = Object.entries(provider.headers).find(
     ([key]) => key.toLowerCase() === "authorization",
