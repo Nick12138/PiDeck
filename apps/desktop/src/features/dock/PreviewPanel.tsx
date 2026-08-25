@@ -198,7 +198,7 @@ export function PreviewPanel({ path, visible }: { path: string | null; visible: 
                 </button>
               </div>
             ) : isMarkdown ? (
-              <div className="chat-markdown h-full overflow-auto px-4 py-3">
+              <div className="preview-markdown chat-markdown h-full overflow-auto px-4 py-3">
                 <Streamdown mode="static">{preview.content ?? ""}</Streamdown>
               </div>
             ) : (

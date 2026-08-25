@@ -2302,6 +2302,29 @@ svg[data-pideck-mermaid-theme="neutral"] {
   overflow-wrap: normal;
 }
 
+/* Preview panel: wide tables scroll horizontally inside the narrow dock, so
+   keep their scrollbar always visible and clearly interactive. Without this
+   the thin default thumb (--color-border) is easy to miss and tables look
+   truncated. */
+.preview-markdown [data-streamdown="table-wrapper"] > div {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) var(--color-surface-overlay);
+}
+.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar {
+  height: 10px;
+}
+.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-track {
+  background: var(--color-surface-overlay);
+  border-radius: 5px;
+}
+.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 5px;
+}
+.preview-markdown [data-streamdown="table-wrapper"] > div::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
 @media (hover: hover) {
   .chat-markdown tbody tr,
   .chat-markdown [data-streamdown="table-body"] [data-streamdown="table-row"] {
