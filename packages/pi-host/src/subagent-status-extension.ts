@@ -95,10 +95,12 @@ export function normalizeSubagentRuns(
 
 let sessionRunIdCache: { sessionId: string; mtime: number; ids: Set<string> } | null = null;
 
-/** Extract the run ids the given session spawned by scanning its transcript
- * for `subagent` tool invocations (run ids look like `run_<base36>`). Uses a
- * per-session mtime cache so the 750ms status poll stays cheap. Returns null
- * when the session file cannot be resolved. */
+/** Extract the run ids the given session spawned by scanning its transcript.
+ * Only `subagent` tool RESULTS that report a successful submission ("已提交")
+ * count as spawns — mentions in `list`/`result`/wait outputs are ignored,
+ * otherwise one `subagent(action:"list")` call would attribute every run to
+ * the session. Uses a per-session mtime cache so the 750ms status poll stays
+ * cheap. Returns null when the session file cannot be resolved. */
 export function collectSessionRunIds(
   sessionsDir: string,
   sessionId: string | null | undefined,
@@ -122,6 +124,7 @@ export function collectSessionRunIds(
         return 0;
       }
     })[0];
+  if (!target) return null;
   let mtime: number;
   try {
     mtime = statSync(target).mtimeMs;
@@ -134,14 +137,39 @@ export function collectSessionRunIds(
   const ids = new Set<string>();
   try {
     for (const line of readFileSync(target, "utf8").split(/\r?\n/)) {
-      if (!line.includes("run_") && !line.includes("subagent")) continue;
-      for (const match of line.matchAll(/\brun_[a-z0-9]{8,}/g)) ids.add(match[0]);
+      let entry: unknown;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!entry || typeof entry !== "object") continue;
+      const message = (entry as { message?: unknown }).message;
+      if (!message || typeof message !== "object") continue;
+      const record = message as { role?: unknown; toolName?: unknown; content?: unknown };
+      if (record.role !== "toolResult" || record.toolName !== "subagent") continue;
+      const text = toolResultText(record.content);
+      // A spawn confirmation looks like "已提交 1 个子代理任务… - run_xxx".
+      if (!text.includes("已提交")) continue;
+      for (const match of text.matchAll(/\brun_[a-z0-9]{8,}/g)) ids.add(match[0]);
     }
   } catch {
     return null;
   }
   sessionRunIdCache = { sessionId, mtime, ids };
   return ids;
+}
+
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) =>
+      part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string"
+        ? (part as { text: string }).text
+        : "",
+    )
+    .join("\n");
 }
 
 export type SubagentStatusBridge = {

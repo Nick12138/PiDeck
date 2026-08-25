@@ -379,17 +379,6 @@ function InlineNode({
               {node.activity.currentTool}
             </span>
           )}
-          <span
-            className={`shrink-0 ${stateClass(node.state)}`}
-            aria-label={stateLabel(node.state, t)}
-            title={stateLabel(node.state, t)}
-          >
-            {node.state === "running" ? (
-              <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
-            ) : (
-              <span className="text-[10px]">{stateLabel(node.state, t)}</span>
-            )}
-          </span>
         </button>
         {node.state === "running" && (
           <button
@@ -409,7 +398,7 @@ function InlineNode({
         {node.state === "paused" && (
           <button
             type="button"
-            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-success opacity-0 transition-opacity hover:bg-success/15 hover:text-success group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
             title={t("subagentsContinue")}
             aria-label={t("subagentsContinue")}
             disabled={pendingAction("continue")}
@@ -424,7 +413,7 @@ function InlineNode({
         {node.state === "failed" && (
           <button
             type="button"
-            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-success opacity-0 transition-opacity hover:bg-success/15 hover:text-success group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
             title={t("subagentsResume")}
             aria-label={t("subagentsResume")}
             disabled={pendingAction("resume")}
@@ -439,7 +428,7 @@ function InlineNode({
         {(node.state === "running" || node.state === "paused" || node.state === "queued") && (
           <button
             type="button"
-            className="flex size-6 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-warning/15 hover:text-warning group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-danger opacity-0 transition-opacity hover:bg-danger/15 hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-60"
             title={t("subagentsStop")}
             aria-label={t("subagentsStop")}
             disabled={pendingAction("stop")}
@@ -451,6 +440,17 @@ function InlineNode({
             <Square size={12} fill="currentColor" />
           </button>
         )}
+        <span
+          className={`shrink-0 ${stateClass(node.state)}`}
+          aria-label={stateLabel(node.state, t)}
+          title={stateLabel(node.state, t)}
+        >
+          {node.state === "running" ? (
+            <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <span className="text-[10px]">{stateLabel(node.state, t)}</span>
+          )}
+        </span>
       </div>
       <div
         className={`grid overflow-hidden transition-[grid-template-rows] duration-150 ease-out ${expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}

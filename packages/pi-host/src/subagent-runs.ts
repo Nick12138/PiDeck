@@ -163,6 +163,21 @@ function boundedJson(value: unknown, budget: { value: number }, depth = 0): Json
   return undefined;
 }
 
+/** 清理 pi 的 @file 注入标记（`<file name="...">…</file>` 成对标签），它会在子代理
+ * 会话里作为第一条 user 消息出现，面板显示时不该暴露这个工具细节。 */
+function stripFileMarkers(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.replace(/<file name="[^"]*">\s*|\s*<\/file>/gi, "");
+  }
+  if (Array.isArray(value)) return value.map(stripFileMarkers);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, stripFileMarkers(item)]),
+    );
+  }
+  return value;
+}
+
 /**
  * Read the live pi session transcript for a run. The child pi process is
  * launched with `--session-id sub-<runId> --session-dir <runs>/<runId>/sessions`,
@@ -189,6 +204,7 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
   });
 
   const path = files[0];
+  if (!path) return null;
   let lines: string[];
   try {
     lines = readFileSync(path, "utf8").split(/\r?\n/);
@@ -211,7 +227,7 @@ export function readSubagentRunTranscript(runId: string): SubagentRunTranscript 
       continue;
     }
     if (!raw || typeof raw !== "object") continue;
-    const record = hideAcceptanceReports(raw) as Record<string, unknown>;
+    const record = hideAcceptanceReports(stripFileMarkers(raw)) as Record<string, unknown>;
     if (record.type === "session") {
       if (typeof record.id === "string" && record.id) sessionId = record.id;
       if (typeof record.name === "string" && record.name) name = record.name;

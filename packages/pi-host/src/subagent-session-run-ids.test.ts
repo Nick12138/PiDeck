@@ -14,7 +14,7 @@ afterEach(() => {
   rmSync(sessionsDir, { recursive: true, force: true });
 });
 
-function writeSession(sessionId: string, lines: unknown[][]): void {
+function writeSession(sessionId: string, lines: Array<Record<string, unknown>>): void {
   writeFileSync(
     join(sessionsDir, `2026-08-25T00-00-00-000Z_${sessionId}.jsonl`),
     lines
@@ -61,7 +61,7 @@ describe("collectSessionRunIds", () => {
         message: {
           role: "toolResult",
           toolName: "subagent",
-          content: [{ type: "text", text: "- run_a1b2c3d4e5f6g7" }],
+          content: [{ type: "text", text: "已提交 1 个子代理任务：\n- run_a1b2c3d4e5f6g7" }],
         },
       },
     ]);
@@ -71,7 +71,7 @@ describe("collectSessionRunIds", () => {
         message: {
           role: "toolResult",
           toolName: "subagent",
-          content: [{ type: "text", text: "- run_zz9yy8xx7ww6vv5" }],
+          content: [{ type: "text", text: "已提交 1 个子代理任务：\n- run_zz9yy8xx7ww6vv5" }],
         },
       },
     ]);
@@ -83,6 +83,34 @@ describe("collectSessionRunIds", () => {
     expect(collectSessionRunIds(sessionsDir, "session-2")).toEqual(
       new Set(["run_zz9yy8xx7ww6vv5"]),
     );
+  });
+
+  it("ignores run ids mentioned in list/result outputs (only spawns count)", () => {
+    writeSession("session-1", [
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          content: [
+            {
+              type: "text",
+              text: "子代理列表（共 2 个）：\n- run_spawned1 [运行中]「a」\n- run_spawned2 [已完成]「b」",
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          content: [{ type: "text", text: "已提交 1 个子代理任务：\n- run_spawned1" }],
+        },
+      },
+    ]);
+
+    expect(collectSessionRunIds(sessionsDir, "session-1")).toEqual(new Set(["run_spawned1"]));
   });
 
   it("returns null when the session file does not exist", () => {

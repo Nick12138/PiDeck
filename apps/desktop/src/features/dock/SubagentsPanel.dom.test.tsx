@@ -107,15 +107,15 @@ describe("SubagentsPanel", () => {
 
     expect(screen.getByText("Active: 1")).toBeVisible();
     const roleBadge = screen.getByText("👀");
-    const row = roleBadge.closest("button");
+    const row = roleBadge.closest("div");
     expect(roleBadge).toBeVisible();
     expect(roleBadge).toHaveAttribute("title", "Role: Reviewer");
     expect(row).not.toBeNull();
     expect(row?.textContent?.indexOf("👀")).toBeLessThan(
       row?.textContent?.indexOf("running task") ?? -1,
     );
-    expect(row?.querySelector("svg")).toBeInTheDocument();
-    expect(row?.querySelector("svg")?.classList).toContain("animate-spin");
+    expect(row?.querySelector("svg.animate-spin")).toBeInTheDocument();
+    expect(row?.querySelector("svg.animate-spin")?.classList).toContain("animate-spin");
   });
 
   it("expands conversation inline instead of navigating away", () => {
