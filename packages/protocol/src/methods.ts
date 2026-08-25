@@ -10,6 +10,7 @@ export const HOST_METHODS = [
   "workspace.getCurrent",
   "workspace.searchFiles",
   "workspace.listDirectory",
+  "workspace.readFile",
   "workspace.setDirectoryWatches",
   "git.getStatus",
   "git.setWatching",
@@ -185,6 +186,7 @@ export type WorkspaceOnlyMethod =
   | "workspace.getCurrent"
   | "workspace.searchFiles"
   | "workspace.listDirectory"
+  | "workspace.readFile"
   | "workspace.setDirectoryWatches"
   | "git.getStatus"
   | "git.setWatching"
@@ -310,6 +312,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "workspace.getCurrent": "workspace",
   "workspace.searchFiles": "workspace",
   "workspace.listDirectory": "workspace",
+  "workspace.readFile": "workspace",
   "workspace.setDirectoryWatches": "workspace",
   "git.getStatus": "workspace",
   "git.setWatching": "workspace",

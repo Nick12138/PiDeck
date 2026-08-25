@@ -1063,6 +1063,16 @@ export const zh: Record<MessageKey, string> = {
 
   // Right Dock
   dockFiles: "文件",
+  dockPreview: "预览",
+  dockPreviewRegion: "文件预览",
+  dockPreviewReadFailed: "无法读取文件",
+  dockPreviewOpenExternal: "用系统默认程序打开",
+  dockPreviewOpenExternalFailed: "无法在系统程序中打开文件",
+  dockPreviewRefresh: "刷新预览",
+  dockPreviewBinary: "二进制文件，无法内联预览",
+  dockPreviewTruncated: "预览已截断，仅显示前 {size}",
+  dockPreviewOpenFile: "预览文件",
+  dockPreviewOpenFileNamed: "预览 {path}",
   dockTodo: "任务",
   dockSubagents: "子代理",
   subagentsTitle: "子代理",

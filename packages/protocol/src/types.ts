@@ -143,6 +143,23 @@ export type WorkspaceDirectoryEntry = {
   symlink: boolean;
 };
 
+/** Read-only preview of one workspace file (workspace.readFile). */
+export type WorkspaceFilePreview = {
+  path: string;
+  /** text = decoded content; image = base64 payload (no data: prefix); binary = unsupported. */
+  kind: "text" | "image" | "binary";
+  /** Total file size in bytes (not truncated). */
+  size: number;
+  /** True when text content was cut at the requested preview limit. */
+  truncated: boolean;
+  /** image only: MIME type of the payload. */
+  mimeType?: string;
+  /** text = decoded string; image = base64-encoded bytes. */
+  content?: string;
+  /** text only: encoding used to decode the payload. */
+  encoding?: "utf-8" | "gbk";
+};
+
 export type GitChangeKind =
   | "added"
   | "modified"

@@ -2093,6 +2093,26 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         )
         ? null
         : "invalid workspace.listDirectory result";
+    case "workspace.readFile":
+      return isPlainObject(result) &&
+        hasExactKeys(
+          result,
+          ["path", "kind", "size", "truncated"],
+          ["mimeType", "content", "encoding"],
+        ) &&
+        isString(result.path) &&
+        (result.kind === "text" || result.kind === "image" || result.kind === "binary") &&
+        typeof result.size === "number" &&
+        Number.isSafeInteger(result.size) &&
+        result.size >= 0 &&
+        isBoolean(result.truncated) &&
+        (result.mimeType === undefined || isString(result.mimeType)) &&
+        (result.content === undefined || isString(result.content)) &&
+        (result.encoding === undefined ||
+          result.encoding === "utf-8" ||
+          result.encoding === "gbk")
+        ? null
+        : "invalid workspace.readFile result";
     case "workspace.setDirectoryWatches":
       return isPlainObject(result) &&
         hasExactKeys(result, ["paths"]) &&

@@ -1107,6 +1107,16 @@ export const en = {
 
   // Right Dock
   dockFiles: "Files",
+  dockPreview: "Preview",
+  dockPreviewRegion: "File preview",
+  dockPreviewReadFailed: "Unable to read file",
+  dockPreviewOpenExternal: "Open in system app",
+  dockPreviewOpenExternalFailed: "Could not open the file in the system app",
+  dockPreviewRefresh: "Refresh preview",
+  dockPreviewBinary: "Binary file — cannot be previewed inline",
+  dockPreviewTruncated: "Preview truncated to the first {size}",
+  dockPreviewOpenFile: "Preview file",
+  dockPreviewOpenFileNamed: "Preview {path}",
   dockTodo: "Tasks",
   dockSubagents: "Subagents",
   subagentsTitle: "Subagents",

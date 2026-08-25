@@ -22,6 +22,15 @@ export const MAX_PASTED_TEXT_ATTACHMENT_BYTES = 1024 * 1024;
 /** Maximum UTF-8 bytes accepted for one repository-relative Git path. */
 export const MAX_GIT_PATH_BYTES = 16 * 1024;
 
+/** Default text preview limit for workspace.readFile. */
+export const DEFAULT_PREVIEW_MAX_BYTES = 512 * 1024;
+
+/** Hard cap on the preview limit accepted by one workspace.readFile request. */
+export const MAX_PREVIEW_REQUEST_BYTES = 8 * 1024 * 1024;
+
+/** Files above this size are not inlined; workspace.readFile returns kind "binary". */
+export const MAX_PREVIEW_INLINE_BYTES = 8 * 1024 * 1024;
+
 /** Maximum UTF-8 bytes accepted for a Git commit message. */
 export const MAX_GIT_COMMIT_MESSAGE_BYTES = 16 * 1024;
 

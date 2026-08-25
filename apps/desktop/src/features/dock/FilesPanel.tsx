@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronsUp,
   Copy,
+  Eye,
   File,
   Folder,
   FolderOpen,
@@ -22,6 +23,7 @@ import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { requestComposerInsert } from "../../lib/composer-insert";
+import { requestDockPreview } from "../../lib/dock-preview";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 
@@ -472,6 +474,20 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       {query ? entry.path : entry.name}
                     </span>
                     <div className="ml-1 hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
+                      {!isDirectory && (
+                        <button
+                          type="button"
+                          title={t("dockPreviewOpenFile")}
+                          aria-label={t("dockPreviewOpenFileNamed", { path: entry.path })}
+                          className="flex size-6 items-center justify-center rounded text-muted hover:bg-surface-raised hover:text-foreground"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            requestDockPreview({ path: entry.path });
+                          }}
+                        >
+                          <Eye size={12} />
+                        </button>
+                      )}
                       {!isDirectory && (
                         <button
                           type="button"
