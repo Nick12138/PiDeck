@@ -567,6 +567,104 @@ export type TelegramValidateTokenResult = {
   description?: string;
 };
 
+/** Telegram bot profile summary from the plugin-owned `<agentDir>/telegram.json`. */
+export type TelegramProfileSummary = {
+  /** Profile name (the plugin's canonical profile is `default`). */
+  profile: string;
+  /** Numeric Telegram bot user id. */
+  botId?: number;
+  /** Bot username without the leading @. */
+  botUsername?: string;
+  /** Bot display name (first_name). */
+  botName?: string;
+  /** Whether the profile carries a usable bot token. */
+  configured: boolean;
+};
+
+/** One inbound update from the plugin's inbox journal, flattened for display. */
+export type TelegramSessionSummary = {
+  /** Absolute path of the session file (readable via `telegram.getSession`). */
+  sessionPath: string;
+  /** Session uuid parsed from the file, when present. */
+  sessionId?: string;
+  /** Session display name from session_info, when present. */
+  name?: string;
+  /** Workspace dir the session belongs to, when recorded. */
+  cwd?: string;
+  /** Unix ms of the file's last write. */
+  updatedAt: number;
+  /** Number of telegram-originated user messages found in the session. */
+  telegramMessageCount: number;
+  /** First telegram user message, truncated. */
+  preview?: string;
+};
+
+/** Result of `telegram.listSessions`. */
+export type TelegramSessionListResult = {
+  sessions: TelegramSessionSummary[];
+};
+
+/** Result of `telegram.getSession`: the raw message records for read-only
+ *  rendering (id/parentId/timestamp/message) plus a fresh summary. */
+export type TelegramSessionDetail = {
+  summary: TelegramSessionSummary;
+  entries: SerializableSessionEntry[];
+};
+
+/** Plugin `assistant` config block (telegram.json, shared across profiles). */
+export type TelegramAssistantConfig = {
+  draftPreviews?: boolean;
+  rendering?: "rich" | "html";
+  proactivePush?: boolean;
+  activity?: "quiet" | "thinking" | "tools" | "verbose";
+  timeInjection?: "hidden" | "always" | "interval";
+};
+
+/** Plugin `voice` config block. */
+export type TelegramVoiceConfig = {
+  replyMode?: "manual" | "hidden" | "mirror" | "always";
+};
+
+/** Plugin `threads` config block. */
+export type TelegramThreadsConfig = {
+  automaticCleanup?: boolean;
+};
+
+/** Bound Telegram account (the first user who sent /start to the bot). */
+export type TelegramBoundUser = {
+  userId: number;
+  username?: string;
+  name?: string;
+};
+
+/** Bridge transport state from `telegram.status` (best-effort read of the
+ *  plugin's `tmp/telegram/owners.json`). */
+export type TelegramBridgeStatus = {
+  /** Whether a Pi instance currently owns polling transport for a profile. */
+  connected: boolean;
+  /** The active profile name, when known. */
+  profile?: string;
+  /** Bot id of the owning profile, when known. */
+  botId?: number;
+  /** OS pid of the process that claimed transport ownership, when known. */
+  ownerPid?: number;
+};
+
+/** Result of `telegram.getConfig` — never includes the raw bot token. */
+export type TelegramConfigResult = {
+  /** Default profile identity (configured status etc.). */
+  default: TelegramProfileSummary | null;
+  /** Absolute path of the telegram workspace dir, ensured to exist. */
+  workspacePath: string;
+  /** Masked bot token (`head***tail`) for display — never the raw token. */
+  tokenMasked?: string;
+  /** Bound owner account, or null when nobody has messaged the bot yet. */
+  bound?: TelegramBoundUser | null;
+  assistant?: TelegramAssistantConfig;
+  voice?: TelegramVoiceConfig;
+  threads?: TelegramThreadsConfig;
+};
+
 export type SerializableAgentContent = {
   type: string;
   text?: string;

@@ -37,7 +37,16 @@ import {
   workspaceHasActiveAgent,
 } from "./workspace-switch-policy";
 import { TelegramAddDialog } from "../bot/TelegramAddDialog";
-import { addGateway, loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
+import { loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-store";
+import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
+import { TelegramWorkspaceRow } from "../telegram/TelegramWorkspaceRow";
+import { isTelegramPluginInstalled } from "../telegram/telegram-plugin";
+import {
+  maybeAutoStartTelegramBridge,
+  useTelegramViewStore,
+  useTelegramWorkspaceActive,
+} from "../telegram/telegram-view-store";
+import { isSameTelegramPath } from "../../lib/telegram-path";
 
 export function workspaceDisplayName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Workspace";
@@ -81,6 +90,8 @@ const NO_WORKSPACES: string[] = [];
 export function WorkspacePicker() {
   const t = useT();
   const host = useAppStore((s) => s.host);
+  const telegramActive = useTelegramWorkspaceActive();
+  const telegramWorkspacePath = useTelegramViewStore((s) => s.workspacePath);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
@@ -139,6 +150,7 @@ export function WorkspacePicker() {
     };
   }, [addMenuOpen]);
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
+  const [telegramInstallOpen, setTelegramInstallOpen] = useState(false);
   const [gateways, setGateways] = useState<BotGateway[]>(() => loadBotGateways());
   const [gatewaysCollapsed, setGatewaysCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.botGatewaysCollapsed"),
@@ -168,9 +180,11 @@ export function WorkspacePicker() {
   const requestedCwd = workspace?.cwd ?? null;
 
   // Self-heal: whatever workspace is active (restored, picked, or set by the
-  // host) always appears in the persistent list.
+  // host) always appears in the persistent list. The telegram workspace is a
+  // first-class row of its own, never a folder entry — keep it out.
   useEffect(() => {
     if (!currentCwd) return;
+    if (isSameTelegramPath(currentCwd, telegramWorkspacePath)) return;
     const next = replaceKnownWorkspace(knownWorkspaces, requestedCwd ?? currentCwd, currentCwd);
     if (
       next.length === knownWorkspaces.length &&
@@ -181,7 +195,7 @@ export function WorkspacePicker() {
     void persistDesktopSettings({
       knownWorkspaces: next,
     }).catch(notifyDesktopSettingsSaveFailure);
-  }, [currentCwd, knownWorkspaces, requestedCwd]);
+  }, [currentCwd, knownWorkspaces, requestedCwd, telegramWorkspacePath]);
 
   // Live activity for every workspace Host in the pool, including background
   // ones whose stdout is not routed to the renderer. Refetch on mount, on
@@ -228,6 +242,10 @@ export function WorkspacePicker() {
 
   async function switchTo(cwd: string) {
     if (!host || pending) return;
+    // Leaving the telegram view for a folder workspace: run before the
+    // same-cwd early return so clicking the already-active folder workspace
+    // still exits the telegram view (single-selection semantics).
+    useTelegramViewStore.getState().exitTelegramWorkspace();
     if (currentCwd && samePath(currentCwd, cwd)) return;
 
     const request = ++requestRef.current;
@@ -319,14 +337,68 @@ export function WorkspacePicker() {
     await switchTo(cwd);
   }
 
+  /**
+   * "Add → TG workspace": install the plugin first when missing, then create/
+   * enter the dedicated telegram workspace and bind a bot (token dialog when
+   * none is configured yet, bridge auto-start otherwise).
+   */
+  const checkTelegramPluginInstalled = async (): Promise<boolean> => {
+    const { host: hostNow, workspace: workspaceNow } = useAppStore.getState();
+    if (!hostNow || !workspaceNow) return false;
+    try {
+      const res = await hostClient.request(
+        "package.list",
+        workspaceContext(hostNow, workspaceNow),
+        { scope: "user" },
+        30_000,
+      );
+      return res.ok && isTelegramPluginInstalled(res.result);
+    } catch {
+      return false;
+    }
+  };
+
+  async function startTelegramAdd() {
+    setAddMenuOpen(false);
+    const { host: hostNow, workspace: workspaceNow } = useAppStore.getState();
+    if (!hostNow) return;
+    if (!workspaceNow) {
+      pushNotification(t("tgInstallNeedsWorkspace"), "warning");
+      return;
+    }
+    if (!(await checkTelegramPluginInstalled())) {
+      setTelegramInstallOpen(true);
+      return;
+    }
+    await enterTelegramWorkspaceFlow();
+  }
+
+  /** Ensure the telegram workspace folder, switch to it, then bind/start. */
+  async function enterTelegramWorkspaceFlow() {
+    const path = await useTelegramViewStore.getState().ensureTelegramWorkspace();
+    if (!path) {
+      pushNotification(t("tgWorkspaceCreateFailed"), "warning");
+      return;
+    }
+    await switchTo(path);
+    const store = useTelegramViewStore.getState();
+    if (!store.profile?.configured) {
+      setTelegramDialogOpen(true);
+      return;
+    }
+    void maybeAutoStartTelegramBridge();
+  }
+
   function removeFromList(path: string) {
     void persistDesktopSettings({
       knownWorkspaces: removeKnownWorkspace(knownWorkspaces, path),
     }).catch(notifyDesktopSettingsSaveFailure);
   }
 
-  // Render the active workspace even before self-heal persists it.
-  const listed = currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces;
+  // Render the active workspace even before self-heal persists it. The
+  // telegram workspace is rendered by its own row, so folder rows exclude it.
+  const listed = (currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces)
+    .filter((path) => !isSameTelegramPath(path, telegramWorkspacePath));
 
   return (
     <section>
@@ -392,10 +464,7 @@ export function WorkspacePicker() {
                 type="button"
                 role="menuitem"
                 className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
-                onClick={() => {
-                  setAddMenuOpen(false);
-                  setTelegramDialogOpen(true);
-                }}
+                onClick={() => void startTelegramAdd()}
               >
                 <Send size={16} className="mt-0.5 shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
@@ -446,7 +515,9 @@ export function WorkspacePicker() {
         ) : (
           <ul className="flex flex-col gap-0.5">
             {listed.map((path) => {
-              const active = Boolean(currentCwd && samePath(currentCwd, path));
+              // Folders and the telegram workspace are single-select: while
+              // the telegram view is active, folder rows show as inactive.
+              const active = !telegramActive && Boolean(currentCwd && samePath(currentCwd, path));
               const activity = workspaceActivities[normalizedActivityKey(path)];
               // Priority: red (unacknowledged failure) > green (busy) > gray
               // (unacknowledged completion) > none. Returning to the sessions
@@ -504,6 +575,7 @@ export function WorkspacePicker() {
                 </li>
               );
             })}
+            <TelegramWorkspaceRow onActivate={(path) => switchTo(path)} />
           </ul>
         )}
       </CollapsibleRegion>
@@ -574,12 +646,14 @@ export function WorkspacePicker() {
         </div>
       )}
       {telegramDialogOpen && (
-        <TelegramAddDialog
-          onCancel={() => setTelegramDialogOpen(false)}
-          onConfirm={(gateway: BotGateway) => {
-            setGateways(addGateway(gateway));
-            setTelegramDialogOpen(false);
-            pushNotification(t("botAddTelegramSaved", { name: gateway.name }), "success");
+        <TelegramAddDialog onCancel={() => setTelegramDialogOpen(false)} />
+      )}
+      {telegramInstallOpen && (
+        <TelegramInstallDialog
+          onCancel={() => setTelegramInstallOpen(false)}
+          onInstalled={() => {
+            setTelegramInstallOpen(false);
+            void enterTelegramWorkspaceFlow();
           }}
         />
       )}

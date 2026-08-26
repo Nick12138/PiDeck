@@ -1077,13 +1077,6 @@ export function SessionList({
                                   >
                                     {sessionDisplayName(item, t("sessionsUntitled"))}
                                   </span>
-                                  {pinned && (
-                                    <Pin
-                                      size={10}
-                                      aria-label={t("sessionsPinned")}
-                                      className="shrink-0 text-muted"
-                                    />
-                                  )}
                                   {decisionWaiting && decisionWaitingLabel ? (
                                     <span
                                       aria-label={decisionWaitingLabel}
@@ -1114,6 +1107,17 @@ export function SessionList({
                                   )}
                                 </div>
                               </button>
+                              {pinned && (
+                                <button
+                                  type="button"
+                                  title={t("sessionsUnpin")}
+                                  aria-label={t("sessionsUnpin")}
+                                  onClick={() => removePinnedSessions([item.sessionId])}
+                                  className="mr-1 flex size-[22px] shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                >
+                                  <Pin size={12} aria-hidden="true" />
+                                </button>
+                              )}
                               {/* A session showing any status dot (live green/yellow or
                                   unacknowledged terminal red/gray) is not archivable
                                   right now — hide the action instead of offering a

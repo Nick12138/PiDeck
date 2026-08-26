@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, PackageOpen, X, type LucideIcon } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 
@@ -92,7 +93,10 @@ export function Dialog({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  return (
+  // Portalled to document.body: an ancestor with backdrop-filter or a
+  // transform (e.g. the frosted sidebar) would otherwise turn this `fixed`
+  // overlay into a containing block and squeeze it into that ancestor.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
       <div
         ref={ref}
@@ -136,6 +140,7 @@ export function Dialog({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

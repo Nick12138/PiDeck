@@ -7,6 +7,8 @@ import { InlineExtensionUiRequest } from "./InlineExtensionUiRequest";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
 import { useT } from "../../lib/i18n/use-t";
 import { conversationContentWidthStyle } from "./conversation-layout";
+import { TelegramHistoryView } from "../telegram/TelegramHistoryView";
+import { useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 
 export function ChatPage() {
   const t = useT();
@@ -20,6 +22,7 @@ export function ChatPage() {
   const setAuthBlocked = useAppStore((s) => s.setAuthBlocked);
   const conversationMinWidth = useAppStore((s) => s.desktopSettings?.conversationMinWidth);
   const conversationMaxWidth = useAppStore((s) => s.desktopSettings?.conversationMaxWidth);
+  const telegramViewActive = useTelegramWorkspaceActive();
 
   // A login/logout/config save bumps the revision: the blockage the banner
   // describes may be resolved, so re-check by sending again.
@@ -34,6 +37,12 @@ export function ChatPage() {
   const isNewConversation = Boolean(
     session && session.messages.length === 0 && session.isIdle && !sessionTreeNavigated,
   );
+
+  // The telegram workspace renders its own read-only history surface instead
+  // of the normal chat, keeping the bridge session PC-side untouched.
+  if (telegramViewActive) {
+    return <TelegramHistoryView />;
+  }
 
   if (!workspace) {
     return (

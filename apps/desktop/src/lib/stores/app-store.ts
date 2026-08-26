@@ -210,10 +210,48 @@ export type SettingsSection =
   | "usage"
   | "host";
 
+/**
+ * Workspace-scoped Settings position cache: the last section the user was on
+ * (plus per-section scroll offsets) so a generic re-open — the sidebar button
+ * or the "open settings" command — returns to where they left off. Written by
+ * SettingsPage on unmount, cleared on workspace switch, expired after
+ * SETTINGS_NAV_CACHE_TTL_MS. In-memory only; explicit opens (e.g. the auth
+ * banner's "providers") never consult it.
+ */
+export type SettingsNavCache = {
+  workspaceId: string;
+  section: SettingsSection;
+  scroll: Partial<Record<SettingsSection, number>>;
+  savedAt: number;
+};
+
+/** How long a remembered Settings position stays valid (30 minutes). */
+export const SETTINGS_NAV_CACHE_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Restore the remembered Settings section for a generic open. A cache that is
+ * still fresh for the current workspace wins; anything stale (timed out or from
+ * another workspace) is dropped so the next open lands on "general" again.
+ */
+function restoreSettingsNavCache(state: {
+  settingsNavCache: SettingsNavCache | null;
+  workspace: { id: string } | null;
+}): Partial<Pick<AppState, "settingsSection" | "settingsNavCache">> {
+  const cache = state.settingsNavCache;
+  if (!cache) return {};
+  const fresh =
+    state.workspace !== null &&
+    state.workspace.id === cache.workspaceId &&
+    Date.now() - cache.savedAt <= SETTINGS_NAV_CACHE_TTL_MS;
+  return fresh ? { settingsSection: cache.section } : { settingsNavCache: null };
+}
+
 export type AppState = EpochState & {
   page: NavPage;
   /** Section the Settings overlay should open on (null = default "general"). */
   settingsSection: SettingsSection | null;
+  /** Last visited Settings position for the current workspace (see SettingsNavCache). */
+  settingsNavCache: SettingsNavCache | null;
   /**
    * Set when agent.prompt is rejected with AUTH_REQUIRED: the chat banner
    * points at Settings → Providers. Cleared on dismiss, on the next accepted
@@ -279,6 +317,7 @@ export type AppState = EpochState & {
   setPage: (page: NavPage) => void;
   openSettingsSection: (section: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
+  setSettingsNavCache: (cache: SettingsNavCache) => void;
   setAuthBlocked: (blocked: { providerId: string | null } | null) => void;
   setProvidersDirty: (dirty: boolean) => void;
   /** New host epoch: clears workspace/session/packages/tools/extension UI. */
@@ -402,6 +441,7 @@ function epochSlice(s: AppState): EpochState {
 export const useAppStore = create<AppState>((set, get) => ({
   page: "chat",
   settingsSection: null,
+  settingsNavCache: null,
   authBlocked: null,
   ...emptyEpoch(),
   desktopSettings: null,
@@ -522,13 +562,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       page,
       ...(page !== state.page ? { extensionWidgetsOpen: false } : {}),
-      // Closing Settings (back to chat) drops the section request so the next
-      // open lands on the default section again.
-      ...(page === "chat" ? { settingsSection: null } : {}),
+      // Closing Settings (back to chat) drops the section request; the last
+      // position itself lives on in settingsNavCache (written by SettingsPage
+      // on unmount), so the next generic open can restore it while it is fresh.
+      ...(page === "chat"
+        ? { settingsSection: null }
+        : page === "settings"
+          ? restoreSettingsNavCache(state)
+          : {}),
     })),
   openSettingsSection: (section) =>
-    set({ page: "settings", settingsSection: section, extensionWidgetsOpen: false }),
+    set((state) => {
+      // An explicit section (e.g. the auth banner's "providers") always opens
+      // there. "general" is the generic "open settings" (sidebar/command
+      // palette) entry, so it consults the position cache like setPage.
+      if (section !== "general") {
+        return { page: "settings", settingsSection: section, extensionWidgetsOpen: false };
+      }
+      return { page: "settings", ...restoreSettingsNavCache(state), extensionWidgetsOpen: false };
+    }),
   setSettingsSection: (section) => set({ settingsSection: section }),
+  setSettingsNavCache: (settingsNavCache) => set({ settingsNavCache }),
   setAuthBlocked: (authBlocked) => set({ authBlocked }),
   setProvidersDirty: (dirty) => set({ providersDirty: dirty }),
 
@@ -578,12 +632,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyWorkspaceSnapshot: (workspace) => {
     const next = epochApplyWorkspace(epochSlice(get()), workspace);
     const previousWorkspace = get().workspace;
+    // The settings position cache is workspace-scoped: switching to another
+    // workspace (a different id, not a revision bump of the same one) drops it.
+    const switchedWorkspace = Boolean(previousWorkspace && previousWorkspace.id !== workspace.id);
     const clearedSession = Boolean(
       previousWorkspace &&
       (previousWorkspace.id !== workspace.id || previousWorkspace.revision !== workspace.revision),
     );
     set({
       ...next,
+      ...(switchedWorkspace ? { settingsNavCache: null } : {}),
       ...(clearedSession ? { sessionCatalog: emptySessionCatalog() } : {}),
       ...(clearedSession
         ? {
@@ -609,6 +667,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = epochClearWorkspace(epochSlice(get()));
     set({
       ...next,
+      settingsNavCache: null,
       sessionCatalog: emptySessionCatalog(),
       extensionUiRequest: null,
       extensionUiQueue: [],

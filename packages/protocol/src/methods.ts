@@ -113,6 +113,14 @@ export const HOST_METHODS = [
   "extensionUi.customInput",
   "extensionUi.customResize",
   "telegram.validateToken",
+  "telegram.getProfiles",
+  "telegram.listSessions",
+  "telegram.getSession",
+  "telegram.saveProfile",
+  "telegram.getConfig",
+  "telegram.updateConfig",
+  "telegram.reset",
+  "telegram.status",
 ] as const;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -181,7 +189,15 @@ export type HostOnlyMethod =
   | "pluginLibrary.catalog"
   | "pluginLibrary.setEnv"
   | "extensionUi.configure"
-  | "telegram.validateToken";
+  | "telegram.validateToken"
+  | "telegram.getProfiles"
+  | "telegram.listSessions"
+  | "telegram.getSession"
+  | "telegram.saveProfile"
+  | "telegram.getConfig"
+  | "telegram.updateConfig"
+  | "telegram.reset"
+  | "telegram.status";
 export type WorkspaceOnlyMethod =
   | "workspace.setCurrent"
   | "workspace.getCurrent"
@@ -413,6 +429,14 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "pluginLibrary.setEnv": "host",
   "extensionUi.configure": "host",
   "telegram.validateToken": "host",
+  "telegram.getProfiles": "host",
+  "telegram.listSessions": "host",
+  "telegram.getSession": "host",
+  "telegram.saveProfile": "host",
+  "telegram.getConfig": "host",
+  "telegram.updateConfig": "host",
+  "telegram.reset": "host",
+  "telegram.status": "host",
   "extensionUi.respond": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",

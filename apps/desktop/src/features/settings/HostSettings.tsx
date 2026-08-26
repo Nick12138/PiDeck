@@ -126,7 +126,7 @@ export function HostSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">{t("hostRuntimeGroup")}</h2>

@@ -287,6 +287,48 @@ export function validateMethodContext<M extends HostMethod>(
   return { ok: true, value: context as HostContextMap[M] };
 }
 
+function isTelegramAssistantConfig(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    exactObject(obj, [], ["draftPreviews", "rendering", "proactivePush", "activity", "timeInjection"]) &&
+    (obj.draftPreviews === undefined || isBoolean(obj.draftPreviews)) &&
+    (obj.rendering === undefined || obj.rendering === "rich" || obj.rendering === "html") &&
+    (obj.proactivePush === undefined || isBoolean(obj.proactivePush)) &&
+    (obj.activity === undefined ||
+      obj.activity === "quiet" ||
+      obj.activity === "thinking" ||
+      obj.activity === "tools" ||
+      obj.activity === "verbose") &&
+    (obj.timeInjection === undefined ||
+      obj.timeInjection === "hidden" ||
+      obj.timeInjection === "always" ||
+      obj.timeInjection === "interval")
+  );
+}
+
+function isTelegramVoiceConfig(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    exactObject(obj, [], ["replyMode"]) &&
+    (obj.replyMode === undefined ||
+      obj.replyMode === "manual" ||
+      obj.replyMode === "hidden" ||
+      obj.replyMode === "mirror" ||
+      obj.replyMode === "always")
+  );
+}
+
+function isTelegramThreadsConfig(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    exactObject(obj, [], ["automaticCleanup"]) &&
+    (obj.automaticCleanup === undefined || isBoolean(obj.automaticCleanup))
+  );
+}
+
 export function validateRequestParams<M extends HostMethod>(
   method: M,
   params: unknown,
@@ -326,7 +368,32 @@ export function validateRequestParams<M extends HostMethod>(
     case "session.getForkPoints":
     case "session.usageReport":
     case "session.getCommands":
+    case "telegram.getProfiles":
+    case "telegram.listSessions":
+    case "telegram.getConfig":
+    case "telegram.reset":
+    case "telegram.status":
       return params === null ? ok(null) : fail("params must be null", { method });
+    case "telegram.getSession":
+      return exactObject(params, ["sessionPath"]) && isNonEmptyString(params.sessionPath)
+        ? ok(params)
+        : fail("invalid telegram.getSession params", { method });
+    case "telegram.updateConfig":
+      return exactObject(params, [], ["assistant", "voice", "threads"]) &&
+        (params.assistant === undefined || isTelegramAssistantConfig(params.assistant)) &&
+        (params.voice === undefined || isTelegramVoiceConfig(params.voice)) &&
+        (params.threads === undefined || isTelegramThreadsConfig(params.threads))
+        ? ok(params)
+        : fail("invalid telegram.updateConfig params", { method });
+    case "telegram.saveProfile":
+      return exactObject(params, ["token"], ["botId", "botUsername", "botName"]) &&
+        isNonEmptyString(params.token) &&
+        (params.botId === undefined ||
+          (typeof params.botId === "number" && Number.isSafeInteger(params.botId) && params.botId >= 0)) &&
+        (params.botUsername === undefined || isNonEmptyString(params.botUsername)) &&
+        (params.botName === undefined || isString(params.botName))
+        ? ok(params)
+        : fail("invalid telegram.saveProfile params", { method });
     case "subagents.getSession":
     case "subagents.stop":
     case "subagents.pause":

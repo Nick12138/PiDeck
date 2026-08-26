@@ -1,0 +1,160 @@
+/** @vitest-environment jsdom */
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HostStatusSnapshot, TelegramSessionSummary } from "@pideck/protocol";
+import { useAppStore } from "../../lib/stores/app-store";
+import { TelegramWorkspaceRow } from "./TelegramWorkspaceRow";
+import { useTelegramViewStore } from "./telegram-view-store";
+
+const TELEGRAM_WORKSPACE_PATH = "C:/agent/workspace/telegram";
+
+const host: HostStatusSnapshot = {
+  protocolVersion: 1,
+  hostInstanceId: "host-1",
+  workspaceId: "workspace-1",
+  workspaceRevision: 1,
+  sessionId: null,
+  sessionRevision: 0,
+  packageRevision: 1,
+  sdkVersion: "0.84.2",
+  nodeVersion: "v22",
+  agentDir: "C:/agent",
+  phase: "ready",
+  capabilities: {
+    packageUpdateCheck: true,
+    extensionUi: true,
+    sessionExport: true,
+  },
+  modelConfigHealth: { state: "ok", source: "ModelRegistry.getError" },
+};
+
+const sessions: TelegramSessionSummary[] = [
+  {
+    sessionPath: "C:/agent/sessions/--P--/a.jsonl",
+    name: "PiDeck 概览",
+    cwd: "C:/work",
+    updatedAt: 1787029396000,
+    telegramMessageCount: 3,
+    preview: "帮我看看这个项目",
+  },
+];
+
+describe("TelegramWorkspaceRow", () => {
+  let refreshTelegramSessions: ReturnType<typeof vi.fn>;
+  let refreshBridgeStatus: ReturnType<typeof vi.fn>;
+  let startTelegramBridge: ReturnType<typeof vi.fn>;
+  let ensureWorkspace: ReturnType<typeof vi.fn>;
+  let onActivate: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    refreshTelegramSessions = vi.fn().mockResolvedValue(undefined);
+    refreshBridgeStatus = vi.fn().mockResolvedValue(undefined);
+    startTelegramBridge = vi.fn().mockResolvedValue(true);
+    ensureWorkspace = vi.fn().mockResolvedValue(TELEGRAM_WORKSPACE_PATH);
+    onActivate = vi.fn().mockResolvedValue(undefined);
+    useTelegramViewStore.setState({
+      profile: {
+        profile: "default",
+        botUsername: "liu_worker_bot",
+        botName: "Worker",
+        configured: true,
+      },
+      workspacePath: TELEGRAM_WORKSPACE_PATH,
+      sessions,
+      loaded: true,
+      loading: false,
+      error: null,
+      bridgeStatus: null,
+      bridgeLoading: false,
+      refreshTelegramSessions,
+      refreshBridgeStatus,
+      startTelegramBridge,
+      ensureTelegramWorkspace: ensureWorkspace,
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("renders the telegram row even without profile or sessions (unconfigured)", () => {
+    useTelegramViewStore.setState({ profile: null, sessions: [], loaded: true });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    expect(screen.getByText("Telegram")).toBeInTheDocument();
+    expect(screen.getByText("Unconfigured")).toBeInTheDocument();
+  });
+
+  it("shows the telegram row with the bot handle", () => {
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    expect(screen.getByText("@liu_worker_bot")).toBeInTheDocument();
+  });
+
+  it("switches to the real telegram workspace on click", async () => {
+    const user = userEvent.setup();
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    await user.click(screen.getByRole("button", { name: /@liu_worker_bot/ }));
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH);
+  });
+
+  it("boots straight into the telegram workspace after startup when the bridge is meant to run", async () => {
+    useAppStore.setState({
+      host,
+      workspace: {
+        id: "workspace-folder",
+        cwd: "C:/work",
+        canonicalCwd: "C:/work",
+        revision: 1,
+        servicesReady: true,
+      },
+      session: {
+        sessionId: "session-1",
+        cwd: "C:/work",
+        revision: 1,
+        isStreaming: false,
+        isIdle: true,
+        isCompacting: false,
+        isRetrying: false,
+        thinkingLevel: "high",
+        autoCompactionEnabled: false,
+        autoRetryEnabled: false,
+        steeringMode: "all",
+        followUpMode: "all",
+        pending: { revision: 0, steering: [], followUp: [] },
+        tools: {
+          revision: 0,
+          workspaceId: "workspace-folder",
+          sessionId: "session-1",
+          sessionRevision: 1,
+          tools: [],
+          active: [],
+        },
+        messages: [],
+      },
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    // No user interaction: the settled app + configured profile + bridge
+    // preference defaulting to on must switch into the TG workspace once.
+    await waitFor(() =>
+      expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH),
+    );
+  });
+
+  it("does not auto-enter at startup when the bridge preference is off", async () => {
+    globalThis.localStorage?.setItem("pideck.telegram.bridgeEnabled.v1", "0");
+    useAppStore.setState({
+      host,
+      connecting: false,
+      rehydrating: false,
+      desynchronized: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(onActivate).not.toHaveBeenCalled();
+    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+  });
+});

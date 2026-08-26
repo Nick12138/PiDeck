@@ -653,7 +653,7 @@ export function ProvidersSettings() {
               <Plus size={15} />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-2">
+          <div className="min-h-0 flex-1 overflow-auto p-2" data-settings-scroll>
             {loading ? (
               <p className="p-3 text-xs text-muted">{t("providersLoading")}</p>
             ) : loadError && providers.length === 0 ? (

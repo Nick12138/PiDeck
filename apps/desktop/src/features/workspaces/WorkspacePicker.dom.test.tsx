@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DesktopSettings, HostStatusSnapshot, WorkspaceSnapshot } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { WorkspacePicker } from "./WorkspacePicker";
+import { useTelegramViewStore } from "../telegram/telegram-view-store";
 
 const desktopSettings: DesktopSettings = {
   theme: "light",
@@ -187,5 +188,33 @@ describe("WorkspacePicker activity dots", () => {
     expect(alphaRow?.querySelector(".bg-muted")).toBeNull();
     expect(alphaRow?.querySelector(".bg-success")).toBeNull();
     expect(alphaRow?.querySelector(".bg-danger")).toBeNull();
+  });
+
+  it("single-selects: the folder workspace loses its highlight while the telegram workspace is active", () => {
+    render(<WorkspacePicker />);
+    const alphaRow = screen.getByText("alpha").closest("li");
+    expect(alphaRow?.querySelector("button")?.getAttribute("aria-current")).toBe("true");
+
+    // Entering the telegram workspace switches the real workspace path; the
+    // folder rows must lose their highlight (single-selection semantics).
+    useTelegramViewStore.setState({ workspacePath: "/agent/workspace/telegram" });
+    act(() =>
+      useAppStore.setState({
+        workspace: {
+          ...workspace,
+          id: "workspace-tg",
+          cwd: "/agent/workspace/telegram",
+          canonicalCwd: "/agent/workspace/telegram",
+        },
+      }),
+    );
+    expect(alphaRow?.querySelector("button")?.getAttribute("aria-current")).not.toBe("true");
+
+    act(() =>
+      useAppStore.setState({
+        workspace: { ...workspace, id: "workspace-1", cwd: "/p/alpha", canonicalCwd: "/p/alpha" },
+      }),
+    );
+    expect(alphaRow?.querySelector("button")?.getAttribute("aria-current")).toBe("true");
   });
 });

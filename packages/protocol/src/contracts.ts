@@ -52,6 +52,14 @@ import type {
   DiscoveredProviderModel,
   ProviderConnectionResult,
   TelegramValidateTokenResult,
+  TelegramProfileSummary,
+  TelegramSessionListResult,
+  TelegramSessionDetail,
+  TelegramAssistantConfig,
+  TelegramVoiceConfig,
+  TelegramThreadsConfig,
+  TelegramConfigResult,
+  TelegramBridgeStatus,
   BuiltinProviderAuthStatus,
   BuiltinProviderModelsResult,
   ProviderLoginFlowEvent,
@@ -192,6 +200,14 @@ export type HostContextMap = {
   "extensionUi.customInput": SessionTargetContext;
   "extensionUi.customResize": SessionTargetContext;
   "telegram.validateToken": HostContext;
+  "telegram.getProfiles": HostContext;
+  "telegram.listSessions": HostContext;
+  "telegram.getSession": HostContext;
+  "telegram.saveProfile": HostContext;
+  "telegram.getConfig": HostContext;
+  "telegram.updateConfig": HostContext;
+  "telegram.reset": HostContext;
+  "telegram.status": HostContext;
 };
 
 export type HostRequestParams = {
@@ -354,6 +370,23 @@ export type HostRequestParams = {
   "extensionUi.customInput": { requestId: string; data: string };
   "extensionUi.customResize": { requestId: string; cols: number; rows: number };
   "telegram.validateToken": { token: string };
+  "telegram.getProfiles": null;
+  "telegram.listSessions": null;
+  "telegram.getSession": { sessionPath: string };
+  "telegram.saveProfile": {
+    token: string;
+    botId?: number;
+    botUsername?: string;
+    botName?: string;
+  };
+  "telegram.getConfig": null;
+  "telegram.updateConfig": {
+    assistant?: TelegramAssistantConfig;
+    voice?: TelegramVoiceConfig;
+    threads?: TelegramThreadsConfig;
+  };
+  "telegram.reset": null;
+  "telegram.status": null;
 };
 
 export type HostResultMap = {
@@ -520,6 +553,14 @@ export type HostResultMap = {
   "extensionUi.customInput": { accepted: true };
   "extensionUi.customResize": { accepted: true };
   "telegram.validateToken": TelegramValidateTokenResult;
+  "telegram.getProfiles": { default: TelegramProfileSummary | null };
+  "telegram.listSessions": TelegramSessionListResult;
+  "telegram.getSession": TelegramSessionDetail;
+  "telegram.saveProfile": { saved: true };
+  "telegram.getConfig": TelegramConfigResult;
+  "telegram.updateConfig": { saved: true };
+  "telegram.reset": { reset: true };
+  "telegram.status": TelegramBridgeStatus;
 };
 
 export type HostEventPayloadMap = {

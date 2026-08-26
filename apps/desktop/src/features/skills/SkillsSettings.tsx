@@ -375,7 +375,7 @@ export function SkillsSettings() {
   if (!host || !workspace?.servicesReady) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
           <p className="mx-auto max-w-3xl rounded-lg border border-border p-4 text-sm text-muted">
             {t("skillsNoWorkspace")}
           </p>
@@ -386,7 +386,7 @@ export function SkillsSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-skills-settings>
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-muted">

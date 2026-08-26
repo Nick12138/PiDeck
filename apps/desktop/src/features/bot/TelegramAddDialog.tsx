@@ -1,37 +1,37 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Bot, LoaderCircle } from "lucide-react";
+import { Bot, Copy, Check, LoaderCircle } from "lucide-react";
+import type { TelegramProfileSummary } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
+import { editDraft } from "../../lib/draft-persistence";
+import { draftTargetFor } from "../../lib/draft-target";
 import { useT } from "../../lib/i18n/use-t";
-import {
-  type BotGateway,
-  createTelegramGateway,
-  defaultGatewayWorkspacePath,
-} from "./gateway-store";
+import { useTelegramViewStore } from "../telegram/telegram-view-store";
 
-export function TelegramAddDialog({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: (gateway: BotGateway) => void;
-}) {
+/**
+ * Add-telegram-bot dialog: validates the bot token via the host, then persists
+ * the identity into the plugin's telegram.json (`telegram.saveProfile`) and
+ * pre-fills `/telegram-connect` in the composer so the plugin starts polling.
+ * The plugin owns config persistence and message transport; this dialog is the
+ * UI hand-off into it.
+ */
+export function TelegramAddDialog({ onCancel }: { onCancel: () => void }) {
   const t = useT();
   const host = useAppStore((s) => s.host);
 
   const [token, setToken] = useState("");
-  const [alias, setAlias] = useState("");
   // Preview of the bot identity returned by getMe (auto-filled, read-only).
-  // workspacePath is the host-provisioned default workspace dir for this gateway.
   const [preview, setPreview] = useState<{
+    botId: number | null;
     username: string | null;
     firstName: string | null;
-    workspacePath: string | null;
   } | null>(null);
   const [validating, setValidating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef(onCancel);
@@ -98,22 +98,11 @@ export function TelegramAddDialog({
         setError(result.description || t("botAddTelegramValidateFailed"));
         return;
       }
-      const workspacePath = result.workspacePath ?? null;
       setPreview({
+        botId: result.botId ?? null,
         username: result.username ?? null,
         firstName: result.firstName ?? null,
-        workspacePath,
       });
-      if (!alias) {
-        setAlias(result.firstName ?? result.username ?? "");
-      }
-      if (!workspacePath) {
-        // Token is valid but the host could not create the workspace dir — warn
-        // but keep the preview so the user can still save the identity.
-        setError(
-          result.description || t("botAddTelegramWorkspaceNotCreated"),
-        );
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("botAddTelegramValidateFailed"));
     } finally {
@@ -121,23 +110,61 @@ export function TelegramAddDialog({
     }
   }
 
-  function submit() {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      setError(t("botAddTelegramTokenRequired"));
-      return;
+  async function copyCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(command);
+    } catch {
+      /* clipboard unavailable — the text is selectable in the UI */
     }
-    if (!preview) return;
-    const gateway = createTelegramGateway({
-      token: trimmed,
-      username: preview.username,
-      firstName: preview.firstName,
-      botId: null,
-      name: alias,
-      boundWorkspacePath:
-        preview.workspacePath ?? defaultGatewayWorkspacePath("telegram", host?.agentDir ?? ""),
-    });
-    onConfirm(gateway);
+  }
+
+  async function finish() {
+    const hostNow = useAppStore.getState().host;
+    if (!hostNow || !preview || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await hostClient.request(
+        "telegram.saveProfile",
+        hostContext(hostNow),
+        {
+          token: token.trim(),
+          ...(preview.botId !== null ? { botId: preview.botId } : {}),
+          ...(preview.username ? { botUsername: preview.username } : {}),
+          ...(preview.firstName ? { botName: preview.firstName } : {}),
+        },
+        15_000,
+      );
+      if (!res.ok) {
+        setError(res.error.message || t("botAddTelegramSaveFailed"));
+        return;
+      }
+      const summary: TelegramProfileSummary = {
+        profile: "default",
+        configured: true,
+        ...(preview.botId !== null ? { botId: preview.botId } : {}),
+        ...(preview.username ? { botUsername: preview.username } : {}),
+        ...(preview.firstName ? { botName: preview.firstName } : {}),
+      };
+      useTelegramViewStore.getState().applySavedProfile(summary);
+      void useTelegramViewStore.getState().refreshTelegramSessions();
+      // The add flow runs inside the dedicated telegram workspace, whose main
+      // panel is the read-only history view (no composer). Start the bridge
+      // programmatically instead of pre-filling a hidden draft; fall back to
+      // the prefilled command only if the programmatic start is unavailable.
+      const started = await useTelegramViewStore.getState().startTelegramBridge();
+      if (!started) {
+        const { workspace, session } = useAppStore.getState();
+        const target = draftTargetFor(workspace, session);
+        if (target) editDraft(target, "/telegram-connect");
+      }
+      onCancel();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("botAddTelegramSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return createPortal(
@@ -164,7 +191,6 @@ export function TelegramAddDialog({
               className="mt-4 flex flex-col gap-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                submit();
               }}
             >
               <label className="flex flex-col gap-1">
@@ -199,49 +225,45 @@ export function TelegramAddDialog({
               </label>
 
               {preview && (
-                <div className="flex items-center gap-3 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm">
-                  <Bot size={14} className="shrink-0 text-success" />
-                  <div className="min-w-0">
-                    <span className="block font-medium text-foreground">
-                      {preview.username ? `@${preview.username}` : t("botAddTelegramUnknownBot")}
-                    </span>
-                    {(preview.firstName || preview.username) && (
-                      <span className="block truncate text-xs text-muted">
-                        {preview.firstName ?? t("botAddTelegramUnknownName")}
+                <div className="flex flex-col gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2.5 text-sm">
+                  <div className="flex items-center gap-3">
+                    <Bot size={14} className="shrink-0 text-success" />
+                    <div className="min-w-0">
+                      <span className="block font-medium text-foreground">
+                        {preview.username ? `@${preview.username}` : t("botAddTelegramUnknownBot")}
                       </span>
-                    )}
+                      {(preview.firstName || preview.username) && (
+                        <span className="block truncate text-xs text-muted">
+                          {preview.firstName ?? t("botAddTelegramUnknownName")}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted">
-                  {t("botAddTelegramNameLabel")}
-                </span>
-                <input
-                  type="text"
-                  value={alias}
-                  onChange={(e) => setAlias(e.target.value)}
-                  placeholder={preview?.firstName ?? preview?.username ?? t("botAddTelegramNamePlaceholder")}
-                  className="h-9 rounded-md border border-border bg-surface px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                />
-              </label>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted">
-                  {t("botAddTelegramWorkspaceLabel")}
-                </span>
-                <div className="flex h-9 items-center rounded-md border border-border bg-surface px-3 text-muted">
-                  <span className="min-w-0 flex-1 truncate text-xs">
-                    {t("botAddTelegramWorkspaceDefault")}
-                  </span>
-                  {preview?.workspacePath && (
-                    <span className="ml-2 shrink-0 text-[10px] text-success">
-                      {t("botAddTelegramWorkspaceReady")}
-                    </span>
+                  <p className="text-xs text-muted">{t("botAddTelegramGuidance")}</p>
+                  {[{ command: "/telegram-connect", label: t("botAddTelegramConnectCmd") }].map(
+                    ({ command, label }) => (
+                      <div key={command} className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-1 font-mono text-[11px]">
+                          {command}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => void copyCommand(command)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px] hover:bg-surface-overlay"
+                          aria-label={label}
+                        >
+                          {copied === command ? (
+                            <Check size={11} className="text-success" />
+                          ) : (
+                            <Copy size={11} />
+                          )}
+                          <span>{copied === command ? t("commonCopied") : label}</span>
+                        </button>
+                      </div>
+                    ),
                   )}
                 </div>
-              </div>
+              )}
 
               {error && (
                 <p role="status" className="text-xs text-danger">
@@ -258,11 +280,12 @@ export function TelegramAddDialog({
                   {t("commonCancel")}
                 </button>
                 <button
-                  type="submit"
+                  type="button"
                   className="interface-density-control inline-flex h-8 items-center justify-center rounded-md bg-accent px-2.5 text-xs text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!token.trim() || validating || !preview}
+                  onClick={() => void finish()}
+                  disabled={!preview || saving}
                 >
-                  {t("botAddTelegramConfirm")}
+                  {saving ? <LoaderCircle size={13} className="animate-spin" /> : t("commonDone")}
                 </button>
               </div>
             </form>

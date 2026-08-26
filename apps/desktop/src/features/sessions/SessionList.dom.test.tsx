@@ -85,6 +85,24 @@ describe("SessionList actions", () => {
     });
   });
 
+  it("unpins the session when the pin button is clicked", () => {
+    globalThis.localStorage.setItem(
+      "pideck.sessions.pinned.workspace-1",
+      JSON.stringify(["session-1"]),
+    );
+    render(<SessionList />);
+
+    const unpin = screen.getByRole("button", { name: "Unpin" });
+    fireEvent.click(unpin);
+
+    expect(
+      JSON.parse(
+        globalThis.localStorage.getItem("pideck.sessions.pinned.workspace-1") ?? "[]",
+      ),
+    ).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Unpin" })).not.toBeInTheDocument();
+  });
+
   it("exposes reload and archive in the session context menu", async () => {
     render(
       <>

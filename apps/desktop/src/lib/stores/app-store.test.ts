@@ -2,7 +2,7 @@
  * R7: app-store epoch wiring — host/workspace changes clear stale state.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { useAppStore } from "./app-store";
+import { useAppStore, type SettingsSection } from "./app-store";
 import {
   deriveExtensionUiWaitingBySession,
   isExtensionDecisionBlockingSession,
@@ -1244,5 +1244,83 @@ describe("Extension message renderer state", () => {
 
     useAppStore.getState().setExtensionMessageRender("entry-1", null);
     expect(useAppStore.getState().session?.extensionMessageRenders).toBeUndefined();
+  });
+});
+
+describe("settings nav cache", () => {
+  beforeEach(() => {
+    useAppStore.getState().setPage("chat");
+    useAppStore.setState({ workspace: null, settingsSection: null, settingsNavCache: null });
+  });
+
+  function seedCache(section: SettingsSection, savedAt = Date.now()) {
+    useAppStore.getState().setSettingsNavCache({
+      workspaceId: "w1",
+      section,
+      scroll: { [section]: 120 },
+      savedAt,
+    });
+  }
+
+  it("returns to the remembered section on a generic open within the TTL", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("providers");
+    useAppStore.getState().setPage("settings");
+    expect(useAppStore.getState().page).toBe("settings");
+    expect(useAppStore.getState().settingsSection).toBe("providers");
+  });
+
+  it("restores the cache for the generic openSettingsSection('general')", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("skills");
+    useAppStore.getState().openSettingsSection("general");
+    expect(useAppStore.getState().settingsSection).toBe("skills");
+  });
+
+  it("expires the cache after 30 minutes and falls back to general", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("host", Date.now() - 31 * 60 * 1000);
+    useAppStore.getState().setPage("settings");
+    expect(useAppStore.getState().settingsSection).toBeNull();
+    expect(useAppStore.getState().settingsNavCache).toBeNull();
+  });
+
+  it("drops the cache when switching to another workspace", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("host");
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w2", 1));
+    expect(useAppStore.getState().settingsNavCache).toBeNull();
+  });
+
+  it("keeps the cache across a revision bump of the same workspace", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("host");
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 2));
+    expect(useAppStore.getState().settingsNavCache).not.toBeNull();
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 3));
+    useAppStore.getState().setPage("settings");
+    expect(useAppStore.getState().settingsSection).toBe("host");
+  });
+
+  it("clears a cache belonging to a different workspace on open", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w2", 1));
+    seedCache("host"); // cache is scoped to w1
+    useAppStore.getState().setPage("settings");
+    expect(useAppStore.getState().settingsSection).toBeNull();
+    expect(useAppStore.getState().settingsNavCache).toBeNull();
+  });
+
+  it("keeps explicit section opens even when a cache exists", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    seedCache("providers");
+    useAppStore.getState().openSettingsSection("host");
+    expect(useAppStore.getState().settingsSection).toBe("host");
+  });
+
+  it("clears the section request when leaving for chat", () => {
+    useAppStore.getState().applyWorkspaceSnapshot(workspace("w1", 1));
+    useAppStore.getState().setSettingsSection("host");
+    useAppStore.getState().setPage("chat");
+    expect(useAppStore.getState().settingsSection).toBeNull();
   });
 });

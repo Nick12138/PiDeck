@@ -9,6 +9,8 @@ import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
 import { useT } from "../lib/i18n/use-t";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
+import { TelegramSessionList } from "../features/telegram/TelegramSessionList";
+import { useTelegramWorkspaceActive } from "../features/telegram/telegram-view-store";
 import { PiMark } from "./PiMark";
 import { sidebarPref, setSidebarPref } from "../lib/sidebar-prefs";
 import { resolveConversationMinWidth } from "../features/chat/conversation-layout";
@@ -120,6 +122,7 @@ export function SidebarLayout({
 }) {
   const t = useT();
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const telegramViewActive = useTelegramWorkspaceActive();
   const [sessionsCollapsed, setSessionsCollapsed] = useState(() =>
     sidebarPref("pideck.sidebar.sessionsCollapsed"),
   );
@@ -302,9 +305,11 @@ export function SidebarLayout({
 
         {sidebarCollapsed ? null : (
           <>
-            <div className="px-2 pb-3 pt-[14px]">
-              <NewSessionButton />
-            </div>
+            {!telegramViewActive && (
+              <div className="px-2 pb-3 pt-[14px]">
+                <NewSessionButton />
+              </div>
+            )}
 
             <div className="px-2 pb-3">
               <button
@@ -332,11 +337,15 @@ export function SidebarLayout({
 
             {/* Collapsed or not, the header row stays in place below Workspaces. */}
             <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-              <SessionList
-                showCreateAction={false}
-                collapsed={sessionsCollapsed}
-                onToggleCollapsed={toggleSessionsCollapsed}
-              />
+              {telegramViewActive ? (
+                <TelegramSessionList />
+              ) : (
+                <SessionList
+                  showCreateAction={false}
+                  collapsed={sessionsCollapsed}
+                  onToggleCollapsed={toggleSessionsCollapsed}
+                />
+              )}
             </div>
           </>
         )}

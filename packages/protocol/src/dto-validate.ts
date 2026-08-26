@@ -383,6 +383,103 @@ function isModelSummary(value: unknown): boolean {
   );
 }
 
+function isTelegramProfileSummary(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["profile", "configured"],
+      ["botId", "botUsername", "botName"],
+    ) &&
+    isNonEmptyString(value.profile) &&
+    isBoolean(value.configured) &&
+    (value.botId === undefined || isSafeRevision(value.botId)) &&
+    (value.botUsername === undefined ||
+      (isString(value.botUsername) && value.botUsername.length > 0)) &&
+    (value.botName === undefined || isString(value.botName))
+  );
+}
+
+function isTelegramBoundUser(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["userId"], ["username", "name"]) &&
+    isSafeRevision(value.userId) &&
+    (value.username === undefined || (isString(value.username) && value.username.length > 0)) &&
+    (value.name === undefined || isString(value.name))
+  );
+}
+
+function isTelegramAssistantConfig(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      [],
+      ["draftPreviews", "rendering", "proactivePush", "activity", "timeInjection"],
+    ) &&
+    (value.draftPreviews === undefined || isBoolean(value.draftPreviews)) &&
+    (value.rendering === undefined || value.rendering === "rich" || value.rendering === "html") &&
+    (value.proactivePush === undefined || isBoolean(value.proactivePush)) &&
+    (value.activity === undefined ||
+      value.activity === "quiet" ||
+      value.activity === "thinking" ||
+      value.activity === "tools" ||
+      value.activity === "verbose") &&
+    (value.timeInjection === undefined ||
+      value.timeInjection === "hidden" ||
+      value.timeInjection === "always" ||
+      value.timeInjection === "interval")
+  );
+}
+
+function isTelegramVoiceConfig(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [], ["replyMode"]) &&
+    (value.replyMode === undefined ||
+      value.replyMode === "manual" ||
+      value.replyMode === "hidden" ||
+      value.replyMode === "mirror" ||
+      value.replyMode === "always")
+  );
+}
+
+function isTelegramThreadsConfig(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [], ["automaticCleanup"]) &&
+    (value.automaticCleanup === undefined || isBoolean(value.automaticCleanup))
+  );
+}
+
+function isTelegramSessionSummary(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(
+      value,
+      ["sessionPath", "updatedAt", "telegramMessageCount"],
+      ["sessionId", "name", "cwd", "preview"],
+    ) &&
+    isNonEmptyString(value.sessionPath) &&
+    isSafeRevision(value.updatedAt) &&
+    isSafeRevision(value.telegramMessageCount) &&
+    (value.sessionId === undefined || isString(value.sessionId)) &&
+    (value.name === undefined || isString(value.name)) &&
+    (value.cwd === undefined || isString(value.cwd)) &&
+    (value.preview === undefined || isString(value.preview))
+  );
+}
+
+/** `entries` are loose SDK session records; only the composite shape is pinned. */
+function isTelegramSessionEntry(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.type)
+  );
+}
+
 const PROVIDER_APIS = [
   "openai-completions",
   "openai-responses",
@@ -2465,6 +2562,65 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         (result.description === undefined || isString(result.description))
         ? null
         : "invalid telegram.validateToken result";
+    case "telegram.getProfiles":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["default"]) &&
+        (result.default === null || isTelegramProfileSummary(result.default))
+        ? null
+        : "invalid telegram.getProfiles result";
+    case "telegram.listSessions":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["sessions"]) &&
+        Array.isArray(result.sessions) &&
+        result.sessions.every(isTelegramSessionSummary)
+        ? null
+        : "invalid telegram.listSessions result";
+    case "telegram.getSession":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["summary", "entries"]) &&
+        isTelegramSessionSummary(result.summary) &&
+        Array.isArray(result.entries) &&
+        result.entries.every(isTelegramSessionEntry)
+        ? null
+        : "invalid telegram.getSession result";
+    case "telegram.saveProfile":
+      return isPlainObject(result) && hasExactKeys(result, ["saved"]) && result.saved === true
+        ? null
+        : "invalid telegram.saveProfile result";
+    case "telegram.getConfig":
+      return isPlainObject(result) &&
+        hasExactKeys(
+          result,
+          ["default", "workspacePath"],
+          ["tokenMasked", "bound", "assistant", "voice", "threads"],
+        ) &&
+        (result.default === null || isTelegramProfileSummary(result.default)) &&
+        isNonEmptyString(result.workspacePath) &&
+        (result.tokenMasked === undefined || isString(result.tokenMasked)) &&
+        (result.bound === undefined || result.bound === null || isTelegramBoundUser(result.bound)) &&
+        (result.assistant === undefined || isTelegramAssistantConfig(result.assistant)) &&
+        (result.voice === undefined || isTelegramVoiceConfig(result.voice)) &&
+        (result.threads === undefined || isTelegramThreadsConfig(result.threads))
+        ? null
+        : "invalid telegram.getConfig result";
+    case "telegram.updateConfig":
+      return isPlainObject(result) && hasExactKeys(result, ["saved"]) && result.saved === true
+        ? null
+        : "invalid telegram.updateConfig result";
+    case "telegram.reset":
+      return isPlainObject(result) && hasExactKeys(result, ["reset"]) && result.reset === true
+        ? null
+        : "invalid telegram.reset result";
+    case "telegram.status":
+      return isPlainObject(result) &&
+        hasExactKeys(result, ["connected"], ["profile", "botId", "ownerPid"]) &&
+        isBoolean(result.connected) &&
+        (result.profile === undefined ||
+          (isString(result.profile) && result.profile.length > 0)) &&
+        (result.botId === undefined || isSafeRevision(result.botId)) &&
+        (result.ownerPid === undefined || isSafeRevision(result.ownerPid))
+        ? null
+        : "invalid telegram.status result";
     case "model.list":
       return isPlainObject(result) &&
         hasExactKeys(

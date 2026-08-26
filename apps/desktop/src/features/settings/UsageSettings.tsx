@@ -557,7 +557,7 @@ export function UsageSettings() {
         </button>
       </SettingsTopBarActions>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" data-settings-scroll>
         {error ? (
           <div className="m-6 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}

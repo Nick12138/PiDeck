@@ -236,6 +236,18 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
   "telegram.validateToken": { token: "123456:ABC-DEF" },
+  "telegram.getProfiles": null,
+  "telegram.listSessions": null,
+  "telegram.getSession": { sessionPath: "C:/agent/sessions/--P--/file.jsonl" },
+  "telegram.saveProfile": { token: "123456:ABC-DEF", botId: 1, botUsername: "bot" },
+  "telegram.getConfig": null,
+  "telegram.updateConfig": {
+    assistant: { rendering: "rich", activity: "verbose" },
+    voice: { replyMode: "mirror" },
+    threads: { automaticCleanup: true },
+  },
+  "telegram.reset": null,
+  "telegram.status": null,
 };
 
 function contextFor(method: HostMethod): Record<string, unknown> {
@@ -292,7 +304,19 @@ function invalidParams(method: HostMethod): unknown {
     case "skill.list":
     case "prompt.list":
     case "package.reloadResources":
+    case "telegram.getProfiles":
+    case "telegram.listSessions":
       return {}; // must be null
+    case "telegram.getSession":
+      return { sessionPath: "" };
+    case "telegram.saveProfile":
+      return { token: "" };
+    case "telegram.getConfig":
+    case "telegram.reset":
+    case "telegram.status":
+      return {}; // must be null
+    case "telegram.updateConfig":
+      return { assistant: { rendering: "nope" } };
     case "workspace.setCurrent":
       return { path: "x" }; // missing cwd
     case "workspace.searchFiles":

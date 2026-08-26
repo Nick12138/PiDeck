@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useRef, useState, useContext } from "react";
 import { useAppStore, type SettingsSection } from "../../lib/stores/app-store";
 import {
   ChartColumn,
@@ -165,7 +165,7 @@ function GeneralSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-6" data-settings-scroll>
         <div className="mx-auto flex max-w-2xl flex-col gap-8">
           <section>
             <h2 className="mb-2 text-[13px] font-medium text-muted">{t("generalStartupGroup")}</h2>
@@ -417,6 +417,12 @@ export function SettingsPage({
   const [inlineSlot, setInlineSlot] = useState<HTMLElement | null>(null);
   const innerTarget = hasTopBar ? outerTarget : inlineSlot;
   const [localSection, setLocalSection] = useState<SettingsSection>(initialSection);
+  // Live mirrors for the scroll/persist handlers so they never read a stale
+  // section after a nav click.
+  const sectionRef = useRef(localSection);
+  sectionRef.current = localSection;
+  const scrollRef = useRef<Partial<Record<SettingsSection, number>>>({});
+  const contentRef = useRef<HTMLElement | null>(null);
   const providersDirty = useAppStore((s) => s.providersDirty);
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -430,6 +436,42 @@ export function SettingsPage({
   useEffect(() => {
     setSettingsSection(localSection);
   }, [localSection, setSettingsSection]);
+
+  // Remember where the user left off (section + per-section scroll offsets)
+  // when Settings unmounts, so the next generic open restores it while the
+  // cache stays fresh (SETTINGS_NAV_CACHE_TTL_MS, same workspace).
+  // The cleanup runs at unmount and must snapshot the LATEST section/scroll
+  // values — the one case where reading ref.current in a cleanup is the
+  // intent, so the section/scroll refs are deliberately not deps.
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    return () => {
+      const workspaceId = useAppStore.getState().workspace?.id;
+      if (!workspaceId) return;
+      useAppStore.getState().setSettingsNavCache({
+        workspaceId,
+        section: sectionRef.current,
+        scroll: { ...scrollRef.current },
+        savedAt: Date.now(),
+      });
+    };
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  // Restore the remembered scroll offset of the active section once its
+  // content has laid out: on mount from the previous visit, on section switch
+  // from the in-visit offset collected via the scroll listener below.
+  useEffect(() => {
+    const inVisit = scrollRef.current[localSection];
+    const cached = useAppStore.getState().settingsNavCache?.scroll[localSection];
+    const target = inVisit ?? cached;
+    if (!target) return;
+    const frame = requestAnimationFrame(() => {
+      const scrollEl = contentRef.current?.querySelector<HTMLElement>("[data-settings-scroll]");
+      if (scrollEl) scrollEl.scrollTop = target;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [localSection]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -513,7 +555,16 @@ export function SettingsPage({
             </nav>
           </aside>
 
-          <main className="flex min-h-0 min-w-0 flex-1" data-settings-content>
+          <main
+            className="flex min-h-0 min-w-0 flex-1"
+            data-settings-content
+            ref={contentRef}
+            onScrollCapture={(event) => {
+              // Scroll events do not bubble, but they do capture, so every
+              // section's inner scroll container reaches this listener.
+              scrollRef.current[sectionRef.current] = (event.target as HTMLElement).scrollTop;
+            }}
+          >
             {localSection === "general" ? (
               <GeneralSettings />
             ) : localSection === "appearance" ? (

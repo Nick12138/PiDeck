@@ -845,7 +845,10 @@ export function PluginLibraryPage() {
       ) : catalog.plugins.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
       ) : (
-        <div className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div
+          className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
+          data-settings-scroll
+        >
           {catalog.plugins.map((entry) => (
             <PluginCard
               key={entry.id}
