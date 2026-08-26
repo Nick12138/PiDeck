@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { AlertTriangle, PackageOpen, type LucideIcon } from "lucide-react";
+import { AlertTriangle, PackageOpen, X, type LucideIcon } from "lucide-react";
 import { useT } from "../lib/i18n/use-t";
 
 const buttonBase =
@@ -28,6 +28,9 @@ export function Dialog({
   tone = "default",
   icon: Icon = PackageOpen,
   showCancel = true,
+  showCloseIcon = false,
+  hideActions = false,
+  maxWidthClass = "max-w-lg",
   onCancel,
   onConfirm,
 }: {
@@ -37,6 +40,12 @@ export function Dialog({
   tone?: DialogTone;
   icon?: LucideIcon;
   showCancel?: boolean;
+  /** Render a close (×) button in the top-right corner instead of the footer actions. */
+  showCloseIcon?: boolean;
+  /** Hide the footer action buttons entirely (e.g. informational help dialogs). */
+  hideActions?: boolean;
+  /** Override the dialog's max-width Tailwind class (default 512px / max-w-lg). */
+  maxWidthClass?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -90,7 +99,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className="theme-floating-surface max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
+        className={`theme-floating-surface max-h-[min(680px,90vh)] w-full overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl ${maxWidthClass}`}
       >
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>
@@ -102,17 +111,30 @@ export function Dialog({
             </h2>
             <div className="mt-2 text-sm text-muted">{children}</div>
           </div>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          {showCancel && (
-            <button type="button" className={secondaryButton} onClick={onCancel}>
-              {t("commonCancel")}
+          {showCloseIcon && (
+            <button
+              type="button"
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+              title={t("commonClose")}
+              aria-label={t("commonClose")}
+              onClick={onCancel}
+            >
+              <X size={16} />
             </button>
           )}
-          <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
-            {confirmLabel}
-          </button>
         </div>
+        {!hideActions && (
+          <div className="mt-5 flex justify-end gap-2">
+            {showCancel && (
+              <button type="button" className={secondaryButton} onClick={onCancel}>
+                {t("commonCancel")}
+              </button>
+            )}
+            <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
+              {confirmLabel}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

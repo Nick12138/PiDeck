@@ -6,7 +6,10 @@ type HostErrorLike = { code?: string; message?: string };
  *  as a one-shot toast but are not retained in the notification center history
  *  (they use the non-persistent `info` level that the bell badge ignores).
  *  See `apps/desktop/src/components/NotificationCenter.tsx`. */
-export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set(["AGENT_BUSY"]);
+export const TRANSIENT_HOST_ERROR_CODES: ReadonlySet<string> = new Set([
+  "AGENT_BUSY",
+  "PACKAGE_MUTATION_BUSY",
+]);
 
 /** Choose the notification level for a host error. Transient "busy" conditions
  *  return `info` so they don't linger in the notification history; everything

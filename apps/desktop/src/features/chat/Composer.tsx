@@ -1853,7 +1853,7 @@ export function Composer({
               type="button"
               title={t("composerAttach")}
               aria-label={t("composerAttach")}
-              className="composer-control flex size-8 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
+              className="composer-control flex size-7 items-center justify-center rounded-md border border-border-subtle text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:opacity-40"
               disabled={
                 disabled ||
                 (images.length >= MAX_AGENT_REQUEST_IMAGES &&
@@ -1862,12 +1862,12 @@ export function Composer({
               }
               onClick={() => void chooseAttachments()}
             >
-              <Paperclip size={16} />
+              <Paperclip size={14} />
             </button>
+            <ContextUsageRing />
             <TodoPopoverButton />
             <ExtensionWidgetsButton open={extensionWidgetsOpen} onToggle={toggleExtensionWidgets} />
             <div className="ml-auto flex items-center gap-2.5">
-              <ContextUsageRing />
               <ModelControls />
               <ThinkingControls />
               {busy ? (
@@ -1876,7 +1876,7 @@ export function Composer({
                     type="button"
                     title={t("composerQueueMessageShortcut")}
                     aria-label={t("composerQueueMessage")}
-                    className="theme-send-control flex size-8 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85"
+                    className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85"
                     onClick={() => void send()}
                   >
                     <ArrowUp size={18} strokeWidth={2.25} className="block shrink-0" />
@@ -1888,7 +1888,7 @@ export function Composer({
                     aria-label={
                       session?.isCompacting ? t("composerStopCompaction") : t("composerStop")
                     }
-                    className="flex size-8 items-center justify-center rounded-full bg-danger/15 text-danger hover:bg-danger/20"
+                    className="flex size-7 items-center justify-center rounded-full bg-danger/15 text-danger hover:bg-danger/20"
                     onClick={() => void (session?.isCompacting ? abortCompaction() : abort())}
                   >
                     <Square size={14} fill="currentColor" className="block shrink-0" />
@@ -1899,7 +1899,7 @@ export function Composer({
                   type="button"
                   title={t("composerSend")}
                   aria-label={t("composerSend")}
-                  className="theme-send-control flex size-8 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="theme-send-control flex size-7 items-center justify-center rounded-full bg-foreground text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
                   disabled={!canSend}
                   onClick={() => void send()}
                 >

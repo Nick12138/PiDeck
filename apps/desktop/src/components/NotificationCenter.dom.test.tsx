@@ -56,6 +56,22 @@ describe("NotificationCenter", () => {
     expect(toasts[2]).toHaveTextContent("four");
   });
 
+  it("shows the busy message as a toast without keeping it in notification history", () => {
+    render(<NotificationCenter />);
+    push("Agent 正忙，请等待当前运行结束后再试。");
+
+    // Toast-only: it surfaces as a transient status toast…
+    expect(screen.getByRole("status")).toHaveTextContent("Agent 正忙，请等待当前运行结束后再试。");
+
+    // …but it never enters the notification history, never drives the bell badge,
+    // and only lives in the transient toast feed.
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+    expect(useAppStore.getState().transientNotifications.map((n) => n.message)).toEqual([
+      "Agent 正忙，请等待当前运行结束后再试。",
+    ]);
+    expect(screen.queryByRole("button", { name: /Notifications \(/ })).not.toBeInTheDocument();
+  });
+
   it("opens the panel and marks everything read when a persistent toast is clicked", async () => {
     render(<NotificationCenter />);
     // Only persistent (warning/error) toasts open the panel when clicked.

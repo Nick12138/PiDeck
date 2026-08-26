@@ -30,6 +30,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import {
+  hostErrorLevel,
   localizeHostError,
   localizePackageMessage,
 } from "../../lib/bridge/localize-host-error";
@@ -635,7 +636,7 @@ export function PackagesPage() {
         result.warnings[0]
           ? localizeHostError(result.warnings[0], t)
           : t("notifPackagesOperationFailed"),
-        "error",
+        result.warnings[0] ? hostErrorLevel(result.warnings[0]) : "error",
       );
     }
   }
@@ -683,12 +684,18 @@ export function PackagesPage() {
         current.workspace?.revision !== workspace.revision
       )
         return;
-      if (!response.ok)
-        throw new Error(
+      if (!response.ok) {
+        const err = new Error(
           response.error
             ? localizeHostError(response.error, t)
             : t("notifPackagesOperationFailed"),
         );
+        // Preserve the raw host error code so the transient "busy" codes can be
+        // classified by hostErrorLevel in the catch below (toast-only, not history).
+        if (response.error?.code)
+          (err as Error & { code?: string }).code = response.error.code;
+        throw err;
+      }
       // The mutation result is authoritative; ignore any older package.list still in flight.
       refreshRequest.current += 1;
       setPendingPreferenceUpdates([]);
@@ -702,7 +709,7 @@ export function PackagesPage() {
       setPendingPreferenceUpdates([]);
       pushNotification(
         error instanceof Error ? error.message : t("notifPackagesOperationFailed"),
-        "error",
+        hostErrorLevel(error as { code?: string }),
       );
     } finally {
       if (optimisticUpdates.length > 0) setPendingPreferenceUpdates([]);

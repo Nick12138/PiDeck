@@ -8,6 +8,7 @@ import type {
   HostStatusSnapshot,
   PackageMutationResult,
   PackageSnapshot,
+  PromptSnapshot,
   ResourceRecord,
   SkillInfo,
   SkillSnapshot,
@@ -98,6 +99,33 @@ function skillSnapshot(overrides: Partial<SkillSnapshot> = {}): SkillSnapshot {
   };
 }
 
+function promptSnapshot(overrides: Partial<PromptSnapshot> = {}): PromptSnapshot {
+  return {
+    revision: 1,
+    workspaceId: "w1",
+    cwd: "C:\\workspace",
+    agentDir: "C:/agent",
+    projectTrusted: true,
+    prompts: [
+      {
+        name: "SYSTEM.md",
+        kind: "system",
+        scope: "project",
+        filePath: "C:/workspace/.pi/SYSTEM.md",
+        loaded: true,
+      },
+      {
+        name: "AGENTS.md",
+        kind: "context",
+        scope: "user",
+        filePath: "C:/agent/AGENTS.md",
+        loaded: true,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 function packageSnapshot(resources: ResourceRecord[]): PackageSnapshot {
   return {
     revision: 1,
@@ -139,6 +167,7 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
 
 describe("SkillsSettings", () => {
   let currentSkills: SkillSnapshot;
+  let currentPrompts: PromptSnapshot;
   let currentResources: ResourceRecord[];
   let request: MockInstance<typeof hostClient.request>;
 
@@ -146,6 +175,7 @@ describe("SkillsSettings", () => {
     dialogMock.open.mockReset();
     dialogMock.open.mockResolvedValue(null);
     currentSkills = skillSnapshot();
+    currentPrompts = promptSnapshot();
     currentResources = [skillResource()];
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
@@ -154,6 +184,7 @@ describe("SkillsSettings", () => {
     useAppStore.getState().setWorkspace(workspace());
     request = vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
       if (method === "skill.list") return envelope(method, currentSkills);
+      if (method === "prompt.list") return envelope(method, currentPrompts);
       if (method === "package.list") return envelope(method, packageSnapshot(currentResources));
       if (method === "resource.setPreference") {
         return envelope(method, mutationResult(currentResources));
@@ -364,6 +395,63 @@ describe("SkillsSettings", () => {
     });
   });
 
+  it("opens a SKILL.md preview dialog when the skill name is clicked", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as unknown as MockInstance;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "desktop_read_small_file") {
+        return {
+          kind: "text",
+          name: "SKILL.md",
+          sizeBytes: 28,
+          text: "# Review\n\nReview the code changes.",
+        };
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    try {
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      const nameButton = await screen.findByRole("button", { name: "Preview skill review" });
+      await user.click(nameButton);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(invokeMock).toHaveBeenCalledWith("desktop_read_small_file", {
+        path: "C:/agent/skills/review/SKILL.md",
+      });
+      await waitFor(() =>
+        expect(screen.getByText(/Review the code changes/)).toBeInTheDocument(),
+      );
+      // The dialog does not bind Escape (the app-level shortcut owns it);
+      // close via the ✕ button instead.
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    } finally {
+      invokeMock.mockReset();
+    }
+  });
+
+  it("shows a localized error when the skill file cannot be read", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as unknown as MockInstance;
+    invokeMock.mockReset();
+    invokeMock.mockRejectedValue("file is not valid UTF-8 text");
+    try {
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      const nameButton = await screen.findByRole("button", { name: "Preview skill review" });
+      await user.click(nameButton);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByText(/not valid UTF-8/)).toBeInTheDocument(),
+      );
+    } finally {
+      invokeMock.mockReset();
+    }
+  });
+
   it("adds a skill directory picked from the folder dialog to project settings", async () => {
     dialogMock.open.mockResolvedValue("C:/team/skills");
     const user = userEvent.setup();
@@ -376,5 +464,93 @@ describe("SkillsSettings", () => {
       const call = request.mock.calls.find(([method]) => method === "skill.addPath");
       expect(call?.[2]).toEqual({ path: "C:/team/skills", scope: "project" });
     });
+  });
+
+  it("renders existing prompt files inside the global and project groups", async () => {
+    render(<SkillsSettings />);
+    await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    expect(screen.getByText("SYSTEM.md")).toBeInTheDocument();
+    expect(screen.getByText("AGENTS.md")).toBeInTheDocument();
+    // Prompt badge labels every entry; kind badges distinguish override/merge.
+    expect(screen.getAllByText("Prompt").length).toBe(2);
+    expect(screen.getByText("Override")).toBeInTheDocument();
+    expect(screen.getByText("Merge")).toBeInTheDocument();
+    expect(screen.getByText("C:/workspace/.pi/SYSTEM.md")).toBeInTheDocument();
+    expect(screen.getByText("C:/agent/AGENTS.md")).toBeInTheDocument();
+    expect(request.mock.calls.some(([method]) => method === "prompt.list")).toBe(true);
+  });
+
+  it("marks a shadowed global prompt as not loaded", async () => {
+    currentPrompts = promptSnapshot({
+      projectTrusted: true,
+      prompts: [
+        {
+          name: "SYSTEM.md",
+          kind: "system",
+          scope: "project",
+          filePath: "C:/workspace/.pi/SYSTEM.md",
+          loaded: true,
+        },
+        {
+          name: "SYSTEM.md",
+          kind: "system",
+          scope: "user",
+          filePath: "C:/agent/SYSTEM.md",
+          loaded: false,
+        },
+      ],
+    });
+    render(<SkillsSettings />);
+    await waitFor(() => expect(screen.getByText("Global (user)")).toBeInTheDocument());
+    expect(screen.getByText("Not loaded")).toBeInTheDocument();
+    expect(screen.getAllByText("Loaded").length).toBe(1);
+  });
+
+  it("opens a prompt preview dialog reusing the skill preview modal", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const invokeMock = invoke as unknown as MockInstance;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "desktop_read_small_file") {
+        return {
+          kind: "text",
+          name: "SYSTEM.md",
+          sizeBytes: 20,
+          text: "# System\n\nProject instructions.",
+        };
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    try {
+      const user = userEvent.setup();
+      render(<SkillsSettings />);
+      const previewButton = (await screen.findAllByRole("button", {
+        name: "Preview prompt SYSTEM.md",
+      }))[0];
+      await user.click(previewButton);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(invokeMock).toHaveBeenCalledWith("desktop_read_small_file", {
+        path: "C:/workspace/.pi/SYSTEM.md",
+      });
+      await waitFor(() =>
+        expect(screen.getByText(/Project instructions/)).toBeInTheDocument(),
+      );
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    } finally {
+      invokeMock.mockReset();
+    }
+  });
+
+  it("opens the prompt help dialog and closes it", async () => {
+    const user = userEvent.setup();
+    render(<SkillsSettings />);
+    const helpButton = await screen.findByRole("button", { name: "Prompt files" });
+    await user.click(helpButton);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/Override \(SYSTEM.md \/ APPEND_SYSTEM.md\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Merge \(AGENTS.md \/ CLAUDE.md\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

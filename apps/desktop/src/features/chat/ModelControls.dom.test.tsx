@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -180,14 +180,14 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
+    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
     await screen.findByRole("menu", { name: "Models" });
 
     // The floated width tracks the model names automatically — no drag handle.
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
   });
 
-  it("shows the Provider display name from the catalog on the current-model button", async () => {
+  it("shows only the model name on the button and keeps the Provider in the tooltip", async () => {
     const snapshotModel = { ...MODEL, providerName: undefined };
     const catalogModel = { ...MODEL, providerName: "天机阁" };
     vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
@@ -205,7 +205,42 @@ describe("ModelControls model menu width", () => {
 
     render(<ModelControls />);
 
-    await screen.findByRole("button", { name: "天机阁/Grok 4.5" });
+    const button = await screen.findByRole("button", { name: "Grok 4.5" });
+    expect(button).toHaveAttribute("title", "天机阁/Grok 4.5");
+    useAppStore.getState().setConnecting(true);
+  });
+
+  it("groups model options under provider section headers", async () => {
+    const secondModel: ModelSummary = {
+      provider: "grotto",
+      providerName: "天机阁",
+      modelId: "glm-5.2",
+      name: "GLM 5.2",
+      thinkingLevels: [],
+    };
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models: [{ ...MODEL, providerName: "云端学习" }, secondModel],
+        current: MODEL,
+        thinkingLevels: ["off", "high"],
+        enabledProviders: ["muapi", "grotto"],
+      }) as never;
+    });
+    // The model catalog is only fetched once the Host connection settles.
+    useAppStore.getState().setConnecting(false);
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
+    const menu = await screen.findByRole("menu", { name: "Models" });
+
+    // Provider names appear as section headers; rows show plain model names.
+    await within(menu).findByText("云端学习");
+    expect(within(menu).getByText("天机阁")).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "Grok 4.5" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "GLM 5.2" })).toBeInTheDocument();
+    expect(screen.queryByText(/muapi\/Grok/)).not.toBeInTheDocument();
     useAppStore.getState().setConnecting(true);
   });
 
@@ -235,7 +270,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
+    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
     const menu = await screen.findByRole("menu", { name: "Models" });
     const menuShell = menu.parentElement;
 
@@ -264,7 +299,7 @@ describe("ModelControls model menu width", () => {
     const user = userEvent.setup();
     render(<ModelControls />);
 
-    await user.click(screen.getByRole("button", { name: "muapi/Grok 4.5" }));
+    await user.click(screen.getByRole("button", { name: "Grok 4.5" }));
     const menu = await screen.findByRole("menu", { name: "Models" });
     const menuShell = menu.parentElement;
 

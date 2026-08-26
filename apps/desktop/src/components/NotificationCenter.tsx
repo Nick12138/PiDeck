@@ -159,6 +159,7 @@ let previousLatestId: string | null = null;
 export function NotificationCenter() {
   const t = useT();
   const notifications = useAppStore((state) => state.notifications);
+  const transientNotifications = useAppStore((state) => state.transientNotifications);
   const dismissNotification = useAppStore((state) => state.dismissNotification);
   const clearNotifications = useAppStore((state) => state.clearNotifications);
   const markNotificationsRead = useAppStore((state) => state.markNotificationsRead);
@@ -166,7 +167,12 @@ export function NotificationCenter() {
   const [toasts, setToasts] = useState<ActiveToast[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const toastTimers = useRef(new Map<string, number[]>());
-  const latestId = notifications.at(-1)?.id ?? null;
+  // Toasts can originate from either channel; the seq stamps preserve global
+  // arrival order across the persistent history and the transient toast feed.
+  const notificationFeed = [...notifications, ...transientNotifications].sort(
+    (a, b) => (a.seq ?? 0) - (b.seq ?? 0),
+  );
+  const latestId = notificationFeed.at(-1)?.id ?? null;
 
   function clearToastTimers(id: string) {
     for (const timer of toastTimers.current.get(id) ?? []) window.clearTimeout(timer);
@@ -332,7 +338,7 @@ export function NotificationCenter() {
           className="pointer-events-none fixed right-3 top-14 z-[70] flex w-[min(20rem,calc(100vw-1.5rem))] flex-col gap-2"
         >
           {toasts.map(({ id, leaving }) => {
-            const notification = notifications.find((item) => item.id === id);
+            const notification = notificationFeed.find((item) => item.id === id);
             if (!notification) return null;
             const style = levelStyle(notification.level, t);
             const Icon = style.icon;

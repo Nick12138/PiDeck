@@ -154,7 +154,10 @@ describe("ContextUsageRing panel", () => {
     await waitFor(() => expect(request).toHaveBeenCalledOnce());
     expect(request).toHaveBeenCalledWith("agent.compact", EXPECTED_CONTEXT, null, null);
     expect(
-      useAppStore.getState().notifications.map(({ message, level }) => ({ message, level })),
+      useAppStore.getState().transientNotifications.map(({ message, level }) => ({
+        message,
+        level,
+      })),
     ).toEqual([{ message: "Context compacted: 50k → 5k tokens", level: "info" }]);
   });
 

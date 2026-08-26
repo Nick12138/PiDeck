@@ -14,6 +14,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
+import { NotificationCenter } from "../../components/NotificationCenter";
 import { formatCatalogPublishedAt } from "./packages-model";
 import { PackagesPage } from "./PackagesPage";
 
@@ -461,6 +462,58 @@ describe("PackagesPage DOM workflows", () => {
       }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText(/Refresh failed: Service graph is busy/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a PACKAGE_MUTATION_BUSY mutation failure toast-only (never in history)", async () => {
+    request.mockImplementation(async (method: string) => {
+      if (method === "package.list") return envelope(method, currentSnapshot);
+      if (method === "resource.setPreferences") {
+        return {
+          protocolVersion: 1,
+          id: `${method}-busy-test`,
+          method,
+          hostInstanceId: "h1",
+          workspaceId: "w1",
+          workspaceRevision: 1,
+          sessionId: "s1",
+          sessionRevision: 1,
+          packageRevision: 1,
+          ok: false,
+          error: {
+            code: "PACKAGE_MUTATION_BUSY",
+            message: "Another package operation is running. Wait for it to finish.",
+            retryable: true,
+          },
+        } as HostResponseEnvelope;
+      }
+      if (method === "package.checkUpdates")
+        return envelope(method, { supported: true, updates: [] });
+      throw new Error(`Unexpected method ${method}`);
+    });
+
+    const user = userEvent.setup();
+    render(
+      <>
+        <PackagesPage />
+        <NotificationCenter />
+      </>,
+    );
+    await user.click(await screen.findByRole("button", { name: /Tools.*User/ }));
+    await user.click(
+      screen.getByRole("button", { name: "disabled all resources in Tools package" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        useAppStore.getState().transientNotifications.some((notification) =>
+          /Another package operation is running/.test(notification.message),
+        ),
+      ).toBe(true);
+    });
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+    expect(
+      screen.getByText(/Another package operation is running. Wait for it to finish./),
+    ).toBeInTheDocument();
   });
 
   it("does not let an older package refresh replace a committed mutation snapshot", async () => {

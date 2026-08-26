@@ -481,6 +481,9 @@ export const en = {
   skillsBundleReadonly: "Packages & extensions are view-only; manage enable/disable in Packages",
   skillsBadgeUntrusted: "Not loaded — project not trusted",
   skillsOpen: "Open",
+  skillsPreviewToggle: "Preview skill {name}",
+  skillsPreviewLoading: "Loading skill content…",
+  skillsPreviewLoadFailed: "Failed to load skill content",
   skillsLoadedTitle: "Loaded skills",
   skillsLoadedHint:
     "Changes apply to new or reloaded sessions; the current session keeps its original system prompt.",
@@ -506,6 +509,26 @@ export const en = {
   notifSkillPathAddFailed: "Failed to add skill path",
   notifSkillPathRemoveFailed: "Failed to remove skill path",
   notifSkillFileOpenFailed: "Failed to open skill file",
+  promptsHelpTitle: "Prompt files",
+  promptsHelpIntro:
+    "Pi automatically loads prompt files from the user and project directories. Only existing files are listed here, grouped by scope.",
+  promptsHelpGlobalDir: "Global (user) directory",
+  promptsHelpProjectDir: "Project directory",
+  promptsHelpOverrideTitle: "Override (SYSTEM.md / APPEND_SYSTEM.md)",
+  promptsHelpOverride:
+    "A trusted project file wins over the global file. The shadowed global file is shown as not loaded.",
+  promptsHelpMergeTitle: "Merge (AGENTS.md / CLAUDE.md)",
+  promptsHelpMerge:
+    "Context files load from both the user and project directories and are merged together.",
+  promptsHelpTrust:
+    "Project files only load after the project is trusted. Context files are not gated by trust.",
+  promptBadge: "Prompt",
+  promptKindSystem: "Override",
+  promptKindAppend: "Append",
+  promptKindContext: "Merge",
+  promptLoaded: "Loaded",
+  promptNotLoaded: "Not loaded",
+  promptsPreviewToggle: "Preview prompt {name}",
   packagesSubtitle: "Install, enable, and browse user-scope packages",
   pluginsSubtitle: "Curated plugins from your own registry — install, toggle, configure",
   pluginsRefresh: "Refresh",

@@ -447,6 +447,19 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().extensionStatus).toBe("Planning");
   });
 
+  it("ignores extension statuses for telegram / wechat / pi-vision", () => {
+    useAppStore.getState().setExtensionStatus("telegram", "telegram not configured");
+    useAppStore.getState().setExtensionStatus("wechat", "[微信 ✅ 已连接]");
+    useAppStore.getState().setExtensionStatus("pi-vision", "👁 deepseek-vl2");
+    useAppStore.getState().setExtensionStatus("planner", "Planning");
+    expect(useAppStore.getState().extensionStatuses).toEqual({ planner: "Planning" });
+    expect(useAppStore.getState().extensionStatus).toBe("Planning");
+
+    useAppStore.getState().setExtensionStatus("planner", "");
+    expect(useAppStore.getState().extensionStatuses).toEqual({});
+    expect(useAppStore.getState().extensionStatus).toBeNull();
+  });
+
   it("queues concurrent Extension UI requests with their response contexts", () => {
     const context = {
       expectedHostInstanceId: "11111111-1111-4111-8111-111111111111",
@@ -1138,7 +1151,7 @@ describe("app-store epoch wiring", () => {
 
   it("retains a bounded notification history with dismiss and clear actions", () => {
     for (let index = 0; index < 51; index += 1) {
-      useAppStore.getState().pushNotification(`message-${index}`, index === 50 ? "error" : "info");
+      useAppStore.getState().pushNotification(`message-${index}`, "error");
     }
     const retained = useAppStore.getState().notifications;
     expect(retained).toHaveLength(50);
@@ -1150,6 +1163,33 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().notifications).toHaveLength(49);
     useAppStore.getState().clearNotifications();
     expect(useAppStore.getState().notifications).toEqual([]);
+    expect(useAppStore.getState().transientNotifications).toEqual([]);
+  });
+
+  it("keeps transient info/success notifications out of the history (toast only)", () => {
+    useAppStore.getState().pushNotification("Agent 正忙，请等待当前运行结束后再试。");
+    useAppStore.getState().pushNotification("Session exported", "success");
+    useAppStore.getState().pushNotification("Disk is full", "error");
+    useAppStore.getState().pushNotification("restart Pi Host to apply", "warning");
+
+    // Info/success never enter the persistent history; error/warning do.
+    const history = useAppStore.getState().notifications;
+    expect(history.map((n) => n.message)).toEqual(["Disk is full", "restart Pi Host to apply"]);
+    expect(history.every((n) => n.level === "error" || n.level === "warning")).toBe(true);
+
+    // The transient feed holds exactly the toast-only entries, in arrival order.
+    const transient = useAppStore.getState().transientNotifications;
+    expect(transient.map((n) => n.message)).toEqual([
+      "Agent 正忙，请等待当前运行结束后再试。",
+      "Session exported",
+    ]);
+    // seq is a global arrival stamp: transient entries precede the persistent ones.
+    expect(transient[0]!.seq).toBeLessThan(transient[1]!.seq ?? 0);
+    expect(transient[1]!.seq ?? 0).toBeLessThan(history[0]!.seq ?? 0);
+
+    useAppStore.getState().clearNotifications();
+    expect(useAppStore.getState().notifications).toEqual([]);
+    expect(useAppStore.getState().transientNotifications).toEqual([]);
   });
 });
 

@@ -200,6 +200,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "skill.list": null,
   "skill.addPath": { path: "./skills", scope: "project" },
   "skill.removePath": { path: "./skills", scope: "project" },
+  "prompt.list": null,
   "package.list": { scope: "all" },
   "package.catalog": {},
   "package.install": { source: "npm:x", scope: "user" },
@@ -289,6 +290,7 @@ function invalidParams(method: HostMethod): unknown {
     case "provider.authStatus":
     case "model.list":
     case "skill.list":
+    case "prompt.list":
     case "package.reloadResources":
       return {}; // must be null
     case "workspace.setCurrent":

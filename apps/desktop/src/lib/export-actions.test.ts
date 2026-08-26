@@ -139,6 +139,15 @@ describe("requestExport", () => {
     }));
   }
 
+  /** Info/success notifications are transient (toast only) and live in a
+   *  separate channel — never in the persistent `notifications` history. */
+  function toasts() {
+    return useAppStore.getState().transientNotifications.map(({ message, level }) => ({
+      message,
+      level,
+    }));
+  }
+
   it("exports to the chosen path and reveals the file", async () => {
     saveMock.mockResolvedValue("/tmp/out.html");
     const request = vi
@@ -156,7 +165,7 @@ describe("requestExport", () => {
       { format: "html", path: "/tmp/out.html" },
       null,
     );
-    expect(notifications()).toEqual([{ message: "Exported to /tmp/out.html", level: "info" }]);
+    expect(toasts()).toEqual([{ message: "Exported to /tmp/out.html", level: "info" }]);
     await vi.waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("desktop_open_path", {
         path: "/tmp/out.html",
@@ -180,7 +189,7 @@ describe("requestExport", () => {
     await expect(requestExport("html")).resolves.toBe(false);
 
     expect(saveMock).not.toHaveBeenCalled();
-    expect(notifications()).toEqual([
+    expect(toasts()).toEqual([
       { message: "Wait for the agent to finish before exporting", level: "info" },
     ]);
   });

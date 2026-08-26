@@ -71,6 +71,7 @@ import type {
   PiSettingsPatch,
   SkillPathMutation,
   SkillSnapshot,
+  PromptSnapshot,
   PluginLibraryApplyParams,
   PluginLibraryCatalog,
   PluginLibraryEnvUpdate,
@@ -171,6 +172,7 @@ export type HostContextMap = {
   "skill.list": WorkspaceContext;
   "skill.addPath": WorkspaceContext;
   "skill.removePath": WorkspaceContext;
+  "prompt.list": WorkspaceContext;
   "package.list": WorkspaceContext;
   "package.catalog": HostContext;
   "package.install": SessionPackageContext;
@@ -320,6 +322,7 @@ export type HostRequestParams = {
   "skill.list": null;
   "skill.addPath": SkillPathMutation;
   "skill.removePath": SkillPathMutation;
+  "prompt.list": null;
   "package.list": { scope: "user" | "project" | "all"; includeResources?: boolean };
   "package.catalog": {
     refresh?: boolean;
@@ -495,6 +498,7 @@ export type HostResultMap = {
   "skill.list": SkillSnapshot;
   "skill.addPath": SkillSnapshot;
   "skill.removePath": SkillSnapshot;
+  "prompt.list": PromptSnapshot;
   "package.list": PackageSnapshot;
   "package.catalog": PackageCatalog;
   "package.install": PackageMutationResult;

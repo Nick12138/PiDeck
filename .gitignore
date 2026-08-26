@@ -34,3 +34,6 @@ artifacts/
 # CI build logs (temporary)
 /ghlogs2/
 /logs2.zip
+
+# Local agent planning and scratch files
+/.zcode/

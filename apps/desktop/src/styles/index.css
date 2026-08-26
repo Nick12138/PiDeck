@@ -2098,6 +2098,25 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
+/* Skill preview dialog: only the copy action is shown and it is compact. */
+.skill-preview-markdown [data-streamdown="code-block-actions"] {
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+}
+
+.skill-preview-markdown [data-streamdown="code-block-copy-button"],
+.skill-preview-markdown [data-streamdown="code-block-download-button"],
+.skill-preview-markdown [data-streamdown="mermaid-block-actions"] button {
+  padding: 0.125rem;
+}
+
+.skill-preview-markdown [data-streamdown="code-block-copy-button"] svg,
+.skill-preview-markdown [data-streamdown="code-block-download-button"] svg,
+.skill-preview-markdown [data-streamdown="mermaid-block-actions"] button svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 .chat-markdown .katex {
   display: inline-block;
   max-width: 100%;

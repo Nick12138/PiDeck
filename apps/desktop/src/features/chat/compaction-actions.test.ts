@@ -104,6 +104,15 @@ function notifications() {
   }));
 }
 
+/** Info/success notifications are transient (toast only) and live in a
+ *  separate channel — never in the persistent `notifications` history. */
+function toasts() {
+  return useAppStore.getState().transientNotifications.map(({ message, level }) => ({
+    message,
+    level,
+  }));
+}
+
 describe("compaction actions", () => {
   beforeEach(() => {
     useAppStore.getState().setHost(null);
@@ -139,7 +148,7 @@ describe("compaction actions", () => {
       null,
     );
     expect(useAppStore.getState().session?.thinkingLevel).toBe("high");
-    expect(notifications()).toEqual([
+    expect(toasts()).toEqual([
       { message: "Context compacted: 120k → 8k tokens", level: "info" },
     ]);
   });
@@ -155,7 +164,7 @@ describe("compaction actions", () => {
     await expect(requestCompact()).resolves.toBe(true);
 
     expect(request).toHaveBeenCalledExactlyOnceWith("agent.compact", EXPECTED_CONTEXT, null, null);
-    expect(notifications()).toEqual([{ message: "Context compacted", level: "info" }]);
+    expect(toasts()).toEqual([{ message: "Context compacted", level: "info" }]);
   });
 
   it("refuses while the agent is busy", async () => {
@@ -165,7 +174,7 @@ describe("compaction actions", () => {
     await expect(requestCompact()).resolves.toBe(false);
 
     expect(request).not.toHaveBeenCalled();
-    expect(notifications()).toEqual([
+    expect(toasts()).toEqual([
       { message: "Wait for the agent to finish before compacting", level: "info" },
     ]);
   });

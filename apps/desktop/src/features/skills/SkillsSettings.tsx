@@ -4,20 +4,24 @@ import {
   Boxes,
   ChevronDown,
   ChevronRight,
+  Eye,
   FolderOpen,
   Folder,
+  HelpCircle,
   Plus,
   RefreshCw,
   Trash2,
   User,
 } from "lucide-react";
-import { secondaryButton } from "../../components/Dialog";
+import { Dialog, secondaryButton } from "../../components/Dialog";
 import { CollapsibleRegion } from "../../components/CollapsibleRegion";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import type {
   HostRequestParams,
   PackageMutationResult,
+  PromptInfo,
+  PromptSnapshot,
   ResourcePreferenceUpdate,
   ResourceRecord,
   SkillInfo,
@@ -31,7 +35,8 @@ import {
   workspaceContext,
 } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
-import { useT } from "../../lib/i18n/use-t";
+import { useT, type Translate } from "../../lib/i18n/use-t";
+import { SkillPreviewModal } from "./SkillPreviewModal";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -123,6 +128,30 @@ function groupIcon(id: SkillGroupId) {
   return id === "user" ? User : id === "project" ? Folder : Boxes;
 }
 
+/**
+ * Prompts are shown alongside skills inside the user/project group cards
+ * (never in the bundle group). Non-existent files are already filtered by the
+ * host, so every returned entry is rendered.
+ */
+function promptsForGroup(
+  promptSnapshot: PromptSnapshot | null,
+  groupId: SkillGroupId,
+): PromptInfo[] {
+  if (!promptSnapshot) return [];
+  if (groupId === "user") return promptSnapshot.prompts.filter((prompt) => prompt.scope === "user");
+  if (groupId === "project") {
+    return promptSnapshot.prompts.filter((prompt) => prompt.scope === "project");
+  }
+  return [];
+}
+
+/** Human-readable label for a prompt kind (override/append/merge groups). */
+function promptKindLabel(kind: PromptInfo["kind"], t: Translate): string {
+  if (kind === "system") return t("promptKindSystem");
+  if (kind === "append") return t("promptKindAppend");
+  return t("promptKindContext");
+}
+
 export function SkillsSettings() {
   const t = useT();
   const host = useAppStore((state) => state.host);
@@ -130,12 +159,17 @@ export function SkillsSettings() {
   const pushNotification = useAppStore((state) => state.pushNotification);
 
   const [snapshot, setSnapshot] = useState<SkillSnapshot | null>(null);
+  const [promptSnapshot, setPromptSnapshot] = useState<PromptSnapshot | null>(null);
   const [resources, setResources] = useState<ResourceRecord[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [newPath, setNewPath] = useState("");
   const [newScope, setNewScope] = useState<SkillSettingsScope>("project");
+  const [previewSkill, setPreviewSkill] = useState<{ name: string; filePath: string } | null>(
+    null,
+  );
+  const [showPromptHelp, setShowPromptHelp] = useState(false);
   // 全局/项目 default expanded; bundle (packages & extensions) default collapsed.
   const [collapsed, setCollapsed] = useState<Record<SkillGroupId, boolean>>({
     user: false,
@@ -153,6 +187,7 @@ export function SkillsSettings() {
   async function refresh() {
     if (!host || !workspace?.servicesReady) {
       setSnapshot(null);
+      setPromptSnapshot(null);
       setResources([]);
       setLoadState("idle");
       return;
@@ -164,10 +199,11 @@ export function SkillsSettings() {
     // project skills do not linger while the new workspace loads.
     if (snapshot && workspace && snapshot.workspaceId !== workspace.id) {
       setSnapshot(null);
+      setPromptSnapshot(null);
       setResources([]);
     }
     try {
-      const [skillResponse, packageResponse] = await Promise.all([
+      const [skillResponse, packageResponse, promptResponse] = await Promise.all([
         hostClient.request("skill.list", workspaceContext(host, workspace), null, 30_000),
         hostClient.request(
           "package.list",
@@ -175,12 +211,19 @@ export function SkillsSettings() {
           { scope: "all", includeResources: true } satisfies HostRequestParams["package.list"],
           60_000,
         ),
+        hostClient.request("prompt.list", workspaceContext(host, workspace), null, 30_000),
       ]);
       if (refreshRequest.current !== request) return;
       if (!skillResponse.ok) {
         throw new Error(skillResponse.error?.message ?? t("notifSkillsLoadFailed"));
       }
       setSnapshot(skillResponse.result);
+      // prompt.list is best-effort: a failure must not block the skills view.
+      if (promptResponse.ok) {
+        setPromptSnapshot(promptResponse.result);
+      } else {
+        setPromptSnapshot(null);
+      }
       if (packageResponse.ok) {
         setResources(
           packageResponse.result.resources.filter((resource) => resource.type === "skill"),
@@ -315,9 +358,13 @@ export function SkillsSettings() {
 
   const rows = snapshot ? buildRows(snapshot.skills, resources) : [];
   // Every group stays visible so empty scopes are discoverable.
-  const groups: Array<{ id: SkillGroupId; rows: SkillRow[] }> = (
+  const groups: Array<{ id: SkillGroupId; rows: SkillRow[]; prompts: PromptInfo[] }> = (
     ["user", "project", "bundle"] as const
-  ).map((id) => ({ id, rows: rows.filter((row) => row.groupId === id) }));
+  ).map((id) => ({
+    id,
+    rows: rows.filter((row) => row.groupId === id),
+    prompts: promptsForGroup(promptSnapshot, id),
+  }));
   const groupLabel = (id: SkillGroupId) =>
     id === "user"
       ? t("skillsGroupUser")
@@ -403,7 +450,20 @@ export function SkillsSettings() {
 
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-[13px] font-medium text-muted">{t("skillsLoadedTitle")}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[13px] font-medium text-muted">{t("skillsLoadedTitle")}</h2>
+                {(snapshot || promptSnapshot) && (
+                  <button
+                    type="button"
+                    className="flex size-6 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+                    title={t("promptsHelpTitle")}
+                    aria-label={t("promptsHelpTitle")}
+                    onClick={() => setShowPromptHelp(true)}
+                  >
+                    <HelpCircle size={14} />
+                  </button>
+                )}
+              </div>
               {snapshot && (
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] ${
@@ -425,7 +485,7 @@ export function SkillsSettings() {
                   <div key={group.id} className="rounded-lg border border-border">
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-surface-overlay/60"
+                      className={`flex w-full items-center gap-2 rounded-lg px-4 py-2 text-left transition-colors hover:bg-surface-overlay/60 ${isCollapsed ? "" : "rounded-b-none"}`}
                       aria-expanded={!isCollapsed}
                       aria-controls={listId}
                       onClick={() =>
@@ -442,7 +502,9 @@ export function SkillsSettings() {
                       )}
                       <Icon size={14} className="shrink-0 text-muted" aria-hidden />
                       <span className="text-[13px] font-medium">{groupLabel(group.id)}</span>
-                      <span className="text-[11px] text-muted">{group.rows.length}</span>
+                      <span className="text-[11px] text-muted">
+                        {group.rows.length + group.prompts.length}
+                      </span>
                     </button>
                     <CollapsibleRegion open={!isCollapsed} id={listId}>
                       {group.id === "bundle" && (
@@ -450,7 +512,7 @@ export function SkillsSettings() {
                           {t("skillsBundleReadonly")}
                         </p>
                       )}
-                      {group.rows.length === 0 ? (
+                      {group.rows.length === 0 && group.prompts.length === 0 ? (
                         <p className="border-t border-border px-4 py-3 text-xs text-muted">
                           {t("skillsGroupEmpty")}
                         </p>
@@ -469,9 +531,20 @@ export function SkillsSettings() {
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                      <span className="break-all text-sm font-medium">
+                                      <button
+                                        type="button"
+                                        className="min-w-0 cursor-pointer break-all text-left text-sm font-medium"
+                                        title={t("skillsPreviewToggle", { name: row.name })}
+                                        aria-label={t("skillsPreviewToggle", { name: row.name })}
+                                        onClick={() =>
+                                          setPreviewSkill({
+                                            name: row.name,
+                                            filePath: row.filePath,
+                                          })
+                                        }
+                                      >
                                         {row.name}
-                                      </span>
+                                      </button>
                                       {row.skill?.disableModelInvocation && (
                                         <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
                                           {t("skillsBadgeCommandOnly")}
@@ -531,6 +604,62 @@ export function SkillsSettings() {
                               </li>
                             );
                           })}
+                          {group.prompts.map((prompt) => (
+                            <li
+                              key={`prompt:${prompt.scope}:${prompt.name}`}
+                              className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-3"
+                            >
+                              <div className="flex min-w-0 flex-col gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      className="min-w-0 cursor-pointer break-all text-left text-sm font-medium"
+                                      title={t("promptsPreviewToggle", { name: prompt.name })}
+                                      aria-label={t("promptsPreviewToggle", { name: prompt.name })}
+                                      onClick={() =>
+                                        setPreviewSkill({ name: prompt.name, filePath: prompt.filePath })
+                                      }
+                                    >
+                                      {prompt.name}
+                                    </button>
+                                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent">
+                                      {t("promptBadge")}
+                                    </span>
+                                    <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] text-muted">
+                                      {promptKindLabel(prompt.kind, t)}
+                                    </span>
+                                    {prompt.loaded ? (
+                                      <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] text-success">
+                                        {t("promptLoaded")}
+                                      </span>
+                                    ) : (
+                                      <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">
+                                        {t("promptNotLoaded")}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-overlay hover:text-foreground"
+                                    title={t("promptsPreviewToggle", { name: prompt.name })}
+                                    aria-label={t("promptsPreviewToggle", { name: prompt.name })}
+                                    onClick={() =>
+                                      setPreviewSkill({ name: prompt.name, filePath: prompt.filePath })
+                                    }
+                                  >
+                                    <Eye size={14} />
+                                  </button>
+                                </div>
+                                <span
+                                  className="truncate font-mono text-[11px] text-muted"
+                                  title={prompt.filePath}
+                                >
+                                  {prompt.filePath}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
                         </ul>
                       )}
                     </CollapsibleRegion>
@@ -622,6 +751,48 @@ export function SkillsSettings() {
           </section>
         </div>
       </div>
+      {previewSkill && (
+        <SkillPreviewModal
+          name={previewSkill.name}
+          filePath={previewSkill.filePath}
+          onClose={() => setPreviewSkill(null)}
+        />
+      )}
+      {showPromptHelp && (
+        <Dialog
+          title={t("promptsHelpTitle")}
+          confirmLabel={t("commonClose")}
+          showCloseIcon
+          hideActions
+          maxWidthClass="max-w-[532px]"
+          onCancel={() => setShowPromptHelp(false)}
+          onConfirm={() => setShowPromptHelp(false)}
+        >
+          <div className="flex flex-col gap-3 text-xs text-muted">
+            <p>{t("promptsHelpIntro")}</p>
+            <div className="flex flex-col gap-1 rounded-lg border border-border p-3">
+              <p className="font-medium text-foreground">{t("promptsHelpGlobalDir")}</p>
+              <p className="font-mono text-[11px]">~/.pi/agent/</p>
+            </div>
+            <div className="flex flex-col gap-1 rounded-lg border border-border p-3">
+              <p className="font-medium text-foreground">{t("promptsHelpProjectDir")}</p>
+              <p className="font-mono text-[11px]">.pi/</p>
+            </div>
+            <div className="flex flex-col gap-1 rounded-lg border border-border p-3">
+              <p className="font-medium text-foreground">{t("promptsHelpOverrideTitle")}</p>
+              <p>{t("promptsHelpOverride")}</p>
+            </div>
+            <div className="flex flex-col gap-1 rounded-lg border border-border p-3">
+              <p className="font-medium text-foreground">{t("promptsHelpMergeTitle")}</p>
+              <p>{t("promptsHelpMerge")}</p>
+            </div>
+            <p className="flex items-start gap-2 text-[11px] text-warning">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>{t("promptsHelpTrust")}</span>
+            </p>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

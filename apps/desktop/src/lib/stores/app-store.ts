@@ -81,6 +81,20 @@ const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
   runs: [],
 };
 
+// Monotonic arrival order shared by the persistent history and the transient
+// toast feed, so NotificationCenter can order toasts across both channels.
+let nextNotificationSeq = 0;
+/** Transient (info/success) notifications are toast-only; keep a small buffer
+ *  beyond MAX_STACKED_TOASTS so rapid pushes don't drop an un-rendered toast. */
+const TRANSIENT_NOTIFICATION_CAP = 8;
+
+// 不在状态条展示的插件状态（插件功能保留，仅取消注册显示）
+const IGNORED_EXTENSION_STATUS_KEYS: ReadonlySet<string> = new Set([
+  "telegram", // @llblab/pi-telegram
+  "wechat", // pi-wechat-assistant
+  "pi-vision", // my-pi-plugins pi-vision
+]);
+
 /** Live view of the single in-flight builtin Provider login flow. */
 type ProviderLoginUiState = {
   loginId: string;
@@ -133,6 +147,8 @@ export type AppNotification = {
   createdAt: number;
   /** Cleared when the notification center is opened; drives the unread badge. */
   read: boolean;
+  /** Monotonic arrival stamp shared across the history and transient toast feeds. */
+  seq?: number;
 };
 
 /**
@@ -249,6 +265,8 @@ export type AppState = EpochState & {
   draftHydratedWorkspace: string | null;
   appUpdatePhase: AppUpdatePhase;
   notifications: AppNotification[];
+  /** Toast-only (info/success) notifications that never enter the history. */
+  transientNotifications: AppNotification[];
   hostFatal: string | null;
   connecting: boolean;
   rehydrating: boolean;
@@ -417,6 +435,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   draftHydratedWorkspace: null,
   appUpdatePhase: { state: "idle" },
   notifications: [],
+  transientNotifications: [],
   hostFatal: null,
   connecting: true,
   rehydrating: false,
@@ -953,7 +972,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setExtensionStatus: (key, text) =>
     set((state) => {
       const statusKey = key || "default";
-      const extensionStatuses = { ...state.extensionStatuses };
+      if (IGNORED_EXTENSION_STATUS_KEYS.has(statusKey)) return {};
+      const extensionStatuses = { ...state.extensionStatuses }; 
       if (text?.trim()) extensionStatuses[statusKey] = text;
       else delete extensionStatuses[statusKey];
       const values = Object.values(extensionStatuses);
@@ -1199,12 +1219,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setAppUpdatePhase: (appUpdatePhase) => set({ appUpdatePhase }),
   pushNotification: (message, level = "info") =>
-    set((s) => ({
-      notifications: [
-        ...s.notifications.slice(-49),
-        { id: crypto.randomUUID(), message, level, createdAt: Date.now(), read: false },
-      ],
-    })),
+    set((s) => {
+      const item: AppNotification = {
+        id: crypto.randomUUID(),
+        message,
+        level,
+        createdAt: Date.now(),
+        read: false,
+        seq: ++nextNotificationSeq,
+      };
+      // Only error/warning notifications are "persistent" — they are retained in
+      // the notification center history. Info/success notifications are transient
+      // (toast only) and never enter the history array.
+      const persistent = level === "error" || level === "warning";
+      return persistent
+        ? { notifications: [...s.notifications.slice(-49), item] }
+        : {
+            transientNotifications: [
+              ...s.transientNotifications.slice(-TRANSIENT_NOTIFICATION_CAP),
+              item,
+            ],
+          };
+    }),
   markNotificationsRead: () =>
     set((state) =>
       state.notifications.some((notification) => !notification.read)
@@ -1219,7 +1255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       notifications: state.notifications.filter((notification) => notification.id !== id),
     })),
-  clearNotifications: () => set({ notifications: [] }),
+  clearNotifications: () => set({ notifications: [], transientNotifications: [] }),
   setHostFatal: (hostFatal) => set({ hostFatal }),
   settleHostFailure: (message) =>
     set({

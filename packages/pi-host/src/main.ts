@@ -47,6 +47,7 @@ import { GitService } from "./git-service.js";
 import { refreshActiveSessionSnapshot } from "./session-snapshot.js";
 import { createPiSettingsHandlers } from "./pi-settings-controller.js";
 import { createSkillHandlers } from "./skill-controller.js";
+import { createPromptHandlers } from "./prompt-controller.js";
 import { createSubagentStatusBridge } from "./subagent-status-extension.js";
 
 function resolveAgentDir(): string {
@@ -261,6 +262,7 @@ async function main(): Promise<void> {
     ...createTelegramHandlers(agentDir),
     ...createPiSettingsHandlers(graphFactory, agentDir),
     ...createSkillHandlers(graphFactory),
+    ...createPromptHandlers(graphFactory),
   };
 
   const server = new PiHostServer({

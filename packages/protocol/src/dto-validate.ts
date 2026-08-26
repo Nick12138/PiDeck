@@ -1443,6 +1443,39 @@ function isSkillConfiguredPath(value: unknown): boolean {
   );
 }
 
+function isPromptInfo(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["name", "kind", "scope", "filePath", "loaded"]) &&
+    isString(value.name) &&
+    ["system", "append", "context"].includes(String(value.kind)) &&
+    ["user", "project"].includes(String(value.scope)) &&
+    isString(value.filePath) &&
+    isBoolean(value.loaded)
+  );
+}
+
+function isPromptSnapshot(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, [
+      "revision",
+      "workspaceId",
+      "cwd",
+      "agentDir",
+      "projectTrusted",
+      "prompts",
+    ]) &&
+    isSafeRevision(value.revision) &&
+    isUuid(value.workspaceId) &&
+    isString(value.cwd) &&
+    isString(value.agentDir) &&
+    isBoolean(value.projectTrusted) &&
+    Array.isArray(value.prompts) &&
+    value.prompts.every(isPromptInfo)
+  );
+}
+
 function isSkillSnapshot(value: unknown): boolean {
   return (
     isPlainObject(value) &&
@@ -2460,6 +2493,8 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "skill.addPath":
     case "skill.removePath":
       return isSkillSnapshot(result) ? null : "invalid SkillSnapshot";
+    case "prompt.list":
+      return isPromptSnapshot(result) ? null : "invalid PromptSnapshot";
     case "package.list":
       return isPackageSnapshot(result) ? null : "invalid PackageSnapshot";
     case "package.catalog":

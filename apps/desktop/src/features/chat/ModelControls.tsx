@@ -1,4 +1,4 @@
-import { Brain, Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ModelSummary, SessionContextBreakdown } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -140,6 +140,22 @@ export function currentModelLabel(
   return modelOptionLabel(catalogModel ?? model);
 }
 
+/** Visible name for the current-model button: the model name alone, without
+ *  the Provider prefix. The Provider is surfaced by the menu's group headers
+ *  and by the button's tooltip, which keeps the full `Provider/name` label. */
+export function currentModelDisplayName(
+  model: ModelSummary | undefined,
+  models: ModelSummary[],
+  fallback: string,
+): string {
+  if (!model) return fallback;
+  const catalogModel = models.find(
+    (candidate) => candidate.provider === model.provider && candidate.modelId === model.modelId,
+  );
+  const resolved = catalogModel ?? model;
+  return resolved.name || resolved.modelId;
+}
+
 export function thinkingLevelLabel(level: string): string {
   const labels = {
     off: "Off",
@@ -231,7 +247,7 @@ export function ContextUsageRing() {
     <span ref={containerRef} className="relative flex shrink-0 items-center">
       <button
         type="button"
-        className="relative flex size-6 shrink-0 items-center justify-center rounded-full"
+        className="relative flex size-[18px] shrink-0 items-center justify-center rounded-full"
         style={{
           background: `conic-gradient(var(--color-accent) ${
             percent === null ? 0 : percent * 3.6
@@ -243,15 +259,15 @@ export function ContextUsageRing() {
         title={title}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="absolute inset-[2px] rounded-full bg-surface-raised" />
-        <span className="relative text-[7px] tabular-nums text-muted">
+        <span className="absolute inset-2 rounded-full bg-surface-raised" />
+        <span className="relative text-[6px] tabular-nums text-muted">
           {roundedPercent === null ? "--" : `${isEstimated ? "~" : ""}${roundedPercent}%`}
         </span>
       </button>
       {open && (
         <div
           className={`theme-floating-surface absolute bottom-full z-50 mb-2 flex w-64 flex-col rounded-md border border-border bg-surface-raised p-3 text-left text-[11px] leading-4 text-foreground shadow-lg ${
-            centerPopover ? "left-1/2 -translate-x-1/2" : "right-0"
+            centerPopover ? "left-1/2 -translate-x-1/2" : "left-0"
           }`}
         >
           <span className="font-medium">{t("contextUsageTitle")}</span>
@@ -447,9 +463,24 @@ export function ModelControls() {
   ]);
 
   const modelOptions = includeCurrentModel(models, session?.model, enabledProviders);
+  const modelGroups = modelOptions.reduce<
+    { provider: string; label: string; models: ModelSummary[] }[]
+  >((groups, model) => {
+    const label = model.providerName || model.provider;
+    const group = groups.find((candidate) => candidate.provider === model.provider);
+    if (group) group.models.push(model);
+    else groups.push({ provider: model.provider, label, models: [model] });
+    return groups;
+  }, []);
   const activeModelLabel = currentModelLabel(session?.model, models, "");
+  const activeModelDisplayName = currentModelDisplayName(session?.model, models, "");
   const modelMenuLabels =
-    modelOptions.length > 0 ? modelOptions.map(modelOptionLabel) : [t("modelNoneEnabled")];
+    modelOptions.length > 0
+      ? [
+          ...modelGroups.map((group) => group.label),
+          ...modelOptions.map((model) => model.name || model.modelId),
+        ]
+      : [t("modelNoneEnabled")];
   const modelMenuMeasureKey = modelMenuLabels.join("\n");
 
   // Menu width tracks the widest model name so the floated dropdown always
@@ -563,7 +594,7 @@ export function ModelControls() {
 
   return (
     <div className="flex min-w-0 items-center">
-      <div ref={menuRef} className="relative flex h-8 min-w-0 max-w-[480px] items-center">
+      <div ref={menuRef} className="relative flex h-7 min-w-0 max-w-[480px] items-center">
         <span
           ref={modelMenuMeasureRef}
           aria-hidden="true"
@@ -575,7 +606,7 @@ export function ModelControls() {
         </span>
         <button
           type="button"
-          className="composer-control flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
+          className="composer-control flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md border border-border-subtle px-1.5 text-xs text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-default disabled:opacity-40"
           disabled={!session}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -584,7 +615,7 @@ export function ModelControls() {
             setMenuOpen((open) => !open);
           }}
         >
-          <span className="truncate">{activeModelLabel || t("modelNone")}</span>
+          <span className="truncate leading-none">{activeModelDisplayName || t("modelNone")}</span>
           <ChevronDown
             className={`shrink-0 transition-transform ${menuOpen ? "rotate-180" : ""}`}
             size={13}
@@ -606,40 +637,47 @@ export function ModelControls() {
               {modelOptions.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-muted">{t("modelNoneEnabled")}</p>
               ) : (
-                modelOptions.map((model) => {
-                  const key = `${model.provider}/${model.modelId}`;
-                  const selected =
-                    session?.model?.provider === model.provider &&
-                    session.model.modelId === model.modelId;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
-                        selected ? "font-medium" : ""
-                      }`}
-                      role="menuitemradio"
-                      aria-checked={selected}
-                      title={modelOptionLabel(model)}
-                      onClick={() => {
-                        if (selected) {
-                          setMenuOpen(false);
-                          return;
-                        }
-                        void setModel(model.provider, model.modelId).then((changed) => {
-                          if (changed) setMenuOpen(false);
-                        });
-                      }}
-                    >
-                      <span className="whitespace-nowrap">{modelOptionLabel(model)}</span>
-                      {selected && (
-                        <span className="ml-auto flex shrink-0 items-center justify-center">
-                          <Check size={16} strokeWidth={2.5} />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
+                modelGroups.map((group) => (
+                  <div key={group.provider}>
+                    <div className="flex h-7 items-center px-2.5 pt-1 text-xs font-medium text-foreground">
+                      {group.label}
+                    </div>
+                    {group.models.map((model) => {
+                      const key = `${model.provider}/${model.modelId}`;
+                      const selected =
+                        session?.model?.provider === model.provider &&
+                        session.model.modelId === model.modelId;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-xs text-muted ${
+                            selected ? "font-medium" : ""
+                          }`}
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          title={modelOptionLabel(model)}
+                          onClick={() => {
+                            if (selected) {
+                              setMenuOpen(false);
+                              return;
+                            }
+                            void setModel(model.provider, model.modelId).then((changed) => {
+                              if (changed) setMenuOpen(false);
+                            });
+                          }}
+                        >
+                          <span className="whitespace-nowrap">{model.name || model.modelId}</span>
+                          {selected && (
+                            <span className="ml-auto flex shrink-0 items-center justify-center">
+                              <Check size={16} strokeWidth={2.5} />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -707,7 +745,7 @@ export function ThinkingControls() {
     <div ref={containerRef} className="relative flex min-w-0 items-center">
       <button
         type="button"
-        className={`composer-control flex h-8 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] transition-colors ${
+        className={`composer-control flex h-7 items-center gap-1 rounded-md border border-border-subtle px-1.5 text-[11px] transition-colors ${
           open
             ? "bg-surface-overlay text-foreground"
             : "text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -718,8 +756,7 @@ export function ThinkingControls() {
         title={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
         onClick={() => setOpen((current) => !current)}
       >
-        <Brain size={15} className="shrink-0" />
-        <span className="whitespace-nowrap capitalize">{thinkingLevelLabel(currentLevel)}</span>
+        <span className="whitespace-nowrap capitalize leading-none">{thinkingLevelLabel(currentLevel)}</span>
       </button>
       {open && (
         <div

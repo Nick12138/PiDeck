@@ -93,6 +93,12 @@ describe("hostErrorLevel", () => {
     expect(hostErrorLevel({ code: "AGENT_BUSY", message: "Agent is busy" })).toBe("info");
   });
 
+  it("treats PACKAGE_MUTATION_BUSY as a transient (info) notification", () => {
+    expect(
+      hostErrorLevel({ code: "PACKAGE_MUTATION_BUSY", message: "Another package operation" }),
+    ).toBe("info");
+  });
+
   it("keeps other host errors as persistent (error) notifications", () => {
     expect(hostErrorLevel({ code: "SESSION_NOT_FOUND", message: "Session not found" })).toBe(
       "error",
@@ -109,5 +115,10 @@ describe("hostErrorLevel", () => {
   it("exposes AGENT_BUSY as a transient host error code", () => {
     expect(TRANSIENT_HOST_ERROR_CODES.has("AGENT_BUSY")).toBe(true);
     expect(TRANSIENT_HOST_ERROR_CODES.has("SESSION_NOT_FOUND")).toBe(false);
+  });
+
+  it("exposes PACKAGE_MUTATION_BUSY as a transient host error code", () => {
+    expect(TRANSIENT_HOST_ERROR_CODES.has("PACKAGE_MUTATION_BUSY")).toBe(true);
+    expect(TRANSIENT_HOST_ERROR_CODES.has("INTERNAL_ERROR")).toBe(false);
   });
 });

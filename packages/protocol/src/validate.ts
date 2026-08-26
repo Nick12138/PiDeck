@@ -706,6 +706,7 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid model.setThinkingLevel params", { method });
     case "skill.list":
+    case "prompt.list":
       return params === null ? ok(null) : fail("params must be null", { method });
     case "skill.addPath":
     case "skill.removePath":

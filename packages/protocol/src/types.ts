@@ -397,6 +397,31 @@ export type SkillPathMutation = {
   scope: SkillSettingsScope;
 };
 
+/** Kind of a discovered prompt file (matching Pi's loader roles). */
+export type PromptKind = "system" | "append" | "context";
+
+export type PromptInfo = {
+  /** File name, e.g. "SYSTEM.md". */
+  name: string;
+  kind: PromptKind;
+  scope: "user" | "project";
+  filePath: string;
+  /** Whether Pi actually loads this file for the current workspace. */
+  loaded: boolean;
+};
+
+export type PromptSnapshot = {
+  revision: number;
+  workspaceId: string;
+  /** Workspace cwd the discovery ran against. */
+  cwd: string;
+  /** Global agent directory containing user-scope prompt files. */
+  agentDir: string;
+  projectTrusted: boolean;
+  /** Only prompt files that exist on disk. */
+  prompts: PromptInfo[];
+};
+
 export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
 
 export type ProviderModelConfig = {

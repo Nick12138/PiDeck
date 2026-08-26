@@ -106,6 +106,15 @@ function notifications() {
   return useAppStore.getState().notifications.map(({ message, level }) => ({ message, level }));
 }
 
+/** Info/success notifications are transient (toast only) and live in a
+ *  separate channel — never in the persistent `notifications` history. */
+function toasts() {
+  return useAppStore.getState().transientNotifications.map(({ message, level }) => ({
+    message,
+    level,
+  }));
+}
+
 describe("requestRetry", () => {
   beforeEach(() => {
     useAppStore.getState().setHost(null);
@@ -201,7 +210,7 @@ describe("requestRetry", () => {
     await expect(requestRetry(userRow("please review"))).resolves.toBe(false);
 
     expect(request).not.toHaveBeenCalled();
-    expect(notifications()).toEqual([
+    expect(toasts()).toEqual([
       { message: "Wait for the agent to finish before retrying", level: "info" },
     ]);
   });
@@ -262,7 +271,7 @@ describe("requestGoOn", () => {
     await expect(requestGoOn()).resolves.toBe(false);
 
     expect(request).not.toHaveBeenCalled();
-    expect(notifications()).toEqual([
+    expect(toasts()).toEqual([
       { message: "Wait for the agent to finish before retrying", level: "info" },
     ]);
   });
