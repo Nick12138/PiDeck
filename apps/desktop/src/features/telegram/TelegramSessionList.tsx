@@ -18,7 +18,13 @@ export function telegramSessionTitle(session: TelegramSessionSummary): string {
 export function telegramSessionTime(updatedAt: number): string | null {
   if (!updatedAt) return null;
   const date = new Date(updatedAt);
-  const hhmm = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Explicit 24-hour (h23) so the label is stable across en-US (AM/PM), zh-CN,
+  // and CI locales; the compact row format is documented as HH:MM.
+  const hhmm = date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
   const now = new Date();
   if (date.toDateString() === now.toDateString()) return hhmm;
   return `${date.getMonth() + 1}/${date.getDate()} ${hhmm}`;
@@ -79,11 +85,7 @@ export function TelegramSessionList() {
           title={t("tgSessionsRefresh")}
           aria-label={t("tgSessionsRefresh")}
         >
-          {loading ? (
-            <LoaderCircle size={13} className="animate-spin" />
-          ) : (
-            <RefreshCw size={13} />
-          )}
+          {loading ? <LoaderCircle size={13} className="animate-spin" /> : <RefreshCw size={13} />}
         </button>
       </div>
       <CollapsibleRegion open={!collapsed} id="telegram-sessions-region">
@@ -134,9 +136,7 @@ export function TelegramSessionList() {
                         </span>
                       )}
                     </span>
-                    {preview && (
-                      <span className="truncate text-[11px] text-muted">{preview}</span>
-                    )}
+                    {preview && <span className="truncate text-[11px] text-muted">{preview}</span>}
                   </button>
                 </li>
               );
