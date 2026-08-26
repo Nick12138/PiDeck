@@ -226,7 +226,7 @@ export type SettingsNavCache = {
 };
 
 /** How long a remembered Settings position stays valid (30 minutes). */
-export const SETTINGS_NAV_CACHE_TTL_MS = 30 * 60 * 1000;
+const SETTINGS_NAV_CACHE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Restore the remembered Settings section for a generic open. A cache that is
@@ -1032,7 +1032,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const statusKey = key || "default";
       if (IGNORED_EXTENSION_STATUS_KEYS.has(statusKey)) return {};
-      const extensionStatuses = { ...state.extensionStatuses }; 
+      const extensionStatuses = { ...state.extensionStatuses };
       if (text?.trim()) extensionStatuses[statusKey] = text;
       else delete extensionStatuses[statusKey];
       const values = Object.values(extensionStatuses);

@@ -11,7 +11,7 @@ function platformIsWindows(): boolean {
   return typeof navigator !== "undefined" && /^win/i.test(navigator.platform);
 }
 
-export function normalizeTelegramPath(path: string): string {
+function normalizeTelegramPath(path: string): string {
   return platformIsWindows() ? path.toLowerCase() : path;
 }
 

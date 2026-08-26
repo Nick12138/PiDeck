@@ -143,7 +143,7 @@ export function currentModelLabel(
 /** Visible name for the current-model button: the model name alone, without
  *  the Provider prefix. The Provider is surfaced by the menu's group headers
  *  and by the button's tooltip, which keeps the full `Provider/name` label. */
-export function currentModelDisplayName(
+function currentModelDisplayName(
   model: ModelSummary | undefined,
   models: ModelSummary[],
   fallback: string,
@@ -756,7 +756,9 @@ export function ThinkingControls() {
         title={t("modelThinkingFor", { model: modelOptionLabel(currentModel) })}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="whitespace-nowrap capitalize leading-none">{thinkingLevelLabel(currentLevel)}</span>
+        <span className="whitespace-nowrap capitalize leading-none">
+          {thinkingLevelLabel(currentLevel)}
+        </span>
       </button>
       {open && (
         <div

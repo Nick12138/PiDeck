@@ -6,7 +6,7 @@
  * protocol-backed settings field / Host command later.
  */
 
-export type BotGatewayKind = "telegram" | "weixin";
+type BotGatewayKind = "telegram" | "weixin";
 
 export type BotGateway = {
   id: string;
@@ -31,21 +31,6 @@ export type BotGateway = {
 };
 
 const STORAGE_KEY = "pideck.bot.gateways.v1";
-
-/**
- * Default workspace directory for a gateway kind, relative to the Pi agent
- * directory. Telegram uses `<agentDir>/workspace/telegram`, WeXin uses
- * `<agentDir>/workspace/weixin`. The host provisions this directory on
- * gateway add; the frontend mirrors the rule for fallback display/
- * testing. Path separators are normalized to the host OS by {@link
- * normalizeWorkspacePath} when the host can't return an authoritative path.
- */
-export function defaultGatewayWorkspacePath(kind: BotGatewayKind, agentDir: string): string {
-  const segment = kind === "telegram" ? "workspace/telegram" : "workspace/weixin";
-  // agentDir is OS-canonical already; join without assuming POSIX separators.
-  const sep = agentDir.includes("\\") && !agentDir.includes("/") ? "\\" : "/";
-  return `${agentDir.replace(/[\\/]$/, "")}${sep}${segment.split("/").join(sep)}`;
-}
 
 export function loadBotGateways(): BotGateway[] {
   try {
