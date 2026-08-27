@@ -1382,6 +1382,37 @@ export function Composer({
       documentsRef.current = sentDocuments;
       setDocuments(sentDocuments);
     };
+    // Optimistic echo: show the user's bubble immediately instead of waiting
+    // for the Host to echo the message_start event (which can lag behind model
+    // preflight/compaction). The authoritative event later replaces the marker
+    // in place, so there is never a duplicate row.
+    const optimisticKey = crypto.randomUUID();
+    const appendOptimisticMessage = () => {
+      const currentSession = useAppStore.getState().session;
+      if (!currentSession || currentSession.sessionId !== session?.sessionId) return;
+      setSession({
+        ...currentSession,
+        messages: [
+          ...currentSession.messages,
+          {
+            role: "user",
+            content: outgoingText,
+            timestamp: Date.now(),
+            _optimisticKey: optimisticKey,
+          },
+        ],
+      });
+    };
+    const removeOptimisticMessage = () => {
+      const currentSession = useAppStore.getState().session;
+      if (!currentSession) return;
+      setSession({
+        ...currentSession,
+        messages: currentSession.messages.filter(
+          (message) => message._optimisticKey !== optimisticKey,
+        ),
+      });
+    };
     // AUTH_REQUIRED gets the persistent banner (with a Providers-settings
     // path) instead of a vanishing toast; anything else keeps the toast.
     const handleSendFailure = (
@@ -1406,12 +1437,14 @@ export function Composer({
     try {
       if (busy) {
         // Running-session sends use the configured steer or follow-up behavior.
+        appendOptimisticMessage();
         const res = await hostClient.request(busySendMethod(busySendBehavior), context, {
           text: outgoingText,
           ...imageParams,
           ...attachmentParams,
         });
         if (!res.ok) {
+          removeOptimisticMessage();
           handleSendFailure(res.error);
         } else {
           commitDraftSend(sendReceipt);
@@ -1419,6 +1452,7 @@ export function Composer({
         return;
       }
 
+      appendOptimisticMessage();
       const res = await hostClient.request(
         "agent.prompt",
         context,
@@ -1426,6 +1460,7 @@ export function Composer({
         null,
       );
       if (!res.ok) {
+        removeOptimisticMessage();
         handleSendFailure(res.error);
       } else {
         commitDraftSend(sendReceipt);
@@ -1433,6 +1468,7 @@ export function Composer({
         setAuthBlocked(null);
       }
     } catch (error) {
+      removeOptimisticMessage();
       pushNotification(error instanceof Error ? error.message : t("composerSendFailed"), "error");
       restoreDraft();
     }

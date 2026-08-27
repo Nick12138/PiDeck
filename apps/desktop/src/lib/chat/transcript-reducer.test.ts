@@ -929,3 +929,64 @@ describe("applyAgentEvent", () => {
     expect(next.leafId).toBe("entry-1");
   });
 });
+
+describe("optimistic user echo", () => {
+  it("replaces the optimistic bubble with the authoritative user message on message_start", () => {
+    let s = baseSession();
+    s.messages = [{ role: "user", content: "hello", timestamp: 1, _optimisticKey: "opt-1" }];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "hello", timestamp: 2 },
+      },
+    })!;
+
+    expect(s.messages).toHaveLength(1);
+    expect(s.messages[0]).toMatchObject({ role: "user", content: "hello" });
+    expect(s.messages[0]?._optimisticKey).toBeUndefined();
+  });
+
+  it("does not duplicate when message_end arrives after message_start replaced the bubble", () => {
+    let s = baseSession();
+    s.messages = [
+      { role: "user", content: "hello", _optimisticKey: "opt-1" },
+      { role: "assistant", content: [] },
+    ];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "hello", timestamp: 2 },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
+        message: { role: "user", content: "hello", timestamp: 2 },
+      },
+    })!;
+
+    const userRows = s.messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(1);
+    expect(s.messages[0]?._optimisticKey).toBeUndefined();
+  });
+
+  it("appends normally when no optimistic bubble matches the incoming text", () => {
+    let s = baseSession();
+    s.messages = [{ role: "user", content: "hello", _optimisticKey: "opt-1" }];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "different text", timestamp: 2 },
+      },
+    })!;
+
+    expect(s.messages).toHaveLength(2);
+  });
+});

@@ -698,6 +698,8 @@ export type SerializableAgentMessage = {
   role: string;
   content: SerializableAgentContent[] | string;
   usage?: SerializableUsage;
+  /** Desktop-local marker for optimistic user bubbles; never sent on the wire. */
+  _optimisticKey?: string;
   [key: string]: JsonValue | SerializableAgentContent[] | string | undefined;
 };
 

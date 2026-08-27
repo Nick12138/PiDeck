@@ -186,11 +186,13 @@ function applyAgentEventToDraft(
     case "message_start": {
       const msg = normalizeMessage(ev.message);
       if (msg) {
-        next.messages.push(
-          msg.role === "assistant"
-            ? { ...msg, startedAt: numericField(msg, "startedAt") ?? eventTime }
-            : msg,
-        );
+        if (msg.role !== "user" || !replaceOptimisticUserMessageInPlace(next.messages, msg)) {
+          next.messages.push(
+            msg.role === "assistant"
+              ? { ...msg, startedAt: numericField(msg, "startedAt") ?? eventTime }
+              : msg,
+          );
+        }
       }
       next.isStreaming = true;
       next.isIdle = false;
@@ -214,6 +216,8 @@ function applyAgentEventToDraft(
       if (msg) {
         if (msg.role === "assistant") {
           mergeLastAssistantInPlace(next.messages, msg, eventTime, true);
+        } else if (replaceMatchingUserMessageInPlace(next.messages, msg)) {
+          // Authoritative message upgraded/replaced the matching user bubble in place.
         } else {
           const last = next.messages[next.messages.length - 1];
           if (last?.role === msg.role) next.messages[next.messages.length - 1] = msg;
@@ -427,6 +431,56 @@ function normalizeMessage(message: unknown): SerializableAgentMessage | null {
     role: m.role,
     content: (m.content as SerializableAgentMessage["content"]) ?? "",
   };
+}
+
+/** Plain text of a message content (string or [{type:"text"|...,text}] parts). */
+function contentText(content: SerializableAgentMessage["content"]): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part) => part && typeof part === "object" && typeof part.text === "string")
+    .map((part) => (part as { text: string }).text)
+    .join("\n");
+}
+
+/**
+ * Replace the first still-pending optimistic user bubble whose text matches the
+ * incoming authoritative message. Returns true when a local bubble was upgraded.
+ */
+function replaceOptimisticUserMessageInPlace(
+  messages: SerializableAgentMessage[],
+  incoming: SerializableAgentMessage,
+): boolean {
+  const incomingText = contentText(incoming.content);
+  if (!incomingText) return false;
+  const index = messages.findIndex(
+    (candidate) =>
+      candidate.role === "user" &&
+      typeof candidate._optimisticKey === "string" &&
+      contentText(candidate.content) === incomingText,
+  );
+  if (index === -1) return false;
+  const { _optimisticKey: _dropped, ...authoritative } = incoming;
+  messages[index] = authoritative;
+  return true;
+}
+
+/**
+ * Replace an already-upgraded optimistic row (same user text) when message_end
+ * arrives after message_start, so a single user prompt never renders twice.
+ */
+function replaceMatchingUserMessageInPlace(
+  messages: SerializableAgentMessage[],
+  incoming: SerializableAgentMessage,
+): boolean {
+  const incomingText = contentText(incoming.content);
+  if (!incomingText) return false;
+  const index = messages.findIndex(
+    (candidate) => candidate.role === "user" && contentText(candidate.content) === incomingText,
+  );
+  if (index === -1) return false;
+  messages[index] = incoming;
+  return true;
 }
 
 function normalizeSessionEntry(value: unknown): SerializableSessionEntry | null {
