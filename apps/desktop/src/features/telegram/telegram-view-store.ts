@@ -15,10 +15,10 @@ import { bootstrapTelegramHost } from "../../lib/bridge/tauri-transport";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 
-export const TELEGRAM_WORKSPACE_DISPLAY_NAME_KEY = "pideck.telegram.workspaceDisplayName.v1";
+const TELEGRAM_WORKSPACE_DISPLAY_NAME_KEY = "pideck.telegram.workspaceDisplayName.v1";
 
 /** Bridge on/off preference, persisted by the settings toggle. Default on. */
-export const TELEGRAM_BRIDGE_ENABLED_KEY = "pideck.telegram.bridgeEnabled.v1";
+const TELEGRAM_BRIDGE_ENABLED_KEY = "pideck.telegram.bridgeEnabled.v1";
 
 export function loadTelegramBridgePrefEnabled(): boolean {
   try {
@@ -106,11 +106,7 @@ export async function maybeAutoStartTelegramBridge(): Promise<boolean> {
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   const { workspace, session } = useAppStore.getState();
-  if (
-    !workspace ||
-    !session ||
-    !isSameTelegramPath(workspace.canonicalCwd, store.workspacePath)
-  ) {
+  if (!workspace || !session || !isSameTelegramPath(workspace.canonicalCwd, store.workspacePath)) {
     return false;
   }
   await store.refreshBridgeStatus();
@@ -284,7 +280,11 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     } catch (err) {
       // Any failure still marks the view loaded so a configured profile can
       // drive the entry; the sidebar surfaces the error itself.
-      set({ loaded: true, error: err instanceof Error ? err.message : String(err), loading: false });
+      set({
+        loaded: true,
+        error: err instanceof Error ? err.message : String(err),
+        loading: false,
+      });
     }
   },
 
@@ -368,13 +368,22 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
   applyTelegramConfig: async (assistant, voice, threads) => {
     const host = useAppStore.getState().host;
     if (!host) return false;
-    const params: { assistant?: TelegramAssistantConfig; voice?: TelegramVoiceConfig; threads?: TelegramThreadsConfig } = {};
+    const params: {
+      assistant?: TelegramAssistantConfig;
+      voice?: TelegramVoiceConfig;
+      threads?: TelegramThreadsConfig;
+    } = {};
     if (assistant !== null && assistant !== undefined) params.assistant = assistant;
     if (voice !== null && voice !== undefined) params.voice = voice;
     if (threads !== null && threads !== undefined) params.threads = threads;
     if (Object.keys(params).length === 0) return true;
     try {
-      const res = await hostClient.request("telegram.updateConfig", hostContext(host), params, 15_000);
+      const res = await hostClient.request(
+        "telegram.updateConfig",
+        hostContext(host),
+        params,
+        15_000,
+      );
       if (!res.ok) return false;
       set({
         assistant: assistant ?? get().assistant,

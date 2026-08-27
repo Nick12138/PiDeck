@@ -789,8 +789,8 @@ export const en = {
   botAddMenu: "Add",
   botAddFolderWorkspace: "Folder workspace",
   botAddFolderWorkspaceDesc: "Pick a local folder to work in.",
-  botAddTelegramBot: "TG Workspace",
-  botAddTelegramBotDesc: "Create a dedicated TG workspace and bind a Telegram bot.",
+  botAddTelegramBot: "Telegram Workspace",
+  botAddTelegramBotDesc: "Create a dedicated Telegram workspace and bind your bot.",
   botAddWeixinBot: "WeXin Bot",
   botAddWeixinBotDesc: "WeXin gateway support is coming soon.",
   botAddComingSoon: "Coming soon",
@@ -829,7 +829,7 @@ export const en = {
 
   // Telegram guidance dialog (plugin handoff)
   botAddTelegramGuidance:
-    "Token verified and the profile is saved. The bridge starts automatically in this workspace; start it manually in the TG workspace settings if it is not connected.",
+    "Token verified and the profile is saved. The bridge starts automatically in this workspace; start it manually in the Telegram workspace settings if it is not connected.",
   botAddTelegramConnectCmd: "Copy",
   botAddTelegramSaveFailed: "Failed to save the bot profile.",
 
@@ -838,18 +838,17 @@ export const en = {
   tgWorkspacesExpand: "Expand message workspaces",
   tgWorkspacesCollapse: "Collapse message workspaces",
   tgWorkspaceEnterTitle: "Open telegram workspace {name}",
-  tgRowUnconfigured: "Unconfigured",
   tgBridgeConnected: "Bridge connected",
   tgBridgeDisconnected: "Bridge disconnected",
   tgWorkspaceCreateFailed:
-    "TG workspace directory couldn’t be created; check the agent directory permissions.",
+    "Telegram workspace directory couldn’t be created; check the agent directory permissions.",
   tgSessionsTitle: "Telegram sessions",
   tgSessionsExpand: "Expand telegram sessions",
   tgSessionsCollapse: "Collapse telegram sessions",
   tgSessionsRefresh: "Refresh",
   tgSessionsEmpty: "No telegram sessions yet.",
   tgSessionPickHint: "Select a session from the sidebar to view it.",
-  tgInstallNeedsWorkspace: "Select a workspace first, then add the TG workspace.",
+  tgInstallNeedsWorkspace: "Select a workspace first, then add the Telegram workspace.",
   tgInstallTitle: "Installing Telegram plugin",
   tgInstallSubtitle: "Installing @llblab/pi-telegram (the plugin handles messaging).",
   tgInstallProgress: "Install progress",

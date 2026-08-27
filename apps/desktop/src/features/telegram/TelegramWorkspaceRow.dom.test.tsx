@@ -78,11 +78,13 @@ describe("TelegramWorkspaceRow", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the telegram row even without profile or sessions (unconfigured)", () => {
+  it("hides the telegram row until a profile is added and configured", () => {
     useTelegramViewStore.setState({ profile: null, sessions: [], loaded: true });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
-    expect(screen.getByText("Telegram")).toBeInTheDocument();
-    expect(screen.getByText("Unconfigured")).toBeInTheDocument();
+    expect(screen.queryByText("Telegram")).not.toBeInTheDocument();
+    // The row stays mounted invisibly so its config-load duties still run and
+    // it appears the moment a profile is saved elsewhere.
+    expect(ensureWorkspace).toHaveBeenCalled();
   });
 
   it("shows the telegram row with the bot handle", () => {

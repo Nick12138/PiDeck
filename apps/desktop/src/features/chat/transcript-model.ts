@@ -1262,7 +1262,7 @@ export function buildAttachedImageBlock(name: string, sourcePath: string): strin
   return `<attached-image name="${safeName}" path="${safePath}"/>`;
 }
 
-export type ParsedFileAttachment = {
+type ParsedFileAttachment = {
   name: string;
   content: string;
   /** Absolute path of the original source file carried by the block, when present. */

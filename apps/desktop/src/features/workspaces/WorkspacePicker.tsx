@@ -92,6 +92,7 @@ export function WorkspacePicker() {
   const host = useAppStore((s) => s.host);
   const telegramActive = useTelegramWorkspaceActive();
   const telegramWorkspacePath = useTelegramViewStore((s) => s.workspacePath);
+  const telegramProfileConfigured = useTelegramViewStore((s) => s.profile?.configured ?? false);
   const workspace = useAppStore((s) => s.workspace);
   const knownWorkspaces = useAppStore((s) => s.desktopSettings?.knownWorkspaces ?? NO_WORKSPACES);
   const switchTarget = useAppStore((s) => s.workspaceSwitchTarget);
@@ -460,22 +461,24 @@ export function WorkspacePicker() {
                   </span>
                 </span>
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
-                onClick={() => void startTelegramAdd()}
-              >
-                <Send size={16} className="mt-0.5 shrink-0 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    {t("botAddTelegramBot")}
+              {!telegramProfileConfigured && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
+                  onClick={() => void startTelegramAdd()}
+                >
+                  <Send size={16} className="mt-0.5 shrink-0 text-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">
+                      {t("botAddTelegramBot")}
+                    </span>
+                    <span className="block truncate text-xs text-muted">
+                      {t("botAddTelegramBotDesc")}
+                    </span>
                   </span>
-                  <span className="block truncate text-xs text-muted">
-                    {t("botAddTelegramBotDesc")}
-                  </span>
-                </span>
-              </button>
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

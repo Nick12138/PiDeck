@@ -24,7 +24,9 @@ import { TelegramSettingsDialog } from "./TelegramSettingsDialog";
  * through the normal host-switch machinery, so the bridge's polling session
  * lives in this workspace and TG turns never land in other workspaces. On
  * entry, the bridge auto-starts when a profile is configured and no owner is
- * live. The row is always visible; the subtitle reflects the bind state.
+ * live. The row is hidden until a bot profile has actually been added and
+ * configured (see the render guard); once visible, the subtitle reflects the
+ * bind state.
  */
 export function TelegramWorkspaceRow({
   onActivate,
@@ -122,6 +124,12 @@ export function TelegramWorkspaceRow({
     })();
   }, [ensureWorkspace, workspacePath]);
 
+  // No profile added AND configured yet: there is no dedicated workspace to
+  // enter, so an "unconfigured" stub row is pure noise. Keep the component
+  // mounted (hooks above still run) so the row appears the moment the add/
+  // settings flow publishes a configured profile into the store.
+  if (profile === null || !profile.configured) return null;
+
   async function handleActivate() {
     const path = await ensureWorkspace();
     if (!path) return;
@@ -134,29 +142,21 @@ export function TelegramWorkspaceRow({
     void maybeAutoStartTelegramBridge();
   }
 
-  const botLabel = profile?.botUsername ? `@${profile.botUsername}` : "Telegram";
+  const botLabel = profile.botUsername ? `@${profile.botUsername}` : "Telegram";
   const title = displayName ?? botLabel;
-  const subtitle = !loaded
-    ? undefined
-    : profile === null
-      ? t("tgRowUnconfigured")
-      : (profile.botName ?? undefined);
+  const subtitle = !loaded ? undefined : (profile.botName ?? undefined);
 
   // Priority: green (connected) > amber (status loading) > gray (configured
-  // but disconnected) > none (no profile yet).
+  // but disconnected). The render guard above guarantees a configured profile.
   const statusDot =
     bridgeStatus?.connected
       ? "bg-success status-dot-pulse"
       : bridgeLoading
         ? "bg-warning status-dot-pulse"
-        : profile !== null
-          ? "bg-muted"
-          : null;
+        : "bg-muted";
   const statusTitle = bridgeStatus?.connected
     ? t("tgBridgeConnected")
-    : profile !== null
-      ? t("tgBridgeDisconnected")
-      : undefined;
+    : t("tgBridgeDisconnected");
 
   const onContextMenu = (event: React.MouseEvent) => {
     if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
