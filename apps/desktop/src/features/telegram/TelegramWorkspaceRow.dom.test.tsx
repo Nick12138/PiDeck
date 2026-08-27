@@ -45,12 +45,14 @@ describe("TelegramWorkspaceRow", () => {
   let refreshTelegramSessions: ReturnType<typeof vi.fn>;
   let refreshBridgeStatus: ReturnType<typeof vi.fn>;
   let startTelegramBridge: ReturnType<typeof vi.fn>;
+  let startTelegramBridgeInBackground: ReturnType<typeof vi.fn>;
   let ensureWorkspace: ReturnType<typeof vi.fn>;
   let onActivate: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     refreshTelegramSessions = vi.fn().mockResolvedValue(undefined);
     refreshBridgeStatus = vi.fn().mockResolvedValue(undefined);
     startTelegramBridge = vi.fn().mockResolvedValue(true);
+    startTelegramBridgeInBackground = vi.fn().mockResolvedValue(true);
     ensureWorkspace = vi.fn().mockResolvedValue(TELEGRAM_WORKSPACE_PATH);
     onActivate = vi.fn().mockResolvedValue(undefined);
     useTelegramViewStore.setState({
@@ -70,6 +72,7 @@ describe("TelegramWorkspaceRow", () => {
       refreshTelegramSessions,
       refreshBridgeStatus,
       startTelegramBridge,
+      startTelegramBridgeInBackground,
       ensureTelegramWorkspace: ensureWorkspace,
     });
   });
@@ -100,7 +103,7 @@ describe("TelegramWorkspaceRow", () => {
     expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH);
   });
 
-  it("boots straight into the telegram workspace after startup when the bridge is meant to run", async () => {
+  it("starts the telegram bridge in the background after startup when the bridge is meant to run", async () => {
     useAppStore.setState({
       host,
       workspace: {
@@ -140,10 +143,12 @@ describe("TelegramWorkspaceRow", () => {
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     // No user interaction: the settled app + configured profile + bridge
-    // preference defaulting to on must switch into the TG workspace once.
+    // preference defaulting to on must bootstrap the bridge's dedicated Host
+    // in the background once — WITHOUT switching the foreground workspace.
     await waitFor(() =>
-      expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH),
+      expect(startTelegramBridgeInBackground).toHaveBeenCalledTimes(1),
     );
+    expect(onActivate).not.toHaveBeenCalled();
   });
 
   it("does not auto-enter at startup when the bridge preference is off", async () => {
