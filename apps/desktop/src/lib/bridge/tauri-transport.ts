@@ -16,6 +16,19 @@ export async function activateWorkspaceHost(cwd: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Bootstraps the telegram bridge's dedicated Host entirely in the background:
+ * activates + starts the telegram workspace Host and runs `/telegram-connect`
+ * inside it WITHOUT switching the foreground route. The renderer's active
+ * Host (and thus the visible workspace) is left untouched.
+ */
+export async function bootstrapTelegramHost(cwd: string): Promise<boolean> {
+  const { invoke, isTauri } = await import("@tauri-apps/api/core");
+  if (!isTauri()) return false;
+  await invoke("pi_host_bootstrap_telegram", { cwd });
+  return true;
+}
+
 export async function prepareWorkspaceHost(cwd: string, activeBusy: boolean): Promise<boolean> {
   const { invoke, isTauri } = await import("@tauri-apps/api/core");
   if (!isTauri()) return false;

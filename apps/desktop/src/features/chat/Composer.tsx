@@ -214,7 +214,6 @@ function localizedDocumentError(message: string | undefined, t: Translate): stri
     });
   }
   if (/password|encrypted/iu.test(message)) return t("composerDocumentEncrypted");
-  if (/scanned|ocr|visible text/iu.test(message)) return t("composerDocumentNeedsOcr");
   if (/genuine|valid docx|only.*pdf|unsupported.*type/iu.test(message)) {
     return t("composerDocumentTypeMismatch");
   }
@@ -244,7 +243,6 @@ function documentStatusText(document: PendingDocument, t: Translate): string {
     }
     return t("composerDocumentParsing");
   }
-  if (document.status === "needs_ocr") return t("composerDocumentNeedsOcr");
   if (document.status === "failed") return localizedDocumentError(document.error, t);
   const count = document.unitCount ?? 0;
   return document.unit === "page"
@@ -1277,10 +1275,15 @@ export function Composer({
     pasteTextAsAttachment(pastedText, selectionStart, selectionEnd);
   }
 
+  /** Documents that are ready, or scanned PDFs the agent can handle via its own OCR tooling. */
+  function isDocumentSendable(status: PendingDocument["status"]): boolean {
+    return status === "ready" || status === "needs_ocr";
+  }
+
   async function send() {
     if (!host || !workspace || !session || !draftTarget || disabled || decisionBlocked) return;
     if (
-      documents.some((document) => document.status !== "ready") ||
+      documents.some((document) => !isDocumentSendable(document.status)) ||
       (!text.trim() && images.length === 0 && files.length === 0 && documents.length === 0)
     ) {
       return;
@@ -1501,7 +1504,7 @@ export function Composer({
 
   const hasDraftContent =
     Boolean(text.trim()) || images.length > 0 || files.length > 0 || documents.length > 0;
-  const documentsReady = documents.every((document) => document.status === "ready");
+  const documentsReady = documents.every((document) => isDocumentSendable(document.status));
   const canSend = !disabled && !decisionBlocked && documentsReady && hasDraftContent;
 
   return (
@@ -1594,7 +1597,7 @@ export function Composer({
             >
               {documents.map((document) => {
                 const active = document.status === "copying" || document.status === "parsing";
-                const failed = document.status === "failed" || document.status === "needs_ocr";
+                const failed = document.status === "failed";
                 const progress =
                   document.unitCount && document.processedUnits !== undefined
                     ? Math.min(

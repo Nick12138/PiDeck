@@ -45,12 +45,14 @@ describe("TelegramWorkspaceRow", () => {
   let refreshTelegramSessions: ReturnType<typeof vi.fn>;
   let refreshBridgeStatus: ReturnType<typeof vi.fn>;
   let startTelegramBridge: ReturnType<typeof vi.fn>;
+  let startTelegramBridgeInBackground: ReturnType<typeof vi.fn>;
   let ensureWorkspace: ReturnType<typeof vi.fn>;
   let onActivate: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     refreshTelegramSessions = vi.fn().mockResolvedValue(undefined);
     refreshBridgeStatus = vi.fn().mockResolvedValue(undefined);
     startTelegramBridge = vi.fn().mockResolvedValue(true);
+    startTelegramBridgeInBackground = vi.fn().mockResolvedValue(true);
     ensureWorkspace = vi.fn().mockResolvedValue(TELEGRAM_WORKSPACE_PATH);
     onActivate = vi.fn().mockResolvedValue(undefined);
     useTelegramViewStore.setState({
@@ -70,6 +72,7 @@ describe("TelegramWorkspaceRow", () => {
       refreshTelegramSessions,
       refreshBridgeStatus,
       startTelegramBridge,
+      startTelegramBridgeInBackground,
       ensureTelegramWorkspace: ensureWorkspace,
     });
   });
@@ -98,9 +101,11 @@ describe("TelegramWorkspaceRow", () => {
     await user.click(screen.getByRole("button", { name: /@liu_worker_bot/ }));
     expect(onActivate).toHaveBeenCalledTimes(1);
     expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH);
+    // Switching workspaces must NOT auto-start the bridge.
+    expect(startTelegramBridge).not.toHaveBeenCalled();
   });
 
-  it("boots straight into the telegram workspace after startup when the bridge is meant to run", async () => {
+  it("starts the telegram bridge in the background after startup when the bridge is meant to run", async () => {
     useAppStore.setState({
       host,
       workspace: {
@@ -140,10 +145,10 @@ describe("TelegramWorkspaceRow", () => {
     });
     render(<TelegramWorkspaceRow onActivate={onActivate} />);
     // No user interaction: the settled app + configured profile + bridge
-    // preference defaulting to on must switch into the TG workspace once.
-    await waitFor(() =>
-      expect(onActivate).toHaveBeenCalledWith(TELEGRAM_WORKSPACE_PATH),
-    );
+    // preference defaulting to on must bootstrap the bridge's dedicated Host
+    // in the background once — WITHOUT switching the foreground workspace.
+    await waitFor(() => expect(startTelegramBridgeInBackground).toHaveBeenCalledTimes(1));
+    expect(onActivate).not.toHaveBeenCalled();
   });
 
   it("does not auto-enter at startup when the bridge preference is off", async () => {
@@ -158,5 +163,41 @@ describe("TelegramWorkspaceRow", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(onActivate).not.toHaveBeenCalled();
     globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+  });
+
+  it("shows a green status dot when the bridge is connected", () => {
+    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    useTelegramViewStore.setState({
+      bridgeStatus: { connected: true },
+      bridgeLoading: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
+    expect(row.querySelector(".bg-success.status-dot-pulse")).not.toBeNull();
+    expect(row.querySelector(".bg-danger")).toBeNull();
+  });
+
+  it("shows no status dot when the bridge is turned off", () => {
+    globalThis.localStorage?.setItem("pideck.telegram.bridgeEnabled.v1", "0");
+    useTelegramViewStore.setState({
+      bridgeStatus: { connected: false },
+      bridgeLoading: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
+    expect(row.querySelector(".bg-success.status-dot-pulse")).toBeNull();
+    expect(row.querySelector(".bg-danger")).toBeNull();
+    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+  });
+
+  it("shows a red status dot when the bridge should be on but is disconnected", () => {
+    globalThis.localStorage?.removeItem("pideck.telegram.bridgeEnabled.v1");
+    useTelegramViewStore.setState({
+      bridgeStatus: { connected: false },
+      bridgeLoading: false,
+    });
+    render(<TelegramWorkspaceRow onActivate={onActivate} />);
+    const row = screen.getByRole("button", { name: /@liu_worker_bot/ });
+    expect(row.querySelector(".bg-danger")).not.toBeNull();
   });
 });

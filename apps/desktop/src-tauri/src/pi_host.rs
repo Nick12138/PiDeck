@@ -12,7 +12,7 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
 };
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 
 pub(crate) const HOST_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
@@ -501,6 +501,9 @@ pub struct PiHostManager {
     shutting_down: Arc<AtomicBool>,
     last_stderr: Arc<Mutex<Vec<String>>>,
     last_ready_line: Arc<Mutex<Option<String>>>,
+    /// In-flight request ids → sender, so Rust can await a Host response without
+    /// routing through the renderer (used to bootstrap a background workspace).
+    pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     activity: Arc<StdMutex<HostActivity>>,
     /// Real hostInstanceId from host.ready / hello — never use "*" for shutdown.
     host_instance_id: Option<String>,
@@ -1554,6 +1557,7 @@ impl PiHostManager {
             shutting_down: Arc::new(AtomicBool::new(false)),
             last_stderr: Arc::new(Mutex::new(Vec::new())),
             last_ready_line: Arc::new(Mutex::new(None)),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
             activity: Arc::new(StdMutex::new(HostActivity::default())),
             host_instance_id: None,
             auto_restart_armed: Arc::new(AtomicBool::new(true)),
@@ -2021,6 +2025,7 @@ impl PiHostManager {
         let auto_restart_once = self.auto_restart_once;
         let app_for_restart = self.app.clone();
         let stdout_generation = Arc::clone(&self.child_generation);
+        let pending_requests = Arc::clone(&self.pending_requests);
         #[cfg(unix)]
         let unix_process_group_for_monitor = unix_process_group.clone();
 
@@ -2043,6 +2048,16 @@ impl PiHostManager {
                                 break;
                             }
                             let payload = line.trim_end_matches(['\r', '\n']).to_string();
+                            // Resolve any in-flight Rust-side request awaiting this id
+                            // (background workspace bootstrap), independent of renderer
+                            // active-route filtering.
+                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&payload) {
+                                if let Some(id) = value.get("id").and_then(|x| x.as_str()) {
+                                    if let Some(tx) = pending_requests.lock().await.remove(id) {
+                                        let _ = tx.send(payload.clone());
+                                    }
+                                }
+                            }
                             if observe_host_activity(&activity, &payload) {
                                 // Busy set changed (a session started or the last
                                 // one settled) — tell the renderer to re-read the
@@ -2337,6 +2352,27 @@ impl PiHostManager {
         result
     }
 
+    /// Send a single JSONL request line and await the Host's response with a
+    /// matching `id`. Bypasses the renderer's active-route routing so a
+    /// background workspace host can be driven directly.
+    pub async fn request(&mut self, request: String, timeout: Duration) -> Result<String, String> {
+        let id = extract_request_id(&request).ok_or_else(|| "request line has no id".to_string())?;
+        let (tx, rx) = oneshot::channel::<String>();
+        self.pending_requests.lock().await.insert(id.clone(), tx);
+        if let Err(error) = self.send_line(request).await {
+            self.pending_requests.lock().await.remove(&id);
+            return Err(error);
+        }
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(line)) => Ok(line),
+            Ok(Err(_)) => Err("request response channel closed".into()),
+            Err(_) => {
+                self.pending_requests.lock().await.remove(&id);
+                Err(format!("request timed out after {}ms", timeout.as_millis()))
+            }
+        }
+    }
+
     pub async fn shutdown(&mut self) {
         self.shutdown_with_grace(HOST_SHUTDOWN_GRACE).await;
     }
@@ -2617,6 +2653,12 @@ pub(crate) fn build_host_path(
     std::env::join_paths(host_path)
         .map(PathBuf::from)
         .map_err(|e| format!("build Host PATH: {e}"))
+}
+
+/// Extract the `id` field from a JSONL request line (best-effort).
+fn extract_request_id(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string())
 }
 
 /// Extract hostInstanceId from a host.ready JSON line (best-effort).

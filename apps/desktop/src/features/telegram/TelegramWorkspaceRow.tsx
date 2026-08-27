@@ -22,11 +22,11 @@ import { TelegramSettingsDialog } from "./TelegramSettingsDialog";
  * Unlike the old virtual view (frontend-only state), selecting this row now
  * switches to the REAL dedicated workspace (`<agentDir>/workspace/telegram`)
  * through the normal host-switch machinery, so the bridge's polling session
- * lives in this workspace and TG turns never land in other workspaces. On
- * entry, the bridge auto-starts when a profile is configured and no owner is
- * live. The row is hidden until a bot profile has actually been added and
- * configured (see the render guard); once visible, the subtitle reflects the
- * bind state.
+ * lives in this workspace and TG turns never land in other workspaces. The
+ * bridge does NOT auto-start on entry — it only starts via the app-startup
+ * bootstrap or the manual settings switch. The row is hidden until a bot
+ * profile has actually been added and configured (see the render guard); once
+ * visible, the subtitle reflects the bind state.
  */
 export function TelegramWorkspaceRow({
   onActivate,
@@ -45,6 +45,9 @@ export function TelegramWorkspaceRow({
   const refresh = useTelegramViewStore((s) => s.refreshTelegramSessions);
   const refreshStatus = useTelegramViewStore((s) => s.refreshBridgeStatus);
   const ensureWorkspace = useTelegramViewStore((s) => s.ensureTelegramWorkspace);
+  const startTelegramBridgeInBackground = useTelegramViewStore(
+    (s) => s.startTelegramBridgeInBackground,
+  );
   // Host presence drives the initial refresh: on app startup the host is
   // async and may not be ready when this row first mounts, which would
   // otherwise skip the load and hide the entry permanently.
@@ -57,6 +60,9 @@ export function TelegramWorkspaceRow({
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  // Mirrors the persisted bridge on/off preference so the status dot can
+  // distinguish "user turned it off" from "should be on but not connected".
+  const [bridgePrefOn, setBridgePrefOn] = useState(() => loadTelegramBridgePrefEnabled());
 
   // Refresh on mount and again once the host becomes available, so a
   // persisted telegram.json / journaled history shows up after startup.
@@ -67,12 +73,12 @@ export function TelegramWorkspaceRow({
     });
   }, [ensureWorkspace, hostReady, refresh, refreshStatus]);
 
-  // Boot straight into the telegram workspace once the app has settled and the
-  // bridge is meant to run: a configured profile plus the bridge switch being
-  // on means the user's TG channel should be front and center. Fires at most
-  // once per app session (the sidebar row stays mounted across switches).
-  const onActivateRef = useRef(onActivate);
-  onActivateRef.current = onActivate;
+  // On startup, when a telegram profile is configured and the bridge switch is
+  // on, the bridge should still run — but WITHOUT forcing the active workspace
+  // to telegram. The dedicated telegram Host is bootstrapped entirely in the
+  // background (spawn + `/telegram-connect`), so the foreground stays on the
+  // user's last workspace and never flickers. Fires at most once per app
+  // session (the sidebar row stays mounted across switches).
   const autoEnteredRef = useRef(false);
   useEffect(() => {
     if (autoEnteredRef.current) return;
@@ -85,12 +91,27 @@ export function TelegramWorkspaceRow({
       const path = await useTelegramViewStore.getState().ensureTelegramWorkspace();
       if (!path) return;
       const currentCwd = useAppStore.getState().workspace?.canonicalCwd ?? null;
-      if (isSameTelegramPath(currentCwd, path)) return;
-      await onActivateRef.current(path);
+      if (isSameTelegramPath(currentCwd, path)) {
+        // Already inside the telegram workspace: start in place.
+        void refresh();
+        void maybeAutoStartTelegramBridge();
+        return;
+      }
+      // Background bootstrap: spawn + connect the bridge's dedicated Host
+      // without switching the foreground workspace.
+      await startTelegramBridgeInBackground();
       void refresh();
-      void maybeAutoStartTelegramBridge();
     })();
-  }, [hostReady, connecting, rehydrating, desynchronized, loaded, profile, refresh]);
+  }, [
+    hostReady,
+    connecting,
+    rehydrating,
+    desynchronized,
+    loaded,
+    profile,
+    refresh,
+    startTelegramBridgeInBackground,
+  ]);
 
   const openFolder = useCallback(() => {
     void (async () => {
@@ -119,26 +140,32 @@ export function TelegramWorkspaceRow({
       await onActivate(path);
     }
     // Either the switch completed or we were already inside the telegram
-    // workspace: refresh history and let auto-start retry when disconnected.
+    // workspace: refresh history. The bridge is intentionally NOT auto-started
+    // here — switching workspaces must not re-arm the bridge; it only starts
+    // via the app-startup bootstrap or the manual settings switch.
     void refresh();
-    void maybeAutoStartTelegramBridge();
   }
 
   const botLabel = profile.botUsername ? `@${profile.botUsername}` : "Telegram";
   const title = displayName ?? botLabel;
   const subtitle = !loaded ? undefined : (profile.botName ?? undefined);
 
-  // Priority: green (connected) > amber (status loading) > gray (configured
-  // but disconnected). The render guard above guarantees a configured profile.
-  const statusDot =
-    bridgeStatus?.connected
-      ? "bg-success status-dot-pulse"
-      : bridgeLoading
-        ? "bg-warning status-dot-pulse"
-        : "bg-muted";
-  const statusTitle = bridgeStatus?.connected
-    ? t("tgBridgeConnected")
-    : t("tgBridgeDisconnected");
+  // Status dot: green when the bridge is connected; hidden when the user
+  // turned the bridge off; red when the bridge is expected to run (pref on)
+  // but is not currently connected. While the status is loading (or unknown)
+  // we show no dot so a stale value never flashes a false error/off reading.
+  // The render guard above guarantees a configured profile.
+  const connected = bridgeStatus?.connected === true;
+  const bridgeError = bridgePrefOn && bridgeStatus !== null && !connected && !bridgeLoading;
+  let statusDot: string | null = null;
+  let statusTitle: string | undefined;
+  if (bridgePrefOn && connected) {
+    statusDot = "bg-success status-dot-pulse";
+    statusTitle = t("tgBridgeConnected");
+  } else if (bridgeError) {
+    statusDot = "bg-danger";
+    statusTitle = t("tgBridgeError");
+  }
 
   const onContextMenu = (event: React.MouseEvent) => {
     if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
@@ -192,14 +219,9 @@ export function TelegramWorkspaceRow({
           <Send size={16} className={`shrink-0 ${active ? "text-accent" : "text-muted"}`} />
         )}
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        {subtitle && (
-          <span className="shrink-0 truncate text-[10px] text-muted">{subtitle}</span>
-        )}
+        {subtitle && <span className="shrink-0 truncate text-[10px] text-muted">{subtitle}</span>}
         {statusDot && (
-          <span
-            className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`}
-            title={statusTitle}
-          />
+          <span className={`size-[8.2px] shrink-0 rounded-full ${statusDot}`} title={statusTitle} />
         )}
       </button>
       {settingsOpen && (
@@ -209,6 +231,7 @@ export function TelegramWorkspaceRow({
             void refresh();
             void refreshStatus();
             setDisplayName(loadTelegramWorkspaceDisplayName());
+            setBridgePrefOn(loadTelegramBridgePrefEnabled());
           }}
         />
       )}

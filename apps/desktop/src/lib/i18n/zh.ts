@@ -495,13 +495,10 @@ export const zh: Record<MessageKey, string> = {
   promptsHelpGlobalDir: "全局（用户）目录",
   promptsHelpProjectDir: "项目目录",
   promptsHelpOverrideTitle: "覆盖（SYSTEM.md / APPEND_SYSTEM.md）",
-  promptsHelpOverride:
-    "受信任的项目文件会覆盖全局文件。被覆盖的全局文件显示为未加载。",
+  promptsHelpOverride: "受信任的项目文件会覆盖全局文件。被覆盖的全局文件显示为未加载。",
   promptsHelpMergeTitle: "合并（AGENTS.md / CLAUDE.md）",
-  promptsHelpMerge:
-    "上下文文件从用户目录与项目目录同时加载，并合并在一起。",
-  promptsHelpTrust:
-    "项目文件仅在项目被信任后才会加载。上下文文件不受信任门控。",
+  promptsHelpMerge: "上下文文件从用户目录与项目目录同时加载，并合并在一起。",
+  promptsHelpTrust: "项目文件仅在项目被信任后才会加载。上下文文件不受信任门控。",
   promptBadge: "提示词",
   promptKindSystem: "覆盖",
   promptKindAppend: "追加",
@@ -802,7 +799,7 @@ export const zh: Record<MessageKey, string> = {
   tgWorkspacesCollapse: "收起消息工作区",
   tgWorkspaceEnterTitle: "进入 Telegram 工作区 {name}",
   tgBridgeConnected: "桥已连接",
-  tgBridgeDisconnected: "桥未连接",
+  tgBridgeError: "桥异常",
   tgWorkspaceCreateFailed: "无法创建 Telegram 工作区目录，请检查 agent 目录权限。",
   tgSessionsTitle: "Telegram 会话",
   tgSessionsExpand: "展开 Telegram 会话",
@@ -837,7 +834,8 @@ export const zh: Record<MessageKey, string> = {
   tgSettingsBridgeSwitch: "桥接",
   tgSettingsDeleteButton: "删除BOT",
   tgSettingsDeleteTitle: "删除 Telegram 工作区",
-  tgSettingsDeleteBody: "将永久删除 telegram.json、临时状态、工作区文件夹以及所有 telegram 驱动的会话。插件本身保留安装。此操作无法撤销。",
+  tgSettingsDeleteBody:
+    "将永久删除 telegram.json、临时状态、工作区文件夹以及所有 telegram 驱动的会话。插件本身保留安装。此操作无法撤销。",
   tgSettingsDeleteConfirmAction2: "删除",
   tgOptRich: "富文本（按钮/折叠）",
   tgOptHtml: "纯 HTML",
@@ -861,10 +859,12 @@ export const zh: Record<MessageKey, string> = {
   tgSettingsConfigSaveFailed: "选项保存失败。",
   tgSettingsBridgeHint: "命令会自动填入对话框，按回车执行。",
   tgSettingsDangerTitle: "危险区",
-  tgSettingsDangerHint: "删除 bot 配置、插件配置、工作区文件夹及所有 telegram 会话。插件本身保留安装。",
+  tgSettingsDangerHint:
+    "删除 bot 配置、插件配置、工作区文件夹及所有 telegram 会话。插件本身保留安装。",
   tgSettingsDelete: "删除 telegram 工作区",
   tgSettingsDeleteConfirm: "确定删除整个 telegram 工作区？",
-  tgSettingsDeleteConfirmHint: "将永久删除 telegram.json、临时状态、工作区文件夹及所有 telegram 驱动的会话，且无法撤销。",
+  tgSettingsDeleteConfirmHint:
+    "将永久删除 telegram.json、临时状态、工作区文件夹及所有 telegram 驱动的会话，且无法撤销。",
   tgSettingsDeleteConfirmAction: "全部删除",
   tgSettingsTokenSave: "保存",
   tgSettingsTokenValidated: "已验证：{bot}",
@@ -1087,7 +1087,6 @@ export const zh: Record<MessageKey, string> = {
   composerDocumentTypeMismatch: "所选文件不是真实的 PDF 或 DOCX 文件",
   composerDocumentEncrypted: "暂不支持加密或有密码保护的文档",
   composerDocumentDamaged: "文档已损坏或使用了暂不支持的结构",
-  composerDocumentNeedsOcr: "检测到扫描版 PDF，暂不支持 OCR",
   composerDocumentParseFailed: "文档解析失败",
   composerDocumentParseFailedDetail: "文档解析失败：{error}",
   composerDocumentCopying: "正在复制到私有存储...",

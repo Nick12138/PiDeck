@@ -427,12 +427,8 @@ export class AttachmentStore {
     let totalBytes = 0;
     for (const id of new Set(attachmentIds)) {
       const metadata = await this.authorizedMetadata(id, sessionId);
-      if (metadata.status !== "ready") {
-        const message =
-          metadata.status === "needs_ocr"
-            ? `${metadata.name} is a scanned PDF and needs OCR`
-            : `${metadata.name} is not ready`;
-        throw new AttachmentStoreError("not_ready", message);
+      if (metadata.status !== "ready" && metadata.status !== "needs_ocr") {
+        throw new AttachmentStoreError("not_ready", `${metadata.name} is not ready`);
       }
       totalBytes += metadata.sizeBytes;
       snapshots.push(metadataSnapshot(metadata));
@@ -460,6 +456,12 @@ export class AttachmentStore {
     limit?: number;
   }): Promise<AttachmentReadResult> {
     const metadata = await this.authorizedMetadata(args.attachmentId, args.sessionId);
+    if (metadata.status === "needs_ocr") {
+      throw new AttachmentStoreError(
+        "not_ready",
+        `${metadata.name} is a scanned PDF without a text layer; extract text from its original file via OCR instead of read_attachment`,
+      );
+    }
     if (metadata.status !== "ready" || !metadata.unit || metadata.unitCount === undefined) {
       throw new AttachmentStoreError("not_ready", "Attachment parsing is not complete");
     }

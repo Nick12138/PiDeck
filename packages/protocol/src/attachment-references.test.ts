@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAttachmentGuideBlock,
   buildAttachmentReferenceBlock,
   parseAttachmentReferences,
   preserveAttachmentReferenceBlocks,
@@ -66,5 +67,32 @@ describe("attachment reference blocks", () => {
   it("ignores malformed and non-UUID reference data", () => {
     const text = '<pideck-attachments version="1">[{"id":"bad"}]</pideck-attachments>';
     expect(parseAttachmentReferences(text)).toEqual([]);
+  });
+
+  it("strips guide blocks alongside reference blocks", () => {
+    const guide = buildAttachmentGuideBlock("OCR instructions for scanned PDFs");
+    const text = `Summarize this.\n\n${buildAttachmentReferenceBlock([attachment])}\n\n${guide}`;
+
+    expect(stripAttachmentReferenceBlocks(text)).toBe("Summarize this.");
+    expect(parseAttachmentReferences(text)).toHaveLength(1);
+  });
+
+  it("strips a standalone guide block", () => {
+    const guide = buildAttachmentGuideBlock("优先使用 wpscli");
+    expect(stripAttachmentReferenceBlocks(`Question?\n\n${guide}`)).toBe("Question?");
+    expect(stripAttachmentReferenceBlocks(guide)).toBe("");
+  });
+
+  it("preserves guide blocks in their original order when queued text is edited", () => {
+    const guide = buildAttachmentGuideBlock("ocr priority: wpscli first");
+    const original = `Old\n\n${guide}\n\n${buildAttachmentReferenceBlock([attachment])}`;
+    const next = preserveAttachmentReferenceBlocks(original, "New");
+
+    expect(stripAttachmentReferenceBlocks(next)).toBe("New");
+    expect(next.indexOf("pideck-attachment-guide")).toBeLessThan(
+      next.indexOf("pideck-attachments"),
+    );
+    expect(next).toContain("wpscli first");
+    expect(parseAttachmentReferences(next)).toHaveLength(1);
   });
 });

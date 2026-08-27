@@ -9,6 +9,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, State};
 
 #[tauri::command]
@@ -337,6 +338,106 @@ pub async fn pi_host_acknowledge_terminal(
         .lock()
         .await
         .acknowledge_session_terminal(Path::new(&cwd), &session_id))
+}
+
+/// Start (or reuse) a workspace's Host in the BACKGROUND — without changing the
+/// renderer's active route — and run `/telegram-connect` in it. This lets the
+/// telegram bridge poll while the user stays on their last workspace.
+#[tauri::command]
+pub async fn pi_host_bootstrap_telegram(
+    state: State<'_, AppState>,
+    cwd: String,
+) -> Result<(), String> {
+    let settings = state.settings.lock().await;
+    let (_route_id, manager, created) = {
+        let mut hosts = state.hosts.lock().await;
+        hosts.activate_workspace(Path::new(&cwd), &settings)?
+    };
+    drop(settings);
+    if created || !manager.lock().await.is_running() {
+        crate::pi_host::start_unlocked(&manager, crate::pi_host::StartKind::Fresh).await?;
+    }
+
+    let mut mgr = manager.lock().await;
+
+    // 1. system.hello → current identity (workspace preloaded via --initial-cwd).
+    let hello_id = uuid::Uuid::new_v4().to_string();
+    let hello = serde_json::json!({
+        "protocolVersion": 1,
+        "id": hello_id,
+        "method": "system.hello",
+        "context": {},
+        "params": {
+            "clientName": "pideck",
+            "clientVersion": "0.1.0",
+            "protocolVersion": 1,
+            "extensionDecisionPresentation": "auto",
+        },
+    });
+    let hello_resp = mgr
+        .request(hello.to_string(), Duration::from_secs(30))
+        .await?;
+    let hello_json: serde_json::Value =
+        serde_json::from_str(&hello_resp).map_err(|e| format!("parse hello response: {e}"))?;
+    if hello_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        return Err(format!(
+            "hello failed: {}",
+            hello_json.get("error").map(|e| e.to_string()).unwrap_or_default()
+        ));
+    }
+    let result = hello_json.get("result").ok_or("hello missing result")?;
+    let host_instance_id = result
+        .get("hostInstanceId")
+        .and_then(|v| v.as_str())
+        .ok_or("hello missing hostInstanceId")?
+        .to_string();
+    let workspace_id = result
+        .get("workspaceId")
+        .and_then(|v| v.as_str())
+        .ok_or("telegram Host did not preload its workspace")?
+        .to_string();
+    let workspace_revision = result
+        .get("workspaceRevision")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let session_id = result
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or("telegram Host did not preload its session")?
+        .to_string();
+    let session_revision = result
+        .get("sessionRevision")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    // 2. agent.prompt → /telegram-connect in the dedicated telegram workspace.
+    let prompt_id = uuid::Uuid::new_v4().to_string();
+    let prompt = serde_json::json!({
+        "protocolVersion": 1,
+        "id": prompt_id,
+        "method": "agent.prompt",
+        "context": {
+            "expectedHostInstanceId": host_instance_id,
+            "expectedWorkspaceId": workspace_id,
+            "expectedWorkspaceRevision": workspace_revision,
+            "expectedSessionId": session_id,
+            "expectedSessionRevision": session_revision,
+        },
+        "params": { "text": "/telegram-connect" },
+    });
+    let prompt_resp = mgr
+        .request(prompt.to_string(), Duration::from_secs(60))
+        .await?;
+    let prompt_json: serde_json::Value =
+        serde_json::from_str(&prompt_resp).map_err(|e| format!("parse prompt response: {e}"))?;
+    if prompt_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        return Err(format!(
+            "/telegram-connect failed: {}",
+            prompt_json.get("error").map(|e| e.to_string()).unwrap_or_default()
+        ));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

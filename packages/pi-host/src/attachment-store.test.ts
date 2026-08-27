@@ -302,18 +302,29 @@ describe("AttachmentStore", () => {
     });
   });
 
-  it("marks image-only PDFs as needing OCR", async () => {
+  it("marks image-only PDFs as needing OCR but still allows sending", async () => {
     const layout = await tempLayout();
     const source = join(layout.root, "scan.pdf");
     await writeFile(source, buildPdf());
     const store = new AttachmentStore({ agentDir: layout.agentDir, parser: parseAttachment });
     await store.initialize();
 
-    await expect(createAndWait(store, source)).resolves.toMatchObject({
+    const scanned = await createAndWait(store, source);
+    expect(scanned).toMatchObject({
       status: "needs_ocr",
       unit: "page",
       unitCount: 1,
     });
+
+    // Scanned PDFs are sendable: prompt preparation must not reject.
+    await expect(store.prepareForPrompt([scanned.id], SESSION_ID)).resolves.toMatchObject([
+      { id: scanned.id, status: "needs_ocr" },
+    ]);
+
+    // Reading the extracted units stays unavailable, with an OCR hint.
+    await expect(
+      store.read({ attachmentId: scanned.id, sessionId: SESSION_ID }),
+    ).rejects.toMatchObject({ kind: "not_ready" });
   });
 
   it("keeps page boundaries for multi-page PDFs with blank pages", async () => {
