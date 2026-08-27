@@ -166,6 +166,7 @@ pub fn run() {
             commands::pi_host_status,
             commands::pi_host_activity,
             commands::pi_host_acknowledge_terminal,
+            commands::pi_host_bootstrap_telegram,
             commands::shell_terminal_create,
             commands::shell_terminal_profiles,
             commands::shell_terminal_write,

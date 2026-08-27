@@ -11,6 +11,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { activeSessionContext, hostContext } from "../../lib/bridge/host-context";
+import { bootstrapTelegramHost } from "../../lib/bridge/tauri-transport";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 
@@ -149,6 +150,11 @@ type TelegramViewState = {
    *  workspace's session (SDK executes the extension command without an LLM
    *  turn). No-op unless the telegram workspace is currently active. */
   startTelegramBridge: () => Promise<boolean>;
+  /** Bootstraps the bridge's dedicated Host in the background: activates + starts
+   *  the telegram workspace Host and runs `/telegram-connect` inside it without
+   *  switching the foreground workspace. Unlike `startTelegramBridge`, this does
+   *  NOT require the telegram workspace to be the active workspace. */
+  startTelegramBridgeInBackground: () => Promise<boolean>;
   /** Runs `/telegram-disconnect` programmatically. Same activation constraint
    *  as `startTelegramBridge`; in Threaded Mode the plugin's confirm dialog
    *  cannot be answered from a detached prompt, so it may no-op there. */
@@ -236,9 +242,15 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
     if (!host || get().loading) return;
     set({ loading: true, error: null });
     try {
-      const [listRes, configRes] = await Promise.all([
+      // Also silently re-fetch the currently open session so the transcript
+      // reflects newly delivered TG messages, not just the sidebar list.
+      const openPath = get().openSessionPath;
+      const [listRes, configRes, detailRes] = await Promise.all([
         hostClient.request("telegram.listSessions", hostContext(host), null, 15_000),
         hostClient.request("telegram.getConfig", hostContext(host), null, 15_000),
+        openPath
+          ? hostClient.request("telegram.getSession", hostContext(host), { sessionPath: openPath }, 15_000)
+          : Promise.resolve(null),
       ]);
       if (!listRes.ok) {
         // Keep the profile-based entry usable even when the session scan
@@ -262,6 +274,9 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         assistant: configRes.ok ? (configRes.result.assistant ?? null) : null,
         voice: configRes.ok ? (configRes.result.voice ?? null) : null,
         threads: configRes.ok ? (configRes.result.threads ?? null) : null,
+        // Keep the open transcript in sync; fall back to the previous
+        // snapshot when no session is open or the re-fetch failed.
+        sessionDetail: detailRes?.ok ? detailRes.result : get().sessionDetail,
         loaded: true,
         loading: false,
         error: null,
@@ -305,6 +320,24 @@ export const useTelegramViewStore = create<TelegramViewState>((set, get) => ({
         return true;
       }
       return false;
+    } catch {
+      return false;
+    }
+  },
+
+  startTelegramBridgeInBackground: async () => {
+    if (!get().profile?.configured) return false;
+    const workspacePath = await get().ensureTelegramWorkspace();
+    if (!workspacePath) return false;
+    markBridgeAction();
+    try {
+      const ok = await bootstrapTelegramHost(workspacePath);
+      if (ok) {
+        // The dedicated Host starts polling asynchronously; re-read status
+        // shortly after so the dot reflects the fresh connection.
+        setTimeout(() => void get().refreshBridgeStatus(), 1500);
+      }
+      return ok;
     } catch {
       return false;
     }

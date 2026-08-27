@@ -43,6 +43,9 @@ export function TelegramWorkspaceRow({
   const refresh = useTelegramViewStore((s) => s.refreshTelegramSessions);
   const refreshStatus = useTelegramViewStore((s) => s.refreshBridgeStatus);
   const ensureWorkspace = useTelegramViewStore((s) => s.ensureTelegramWorkspace);
+  const startTelegramBridgeInBackground = useTelegramViewStore(
+    (s) => s.startTelegramBridgeInBackground,
+  );
   // Host presence drives the initial refresh: on app startup the host is
   // async and may not be ready when this row first mounts, which would
   // otherwise skip the load and hide the entry permanently.
@@ -65,12 +68,12 @@ export function TelegramWorkspaceRow({
     });
   }, [ensureWorkspace, hostReady, refresh, refreshStatus]);
 
-  // Boot straight into the telegram workspace once the app has settled and the
-  // bridge is meant to run: a configured profile plus the bridge switch being
-  // on means the user's TG channel should be front and center. Fires at most
-  // once per app session (the sidebar row stays mounted across switches).
-  const onActivateRef = useRef(onActivate);
-  onActivateRef.current = onActivate;
+  // On startup, when a telegram profile is configured and the bridge switch is
+  // on, the bridge should still run — but WITHOUT forcing the active workspace
+  // to telegram. The dedicated telegram Host is bootstrapped entirely in the
+  // background (spawn + `/telegram-connect`), so the foreground stays on the
+  // user's last workspace and never flickers. Fires at most once per app
+  // session (the sidebar row stays mounted across switches).
   const autoEnteredRef = useRef(false);
   useEffect(() => {
     if (autoEnteredRef.current) return;
@@ -83,12 +86,27 @@ export function TelegramWorkspaceRow({
       const path = await useTelegramViewStore.getState().ensureTelegramWorkspace();
       if (!path) return;
       const currentCwd = useAppStore.getState().workspace?.canonicalCwd ?? null;
-      if (isSameTelegramPath(currentCwd, path)) return;
-      await onActivateRef.current(path);
+      if (isSameTelegramPath(currentCwd, path)) {
+        // Already inside the telegram workspace: start in place.
+        void refresh();
+        void maybeAutoStartTelegramBridge();
+        return;
+      }
+      // Background bootstrap: spawn + connect the bridge's dedicated Host
+      // without switching the foreground workspace.
+      await startTelegramBridgeInBackground();
       void refresh();
-      void maybeAutoStartTelegramBridge();
     })();
-  }, [hostReady, connecting, rehydrating, desynchronized, loaded, profile, refresh]);
+  }, [
+    hostReady,
+    connecting,
+    rehydrating,
+    desynchronized,
+    loaded,
+    profile,
+    refresh,
+    startTelegramBridgeInBackground,
+  ]);
 
   const openFolder = useCallback(() => {
     void (async () => {
