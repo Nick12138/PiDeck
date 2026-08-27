@@ -3,6 +3,10 @@ import type { AttachmentSnapshot, AttachmentUnit } from "./types.js";
 const OPEN_TAG = '<pideck-attachments version="1">';
 const CLOSE_TAG = "</pideck-attachments>";
 const BLOCK_PATTERN = /<pideck-attachments version="1">\s*([\s\S]*?)\s*<\/pideck-attachments>/gu;
+const GUIDE_OPEN_TAG = '<pideck-attachment-guide version="1">';
+const GUIDE_CLOSE_TAG = "</pideck-attachment-guide>";
+const GUIDE_PATTERN =
+  /<pideck-attachment-guide version="1">\s*([\s\S]*?)\s*<\/pideck-attachment-guide>/gu;
 
 export type AttachmentReference = {
   id: string;
@@ -56,12 +60,18 @@ export function parseAttachmentReferences(text: string): AttachmentReference[] {
   return references;
 }
 
+export function buildAttachmentGuideBlock(text: string): string {
+  return `${GUIDE_OPEN_TAG}\n${text.trim()}\n${GUIDE_CLOSE_TAG}`;
+}
+
 export function stripAttachmentReferenceBlocks(text: string): string {
-  return text.replace(BLOCK_PATTERN, "").trimEnd();
+  return text.replace(BLOCK_PATTERN, "").replace(GUIDE_PATTERN, "").trimEnd();
 }
 
 export function preserveAttachmentReferenceBlocks(original: string, visibleText: string): string {
-  const blocks = [...original.matchAll(BLOCK_PATTERN)].map((match) => match[0]);
+  const blocks = [...original.matchAll(BLOCK_PATTERN), ...original.matchAll(GUIDE_PATTERN)]
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    .map((match) => match[0]);
   if (blocks.length === 0) return visibleText;
   return [visibleText.trimEnd(), ...blocks].filter(Boolean).join("\n\n");
 }

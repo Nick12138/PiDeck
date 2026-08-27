@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { getSupportedThinkingLevels, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
+  buildAttachmentGuideBlock,
   buildAttachmentReferenceBlock,
   createHostError,
   stripAttachmentReferenceBlocks,
+  type AttachmentSnapshot,
   type HostError,
   type HostIdentity,
   type ModelSummary,
@@ -165,6 +167,31 @@ function startDetachedPrompt(args: {
   }
 }
 
+/** Hidden OCR instructions injected alongside attachments that need OCR. */
+function buildOcrGuideText(attachments: readonly AttachmentSnapshot[]): string | null {
+  const scanned = attachments.filter((attachment) => attachment.status === "needs_ocr");
+  if (scanned.length === 0) return null;
+  const list = scanned
+    .map((attachment) => {
+      const pages = attachment.unitCount !== undefined ? `（共 ${attachment.unitCount} 页）` : "";
+      return `- ${attachment.name}${pages}`;
+    })
+    .join("\n");
+  return [
+    "【扫描版 PDF 处理指引】",
+    "以下附件是扫描版 PDF（无文字层，read_attachment 读不到内容）：",
+    list,
+    "",
+    "提取文字内容时按以下优先级处理：",
+    "1. 优先使用 wpscli（WPS CLI 的 OCR 转换，如 wps_pdf2word 的 scanned 模式）；",
+    "2. 其次使用 PyMuPDF（fitz）把 PDF 逐页渲染成图片，再用 ocr_image（百度 OCR）逐页识别；",
+    "3. 兕底：使用视觉能力一张一张查看渲染出的图片；",
+    "4. 若以上全部失败，请明确提示需要用户帮助并说明原因。",
+    "",
+    "提示：附件引用 JSON 中的 path 字段是原始文件的绝对路径，可直接用文件系统工具读取。",
+  ].join("\n");
+}
+
 async function buildPromptWithAttachments(args: {
   factory: WorkspaceGraphFactory;
   sessionId: string;
@@ -175,8 +202,13 @@ async function buildPromptWithAttachments(args: {
   const store = args.factory.deps.attachmentStore;
   if (!store) throw new Error("Attachment service is not available");
   const attachments = await store.prepareForPrompt(args.attachmentIds, args.sessionId);
+  const ocrGuide = buildOcrGuideText(attachments);
   return {
-    text: [args.text.trimEnd(), buildAttachmentReferenceBlock(attachments)]
+    text: [
+      args.text.trimEnd(),
+      buildAttachmentReferenceBlock(attachments),
+      ...(ocrGuide ? [buildAttachmentGuideBlock(ocrGuide)] : []),
+    ]
       .filter(Boolean)
       .join("\n\n"),
     attachmentIds: attachments.map((attachment) => attachment.id),

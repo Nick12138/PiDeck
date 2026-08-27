@@ -259,6 +259,73 @@ describe("session-bound agent handlers", () => {
       );
     });
   });
+
+  it("appends the hidden OCR guide for scanned PDF attachments", async () => {
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const prepareForPrompt = vi.fn().mockResolvedValue([
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        name: "scan.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 2048,
+        status: "needs_ocr",
+        unit: "page",
+        unitCount: 4,
+      },
+    ]);
+    const commitToSession = vi.fn().mockResolvedValue(undefined);
+    (fixture.factory as unknown as { deps: unknown }).deps = {
+      attachmentStore: { prepareForPrompt, commitToSession },
+    };
+
+    const outcome = await createAgentHandlers(fixture.factory)["agent.followUp"]!({
+      id: "scanned-pdf-follow-up",
+      context: {},
+      params: {
+        text: "what does this say",
+        attachmentIds: ["55555555-5555-4555-8555-555555555555"],
+      },
+    } as never);
+
+    expect("error" in outcome).toBe(false);
+    const promptText = vi.mocked(fixture.session.followUp).mock.calls[0]?.[0] as string;
+    expect(promptText).toContain('<pideck-attachment-guide version="1">');
+    expect(promptText).toContain("scan.pdf");
+    expect(promptText).toContain("wpscli");
+    expect(promptText).toContain("ocr_image");
+    expect(promptText).toContain("PyMuPDF");
+    await vi.waitFor(() => expect(commitToSession).toHaveBeenCalled());
+  });
+
+  it("omits the OCR guide when no attachment needs OCR", async () => {
+    const fixture = stableHandlerFixture(Promise.resolve());
+    const prepareForPrompt = vi.fn().mockResolvedValue([
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        name: "typed.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 512,
+        status: "ready",
+        unit: "page",
+        unitCount: 2,
+      },
+    ]);
+    (fixture.factory as unknown as { deps: unknown }).deps = {
+      attachmentStore: { prepareForPrompt, commitToSession: vi.fn() },
+    };
+
+    await createAgentHandlers(fixture.factory)["agent.followUp"]!({
+      id: "ready-pdf-follow-up",
+      context: {},
+      params: {
+        text: "summarize",
+        attachmentIds: ["66666666-6666-4666-8666-666666666666"],
+      },
+    } as never);
+
+    const promptText = vi.mocked(fixture.session.followUp).mock.calls[0]?.[0] as string;
+    expect(promptText).not.toContain("pideck-attachment-guide");
+  });
 });
 
 describe("agent.prompt startup", () => {

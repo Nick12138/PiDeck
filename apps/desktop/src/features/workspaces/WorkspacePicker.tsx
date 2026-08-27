@@ -41,11 +41,7 @@ import { loadBotGateways, removeGateway, type BotGateway } from "../bot/gateway-
 import { TelegramInstallDialog } from "../telegram/TelegramInstallDialog";
 import { TelegramWorkspaceRow } from "../telegram/TelegramWorkspaceRow";
 import { isTelegramPluginInstalled } from "../telegram/telegram-plugin";
-import {
-  maybeAutoStartTelegramBridge,
-  useTelegramViewStore,
-  useTelegramWorkspaceActive,
-} from "../telegram/telegram-view-store";
+import { useTelegramViewStore, useTelegramWorkspaceActive } from "../telegram/telegram-view-store";
 import { isSameTelegramPath } from "../../lib/telegram-path";
 
 export function workspaceDisplayName(path: string): string {
@@ -225,10 +221,7 @@ export function WorkspacePicker() {
       if (currentWorkspace) {
         const active = activities[normalizedActivityKey(currentWorkspace.canonicalCwd)];
         if (active) {
-          current.mergeSessionTerminalSnapshots(
-            currentWorkspace.id,
-            active.terminalSessions,
-          );
+          current.mergeSessionTerminalSnapshots(currentWorkspace.id, active.terminalSessions);
         }
       }
       setWorkspaceActivities(activities);
@@ -341,7 +334,7 @@ export function WorkspacePicker() {
   /**
    * "Add → TG workspace": install the plugin first when missing, then create/
    * enter the dedicated telegram workspace and bind a bot (token dialog when
-   * none is configured yet, bridge auto-start otherwise).
+   * none is configured yet; otherwise just enter the workspace).
    */
   const checkTelegramPluginInstalled = async (): Promise<boolean> => {
     const { host: hostNow, workspace: workspaceNow } = useAppStore.getState();
@@ -374,7 +367,8 @@ export function WorkspacePicker() {
     await enterTelegramWorkspaceFlow();
   }
 
-  /** Ensure the telegram workspace folder, switch to it, then bind/start. */
+  /** Ensure the telegram workspace folder and switch to it; open the token
+   *  dialog when no bot is bound yet. Never auto-starts the bridge. */
   async function enterTelegramWorkspaceFlow() {
     const path = await useTelegramViewStore.getState().ensureTelegramWorkspace();
     if (!path) {
@@ -385,9 +379,7 @@ export function WorkspacePicker() {
     const store = useTelegramViewStore.getState();
     if (!store.profile?.configured) {
       setTelegramDialogOpen(true);
-      return;
     }
-    void maybeAutoStartTelegramBridge();
   }
 
   function removeFromList(path: string) {
@@ -398,8 +390,9 @@ export function WorkspacePicker() {
 
   // Render the active workspace even before self-heal persists it. The
   // telegram workspace is rendered by its own row, so folder rows exclude it.
-  const listed = (currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces)
-    .filter((path) => !isSameTelegramPath(path, telegramWorkspacePath));
+  const listed = (
+    currentCwd ? addKnownWorkspace(knownWorkspaces, currentCwd) : knownWorkspaces
+  ).filter((path) => !isSameTelegramPath(path, telegramWorkspacePath));
 
   return (
     <section>
@@ -442,65 +435,65 @@ export function WorkspacePicker() {
                   role="menu"
                   style={{ left: addMenuPos.left, top: addMenuPos.top }}
                 >
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
-                onClick={() => {
-                  setAddMenuOpen(false);
-                  void pickAndAdd();
-                }}
-              >
-                <FolderPlus size={16} className="mt-0.5 shrink-0 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    {t("botAddFolderWorkspace")}
-                  </span>
-                  <span className="block truncate text-xs text-muted">
-                    {t("botAddFolderWorkspaceDesc")}
-                  </span>
-                </span>
-              </button>
-              {!telegramProfileConfigured && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
-                  onClick={() => void startTelegramAdd()}
-                >
-                  <Send size={16} className="mt-0.5 shrink-0 text-muted" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">
-                      {t("botAddTelegramBot")}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      void pickAndAdd();
+                    }}
+                  >
+                    <FolderPlus size={16} className="mt-0.5 shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">
+                        {t("botAddFolderWorkspace")}
+                      </span>
+                      <span className="block truncate text-xs text-muted">
+                        {t("botAddFolderWorkspaceDesc")}
+                      </span>
                     </span>
-                    <span className="block truncate text-xs text-muted">
-                      {t("botAddTelegramBotDesc")}
+                  </button>
+                  {!telegramProfileConfigured && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-overlay"
+                      onClick={() => void startTelegramAdd()}
+                    >
+                      <Send size={16} className="mt-0.5 shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-foreground">
+                          {t("botAddTelegramBot")}
+                        </span>
+                        <span className="block truncate text-xs text-muted">
+                          {t("botAddTelegramBotDesc")}
+                        </span>
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled
+                    className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <MessageCircle size={16} className="mt-0.5 shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">
+                        {t("botAddWeixinBot")}
+                      </span>
+                      <span className="block truncate text-xs text-muted">
+                        {t("botAddWeixinBotDesc")}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                disabled
-                className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <MessageCircle size={16} className="mt-0.5 shrink-0 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    {t("botAddWeixinBot")}
-                  </span>
-                  <span className="block truncate text-xs text-muted">
-                    {t("botAddWeixinBotDesc")}
-                  </span>
-                </span>
-                  <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
-                    {t("botAddComingSoon")}
-                  </span>
-                </button>
-              </div>,
-              document.body,
-            )
+                    <span className="mt-0.5 shrink-0 rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                      {t("botAddComingSoon")}
+                    </span>
+                  </button>
+                </div>,
+                document.body,
+              )
             : null}
         </div>
       </div>
@@ -648,9 +641,7 @@ export function WorkspacePicker() {
           </CollapsibleRegion>
         </div>
       )}
-      {telegramDialogOpen && (
-        <TelegramAddDialog onCancel={() => setTelegramDialogOpen(false)} />
-      )}
+      {telegramDialogOpen && <TelegramAddDialog onCancel={() => setTelegramDialogOpen(false)} />}
       {telegramInstallOpen && (
         <TelegramInstallDialog
           onCancel={() => setTelegramInstallOpen(false)}
