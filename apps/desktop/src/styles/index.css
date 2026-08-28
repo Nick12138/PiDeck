@@ -964,6 +964,38 @@ html[data-theme-family="transparent"] [data-right-dock] {
   background-color: transparent;
 }
 
+/* Transparent theme, narrow window: when the chat page's min-width spills
+   under the dock (data-dock-overflow set by RightDock), the fully transparent
+   dock lets the chat text behind it show through and the two columns' text
+   visually collide. Lift the entire dock plane to a semi-opaque frosted sheet
+   while the overlap lasts — blurring what's underneath via the dock's own
+   backdrop-filter — and drop it back to transparent the moment the layout has
+   room again. `html[data-theme-family="transparent"] [data-right-dock]` above
+   stays the resting state; this rule only engages on the overflow flag. The
+   prefers-reduced-transparency fallback (0,4,1) still outranks this (0,3,1),
+   so reduced-transparency users keep the fully opaque surface sheet. */
+html[data-theme-family="transparent"]
+  [data-right-dock][data-dock-overflow="true"] {
+  background-color: var(--theme-dock-overflow-material);
+  /* The sheet floats over the chat column, so its left edge gets the content
+     card's radius too (top-right already comes from the base rule; bottom-right
+     is clipped by the frame). Re-bake the clip-path with every corner rounded
+     — the base rule's clip-path only rounds the top-right, and without an
+     override it would square the new left corners (same compositor artifact
+     the base rule's self-clip exists to prevent). */
+  border-top-left-radius: var(--app-content-radius);
+  border-bottom-left-radius: var(--app-content-radius);
+  clip-path: inset(0 round var(--app-content-radius));
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  html[data-theme-family="transparent"]
+    [data-right-dock][data-dock-overflow="true"] {
+    -webkit-backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
+    backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
+  }
+}
+
 html[data-theme-family="transparent"] [data-dock-panel] {
   background-color: transparent !important;
 }
@@ -1030,6 +1062,7 @@ html[data-theme-family="transparent"].light {
   --color-nav-active: color-mix(in srgb, #e8e8ed 55%, transparent);
   --color-nav-active-foreground: var(--color-foreground);
   --theme-floating-material: color-mix(in srgb, #ffffff 94%, transparent);
+  --theme-dock-overflow-material: color-mix(in srgb, #ffffff 80%, transparent);
 }
 
 html[data-theme-family="transparent"].dark {
@@ -1044,6 +1077,7 @@ html[data-theme-family="transparent"].dark {
   --color-nav-active: color-mix(in srgb, #3a3a3c 32%, transparent);
   --color-nav-active-foreground: #f5f5f7;
   --theme-floating-material: color-mix(in srgb, #2c2c2e 92%, transparent);
+  --theme-dock-overflow-material: color-mix(in srgb, #1c1c1e 60%, transparent);
 }
 
 html[data-theme-family="vercel"].light {

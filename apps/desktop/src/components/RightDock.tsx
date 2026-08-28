@@ -131,6 +131,22 @@ export function clampDockWidth(width: number, viewportWidth = 1280): number {
   return Math.min(responsiveMax, Math.max(MIN_DOCK_WIDTH, Math.round(width)));
 }
 
+/**
+ * Whether the chat page has spilled past the right edge of the main content
+ * column. The chat page carries the conversation min-width, so on a narrow
+ * window main's flex box shrinks (min-w-0) while the page keeps its floor and
+ * overflows to the right — straight under the dock. Geometric right-edge
+ * comparison (not scrollWidth) so internal content overflow inside scroll
+ * containers can't trip it; layout-wise it's the exact overlap condition.
+ */
+export function dockContentOverflow(
+  mainEl: HTMLElement | null,
+  chatPageEl: HTMLElement | null,
+): boolean {
+  if (!mainEl || !chatPageEl) return false;
+  return chatPageEl.getBoundingClientRect().right > mainEl.getBoundingClientRect().right + 1;
+}
+
 function initialDockWidth(): number {
   const viewportWidth = typeof window === "undefined" ? 1280 : window.innerWidth;
   try {
@@ -168,6 +184,7 @@ export function RightDock() {
   const [visibleTabLimit, setVisibleTabLimit] = useState(Number.MAX_SAFE_INTEGER);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+  const [mainOverflows, setMainOverflows] = useState(false);
   const subagentsAvailabilityRef = useRef({
     sessionId: session?.sessionId ?? null,
     hasBeenUsed: false,
@@ -306,6 +323,36 @@ export function RightDock() {
     observer.observe(tabBar);
     return () => observer.disconnect();
   }, [tabOrder.length]);
+
+  // Transparent theme: the dock is a fully transparent frosted sheet, so when
+  // the window gets narrow enough that the chat page's min-width overflows
+  // under the dock, the dock's own text collides with the chat text behind it.
+  // Watch main/chat/page/frame geometry and expose the overlap as
+  // `data-dock-overflow` on the aside; CSS (transparent family only) lifts the
+  // dock to a semi-opaque sheet while the overlap lasts and drops it back to
+  // transparent the moment layout has room. Re-attach on every tick so a chat
+  // page that mounts late (services still warming up) is picked up too.
+  useEffect(() => {
+    const readOverflow = () => {
+      const mainEl = document.querySelector<HTMLElement>("[data-content-main]");
+      const chatPageEl = document.querySelector<HTMLElement>("[data-chat-page]");
+      resizeObserver.disconnect();
+      if (mainEl) resizeObserver.observe(mainEl);
+      if (chatPageEl) resizeObserver.observe(chatPageEl);
+      setMainOverflows(dockContentOverflow(mainEl, chatPageEl));
+      return { mainEl, chatPageEl };
+    };
+    const resizeObserver = new ResizeObserver(readOverflow);
+    const mutationObserver = new MutationObserver(readOverflow);
+    readOverflow();
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", readOverflow);
+    return () => {
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", readOverflow);
+    };
+  }, []);
 
   const { visible: visibleTabIds, overflow: overflowTabIds } = partitionDockTabs(
     tabOrder,
@@ -607,6 +654,7 @@ export function RightDock() {
       style={{ width: dockWidth, marginRight: dockOpen ? 0 : -dockWidth }}
       data-right-dock
       data-dock-open={dockOpen ? "true" : "false"}
+      data-dock-overflow={mainOverflows ? "true" : "false"}
       className={`relative flex shrink-0 flex-col border-l border-border bg-surface ${
         resizing ? "transition-none" : "transition-[margin-right] duration-200 ease-out"
       }`}

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { clampDockWidth, partitionDockTabs, visibleDockTabLimit } from "./RightDock";
+import {
+  clampDockWidth,
+  dockContentOverflow,
+  partitionDockTabs,
+  visibleDockTabLimit,
+} from "./RightDock";
 
 describe("clampDockWidth", () => {
   it("uses the configured desktop limits", () => {
@@ -34,5 +39,42 @@ describe("dock tab overflow", () => {
       visible: ["a", "d"],
       overflow: ["b", "c"],
     });
+  });
+});
+
+describe("dockContentOverflow", () => {
+  const elWithRight = (right: number): HTMLElement =>
+    ({
+      getBoundingClientRect: () =>
+        ({
+          x: 0,
+          y: 0,
+          left: 0,
+          top: 0,
+          width: right,
+          height: 0,
+          right,
+          bottom: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    }) as HTMLElement;
+
+  it("is false when the chat page stays inside the main column", () => {
+    expect(dockContentOverflow(elWithRight(100), elWithRight(90))).toBe(false);
+  });
+
+  it("is true when the chat page spills past the main column's right edge", () => {
+    expect(dockContentOverflow(elWithRight(100), elWithRight(105))).toBe(true);
+  });
+
+  it("tolerates sub-pixel rounding at the boundary", () => {
+    expect(dockContentOverflow(elWithRight(100), elWithRight(100.5))).toBe(false);
+    expect(dockContentOverflow(elWithRight(100), elWithRight(101.5))).toBe(true);
+  });
+
+  it("is false while either element is missing", () => {
+    expect(dockContentOverflow(null, elWithRight(10))).toBe(false);
+    expect(dockContentOverflow(elWithRight(10), null)).toBe(false);
+    expect(dockContentOverflow(null, null)).toBe(false);
   });
 });
