@@ -67,6 +67,10 @@ import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
 import { ForkModal } from "./ForkModal";
 import { requestTreePanel } from "../../lib/dock-tree";
+import {
+  appendOptimisticUserMessage,
+  removeOptimisticUserMessage,
+} from "../../lib/chat/optimistic-echo";
 import { requestExport } from "../../lib/export-actions";
 import { useImeComposition } from "../../lib/use-ime-composition";
 import { useLocale, useT, type Translate } from "../../lib/i18n/use-t";
@@ -1385,36 +1389,17 @@ export function Composer({
       documentsRef.current = sentDocuments;
       setDocuments(sentDocuments);
     };
-    // Optimistic echo: show the user's bubble immediately instead of waiting
-    // for the Host to echo the message_start event (which can lag behind model
-    // preflight/compaction). The authoritative event later replaces the marker
-    // in place, so there is never a duplicate row.
-    const optimisticKey = crypto.randomUUID();
+    // Optimistic echo (idle prompt path only): show the user's bubble
+    // immediately instead of waiting for the Host to echo message_start (which
+    // can lag behind model preflight/compaction). The authoritative event
+    // later replaces the marker in place, so there is never a duplicate row.
+    let optimisticKey: string | null = null;
     const appendOptimisticMessage = () => {
-      const currentSession = useAppStore.getState().session;
-      if (!currentSession || currentSession.sessionId !== session?.sessionId) return;
-      setSession({
-        ...currentSession,
-        messages: [
-          ...currentSession.messages,
-          {
-            role: "user",
-            content: outgoingText,
-            timestamp: Date.now(),
-            _optimisticKey: optimisticKey,
-          },
-        ],
-      });
+      optimisticKey = appendOptimisticUserMessage(outgoingText, session?.sessionId);
     };
     const removeOptimisticMessage = () => {
-      const currentSession = useAppStore.getState().session;
-      if (!currentSession) return;
-      setSession({
-        ...currentSession,
-        messages: currentSession.messages.filter(
-          (message) => message._optimisticKey !== optimisticKey,
-        ),
-      });
+      removeOptimisticUserMessage(optimisticKey);
+      optimisticKey = null;
     };
     // AUTH_REQUIRED gets the persistent banner (with a Providers-settings
     // path) instead of a vanishing toast; anything else keeps the toast.
@@ -1440,14 +1425,16 @@ export function Composer({
     try {
       if (busy) {
         // Running-session sends use the configured steer or follow-up behavior.
-        appendOptimisticMessage();
+        // No optimistic bubble here: the QueuePanel waiting area already echoes
+        // the queued text via pending.steering/followUp, and echoing it into the
+        // transcript would render the message twice (and pin it at a stale
+        // position when the queued run later starts).
         const res = await hostClient.request(busySendMethod(busySendBehavior), context, {
           text: outgoingText,
           ...imageParams,
           ...attachmentParams,
         });
         if (!res.ok) {
-          removeOptimisticMessage();
           handleSendFailure(res.error);
         } else {
           commitDraftSend(sendReceipt);

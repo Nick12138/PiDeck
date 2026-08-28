@@ -5,6 +5,10 @@ import { activeSessionContext } from "./bridge/host-context";
 import { hostErrorLevel, localizeHostError } from "./bridge/localize-host-error";
 import { tCurrent } from "./i18n/use-t";
 import {
+  appendOptimisticUserMessage,
+  removeOptimisticUserMessage,
+} from "./chat/optimistic-echo";
+import {
   buildAttachedFileBlock,
   buildAttachedPathBlock,
   parseUserAttachments,
@@ -16,6 +20,11 @@ type ActiveSessionPromptParams = {
   images?: SerializableImage[];
   attachmentIds?: string[];
 };
+
+// The optimistic bubble must carry the exact outgoing text (including
+// attachment reference blocks) so the reducer's message_start expansion
+// in-place match succeeds; the bubble renderer strips those blocks for
+// display anyway.
 
 /**
  * Send a prompt to the active session, applying the shared safeguards: the
@@ -49,6 +58,10 @@ async function promptActiveSession(params: ActiveSessionPromptParams): Promise<b
     }
   };
 
+  // Same optimistic echo as the Composer: the retry/Go On bubble should show
+  // immediately, not after the Host's message_start clears preflight. A
+  // rejected send rolls the bubble back.
+  const optimisticKey = appendOptimisticUserMessage(params.text, session.sessionId);
   try {
     const res = await hostClient.request(
       "agent.prompt",
@@ -57,12 +70,14 @@ async function promptActiveSession(params: ActiveSessionPromptParams): Promise<b
       null,
     );
     if (!res.ok) {
+      removeOptimisticUserMessage(optimisticKey);
       handleFailure(res.error);
       return false;
     }
     setAuthBlocked(null);
     return true;
   } catch (error) {
+    removeOptimisticUserMessage(optimisticKey);
     pushNotification(
       error instanceof Error ? error.message : tCurrent("composerSendFailed"),
       "error",

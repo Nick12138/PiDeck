@@ -475,12 +475,18 @@ function replaceMatchingUserMessageInPlace(
 ): boolean {
   const incomingText = contentText(incoming.content);
   if (!incomingText) return false;
-  const index = messages.findIndex(
-    (candidate) => candidate.role === "user" && contentText(candidate.content) === incomingText,
-  );
-  if (index === -1) return false;
-  messages[index] = incoming;
-  return true;
+  // Scan backwards: the matching row of the CURRENT turn is the newest one.
+  // Forward scanning would rewrite an older identical message instead — e.g.
+  // after a retry, the failed turn's user bubble holds the same text and must
+  // stay untouched.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]!;
+    if (candidate.role === "user" && contentText(candidate.content) === incomingText) {
+      messages[index] = incoming;
+      return true;
+    }
+  }
+  return false;
 }
 
 function normalizeSessionEntry(value: unknown): SerializableSessionEntry | null {

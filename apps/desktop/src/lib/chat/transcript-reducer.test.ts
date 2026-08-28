@@ -989,4 +989,35 @@ describe("optimistic user echo", () => {
 
     expect(s.messages).toHaveLength(2);
   });
+
+  it("message_end updates the newest matching user row after a same-text retry", () => {
+    let s = baseSession();
+    s.messages = [
+      // Failed turn's user bubble stays in the transcript after a retry.
+      { role: "user", content: "hello", timestamp: 1 },
+      // Optimistic echo of the retry-send.
+      { role: "user", content: "hello", _optimisticKey: "opt-1" },
+    ];
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: { role: "user", content: "hello", timestamp: 2 },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
+        message: { role: "user", content: "hello", timestamp: 3 },
+      },
+    })!;
+
+    const userRows = s.messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+    // The failed turn's row is untouched; only the retry row was upgraded.
+    expect(s.messages[0]).toMatchObject({ role: "user", content: "hello", timestamp: 1 });
+    expect(s.messages[1]).toMatchObject({ role: "user", content: "hello", timestamp: 3 });
+  });
 });
