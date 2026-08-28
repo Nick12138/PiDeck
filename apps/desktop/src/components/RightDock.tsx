@@ -168,10 +168,6 @@ export function RightDock() {
   const [visibleTabLimit, setVisibleTabLimit] = useState(Number.MAX_SAFE_INTEGER);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
-  const todoAvailabilityRef = useRef({
-    sessionId: session?.sessionId ?? null,
-    hasTodos: todoCount > 0,
-  });
   const subagentsAvailabilityRef = useRef({
     sessionId: session?.sessionId ?? null,
     hasBeenUsed: false,
@@ -367,20 +363,6 @@ export function RightDock() {
     setActiveTab("subagents");
     setAddMenuOpen(false);
   };
-
-  useEffect(() => {
-    const sessionId = session?.sessionId ?? null;
-    const availability = todoAvailabilityRef.current;
-    const sessionChanged = availability.sessionId !== sessionId;
-    const becameAvailable = todoCount > 0 && (!availability.hasTodos || sessionChanged);
-    availability.sessionId = sessionId;
-    availability.hasTodos = todoCount > 0;
-    if (todoCount <= 0 || (!becameAvailable && !sessionChanged)) return;
-    setTabOrder((current) => (current.includes("todo") ? current : [...current, "todo"]));
-    setActiveTab("todo");
-    setDockOpen(true);
-    setSidebarPref("pideck.dock.open", true);
-  }, [session, session?.sessionId, todoCount, setDockOpen]);
 
   useEffect(() => {
     const sessionId = session?.sessionId ?? null;
