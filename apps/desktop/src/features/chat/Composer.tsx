@@ -1395,7 +1395,11 @@ export function Composer({
     // later replaces the marker in place, so there is never a duplicate row.
     let optimisticKey: string | null = null;
     const appendOptimisticMessage = () => {
-      optimisticKey = appendOptimisticUserMessage(outgoingText, session?.sessionId);
+      optimisticKey = appendOptimisticUserMessage(
+        outgoingText,
+        session?.sessionId,
+        sentImages.map(({ mediaType, data }) => ({ mediaType, data })),
+      );
     };
     const removeOptimisticMessage = () => {
       removeOptimisticUserMessage(optimisticKey);

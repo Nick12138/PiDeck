@@ -443,22 +443,64 @@ function contentText(content: SerializableAgentMessage["content"]): string {
     .join("\n");
 }
 
+function contentImages(content: SerializableAgentMessage["content"]): Array<{
+  data: string;
+  mimeType: string;
+}> {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    if (!part || typeof part !== "object" || part.type !== "image") return [];
+    const value = part as { data?: unknown; mimeType?: unknown; mediaType?: unknown };
+    if (typeof value.data !== "string") return [];
+    const mimeType =
+      typeof value.mimeType === "string"
+        ? value.mimeType
+        : typeof value.mediaType === "string"
+          ? value.mediaType
+          : "";
+    return [{ data: value.data, mimeType }];
+  });
+}
+
+function messagesMatchByContent(
+  left: SerializableAgentMessage,
+  right: SerializableAgentMessage,
+): boolean {
+  const leftText = contentText(left.content);
+  const rightText = contentText(right.content);
+  if (leftText || rightText) return leftText === rightText;
+  const leftImages = contentImages(left.content);
+  const rightImages = contentImages(right.content);
+  return (
+    leftImages.length > 0 &&
+    leftImages.length === rightImages.length &&
+    leftImages.every(
+      (image, index) =>
+        image.data === rightImages[index]?.data && image.mimeType === rightImages[index]?.mimeType,
+    )
+  );
+}
+
 /**
- * Replace the first still-pending optimistic user bubble whose text matches the
- * incoming authoritative message. Returns true when a local bubble was upgraded.
+ * Replace the latest still-pending optimistic user bubble whose content
+ * matches the incoming authoritative message. Returns true when upgraded.
  */
 function replaceOptimisticUserMessageInPlace(
   messages: SerializableAgentMessage[],
   incoming: SerializableAgentMessage,
 ): boolean {
-  const incomingText = contentText(incoming.content);
-  if (!incomingText) return false;
-  const index = messages.findIndex(
-    (candidate) =>
+  let index = -1;
+  for (let candidateIndex = messages.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+    const candidate = messages[candidateIndex]!;
+    if (
       candidate.role === "user" &&
       typeof candidate._optimisticKey === "string" &&
-      contentText(candidate.content) === incomingText,
-  );
+      messagesMatchByContent(candidate, incoming)
+    ) {
+      index = candidateIndex;
+      break;
+    }
+  }
   if (index === -1) return false;
   const { _optimisticKey: _dropped, ...authoritative } = incoming;
   messages[index] = authoritative;
@@ -466,22 +508,18 @@ function replaceOptimisticUserMessageInPlace(
 }
 
 /**
- * Replace an already-upgraded optimistic row (same user text) when message_end
- * arrives after message_start, so a single user prompt never renders twice.
+ * Replace an already-upgraded optimistic row (same user content) when
+ * message_end arrives after message_start, so a single user prompt never
+ * renders twice.
  */
 function replaceMatchingUserMessageInPlace(
   messages: SerializableAgentMessage[],
   incoming: SerializableAgentMessage,
 ): boolean {
-  const incomingText = contentText(incoming.content);
-  if (!incomingText) return false;
-  // Scan backwards: the matching row of the CURRENT turn is the newest one.
-  // Forward scanning would rewrite an older identical message instead — e.g.
-  // after a retry, the failed turn's user bubble holds the same text and must
-  // stay untouched.
+  if (!contentText(incoming.content) && contentImages(incoming.content).length === 0) return false;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const candidate = messages[index]!;
-    if (candidate.role === "user" && contentText(candidate.content) === incomingText) {
+    if (candidate.role === "user" && messagesMatchByContent(candidate, incoming)) {
       messages[index] = incoming;
       return true;
     }

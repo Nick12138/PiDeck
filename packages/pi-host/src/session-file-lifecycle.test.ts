@@ -274,7 +274,7 @@ describe("Session file lifecycle", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
-  it("promotes a background session when its file is not yet on disk", async () => {
+  it("promotes an idle cached session when its file is not yet on disk", async () => {
     const fixture = createFixture();
     const sessionPath = join(fixture.activeDir, SESSION_ID + ".jsonl");
 
@@ -283,19 +283,23 @@ describe("Session file lifecycle", () => {
     fixture.graph.settingsManager = {} as never;
     fixture.graph.resourceLoader = {} as never;
 
-    // Set up a background session entry (simulating a busy session that was
-    // retained when the user switched away before the first assistant message).
+    // A cached idle session must also promote directly without a disk read.
     const mockSessionSnapshot = {
       sessionId: SESSION_ID,
       sessionPath,
       sessionManager: {},
       agentSession: { isIdle: false },
     } as never;
-    fixture.graph.backgroundSessions.set(SESSION_ID, {
-      sessionId: SESSION_ID,
-      sessionSnapshot: mockSessionSnapshot,
-      agentSession: { isIdle: false },
-    } as never);
+    fixture.graph.idleSessionCache = new Map([
+      [
+        SESSION_ID,
+        {
+          sessionId: SESSION_ID,
+          sessionSnapshot: mockSessionSnapshot,
+          agentSession: { isIdle: true },
+        } as never,
+      ],
+    ]);
 
     // Mock promoteBackgroundRuntime to return a successful result
     const promoteMock = vi
@@ -303,7 +307,7 @@ describe("Session file lifecycle", () => {
       .mockResolvedValue({ sessionId: SESSION_ID, sessionPath } as never);
 
     // Ensure the session file does NOT exist on disk (simulating unpersisted session)
-    const result = await fixture.factory.openSession("promote-background", sessionPath);
+    const result = await fixture.factory.openSession("promote-idle-cache", sessionPath);
     expect(result).toMatchObject({
       sessionId: SESSION_ID,
     });

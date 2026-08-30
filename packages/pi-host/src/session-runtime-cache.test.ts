@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureActiveSessionState,
   commitActiveSessionState,
+  IDLE_SESSION_CACHE_TTL_MS,
+  MAX_IDLE_SESSION_CACHE,
   SESSION_DISPOSAL_STEP_TIMEOUT_MS,
   SessionRuntimeCache,
   type ActiveSessionState,
@@ -123,6 +125,72 @@ describe("session disposal bounds", () => {
   });
 });
 
+describe("idle Session cache", () => {
+  it("retains an idle Session without treating it as a busy background runtime", () => {
+    const cache = disposalCache();
+    const state = activeSlots("idle");
+    Reflect.set(state.agentSession!, "isIdle", true);
+    const graph = {
+      ...graphFrom(state),
+      backgroundSessions: new Map(),
+    } as unknown as WorkspaceGraph;
+
+    const runtime = cache.retainSessionRuntime(graph, state);
+
+    expect(runtime?.agentSession).toBe(state.agentSession);
+    expect(graph.backgroundSessions.size).toBe(0);
+    expect(graph.idleSessionCache?.get("idle")).toBe(runtime);
+  });
+
+  it("keeps the five most recently active idle Sessions and evicts the oldest runtime", () => {
+    const cache = disposalCache();
+    const graph = { backgroundSessions: new Map() } as unknown as WorkspaceGraph;
+    const states = ["A", "B", "C", "D", "E"].map((sessionId) => {
+      const state = activeSlots(sessionId);
+      Reflect.set(state.agentSession!, "isIdle", true);
+      cache.retainSessionRuntime(graph, state);
+      return state;
+    });
+
+    cache.touchIdleSession(graph, "F");
+
+    expect(MAX_IDLE_SESSION_CACHE).toBe(5);
+    expect([...graph.idleSessionRecency?.keys() ?? []]).toEqual(["B", "C", "D", "E", "F"]);
+    expect([...graph.idleSessionCache?.keys() ?? []]).toEqual(["B", "C", "D", "E"]);
+    expect(graph.idleSessionCache?.has("A")).toBe(false);
+    expect(states[0]!.agentSession).not.toBeNull();
+  });
+
+  it("expires an untouched cached Session after the configured idle timeout", async () => {
+    vi.useFakeTimers();
+    const cache = disposalCache();
+    const state = activeSlots("idle");
+    Reflect.set(state.agentSession!, "isIdle", true);
+    const graph = { backgroundSessions: new Map() } as unknown as WorkspaceGraph;
+
+    cache.retainSessionRuntime(graph, state);
+    await vi.advanceTimersByTimeAsync(IDLE_SESSION_CACHE_TTL_MS);
+
+    expect(graph.idleSessionCache?.has("idle")).toBe(false);
+    expect(graph.idleSessionRecency?.has("idle")).toBe(false);
+  });
+
+  it("removes a running Session from the idle queue", () => {
+    const cache = disposalCache();
+    const state = activeSlots("running");
+    Reflect.set(state.agentSession!, "isIdle", true);
+    const graph = {
+      ...graphFrom(state),
+      backgroundSessions: new Map(),
+    } as unknown as WorkspaceGraph;
+
+    cache.touchIdleSession(graph, "running");
+    Reflect.set(state.agentSession!, "isIdle", false);
+    cache.touchIdleSession(graph, "running");
+
+    expect(graph.idleSessionRecency?.has("running")).toBe(false);
+  });
+});
 describe("active Session state", () => {
   it("captures all Session graph slots and both identity fields", () => {
     const state = activeSlots("current");

@@ -164,6 +164,24 @@ export class WorkspaceGraphFactory {
     return this.sessionRuntimeCache.retainBusySession(graph, previous);
   }
 
+  /** @internal — session-lifecycle module */
+  retainSessionRuntime(
+    graph: WorkspaceGraph,
+    previous: ActiveSessionState,
+  ): BackgroundSessionRuntime | null {
+    return this.sessionRuntimeCache.retainSessionRuntime(graph, previous);
+  }
+
+  /** @internal — session-lifecycle module */
+  touchIdleSession(graph: WorkspaceGraph, sessionId: string): void {
+    this.sessionRuntimeCache.touchIdleSession(graph, sessionId);
+  }
+
+  /** @internal — agent-controller module */
+  cacheSettledBackgroundRuntime(graph: WorkspaceGraph, runtime: BackgroundSessionRuntime): void {
+    this.sessionRuntimeCache.cacheSettledBackgroundRuntime(graph, runtime);
+  }
+
   /** @internal - session lifecycle file mutations */
   async disposeBackgroundSessionRuntimeIfIdle(
     graph: WorkspaceGraph,
@@ -175,13 +193,6 @@ export class WorkspaceGraphFactory {
       sessionId,
       sessionPath,
     );
-  }
-
-  async disposeSettledBackgroundRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-  ): Promise<void> {
-    return this.sessionRuntimeCache.disposeSettledBackgroundRuntime(graph, runtime);
   }
 
   /** @internal — session-lifecycle module */

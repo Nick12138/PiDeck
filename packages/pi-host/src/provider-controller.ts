@@ -426,6 +426,7 @@ function providerMutationConflict(
   const sessions: AgentSession[] = [
     ...(graph.agentSession ? [graph.agentSession] : []),
     ...[...graph.backgroundSessions.values()].map((runtime) => runtime.agentSession),
+    ...[...(graph.idleSessionCache?.values() ?? [])].map((runtime) => runtime.agentSession),
   ];
   const conflict = sessions.find((session) => {
     const providerId = session.model?.provider;

@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   Minus,
   Plus,
   RefreshCw,
@@ -227,6 +229,7 @@ function PluginConfigDialog({
     initialConfigValues(entry, desktopSettings?.pluginEnv),
   );
   const [saving, setSaving] = useState(false);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   const needsRuntimeModels = (entry.config ?? []).some(
     (item) => wantsModelOptions(item) || wantsModelListOptions(item),
@@ -385,11 +388,39 @@ function PluginConfigDialog({
     }
 
     // 4. Fallback for unknown optionsSource without static options or regular text items.
+    if (item.secret) {
+      const shown = showSecrets[item.key] ?? false;
+      return (
+        <div className="relative">
+          <input
+            id={id}
+            className={`${inputClass} w-full pr-8`}
+            type={shown ? "text" : "password"}
+            autoComplete="off"
+            placeholder={item.placeholder}
+            value={values[item.env] ?? ""}
+            onChange={(event) =>
+              setValues((prev) => ({ ...prev, [item.env]: event.target.value }))
+            }
+          />
+          <button
+            type="button"
+            className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center text-muted hover:text-foreground"
+            title={shown ? t("providersKeyHide") : t("providersKeyShow")}
+            onClick={() =>
+              setShowSecrets((prev) => ({ ...prev, [item.key]: !shown }))
+            }
+          >
+            {shown ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
+      );
+    }
     return (
       <input
         id={id}
         className={inputClass}
-        type={item.secret ? "password" : "text"}
+        type="text"
         autoComplete="off"
         placeholder={item.placeholder}
         value={values[item.env] ?? ""}

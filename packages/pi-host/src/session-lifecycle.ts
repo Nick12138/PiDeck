@@ -140,7 +140,30 @@ export async function archiveSession(
     if (!session) {
       return { error: createHostError("SESSION_NOT_FOUND", "Session is not active") };
     }
-    if (factory.getSessionRuntimeInfo(session.id, session.path)) {
+    const active =
+      g.sessionSnapshot?.sessionId === sessionId &&
+      factory.sessionPathsEqual(g.sessionSnapshot.sessionPath, sessionPath);
+    if (active) {
+      return {
+        error: createHostError(
+          "AGENT_BUSY",
+          "Switch away from the Session and wait for its run to finish before archiving",
+          { retryable: true },
+        ),
+      };
+    }
+    const cached = g.idleSessionCache?.get(sessionId);
+    if (!cached && factory.getSessionRuntimeInfo(session.id, session.path)) {
+      return {
+        error: createHostError(
+          "AGENT_BUSY",
+          "Switch away from the Session and wait for its run to finish before archiving",
+          { retryable: true },
+        ),
+      };
+    }
+    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(g, sessionId, sessionPath);
+    if (runtime === "busy") {
       return {
         error: createHostError(
           "AGENT_BUSY",
@@ -311,7 +334,20 @@ export async function renameSession(
       };
     }
 
-    if (factory.getSessionRuntimeInfo(target.id, target.path)) {
+    const cached = g.idleSessionCache?.get(target.id);
+    if (!cached && factory.getSessionRuntimeInfo(target.id, target.path)) {
+      return {
+        error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
+          retryable: true,
+        }),
+      };
+    }
+    const runtime = await factory.disposeBackgroundSessionRuntimeIfIdle(
+      g,
+      target.id,
+      target.path,
+    );
+    if (runtime === "busy") {
       return {
         error: createHostError("AGENT_BUSY", "Wait for the Session run to finish", {
           retryable: true,
@@ -625,7 +661,7 @@ export async function createSession(
     });
     markStep("buildSessionSnapshot");
 
-    const retainedPrevious = factory.retainBusySession(g, prev);
+    const retainedPrevious = factory.retainSessionRuntime(g, prev);
 
     // Temporarily commit candidate identity so blocking Extension UI can respond,
     // but do not publish a ready Session until bindExtensions has completed.
@@ -653,6 +689,7 @@ export async function createSession(
     } catch (bindErr) {
       if (retainedPrevious) {
         g.backgroundSessions.delete(retainedPrevious.sessionId);
+        g.idleSessionCache?.delete(retainedPrevious.sessionId);
       }
       try {
         unsubscribeAgent?.();
@@ -676,6 +713,7 @@ export async function createSession(
     }
 
     markStep("activateExtensionUi");
+    factory.touchIdleSession(g, sessionId);
 
     // The candidate is authoritative once commit and Extension activation
     // succeed. Publish it before the outgoing runtime's teardown so slow
@@ -828,9 +866,10 @@ export async function openSession(
     // not yet be persisted to disk (no assistant message), so the disk listing
     // below would fail to find it. If the session is still in memory, promote it
     // directly without requiring a file on disk.
-    const retained = [...g.backgroundSessions.values()].find((runtime) =>
-      factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
-    );
+    const retained = [
+      ...g.backgroundSessions.values(),
+      ...(g.idleSessionCache?.values() ?? []),
+    ].find((runtime) => factory.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath));
     if (retained) {
       operation.signal.throwIfAborted();
       return await factory.promoteBackgroundRuntime(g, retained);
@@ -935,7 +974,7 @@ export async function openSession(
 
       const prev = captureActiveSessionState(g, server.identity);
 
-      const retainedPrevious = factory.retainBusySession(g, prev);
+      const retainedPrevious = factory.retainSessionRuntime(g, prev);
 
       commitActiveSessionState(g, server.identity, {
         sessionManager,
@@ -961,6 +1000,7 @@ export async function openSession(
       } catch (bindErr) {
         if (retainedPrevious) {
           g.backgroundSessions.delete(retainedPrevious.sessionId);
+          g.idleSessionCache?.delete(retainedPrevious.sessionId);
         }
         try {
           candidateUnsubscribeAgent?.();
@@ -987,6 +1027,7 @@ export async function openSession(
       // Publish it before awaiting outgoing idle shutdown so slow Extension cleanup
       // cannot hold the visible conversation on the previous Session.
       markStep("activateExtensionUi");
+      factory.touchIdleSession(g, sessionId);
       server.emit("session.snapshot", sessionSnapshot);
       candidateStatusBridge?.markReady();
       server.emit("agent.toolsChanged", sessionSnapshot.tools);

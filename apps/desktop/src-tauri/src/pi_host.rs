@@ -513,6 +513,9 @@ pub struct PiHostManager {
     /// into the Host process environment at spawn time. Snapshot taken from
     /// desktop settings; applied on the next Host start.
     plugin_env: BTreeMap<String, BTreeMap<String, String>>,
+    /// Idle Session hot-queue policy, applied to the next spawned Host.
+    idle_session_cache_limit: u32,
+    idle_session_timeout_minutes: u32,
     /// Monotonic child generation used to retire delayed stdout/stderr monitors.
     child_generation: Arc<AtomicU32>,
     stdout_task: Option<JoinHandle<()>>,
@@ -842,6 +845,10 @@ impl PiHostPool {
             manager.set_agent_dir(settings.resolved_agent_dir());
             manager.set_auto_restart_once(settings.settings.auto_restart_host_once);
             manager.set_plugin_env(settings.settings.plugin_env.clone());
+            manager.set_idle_session_policy(
+                settings.settings.idle_session_cache_limit,
+                settings.settings.idle_session_timeout_minutes,
+            );
         }
     }
 
@@ -1552,6 +1559,8 @@ impl PiHostManager {
             agent_dir: settings.resolved_agent_dir(),
             initial_workspace: initial_workspace.or_else(|| Self::initial_workspace_from(settings)),
             plugin_env: settings.settings.plugin_env.clone(),
+            idle_session_cache_limit: settings.settings.idle_session_cache_limit,
+            idle_session_timeout_minutes: settings.settings.idle_session_timeout_minutes,
             restart_count: Arc::new(AtomicU32::new(0)),
             auto_restart_once: settings.settings.auto_restart_host_once,
             shutting_down: Arc::new(AtomicBool::new(false)),
@@ -1598,6 +1607,11 @@ impl PiHostManager {
 
     pub fn set_plugin_env(&mut self, plugin_env: BTreeMap<String, BTreeMap<String, String>>) {
         self.plugin_env = plugin_env;
+    }
+
+    pub fn set_idle_session_policy(&mut self, limit: u32, timeout_minutes: u32) {
+        self.idle_session_cache_limit = limit;
+        self.idle_session_timeout_minutes = timeout_minutes;
     }
 
     pub fn set_initial_workspace_path(&mut self, path: PathBuf) {
@@ -1847,13 +1861,23 @@ impl PiHostManager {
         }
         cmd.env("PI_CODING_AGENT_DIR", &agent_dir);
         cmd.env("PIDECK_HOST_CACHE_DIR", &host_cache_dir);
+        cmd.env(
+            "PIDECK_IDLE_SESSION_CACHE_LIMIT",
+            self.idle_session_cache_limit.to_string(),
+        );
+        cmd.env(
+            "PIDECK_IDLE_SESSION_TIMEOUT_MINUTES",
+            self.idle_session_timeout_minutes.to_string(),
+        );
         // Reserved names belong to the launcher; plugin config must not shadow them.
-        const RESERVED_ENV: [&str; 8] = [
+        const RESERVED_ENV: [&str; 10] = [
             "PATH",
             "NODE_PATH",
             "NODE",
             "PI_CODING_AGENT_DIR",
             "PIDECK_HOST_CACHE_DIR",
+            "PIDECK_IDLE_SESSION_CACHE_LIMIT",
+            "PIDECK_IDLE_SESSION_TIMEOUT_MINUTES",
             "PIDECK_BUNDLED_NODE",
             "PIDECK_BUNDLED_GIT",
             "PIDECK_BUNDLED_BASH",

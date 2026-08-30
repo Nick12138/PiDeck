@@ -154,7 +154,7 @@ function stableHandlerFixture(wait: Promise<void>) {
     getServer: () => server,
     getSessionOperationLock: () => sessionOperationLock,
     isSessionBusy: (target: AgentSession) => !target.isIdle || sessionOperationLock.isHeld(),
-    disposeSettledBackgroundRuntime: vi.fn(async () => {}),
+    cacheSettledBackgroundRuntime: vi.fn(),
     beginQueueTransaction,
     finishQueueTransaction: (target: AgentSession) => {
       const result = finishQueueTransaction(target);
@@ -1080,7 +1080,7 @@ describe("agent.compact concurrency", () => {
       revision: originalIdentity.sessionRevision,
     });
     await vi.waitFor(() => {
-      expect(fixture.factory.disposeSettledBackgroundRuntime).toHaveBeenCalledWith(
+      expect(fixture.factory.cacheSettledBackgroundRuntime).toHaveBeenCalledWith(
         fixture.graph,
         background,
       );

@@ -63,10 +63,14 @@ export function mapSubagentHttpRun(run: SubagentHttpRunSummary): SubagentStatusN
 
 /** Normalize a `GET /api/runs` payload into a bounded status snapshot.
  * Runs are scoped to the active orchestrator session: a run is shown when its
- * recorded sessionId matches the active session, OR (for legacy runs without
- * a recorded sessionId) when its run id appears in the active session's own
- * transcript — i.e. this session really spawned it. Historical runs from
- * other sessions never leak into the panel. */
+ * recorded sessionId matches the active session, OR when its run id appears
+ * in the active session's own transcript — i.e. this session really spawned
+ * it. The transcript fallback covers both legacy runs without a recorded
+ * sessionId and runs whose recorded sessionId is stale (the plugin snapshots
+ * the orchestrator session id from a process-global env var set at the last
+ * session_start; session switches that skip session_start leave it pointing
+ * at the previous session). Historical runs from other sessions never leak
+ * into the panel. */
 export function normalizeSubagentRuns(
   runs: SubagentHttpRunSummary[],
   now = Date.now(),
@@ -74,8 +78,12 @@ export function normalizeSubagentRuns(
   ownedRunIds: Set<string> | null = null,
 ): SubagentsStatusSnapshot {
   const scoped = runs.filter((run) => {
-    if (typeof run.sessionId === "string" && run.sessionId) {
-      return run.sessionId === sessionId;
+    if (
+      typeof run.sessionId === "string" &&
+      run.sessionId &&
+      run.sessionId === sessionId
+    ) {
+      return true;
     }
     return ownedRunIds?.has(run.id) ?? false;
   });
@@ -288,6 +296,21 @@ export function createSubagentStatusBridge(
     });
     pi.on("session_shutdown", () => {
       if (generation !== activeGeneration) return;
+      // The host promotes retained (idle-cached/background) sessions without
+      // re-invoking this factory, and disposes the previously active runner
+      // afterwards — so a shutdown can arrive while the bridge is already
+      // re-pointed at another session's identity. Polling is identity-driven;
+      // keep it alive as long as an identity is bound, or the panel freezes
+      // on the unavailable snapshot forever.
+      if (identity && identityGeneration === activeGeneration) {
+        sessionDisposed = false;
+        if (!interval) {
+          interval = setInterval(() => void pollOnce(), POLL_MS);
+          interval.unref?.();
+          void pollOnce();
+        }
+        return;
+      }
       stop();
       publish(generation, unavailable());
     });

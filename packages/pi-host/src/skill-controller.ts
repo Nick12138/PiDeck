@@ -195,6 +195,7 @@ async function mutateSkillPaths(
       // skill set applies to reloaded/new sessions.
       try {
         await g.settingsManager?.reload();
+        await factory.invalidateRetainedRuntimeCaches?.();
         if (g.resourceLoader) {
           await g.resourceLoader.reload();
           g.resourceReloadRequired = false;

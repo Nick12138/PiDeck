@@ -1,3 +1,4 @@
+import type { SerializableImage } from "@pideck/protocol";
 import { useAppStore } from "../stores/app-store";
 
 /**
@@ -14,19 +15,29 @@ import { useAppStore } from "../stores/app-store";
 export function appendOptimisticUserMessage(
   text: string,
   expectedSessionId?: string | null,
+  images?: readonly SerializableImage[],
 ): string | null {
   const store = useAppStore.getState();
   const session = store.session;
   if (!session) return null;
   if (expectedSessionId && session.sessionId !== expectedSessionId) return null;
   const key = crypto.randomUUID();
+  const content = [
+    ...(text ? [{ type: "text" as const, text }] : []),
+    ...(images ?? []).map((image) => ({
+      type: "image" as const,
+      mimeType: image.mediaType,
+      data: image.data,
+    })),
+  ];
+  const messageContent = images?.length ? content : text;
   store.applySessionSnapshot({
     ...session,
     messages: [
       ...session.messages,
       {
         role: "user",
-        content: text,
+        content: messageContent,
         timestamp: Date.now(),
         _optimisticKey: key,
       },
@@ -35,14 +46,17 @@ export function appendOptimisticUserMessage(
   return key;
 }
 
+
 export function removeOptimisticUserMessage(key: string | null): void {
   if (!key) return;
   const store = useAppStore.getState();
   const session = store.session;
   if (!session) return;
   if (!session.messages.some((message) => message._optimisticKey === key)) return;
-  store.applySessionSnapshot({
-    ...session,
-    messages: session.messages.filter((message) => message._optimisticKey !== key),
+  useAppStore.setState({
+    session: {
+      ...session,
+      messages: session.messages.filter((message) => message._optimisticKey !== key),
+    },
   });
 }

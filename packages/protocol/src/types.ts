@@ -1368,6 +1368,10 @@ export type DesktopSettings = {
   conversationFontSize?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */
   codeFontSize?: number;
+  /** Maximum number of recently active or idle Session runtimes to retain. */
+  idleSessionCacheLimit?: number;
+  /** Minutes an idle cached Session may remain untouched before disposal. */
+  idleSessionTimeoutMinutes?: number;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

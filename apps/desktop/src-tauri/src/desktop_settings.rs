@@ -121,6 +121,8 @@ pub struct DesktopSettings {
     pub conversation_max_width: u32,
     pub conversation_font_size: u32,
     pub code_font_size: u32,
+    pub idle_session_cache_limit: u32,
+    pub idle_session_timeout_minutes: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -151,6 +153,8 @@ impl Default for DesktopSettings {
             conversation_max_width: DEFAULT_CONVERSATION_MAX_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
+            idle_session_cache_limit: 5,
+            idle_session_timeout_minutes: 30,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             plugin_env: BTreeMap::new(),
@@ -332,6 +336,12 @@ impl DesktopSettingsStore {
                 "codeFontSize must be between {MIN_CODE_FONT_SIZE} and {MAX_CODE_FONT_SIZE}"
             ));
         }
+        if !(1..=20).contains(&settings.idle_session_cache_limit) {
+            return Err("idleSessionCacheLimit must be between 1 and 20".to_string());
+        }
+        if !(1..=24 * 60).contains(&settings.idle_session_timeout_minutes) {
+            return Err("idleSessionTimeoutMinutes must be between 1 and 1440".to_string());
+        }
         for (plugin_id, vars) in &settings.plugin_env {
             if plugin_id.is_empty() || plugin_id.chars().count() > 64 {
                 return Err("pluginEnv plugin ids must be 1-64 characters".to_string());
@@ -476,6 +486,8 @@ impl DesktopSettingsStore {
                     | "conversationMaxWidth"
                     | "conversationFontSize"
                     | "codeFontSize"
+                    | "idleSessionCacheLimit"
+                    | "idleSessionTimeoutMinutes"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
                     | "pluginEnv"

@@ -1002,14 +1002,7 @@ export function createAgentHandlers(
       } finally {
         operationLock.release(ctx.id);
         if (backgroundAfterCompact) {
-          void factory
-            .disposeSettledBackgroundRuntime(g, backgroundAfterCompact)
-            .catch((error: unknown) => {
-              logger.warn("Background Session cleanup after compaction failed", {
-                sessionId: backgroundAfterCompact?.sessionId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            });
+          factory.cacheSettledBackgroundRuntime(g, backgroundAfterCompact);
         }
       }
     },

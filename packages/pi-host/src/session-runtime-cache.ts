@@ -25,6 +25,21 @@ import type { BackgroundSessionRuntime, WorkspaceGraph } from "./workspace-graph
 
 export const SESSION_DISPOSAL_STEP_TIMEOUT_MS = 15_000;
 
+function integerFromEnv(name: string, fallback: number, min: number, max: number): number {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+}
+
+/** Number of hot Sessions (the active Session plus idle cached Sessions). */
+export const MAX_IDLE_SESSION_CACHE = integerFromEnv(
+  "PIDECK_IDLE_SESSION_CACHE_LIMIT",
+  5,
+  1,
+  20,
+);
+export const IDLE_SESSION_CACHE_TTL_MS =
+  integerFromEnv("PIDECK_IDLE_SESSION_TIMEOUT_MINUTES", 30, 1, 24 * 60) * 60 * 1000;
+
 type DisposalStepResult =
   { status: "completed" } | { status: "failed"; error: unknown } | { status: "timed_out" };
 
@@ -147,6 +162,10 @@ export class SessionRuntimeCache {
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
   private readonly disposedSessions = new WeakSet<AgentSession>();
+  private readonly idleCacheTimers = new WeakMap<
+    WorkspaceGraph,
+    Map<string, ReturnType<typeof setTimeout>>
+  >();
 
   constructor(private readonly context: SessionRuntimeCacheContext) {}
 
@@ -225,10 +244,16 @@ export class SessionRuntimeCache {
       [...graph.backgroundSessions.values()].find((runtime) =>
         this.context.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
       );
-    return background
+    const cached =
+      graph.idleSessionCache?.get(sessionId) ??
+      [...(graph.idleSessionCache?.values() ?? [])].find((runtime) =>
+        this.context.sessionPathsEqual(runtime.sessionSnapshot.sessionPath, sessionPath),
+      );
+    const runtime = background ?? cached;
+    return runtime
       ? {
-          runtimeState: this.runtimeStateForSession(background.agentSession),
-          sessionRevision: background.sessionRevision,
+          runtimeState: this.runtimeStateForSession(runtime.agentSession),
+          sessionRevision: runtime.sessionRevision,
         }
       : null;
   }
@@ -275,6 +300,16 @@ export class SessionRuntimeCache {
   async disposeGraphSessionRuntimes(graph: WorkspaceGraph): Promise<void> {
     await this.disposeAgentSession(graph);
     for (const runtime of [...graph.backgroundSessions.values()]) {
+      await this.disposeBackgroundRuntime(graph, runtime);
+    }
+    for (const runtime of [...(graph.idleSessionCache?.values() ?? [])]) {
+      await this.disposeBackgroundRuntime(graph, runtime);
+    }
+    graph.idleSessionRecency?.clear();
+  }
+
+  async disposeIdleSessionRuntimes(graph: WorkspaceGraph): Promise<void> {
+    for (const runtime of [...(graph.idleSessionCache?.values() ?? [])]) {
       await this.disposeBackgroundRuntime(graph, runtime);
     }
   }
@@ -340,7 +375,117 @@ export class SessionRuntimeCache {
       extensionUiReplayState: previous.extensionUiReplayState,
     };
     graph.backgroundSessions.set(runtime.sessionId, runtime);
+    this.dropIdleSessionRecency(graph, runtime.sessionId);
     return runtime;
+  }
+
+  retainSessionRuntime(
+    graph: WorkspaceGraph,
+    previous: ActiveSessionState,
+  ): BackgroundSessionRuntime | null {
+    const busy = this.retainBusySession(graph, previous);
+    if (busy) return busy;
+    if (
+      !previous.sessionId ||
+      !previous.sessionManager ||
+      !previous.agentSession ||
+      !previous.resourceLoader ||
+      !previous.sessionSnapshot
+    ) {
+      return null;
+    }
+    const runtime: BackgroundSessionRuntime = {
+      sessionId: previous.sessionId,
+      sessionRevision: previous.sessionRevision,
+      sessionManager: previous.sessionManager,
+      agentSession: previous.agentSession,
+      resourceLoader: previous.resourceLoader,
+      extensionsResult: previous.extensionsResult,
+      toolRevision: previous.toolRevision,
+      sessionSnapshot: previous.sessionSnapshot,
+      unsubscribeAgent: previous.unsubscribeAgent,
+      extensionUiActivate: previous.extensionUiActivate,
+      extensionUiCleanup: previous.extensionUiCleanup,
+      extensionUiUpdateIdentity: previous.extensionUiUpdateIdentity,
+      extensionUiReplayState: previous.extensionUiReplayState,
+    };
+    this.cacheIdleRuntime(graph, runtime);
+    this.touchIdleSession(graph, runtime.sessionId);
+    return runtime;
+  }
+
+  /** Record a manual activation or one-time background completion in the hot queue. */
+  touchIdleSession(graph: WorkspaceGraph, sessionId: string): void {
+    const active =
+      graph.sessionSnapshot?.sessionId === sessionId ? graph.agentSession : undefined;
+    const runtime =
+      active ?? graph.idleSessionCache?.get(sessionId)?.agentSession ?? graph.backgroundSessions.get(sessionId)?.agentSession;
+    if (runtime && !runtime.isIdle) {
+      this.dropIdleSessionRecency(graph, sessionId);
+      return;
+    }
+    const recency = graph.idleSessionRecency ?? (graph.idleSessionRecency = new Map());
+    recency.delete(sessionId);
+    recency.set(sessionId, true);
+    while (recency.size > MAX_IDLE_SESSION_CACHE) {
+      const oldestId = recency.keys().next().value;
+      if (oldestId === undefined) break;
+      recency.delete(oldestId);
+      const cached = graph.idleSessionCache?.get(oldestId);
+      if (cached) void this.disposeBackgroundRuntime(graph, cached);
+    }
+  }
+
+  /** Move a finished background runtime into the idle cache and refresh its TTL once. */
+  cacheSettledBackgroundRuntime(
+    graph: WorkspaceGraph,
+    runtime: BackgroundSessionRuntime,
+  ): void {
+    if (
+      graph.backgroundSessions.get(runtime.sessionId) !== runtime ||
+      !runtime.agentSession.isIdle
+    ) {
+      return;
+    }
+    graph.backgroundSessions.delete(runtime.sessionId);
+    this.cacheIdleRuntime(graph, runtime);
+    this.touchIdleSession(graph, runtime.sessionId);
+  }
+
+  private cacheIdleRuntime(graph: WorkspaceGraph, runtime: BackgroundSessionRuntime): void {
+    const cache = graph.idleSessionCache ?? (graph.idleSessionCache = new Map());
+    cache.delete(runtime.sessionId);
+    cache.set(runtime.sessionId, runtime);
+    this.armIdleCacheTimer(graph, runtime);
+  }
+
+  private armIdleCacheTimer(graph: WorkspaceGraph, runtime: BackgroundSessionRuntime): void {
+    const timers = this.idleCacheTimers.get(graph) ?? new Map<string, ReturnType<typeof setTimeout>>();
+    this.idleCacheTimers.set(graph, timers);
+    const previous = timers.get(runtime.sessionId);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      if (graph.idleSessionCache?.get(runtime.sessionId) !== runtime) {
+        this.clearIdleCacheTimer(graph, runtime.sessionId);
+        return;
+      }
+      void this.disposeBackgroundRuntime(graph, runtime);
+    }, IDLE_SESSION_CACHE_TTL_MS);
+    timer.unref?.();
+    timers.set(runtime.sessionId, timer);
+  }
+
+  private clearIdleCacheTimer(graph: WorkspaceGraph, sessionId: string): void {
+    const timers = this.idleCacheTimers.get(graph);
+    const timer = timers?.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    timers!.delete(sessionId);
+    if (timers!.size === 0) this.idleCacheTimers.delete(graph);
+  }
+
+  private dropIdleSessionRecency(graph: WorkspaceGraph, sessionId: string): void {
+    graph.idleSessionRecency?.delete(sessionId);
   }
 
   async disposeBackgroundSessionRuntimeIfIdle(
@@ -348,7 +493,10 @@ export class SessionRuntimeCache {
     sessionId: string,
     sessionPath: string,
   ): Promise<"none" | "busy" | "disposed"> {
-    const runtime = [...graph.backgroundSessions.values()].find(
+    const runtime = [
+      ...graph.backgroundSessions.values(),
+      ...(graph.idleSessionCache?.values() ?? []),
+    ].find(
       (candidate) =>
         candidate.sessionId === sessionId &&
         this.context.sessionPathsEqual(candidate.sessionSnapshot.sessionPath, sessionPath),
@@ -379,15 +527,21 @@ export class SessionRuntimeCache {
     runtime: BackgroundSessionRuntime,
   ): Promise<SessionSnapshot | { error: HostError }> {
     const server = this.context.getServer();
-    if (!server || graph.backgroundSessions.get(runtime.sessionId) !== runtime) {
+    if (
+      !server ||
+      (graph.backgroundSessions.get(runtime.sessionId) !== runtime &&
+        graph.idleSessionCache?.get(runtime.sessionId) !== runtime)
+    ) {
       return {
         error: createHostError("SESSION_NOT_FOUND", "Background Session is no longer available"),
       };
     }
 
     const previous = captureActiveSessionState(graph, server.identity);
-    const retainedPrevious = this.retainBusySession(graph, previous);
+    const retainedPrevious = this.retainSessionRuntime(graph, previous);
     graph.backgroundSessions.delete(runtime.sessionId);
+    graph.idleSessionCache?.delete(runtime.sessionId);
+    this.clearIdleCacheTimer(graph, runtime.sessionId);
     const sessionRevision = server.identity.sessionRevision + 1;
     const promotedIdentity: HostIdentity = {
       ...server.getIdentity(),
@@ -419,9 +573,19 @@ export class SessionRuntimeCache {
       extensionUiUpdateIdentity: runtime.extensionUiUpdateIdentity,
       extensionUiReplayState: runtime.extensionUiReplayState,
       unsubscribeAgent: runtime.unsubscribeAgent,
+      // The bridge is a graph-level service; promote skips the full
+      // create/open flow that would otherwise re-install it, so carry it over
+      // explicitly (commitActiveSessionState would wipe it to undefined).
+      subagentStatusBridge: graph.subagentStatusBridge,
       sessionId: runtime.sessionId,
       sessionRevision,
     });
+
+    // Promoting a retained runtime skips the full create/open flow, so the
+    // subagent status bridge would otherwise keep filtering with the previous
+    // session's identity and the panel would show nothing (or the wrong
+    // session's runs) after switching back.
+    graph.subagentStatusBridge?.setIdentity(promotedIdentity);
 
     if (!retainedPrevious) {
       try {
@@ -440,6 +604,9 @@ export class SessionRuntimeCache {
     }
 
     server.emit("session.snapshot", snapshot);
+    // The desktop gates session-scoped events on the snapshot having been
+    // observed first, so mark the bridge ready only after emitting it.
+    graph.subagentStatusBridge?.markReady();
     server.emit("agent.toolsChanged", snapshot.tools);
     if (retainedPrevious) this.announceRetainedRuntime(retainedPrevious);
     server.emit("session.runtimeChanged", {
@@ -449,6 +616,7 @@ export class SessionRuntimeCache {
       updatedAt: Date.now(),
     });
     runtime.extensionUiReplayState?.();
+    this.touchIdleSession(graph, runtime.sessionId);
     return snapshot;
   }
 
@@ -462,8 +630,14 @@ export class SessionRuntimeCache {
       : [...graph.backgroundSessions.values()].find(
           (runtime) => runtime.agentSession === sourceSession,
         );
-    const sessionManager = active ? graph.sessionManager : background?.sessionManager;
-    const currentSnapshot = active ? graph.sessionSnapshot : background?.sessionSnapshot;
+    const cached = active || background
+      ? undefined
+      : [...(graph.idleSessionCache?.values() ?? [])].find(
+          (runtime) => runtime.agentSession === sourceSession,
+        );
+    const retained = background ?? cached;
+    const sessionManager = active ? graph.sessionManager : retained?.sessionManager;
+    const currentSnapshot = active ? graph.sessionSnapshot : retained?.sessionSnapshot;
     if (!sessionManager || !currentSnapshot) return;
     const eventIdentity: HostIdentity = {
       ...server.getIdentity(),
@@ -475,6 +649,9 @@ export class SessionRuntimeCache {
       typeof event === "object" && event !== null && "type" in event
         ? String((event as { type?: unknown }).type ?? "")
         : "";
+    if (this.isSessionBusy(sourceSession)) {
+      this.dropIdleSessionRecency(graph, currentSnapshot.sessionId);
+    }
     if (eventType === "queue_update") {
       const queueEvent = event as {
         steering?: readonly string[];
@@ -502,10 +679,10 @@ export class SessionRuntimeCache {
         sessionId: eventIdentity.sessionId ?? "",
         revision: eventIdentity.sessionRevision,
         workspaceId: graph.workspaceId,
-        toolRevision: active ? graph.toolRevision : background!.toolRevision,
+        toolRevision: active ? graph.toolRevision : retained!.toolRevision,
       });
       if (active) graph.sessionSnapshot = nextSnapshot;
-      else background!.sessionSnapshot = nextSnapshot;
+      else retained!.sessionSnapshot = nextSnapshot;
       server.emitForIdentity(eventIdentity, "session.infoChanged", {
         sessionId: nextSnapshot.sessionId,
         ...(nextSnapshot.name ? { name: nextSnapshot.name } : {}),
@@ -523,7 +700,7 @@ export class SessionRuntimeCache {
     this.publishRuntimeState(sourceSession, eventIdentity, eventType, serialized);
 
     if (toolResultNeedsToolsRefresh(event)) {
-      const toolRevision = active ? (graph.toolRevision += 1) : (background!.toolRevision += 1);
+      const toolRevision = active ? (graph.toolRevision += 1) : (retained!.toolRevision += 1);
       const tools = buildToolSnapshot({
         session: sourceSession,
         workspaceId: graph.workspaceId,
@@ -532,17 +709,16 @@ export class SessionRuntimeCache {
         toolRevision,
       });
       if (active && graph.sessionSnapshot) graph.sessionSnapshot.tools = tools;
-      if (!active && background) background.sessionSnapshot.tools = tools;
+      if (!active && retained) retained.sessionSnapshot.tools = tools;
       if (active) server.emitForIdentity(eventIdentity, "agent.toolsChanged", tools);
     }
 
-    const snapshot = active ? graph.sessionSnapshot : background?.sessionSnapshot;
+    const snapshot = active ? graph.sessionSnapshot : retained?.sessionSnapshot;
     if (!snapshot) return;
     snapshot.isIdle = sourceSession.isIdle;
     snapshot.isStreaming = !sourceSession.isIdle;
     if (eventType !== "agent_end" && eventType !== "agent_settled") return;
 
-    if (!this.hasBusySessions()) server.setPhase("ready");
     const lifecycleSnapshot = buildSessionSnapshot({
       session: sourceSession,
       sessionManager,
@@ -550,27 +726,19 @@ export class SessionRuntimeCache {
       sessionId: eventIdentity.sessionId ?? "",
       revision: eventIdentity.sessionRevision,
       workspaceId: graph.workspaceId,
-      toolRevision: active ? graph.toolRevision : background!.toolRevision,
+      toolRevision: active ? graph.toolRevision : retained!.toolRevision,
     });
     if (active) {
       graph.sessionSnapshot = lifecycleSnapshot;
+      this.touchIdleSession(graph, lifecycleSnapshot.sessionId);
       server.emitForIdentity(eventIdentity, "session.snapshot", lifecycleSnapshot);
-    } else if (background) {
-      background.sessionSnapshot = lifecycleSnapshot;
-      if (eventType === "agent_settled") {
-        setTimeout(() => {
-          void this.disposeSettledBackgroundRuntime(graph, background).then(() => {
-            if (
-              this.context.getGraph() === graph &&
-              server.getPhase() === "agentBusy" &&
-              !this.hasBusySessions()
-            ) {
-              server.setPhase("ready");
-            }
-          });
-        }, 0);
+    } else if (retained) {
+      retained.sessionSnapshot = lifecycleSnapshot;
+      if (background && eventType === "agent_settled") {
+        this.cacheSettledBackgroundRuntime(graph, background);
       }
     }
+    if (!this.hasBusySessions()) server.setPhase("ready");
   }
 
   private runtimeStateForSession(session: AgentSession): SessionRuntimeState {
@@ -640,8 +808,13 @@ export class SessionRuntimeCache {
     graph: WorkspaceGraph,
     runtime: BackgroundSessionRuntime,
   ): Promise<void> {
-    if (graph.backgroundSessions.get(runtime.sessionId) !== runtime) return;
-    graph.backgroundSessions.delete(runtime.sessionId);
+    const retainedAsBackground = graph.backgroundSessions.get(runtime.sessionId) === runtime;
+    const retainedAsCached = graph.idleSessionCache?.get(runtime.sessionId) === runtime;
+    if (!retainedAsBackground && !retainedAsCached) return;
+    if (retainedAsBackground) graph.backgroundSessions.delete(runtime.sessionId);
+    if (retainedAsCached) graph.idleSessionCache?.delete(runtime.sessionId);
+    this.clearIdleCacheTimer(graph, runtime.sessionId);
+    this.dropIdleSessionRecency(graph, runtime.sessionId);
     try {
       runtime.unsubscribeAgent?.();
     } catch {
@@ -653,24 +826,6 @@ export class SessionRuntimeCache {
       /* ignore */
     }
     await this.disposeAgentSessionOnly(runtime.agentSession);
-  }
-
-  async disposeSettledBackgroundRuntime(
-    graph: WorkspaceGraph,
-    runtime: BackgroundSessionRuntime,
-  ): Promise<void> {
-    const server = this.context.getServer();
-    if (!server) return;
-    const requestId = `background-settle:${runtime.sessionId}`;
-    await server.serviceGraphLock.acquireUnbounded({
-      operationKind: "session.cleanup",
-      requestId,
-    });
-    try {
-      await this.disposeBackgroundRuntime(graph, runtime);
-    } finally {
-      server.serviceGraphLock.release(requestId);
-    }
   }
 
   private publishRuntimeState(

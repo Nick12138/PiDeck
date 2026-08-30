@@ -165,6 +165,61 @@ describe("createSubagentStatusBridge reload resilience", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it("keeps polling after a belated shutdown of a retained session (promotion re-points the bridge)", async () => {
+    vi.useFakeTimers();
+    try {
+      const emitted: Array<{ identity: HostIdentity; snapshot: SubagentsStatusSnapshot }> = [];
+      const bridge = createSubagentStatusBridge((identity, snapshot) => {
+        emitted.push({ identity, snapshot });
+      });
+      const h = harness([run()]);
+
+      // Session B is created and bound: factory invoked once, identity B
+      // ready, polling starts under the single active generation.
+      bridge.extension(h.api);
+      bridge.setIdentity(identity());
+      bridge.markReady();
+      h.fire("session_start", { type: "session_start", reason: "startup" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(emitted.at(-1)?.snapshot).toMatchObject({ available: true });
+
+      // The user switches back to idle-cached session A: promoteBackgroundRuntime
+      // re-points the bridge without re-invoking the factory (same generation).
+      const promoted = { ...identity(), sessionId: "a", sessionRevision: 2 };
+      bridge.setIdentity(promoted);
+      bridge.markReady();
+
+      // Later, retained session B is disposed; its runner fires session_shutdown
+      // under the still-active generation. The bridge must keep polling with
+      // the promoted identity instead of freezing on an unavailable snapshot.
+      const callsBefore = h.getMock.mock.calls.length;
+      h.fire("session_shutdown", {});
+      await vi.advanceTimersByTimeAsync(800);
+
+      expect(h.getMock.mock.calls.length).toBeGreaterThan(callsBefore);
+      const last = emitted.at(-1);
+      expect(last?.identity).toEqual(promoted);
+      expect(last?.snapshot).toMatchObject({ available: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops polling when a shutdown fires with no identity bound", async () => {
+    const emit = vi.fn();
+    const bridge = createSubagentStatusBridge(emit);
+    const h = harness([run()]);
+
+    // A generation whose identity was never bound (e.g. a fresh graph with no
+    // session yet) must still honor shutdown: polling stays off and nothing
+    // is published.
+    bridge.extension(h.api);
+    h.fire("session_shutdown", {});
+    await h.flush();
+    expect(emit).not.toHaveBeenCalled();
+    expect(h.getMock).not.toHaveBeenCalled();
+  });
+
   it("degrades to unavailable when the plugin HTTP API is unreachable", async () => {
     const emitted: SubagentsStatusSnapshot[] = [];
     const bridge = createSubagentStatusBridge((_identity, snapshot) => {

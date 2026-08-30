@@ -81,9 +81,93 @@ const EMPTY_SUBAGENTS_STATUS: SubagentsStatusSnapshot = {
   runs: [],
 };
 
-// Monotonic arrival order shared by the persistent history and the transient
-// toast feed, so NotificationCenter can order toasts across both channels.
+function optimisticMessageFingerprint(message: {
+  role: string;
+  content: unknown;
+}): string {
+  const content = message.content;
+  if (typeof content === "string") {
+    return JSON.stringify({ role: message.role, text: content, images: [] });
+  }
+  if (Array.isArray(content)) {
+    const text: string[] = [];
+    const images: Array<{ data: unknown; mimeType: unknown }> = [];
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const value = part as Record<string, unknown>;
+      if (typeof value.text === "string") text.push(value.text);
+      if (value.type === "image") {
+        images.push({ data: value.data, mimeType: value.mimeType ?? value.mediaType });
+      }
+    }
+    return JSON.stringify({ role: message.role, text: text.join("\n"), images });
+  }
+  try {
+    return JSON.stringify({ role: message.role, content });
+  } catch {
+    return `${message.role}:${String(content)}`;
+  }
+}
+
+/**
+ * Keep local optimistic rows across an authoritative snapshot until a matching
+ * SDK message has arrived. Snapshots are authoritative for persisted state,
+ * but they cannot know about a desktop-only row created after the snapshot was
+ * built.
+ */
+function mergeOptimisticMessages(
+  current: SessionSnapshot | null,
+  incoming: SessionSnapshot | null,
+): SessionSnapshot | null {
+  if (
+    !current ||
+    !incoming ||
+    current.sessionId !== incoming.sessionId ||
+    current.revision !== incoming.revision
+  ) {
+    return incoming;
+  }
+
+  const pending = current.messages
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => typeof message._optimisticKey === "string");
+  if (pending.length === 0) return incoming;
+
+  const committedCounts = new Map<string, number>();
+  for (const message of current.messages) {
+    if (message._optimisticKey !== undefined) continue;
+    const key = optimisticMessageFingerprint(message);
+    committedCounts.set(key, (committedCounts.get(key) ?? 0) + 1);
+  }
+  const incomingCounts = new Map<string, number>();
+  for (const message of incoming.messages) {
+    const key = optimisticMessageFingerprint(message);
+    incomingCounts.set(key, (incomingCounts.get(key) ?? 0) + 1);
+  }
+
+  const preserved = pending.filter(({ message }) => {
+    if (incoming.messages.some((candidate) => candidate._optimisticKey === message._optimisticKey)) {
+      return false;
+    }
+    const key = optimisticMessageFingerprint(message);
+    // A matching additional authoritative message means the SDK has already
+    // accepted this turn even if the start event was missed by the renderer.
+    return (incomingCounts.get(key) ?? 0) <= (committedCounts.get(key) ?? 0);
+  });
+  if (preserved.length === 0) return incoming;
+
+  const messages = [...incoming.messages];
+  let inserted = 0;
+  for (const { message, index } of preserved) {
+    messages.splice(Math.min(index + inserted, messages.length), 0, message);
+    inserted += 1;
+  }
+  return { ...incoming, messages };
+}
+
+// Monotonic arrival order shared across persistent and transient notifications.
 let nextNotificationSeq = 0;
+
 /** Transient (info/success) notifications are toast-only; keep a small buffer
  *  beyond MAX_STACKED_TOASTS so rapid pushes don't drop an un-rendered toast. */
 const TRANSIENT_NOTIFICATION_CAP = 8;
@@ -698,7 +782,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   applySessionSnapshot: (session) => {
     const current = get();
     const previousSession = current.session;
-    const next = epochApplySession(epochSlice(current), session);
+    const protectedSession = mergeOptimisticMessages(previousSession, session);
+    const next = epochApplySession(epochSlice(current), protectedSession);
     // Switching away must not clear a still-busy previous session's live dot:
     // it keeps running in the background, so only a non-busy previous session
     // (idle/error/inactive) is demoted to "inactive". Preserving the busy

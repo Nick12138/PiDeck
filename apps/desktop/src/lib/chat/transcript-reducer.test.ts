@@ -990,12 +990,11 @@ describe("optimistic user echo", () => {
     expect(s.messages).toHaveLength(2);
   });
 
+
   it("message_end updates the newest matching user row after a same-text retry", () => {
     let s = baseSession();
     s.messages = [
-      // Failed turn's user bubble stays in the transcript after a retry.
       { role: "user", content: "hello", timestamp: 1 },
-      // Optimistic echo of the retry-send.
       { role: "user", content: "hello", _optimisticKey: "opt-1" },
     ];
 
@@ -1016,8 +1015,42 @@ describe("optimistic user echo", () => {
 
     const userRows = s.messages.filter((m) => m.role === "user");
     expect(userRows).toHaveLength(2);
-    // The failed turn's row is untouched; only the retry row was upgraded.
     expect(s.messages[0]).toMatchObject({ role: "user", content: "hello", timestamp: 1 });
     expect(s.messages[1]).toMatchObject({ role: "user", content: "hello", timestamp: 3 });
   });
+  it("claims a pure-image optimistic row on message_start and message_end", () => {
+    let s = baseSession();
+    s.messages = [
+      {
+        role: "user",
+        content: [{ type: "image", mimeType: "image/png", data: "BASE64" }],
+        _optimisticKey: "opt-image",
+      },
+    ];
+
+    s = applyAgentEvent(s, {
+      runId: "r-image",
+      event: {
+        type: "message_start",
+        message: {
+          role: "user",
+          content: [{ type: "image", mimeType: "image/png", data: "BASE64" }],
+        },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r-image",
+      event: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [{ type: "image", mimeType: "image/png", data: "BASE64" }],
+        },
+      },
+    })!;
+
+    expect(s.messages).toHaveLength(1);
+    expect(s.messages[0]?._optimisticKey).toBeUndefined();
+  });
+
 });

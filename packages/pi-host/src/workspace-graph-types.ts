@@ -49,6 +49,10 @@ export type WorkspaceGraph = {
   extensionUiReplayState: (() => void) | null;
   /** After package mutation reload failure — block prompts until reload succeeds */
   resourceReloadRequired: boolean;
+  /** Recently visited idle Sessions, retained for instant same-workspace return. */
+  idleSessionCache?: Map<string, BackgroundSessionRuntime>;
+  /** Least-to-most recent hot Session order; includes the current active Session. */
+  idleSessionRecency?: Map<string, true>;
   backgroundSessions: Map<string, BackgroundSessionRuntime>;
   /** Disk/config fingerprint captured when this graph was parked. */
   retainedFingerprint?: string;

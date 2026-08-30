@@ -106,6 +106,44 @@ describe("app-store epoch wiring", () => {
     });
   });
 
+  it("preserves an unclaimed optimistic message when an authoritative snapshot is stale", () => {
+    const current = session("s1");
+    current.messages = [
+      ...current.messages,
+      { role: "user", content: "pending", _optimisticKey: "opt-1" },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1"),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(useAppStore.getState().session?.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "pending", _optimisticKey: "opt-1" },
+    ]);
+  });
+
+  it("does not preserve an optimistic message already present in the snapshot", () => {
+    const current = session("s1");
+    current.messages = [
+      ...current.messages,
+      { role: "user", content: "pending", _optimisticKey: "opt-1" },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1"),
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "user", content: [{ type: "text", text: "pending" }] },
+      ],
+    });
+
+    expect(useAppStore.getState().session?.messages).toHaveLength(2);
+    expect(useAppStore.getState().session?.messages[1]?._optimisticKey).toBeUndefined();
+  });
   it("retains redacted decision group steps until Host completion", () => {
     const context = {
       expectedHostInstanceId: "h1",

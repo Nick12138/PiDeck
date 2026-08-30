@@ -625,7 +625,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     });
   });
 
-  it("disposes a background session only after agent_settled", async () => {
+  it("moves a settled background session into the idle cache", async () => {
     vi.useFakeTimers();
     try {
       const serviceGraphLock = new TryMutex();
@@ -691,25 +691,19 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       ).toBe(true);
       Reflect.set(backgroundSession, "isIdle", true);
       internal.handleAgentEvent(graph, backgroundSession, { type: "agent_settled" });
-      expect(graph.backgroundSessions.get(BACKGROUND_SESSION_ID)).toBe(background);
-
-      await vi.runAllTimersAsync();
-
-      expect(graph.backgroundSessions.get(BACKGROUND_SESSION_ID)).toBe(background);
-      expect(backgroundSession.dispose).not.toHaveBeenCalled();
-      serviceGraphLock.release("candidate-session");
-      await vi.runAllTimersAsync();
 
       expect(graph.backgroundSessions.has(BACKGROUND_SESSION_ID)).toBe(false);
+      expect(graph.idleSessionCache?.get(BACKGROUND_SESSION_ID)).toBe(background);
       expect(backgroundSession.abort).not.toHaveBeenCalled();
-      expect(backgroundSession.dispose).toHaveBeenCalledTimes(1);
+      expect(backgroundSession.dispose).not.toHaveBeenCalled();
       expect(server.setPhase).toHaveBeenCalledWith("ready");
+      serviceGraphLock.release("candidate-session");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("promotes a lock-held idle background Runtime and disposes the previous idle Session", async () => {
+  it("promotes a lock-held idle background Runtime and caches the previous idle Session", async () => {
     const identity = {
       hostInstanceId: HOST_ID,
       workspaceId: WORKSPACE_ID,
@@ -735,6 +729,13 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
     );
     const updateIdentity = vi.fn();
     const replayState = vi.fn(() => emitted.push("extensionUi.widgetChanged"));
+    // Promoting a retained runtime skips the full open flow; the bridge must
+    // still be re-pointed at the promoted identity, or the subagents panel
+    // keeps filtering with the previous session's id.
+    const statusBridge = {
+      setIdentity: vi.fn(),
+      markReady: vi.fn(() => emitted.push("subagents.statusChanged")),
+    };
     const runtime = {
       sessionId: BACKGROUND_SESSION_ID,
       sessionRevision: 3,
@@ -769,6 +770,7 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       extensionUiReplayState: null,
       unsubscribeAgent: null,
       backgroundSessions: new Map([[BACKGROUND_SESSION_ID, runtime]]),
+      subagentStatusBridge: statusBridge,
     } as unknown as WorkspaceGraph;
     Reflect.set(factory, "graph", graph);
     const internal = factory as unknown as {
@@ -791,9 +793,17 @@ describe("WorkspaceGraphFactory multi-Session routing", () => {
       expect.objectContaining({ sessionId: BACKGROUND_SESSION_ID, sessionRevision: 6 }),
     );
     expect(replayState).toHaveBeenCalledOnce();
-    expect(foreground.dispose).toHaveBeenCalledTimes(1);
+    expect(statusBridge.setIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: BACKGROUND_SESSION_ID, sessionRevision: 6 }),
+    );
+    // Mark-ready must follow session.snapshot: the desktop gates session-scoped
+    // bridge events on having observed the snapshot first.
+    expect(statusBridge.markReady).toHaveBeenCalledOnce();
+    expect(foreground.dispose).not.toHaveBeenCalled();
+    expect(graph.idleSessionCache?.get(ACTIVE_SESSION_ID)?.agentSession).toBe(foreground);
     expect(emitted).toEqual([
       "session.snapshot",
+      "subagents.statusChanged",
       "agent.toolsChanged",
       "session.runtimeChanged",
       "extensionUi.widgetChanged",

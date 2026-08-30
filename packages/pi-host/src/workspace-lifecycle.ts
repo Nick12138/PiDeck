@@ -171,6 +171,8 @@ export class WorkspaceLifecycle {
   }
 
   async invalidateRetainedRuntimeCaches(): Promise<void> {
+    const activeGraph = this.context.getGraph();
+    if (activeGraph) await this.sessionRuntimeCache.disposeIdleSessionRuntimes(activeGraph);
     await this.disposeRetainedGraphs();
   }
 
@@ -387,6 +389,10 @@ export class WorkspaceLifecycle {
   }
 
   private async retainGraph(graph: WorkspaceGraph, signal?: AbortSignal): Promise<void> {
+    // Same-workspace Session cache is deliberately in-memory only. Releasing
+    // it here lets the workspace graph retain its established fingerprint and
+    // provider lifecycle without carrying arbitrary conversation runtimes.
+    await this.sessionRuntimeCache.disposeIdleSessionRuntimes(graph);
     if (
       !graph.servicesReady ||
       !graph.agentSession ||
@@ -653,6 +659,7 @@ export class WorkspaceLifecycle {
       extensionUiUpdateIdentity: null,
       extensionUiReplayState: null,
       resourceReloadRequired: false,
+      idleSessionCache: new Map(),
       backgroundSessions: new Map(),
       providerOwner: null,
     };
@@ -794,6 +801,7 @@ export class WorkspaceLifecycle {
         extensionUiUpdateIdentity: null,
         extensionUiReplayState: null,
         resourceReloadRequired: false,
+        idleSessionCache: new Map(),
         backgroundSessions: new Map(),
         providerOwner,
         ...(statusBridge ? { subagentStatusBridge: statusBridge } : {}),
