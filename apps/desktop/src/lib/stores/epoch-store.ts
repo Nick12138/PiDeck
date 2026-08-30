@@ -73,17 +73,24 @@ export function applySessionSnapshot(
   state: EpochState,
   session: SessionSnapshot | null,
 ): EpochState {
+  const sessionId = session?.sessionId ?? null;
+  const sessionRevision = session?.revision ?? 0;
+  // Agent events are flushed once per animation frame while streaming, so
+  // keep the previous host reference when only the session payload moved.
+  // Identity-stable host prevents every host-scoped effect/subscription
+  // (for example the Git watcher in ChangesPanel) from tearing down and
+  // re-arming for every streamed token.
+  const host =
+    state.host && state.host.sessionId === sessionId && state.host.sessionRevision === sessionRevision
+      ? state.host
+      : state.host
+        ? { ...state.host, sessionId, sessionRevision }
+        : null;
   return {
     ...state,
     // session.snapshot advances the active generation before any following
     // session-scoped event (for example agent.toolsChanged) is validated.
-    host: state.host
-      ? {
-          ...state.host,
-          sessionId: session?.sessionId ?? null,
-          sessionRevision: session?.revision ?? 0,
-        }
-      : null,
+    host,
     session,
     tools: session?.tools ?? null,
   };

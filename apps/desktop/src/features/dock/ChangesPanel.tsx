@@ -232,6 +232,16 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   const generation = useRef(0);
   const workspaceKey =
     host && workspace ? `${host.hostInstanceId}:${workspace.id}:${workspace.revision}` : "none";
+  // workspaceContext() reads only hostInstanceId/workspaceId/workspaceRevision
+  // — all embodied by workspaceKey. The host/workspace objects themselves are
+  // rebuilt by the store on every streamed agent event, so memoizing the
+  // context on workspaceKey keeps the watch effects below from tearing down
+  // and re-arming the Git watcher once per animation frame.
+  const gitWatchContext = useMemo(
+    () => (host && workspace ? workspaceContext(host, workspace) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspaceKey],
+  );
   const historyHeadKey =
     snapshot?.state === "ready"
       ? `${snapshot.branch ?? "detached"}:${snapshot.headSha ?? "unborn"}`
@@ -309,9 +319,9 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
   }, [acceptSnapshot, host, t, workspace]);
 
   useEffect(() => {
-    if (!visible || !host || !workspace) return;
+    if (!visible || !gitWatchContext) return;
     const requestGeneration = ++generation.current;
-    const context = workspaceContext(host, workspace);
+    const context = gitWatchContext;
     setLoading(true);
     void hostClient
       .request("git.setWatching", context, { enabled: true }, 12_000)
@@ -337,16 +347,16 @@ export function ChangesPanel({ visible }: { visible: boolean }) {
         .request("git.setWatching", context, { enabled: false }, 12_000)
         .catch(() => undefined);
     };
-  }, [visible, workspaceKey, acceptSnapshot, host, t, workspace]);
+  }, [visible, gitWatchContext, acceptSnapshot, t]);
 
   useEffect(
     () =>
-      host && workspace
-        ? subscribeValidatedHostEvent("git.changed", workspaceContext(host, workspace), (event) => {
+      gitWatchContext
+        ? subscribeValidatedHostEvent("git.changed", gitWatchContext, (event) => {
             if (visible) acceptSnapshot(event.payload.snapshot);
           })
         : undefined,
-    [acceptSnapshot, host, visible, workspace],
+    [acceptSnapshot, gitWatchContext, visible],
   );
 
   const ready = snapshot?.state === "ready" ? snapshot : null;
