@@ -12,6 +12,10 @@ import {
   type ActiveSessionContext,
 } from "@pideck/protocol";
 import { useT } from "../../lib/i18n/use-t";
+import {
+  appendOptimisticUserMessage,
+  removeOptimisticUserMessage,
+} from "../../lib/chat/optimistic-echo";
 
 /**
  * Waiting queue above the composer. Backed by the SDK queue (visible to the
@@ -93,9 +97,16 @@ export function QueuePanel() {
 
   async function runNow(kind: "followUp" | "steering", index: number) {
     if (!host || !workspace || !session || busyOp) return;
-    if ((kind === "followUp" ? followUp[index] : steering[index]) === undefined) return;
+    const queuedText =
+      kind === "followUp" ? followUp[index] : (steering[index] ?? undefined);
+    if (queuedText === undefined) return;
     const targetSessionId = session.sessionId;
     const targetSessionRevision = session.revision;
+    // The queued item starts a real turn immediately; echo it into the
+    // transcript without waiting for the Host's message_start (which can lag
+    // behind SDK preflight). A rejected/failed start rolls the row back; the
+    // authoritative message then claims it in place.
+    const optimisticKey = appendOptimisticUserMessage(queuedText, session.sessionId);
     setBusyOp(true);
     try {
       const context = activeSessionContext(host, workspace, session);
@@ -106,8 +117,13 @@ export function QueuePanel() {
           : { steeringIndex: index }),
       });
       if (!response.ok) {
+        removeOptimisticUserMessage(optimisticKey);
         pushNotification(localizeHostError(response.error, t), hostErrorLevel(response.error));
         return;
+      }
+      if (response.result.started !== true) {
+        // The item could not start (lock/abort race) — roll the echo back.
+        removeOptimisticUserMessage(optimisticKey);
       }
       const current = useAppStore.getState().session;
       if (

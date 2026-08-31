@@ -11,7 +11,7 @@ import type {
   SerializableAssistantMessageEvent,
   HostIdentity,
 } from "@pideck/protocol";
-import { toJsonValue } from "@pideck/protocol";
+import { toJsonValue, stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import { parse as parsePartialJson } from "partial-json";
 import { isAbortedToolResult } from "./tool-result-status";
 
@@ -189,7 +189,11 @@ function applyAgentEventToDraft(
         if (msg.role !== "user" || !replaceOptimisticUserMessageInPlace(next.messages, msg)) {
           next.messages.push(
             msg.role === "assistant"
-              ? { ...msg, startedAt: numericField(msg, "startedAt") ?? eventTime }
+              ? {
+                  ...msg,
+                  startedAt: numericField(msg, "startedAt") ?? eventTime,
+                  ...(payload.runId ? { _streamRunId: payload.runId } : {}),
+                }
               : msg,
           );
         }
@@ -201,10 +205,15 @@ function applyAgentEventToDraft(
 
     case "message_update": {
       if (ev.assistantMessageEvent) {
-        appendAssistantContentEventInPlace(next.messages, ev.assistantMessageEvent, eventTime);
+        appendAssistantContentEventInPlace(
+          next.messages,
+          ev.assistantMessageEvent,
+          eventTime,
+          payload.runId,
+        );
       } else {
         const deltaText = extractGenericDelta(ev);
-        if (deltaText) appendTextDeltaInPlace(next.messages, deltaText, eventTime);
+        if (deltaText) appendTextDeltaInPlace(next.messages, deltaText, eventTime, payload.runId);
       }
       next.isStreaming = true;
       next.isIdle = false;
@@ -215,7 +224,7 @@ function applyAgentEventToDraft(
       const msg = normalizeMessage(ev.message);
       if (msg) {
         if (msg.role === "assistant") {
-          mergeLastAssistantInPlace(next.messages, msg, eventTime, true);
+          mergeLastAssistantInPlace(next.messages, msg, eventTime, true, payload.runId);
         } else if (replaceMatchingUserMessageInPlace(next.messages, msg)) {
           // Authoritative message upgraded/replaced the matching user bubble in place.
         } else {
@@ -466,8 +475,11 @@ function messagesMatchByContent(
   left: SerializableAgentMessage,
   right: SerializableAgentMessage,
 ): boolean {
-  const leftText = contentText(left.content);
-  const rightText = contentText(right.content);
+  // Attachment reference/guide blocks are injected by the Host between the
+  // optimistic echo and the authoritative message — strip them so the
+  // optimistic row still matches the SDK's message in place.
+  const leftText = stripAttachmentReferenceBlocks(contentText(left.content)).trim();
+  const rightText = stripAttachmentReferenceBlocks(contentText(right.content)).trim();
   if (leftText || rightText) return leftText === rightText;
   const leftImages = contentImages(left.content);
   const rightImages = contentImages(right.content);
@@ -614,14 +626,31 @@ function mergeContentTiming(
   });
 }
 
+function streamRunMatches(
+  row: SerializableAgentMessage,
+  runId: string | undefined,
+): boolean {
+  // Events without a runId (older hosts / hand-built frames) keep the legacy
+  // tail-merge behavior. With a runId the tail row must have been opened by
+  // the same run — appending across a turn boundary corrupts the previous
+  // assistant message with the new run's content. A snapshot-restored row
+  // carries no marker; it stays adoptable while unsealed (no endedAt) so
+  // mid-turn rehydrate resumes into it instead of duplicating it.
+  if (runId === undefined) return true;
+  const marker = (row as { _streamRunId?: unknown })._streamRunId;
+  if (typeof marker === "string") return marker === runId;
+  return numericField(row, "endedAt") === undefined;
+}
+
 function mergeLastAssistantInPlace(
   messages: SerializableAgentMessage[],
   message: SerializableAgentMessage,
   eventTime: number,
   complete: boolean,
+  runId?: string,
 ): void {
   const last = messages[messages.length - 1];
-  if (last?.role !== "assistant") {
+  if (last?.role !== "assistant" || !streamRunMatches(last, runId)) {
     messages.push({
       ...message,
       startedAt: numericField(message, "startedAt") ?? eventTime,
@@ -641,6 +670,7 @@ function appendAssistantContentEventInPlace(
   messages: SerializableAgentMessage[],
   event: SerializableAssistantMessageEvent,
   eventTime: number,
+  runId?: string,
 ): void {
   const eventType = event.type;
   if (eventType === "start" || eventType === "done" || eventType === "error") return;
@@ -654,8 +684,13 @@ function appendAssistantContentEventInPlace(
   const contentIndex = event.contentIndex;
 
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") {
-    messages.push({ role: "assistant", content: [], startedAt: eventTime });
+  if (!last || last.role !== "assistant" || !streamRunMatches(last, runId)) {
+    messages.push({
+      role: "assistant",
+      content: [],
+      startedAt: eventTime,
+      ...(runId ? { _streamRunId: runId } : {}),
+    });
   }
 
   const assistant = messages[messages.length - 1]!;
@@ -760,11 +795,17 @@ function appendTextDeltaInPlace(
   messages: SerializableAgentMessage[],
   delta: string,
   eventTime: number,
+  runId?: string,
 ): void {
   if (!delta) return;
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") {
-    messages.push({ role: "assistant", content: delta, startedAt: eventTime });
+  if (!last || last.role !== "assistant" || !streamRunMatches(last, runId)) {
+    messages.push({
+      role: "assistant",
+      content: delta,
+      startedAt: eventTime,
+      ...(runId ? { _streamRunId: runId } : {}),
+    });
     return;
   }
   const content = last.content;

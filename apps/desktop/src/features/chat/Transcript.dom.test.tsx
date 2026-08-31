@@ -682,10 +682,12 @@ describe("Transcript Session-open scrolling", () => {
           { role: "assistant", content: [], stopReason: "error", errorMessage: "Second failure" },
         ]),
       );
-      const request = vi.spyOn(hostClient, "request").mockResolvedValue({
-        ok: true,
-        result: { accepted: true, runId: "run-2" },
-      } as never);
+      let resolvePrompt!: (value: unknown) => void;
+      const request = vi.spyOn(hostClient, "request").mockReturnValue(
+        new Promise((resolve) => {
+          resolvePrompt = resolve;
+        }) as never,
+      );
 
       render(<Transcript />);
       const user = userEvent.setup();
@@ -696,6 +698,14 @@ describe("Transcript Session-open scrolling", () => {
 
       await user.click(goOnButtons[0]);
 
+      // The optimistic Continue row appears immediately — before the Host
+      // request resolves.
+      expect(await screen.findByText("Continue")).toBeInTheDocument();
+
+      resolvePrompt({
+        ok: true,
+        result: { accepted: true, runId: "run-2" },
+      });
       await waitFor(() =>
         expect(request).toHaveBeenCalledWith(
           "agent.prompt",

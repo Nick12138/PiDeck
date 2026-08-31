@@ -144,6 +144,29 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().session?.messages).toHaveLength(2);
     expect(useAppStore.getState().session?.messages[1]?._optimisticKey).toBeUndefined();
   });
+  it("treats an authoritative message with attachment blocks as the pending row", () => {
+    const block =
+      '<pideck-attachments version="1">\n[{"id":"a1"}]\n</pideck-attachments>';
+    const current = session("s1");
+    current.messages = [
+      ...current.messages,
+      { role: "user", content: "please look", _optimisticKey: "opt-2" },
+    ];
+    useAppStore.getState().applySessionSnapshot(current);
+
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1"),
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "user", content: [{ type: "text", text: `please look\n\n${block}` }] },
+      ],
+    });
+
+    const messages = useAppStore.getState().session?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?._optimisticKey).toBeUndefined();
+  });
+
   it("retains redacted decision group steps until Host completion", () => {
     const context = {
       expectedHostInstanceId: "h1",
@@ -361,6 +384,28 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().noteSequence(7)).toBe("apply");
     expect(useAppStore.getState().lastSequence).toBe(7);
     expect(useAppStore.getState().desynchronized).toBe(false);
+  });
+
+  it("keeps an unclaimed optimistic row across a full rehydrate", () => {
+    useAppStore.getState().applySessionSnapshot({
+      ...session("s1"),
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "user", content: "pending send", _optimisticKey: "opt-1" },
+      ],
+    });
+
+    useAppStore.getState().completeRehydrate({
+      host: host("h1"),
+      session: session("s1"), // snapshot predates the optimistic send
+      lastSequence: 6,
+    });
+
+    expect(useAppStore.getState().session?.messages.map((m) => m.content)).toEqual([
+      "hi",
+      "pending send",
+    ]);
+    expect(useAppStore.getState().session?.messages[1]?._optimisticKey).toBe("opt-1");
   });
 
   it("duplicate sequence drops", () => {

@@ -16,6 +16,7 @@ import type {
   ProviderLoginPrompt,
   SessionSummary,
 } from "@pideck/protocol";
+import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 import {
   applyPackageSnapshot as epochApplyPackages,
   applySessionSnapshot as epochApplySession,
@@ -86,8 +87,14 @@ function optimisticMessageFingerprint(message: {
   content: unknown;
 }): string {
   const content = message.content;
+  // Host-injected attachment blocks must not make an otherwise identical
+  // authoritative message look different from the pending optimistic row.
   if (typeof content === "string") {
-    return JSON.stringify({ role: message.role, text: content, images: [] });
+    return JSON.stringify({
+      role: message.role,
+      text: stripAttachmentReferenceBlocks(content).trim(),
+      images: [],
+    });
   }
   if (Array.isArray(content)) {
     const text: string[] = [];
@@ -100,7 +107,11 @@ function optimisticMessageFingerprint(message: {
         images.push({ data: value.data, mimeType: value.mimeType ?? value.mediaType });
       }
     }
-    return JSON.stringify({ role: message.role, text: text.join("\n"), images });
+    return JSON.stringify({
+      role: message.role,
+      text: stripAttachmentReferenceBlocks(text.join("\n")).trim(),
+      images,
+    });
   }
   try {
     return JSON.stringify({ role: message.role, content });
@@ -1428,7 +1439,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   completeRehydrate: (snap) => {
     const current = get();
     const workspace = snap.workspace !== undefined ? snap.workspace : current.workspace;
-    const session = snap.session !== undefined ? snap.session : current.session;
+    // A rehydrate snapshot is captured by the Host before the desktop knows
+    // whether its just-sent optimistic row reached the SDK. Keep unclaimed
+    // local rows so the rehydrate boundary never swallows a visible send.
+    const session =
+      snap.session !== undefined
+        ? mergeOptimisticMessages(current.session, snap.session ?? null)
+        : current.session;
     set({
       host: snap.host !== undefined ? snap.host : current.host,
       workspace,

@@ -154,6 +154,58 @@ describe("QueuePanel Run Now", () => {
     expect(request.mock.calls.map(([method]) => method)).toEqual(["agent.runNow"]);
   });
 
+  it("echoes the queued item into the transcript before the Host acknowledges Run Now", async () => {
+    let resolveRequest!: (response: HostResponseEnvelope) => void;
+    const response = new Promise<HostResponseEnvelope>((resolve) => {
+      resolveRequest = resolve;
+    });
+    vi.spyOn(hostClient, "request").mockImplementation(() => response as never);
+    const user = userEvent.setup();
+    render(<QueuePanel />);
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Interrupt current run and run this now" })[0]!,
+    );
+
+    // The optimistic row is visible in the session while the request is in flight.
+    const messages = useAppStore.getState().session?.messages ?? [];
+    const optimistic = messages.filter((message) => message._optimisticKey);
+    expect(optimistic).toHaveLength(1);
+    expect(optimistic[0]?.content).toBe("run this");
+
+    resolveRequest(runNowResponse());
+    await waitFor(() => expect(useAppStore.getState().session?.pending.revision).toBe(8));
+    // Still present with its marker until the Host's message_start claims it.
+    expect(
+      useAppStore.getState().session?.messages.filter((m) => m._optimisticKey),
+    ).toHaveLength(1);
+  });
+
+  it("rolls the echo back when Run Now did not start the item", async () => {
+    vi.spyOn(hostClient, "request").mockResolvedValue({
+      ...runNowResponse(),
+      result: {
+        started: false,
+        settled: false,
+        queueRestored: true,
+        partialFailure: false,
+        queue: { revision: 7, steering: ["steer"], followUp: ["run this", "later"] },
+      },
+    } as never);
+    const user = userEvent.setup();
+    render(<QueuePanel />);
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Interrupt current run and run this now" })[0]!,
+    );
+
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().session?.messages.filter((m) => m._optimisticKey),
+      ).toHaveLength(0),
+    );
+  });
+
   it("does not replace a newer queue event with an older Run Now response", async () => {
     let resolveRequest!: (response: HostResponseEnvelope) => void;
     const response = new Promise<HostResponseEnvelope>((resolve) => {

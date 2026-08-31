@@ -8,6 +8,7 @@ import {
   type TimedAgentEventEnvelope,
 } from "./transcript-reducer.js";
 import type { SerializableAssistantMessageEvent, SessionSnapshot } from "@pideck/protocol";
+import { buildAttachmentReferenceBlock } from "@pideck/protocol";
 
 function baseSession(): SessionSnapshot {
   return {
@@ -37,6 +38,75 @@ function baseSession(): SessionSnapshot {
 }
 
 describe("applyAgentEvent", () => {
+  it("opens a new assistant row for deltas from a run whose message_start is missing", () => {
+    let s = baseSession();
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "agent_start" },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "message_start", message: { role: "assistant", content: "" } },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Old answer" },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "Old answer" }] },
+      },
+    })!;
+
+    // A new run whose turn prefix never arrived: its streamed text must not
+    // be glued onto the previous assistant row.
+    s = applyAgentEvent(s, {
+      runId: "r2",
+      event: {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "New answer" },
+      },
+    })!;
+
+    const assistants = s.messages.filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0]?.content).toEqual([{ type: "text", text: "Old answer" }]);
+    expect(assistants[1]?.content).toEqual([{ type: "text", text: "New answer" }]);
+  });
+
+  it("appends a cross-run message_end instead of overwriting the previous assistant row", () => {
+    let s = baseSession();
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: { type: "message_start", message: { role: "assistant", content: "" } },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+      },
+    })!;
+
+    s = applyAgentEvent(s, {
+      runId: "r2",
+      event: {
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "Recovered" }] },
+      },
+    })!;
+
+    const assistants = s.messages.filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0]?.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(assistants[1]?.content).toEqual([{ type: "text", text: "Recovered" }]);
+  });
+
   it("settles the previous assistant before a new run starts", () => {
     const session = baseSession();
     session.messages = [
@@ -972,6 +1042,44 @@ describe("optimistic user echo", () => {
 
     const userRows = s.messages.filter((m) => m.role === "user");
     expect(userRows).toHaveLength(1);
+    expect(s.messages[0]?._optimisticKey).toBeUndefined();
+  });
+
+  it("claims the optimistic row when the authoritative text carries attachment blocks", () => {
+    let s = baseSession();
+    s.messages = [{ role: "user", content: "请查看这个附件", _optimisticKey: "opt-doc" }];
+    const reference = buildAttachmentReferenceBlock([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "report.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 1024,
+        status: "ready",
+      },
+    ]);
+
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_start",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: `请查看这个附件\n\n${reference}` }],
+        },
+      },
+    })!;
+    s = applyAgentEvent(s, {
+      runId: "r1",
+      event: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: `请查看这个附件\n\n${reference}` }],
+        },
+      },
+    })!;
+
+    expect(s.messages).toHaveLength(1);
     expect(s.messages[0]?._optimisticKey).toBeUndefined();
   });
 
