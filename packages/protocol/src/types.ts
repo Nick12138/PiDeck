@@ -1345,6 +1345,8 @@ export type DesktopSettings = {
   themeFamily?: DesktopThemeFamily;
   defaultWorkspace?: string;
   restoreLastSession: boolean;
+  /** Launch PiDeck with Windows at login and keep it hidden in the system tray. */
+  autoStartOnBoot?: boolean;
   lastWorkspace?: string;
   lastSessionPath?: string;
   agentDir?: string;

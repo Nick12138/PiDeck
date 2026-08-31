@@ -8,6 +8,7 @@ mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
 mod shell_terminal;
+mod system_autostart;
 mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
@@ -38,6 +39,14 @@ pub fn run() {
 
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
+            if let Err(error) = system_autostart::configure(settings.settings.auto_start_on_boot) {
+                eprintln!("[pideck] failed to configure startup launch: {error}");
+            }
+            if system_autostart::was_launched_at_login() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             let drafts = DraftStore::load(app.handle());
             let hosts = PiHostPool::new(app.handle().clone(), &settings);
             app.manage(AppState {

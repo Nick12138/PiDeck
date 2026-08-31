@@ -53,6 +53,7 @@ beforeEach(() => {
     theme: "system",
     language: "en",
     restoreLastSession: true,
+    autoStartOnBoot: false,
     autoRestartHostOnce: true,
     extensionDecisionPresentation: "legacy-modal",
     terminalProfile: "auto",
@@ -136,6 +137,7 @@ describe("SettingsPage navigation guard", () => {
 
     expect(screen.getByText("Startup")).toBeInTheDocument();
     expect(screen.getByText("Restore last session")).toBeInTheDocument();
+    expect(screen.getByText("Launch at startup")).toBeInTheDocument();
     expect(screen.getByText("Auto-restart Pi Host")).toBeInTheDocument();
     expect(screen.queryByLabelText(/Theme/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Language/)).not.toBeInTheDocument();

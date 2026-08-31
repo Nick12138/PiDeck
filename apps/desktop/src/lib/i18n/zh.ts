@@ -169,6 +169,8 @@ export const zh: Record<MessageKey, string> = {
   thinkingLevelMax: "最高",
   generalRestoreSession: "恢复上次会话",
   generalRestoreSessionDesc: "启动 PiDeck 时重新打开上次的工作区和对话。",
+  generalAutoStartOnBoot: "开机自启",
+  generalAutoStartOnBootDesc: "登录 Windows 后自动启动 PiDeck，并最小化到系统托盘。",
   generalAutoRestart: "自动重启 Pi Host",
   generalAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
   generalIdleSessionCacheLimit: "空闲会话队列容量",

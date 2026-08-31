@@ -43,6 +43,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "themeFamily",
   "defaultWorkspace",
   "restoreLastSession",
+  "autoStartOnBoot",
   "lastWorkspace",
   "lastSessionPath",
   "agentDir",
@@ -164,7 +165,11 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
       throw new Error(`${key} must be an integer between ${min} and ${max}`);
     }
   }
-  for (const key of ["restoreLastSession", "autoRestartHostOnce"] as const) {
+  for (const key of [
+    "restoreLastSession",
+    "autoStartOnBoot",
+    "autoRestartHostOnce",
+  ] as const) {
     if (values[key] !== undefined && typeof values[key] !== "boolean") {
       throw new Error(`${key} must be a boolean`);
     }

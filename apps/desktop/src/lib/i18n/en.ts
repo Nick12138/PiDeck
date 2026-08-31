@@ -180,6 +180,9 @@ export const en = {
   thinkingLevelMax: "Maximum",
   generalRestoreSession: "Restore last session",
   generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiDeck starts.",
+  generalAutoStartOnBoot: "Launch at startup",
+  generalAutoStartOnBootDesc:
+    "Launch PiDeck when you sign in to Windows and keep it minimized to the system tray.",
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",

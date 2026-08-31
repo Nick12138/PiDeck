@@ -183,6 +183,19 @@ function GeneralSettings() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="min-w-0">
+                  <span className="block text-sm">{t("generalAutoStartOnBoot")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("generalAutoStartOnBootDesc")}
+                  </span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.autoStartOnBoot ?? false}
+                  label={t("generalAutoStartOnBoot")}
+                  onChange={(next) => void patchDesktop({ autoStartOnBoot: next })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
                   <span className="block text-sm">{t("generalAutoRestart")}</span>
                   <span className="block text-xs text-muted">{t("generalAutoRestartDesc")}</span>
                 </span>

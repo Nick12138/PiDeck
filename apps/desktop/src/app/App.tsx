@@ -535,6 +535,7 @@ export function App() {
           theme: "dark" as const,
           themeFamily: "pideck" as const,
           restoreLastSession: false,
+          autoStartOnBoot: false,
           autoRestartHostOnce: false,
           extensionDecisionPresentation: "auto" as const,
           terminalProfile: "auto" as const,

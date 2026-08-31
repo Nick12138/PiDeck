@@ -25,8 +25,29 @@ pub async fn desktop_settings_patch(
     state: State<'_, AppState>,
     patch: Value,
 ) -> Result<DesktopSettings, String> {
+    let requested_auto_start = patch.get("autoStartOnBoot").and_then(Value::as_bool);
     let mut store = state.settings.lock().await;
-    let next = store.patch(patch)?;
+    let previous_auto_start = store.settings.auto_start_on_boot;
+
+    // Register/unregister first so a registry failure never leaves the JSON
+    // setting claiming that startup launch is enabled when it is not.
+    if let Some(enabled) = requested_auto_start {
+        if enabled != previous_auto_start {
+            crate::system_autostart::configure(enabled)?;
+        }
+    }
+
+    let next = match store.patch(patch) {
+        Ok(next) => next,
+        Err(error) => {
+            if let Some(enabled) = requested_auto_start {
+                if enabled != previous_auto_start {
+                    let _ = crate::system_autostart::configure(previous_auto_start);
+                }
+            }
+            return Err(error);
+        }
+    };
     // Propagate agentDir / autoRestart to host manager
     let hosts = state.hosts.lock().await;
     hosts.update_settings(&store).await;

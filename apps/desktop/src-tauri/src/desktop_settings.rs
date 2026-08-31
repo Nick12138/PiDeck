@@ -102,6 +102,7 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_workspace: Option<String>,
     pub restore_last_session: bool,
+    pub auto_start_on_boot: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,6 +141,7 @@ impl Default for DesktopSettings {
             theme_family: DesktopThemeFamily::Pideck,
             default_workspace: None,
             restore_last_session: true,
+            auto_start_on_boot: false,
             last_workspace: None,
             last_session_path: None,
             agent_dir: None,
@@ -473,6 +475,7 @@ impl DesktopSettingsStore {
                     | "themeFamily"
                     | "defaultWorkspace"
                     | "restoreLastSession"
+                    | "autoStartOnBoot"
                     | "lastWorkspace"
                     | "lastSessionPath"
                     | "agentDir"
