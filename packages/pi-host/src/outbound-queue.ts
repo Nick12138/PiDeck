@@ -103,6 +103,73 @@ function sessionScope(identity: HostIdentity): string {
   ].join(":");
 }
 
+const AGENT_EVENT_IMAGE_OMITTED = "[image omitted: event payload exceeded transport limit]";
+const AGENT_EVENT_TRUNCATED_SUFFIX = "\n…[truncated: event payload exceeded transport limit]";
+const MAX_EVENT_STRING_BYTES = 256 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  let text = value.slice(0, maxBytes);
+  while (Buffer.byteLength(text, "utf8") > maxBytes) {
+    text = text.slice(0, Math.max(1, Math.floor(text.length * 0.9)));
+  }
+  return value.slice(0, text.length);
+}
+
+/**
+ * Agent events carry full message bodies (user text, base64 images, tool
+ * results). Streaming whole transcripts means any one of them — a huge tool
+ * result or a set of images — can exceed the 32MiB frame cap. Previously such
+ * a frame was dropped out of the write loop after its sequence had been
+ * allocated, manufacturing a synthetic gap: the desktop then lost the entire
+ * turn prefix until rehydrate. Instead shrink the payload in place while
+ * preserving the event structure (roles, boundaries, ids), which is what the
+ * desktop needs to keep the current turn consistent. Returns false when the
+ * payload could not be shrunk.
+ */
+function shrinkAgentEventPayload(payload: unknown): unknown {
+  const marker = { changed: false };
+  const result = shrinkValue(payload, marker);
+  return marker.changed ? result : payload;
+}
+
+function shrinkValue(value: unknown, marker: { changed: boolean }): unknown {
+  if (typeof value === "string") {
+    if (Buffer.byteLength(value, "utf8") <= MAX_EVENT_STRING_BYTES) return value;
+    marker.changed = true;
+    return `${truncateUtf8(value, MAX_EVENT_STRING_BYTES)}${AGENT_EVENT_TRUNCATED_SUFFIX}`;
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item) => {
+      const shrunk = shrinkValue(item, marker);
+      if (!Object.is(shrunk, item)) changed = true;
+      return shrunk;
+    });
+    return changed ? next : value;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (
+      record.type === "image" &&
+      typeof record.data === "string" &&
+      Buffer.byteLength(record.data, "utf8") > MAX_EVENT_STRING_BYTES
+    ) {
+      marker.changed = true;
+      return { type: "text", text: AGENT_EVENT_IMAGE_OMITTED };
+    }
+    let changed = false;
+    const next: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(record)) {
+      const shrunk = shrinkValue(item, marker);
+      if (!Object.is(shrunk, item)) changed = true;
+      next[key] = shrunk;
+    }
+    return changed ? next : value;
+  }
+  return value;
+}
+
 function coalesceKeyFor(
   identity: HostIdentity,
   event: HostEventName,
@@ -383,13 +450,30 @@ export class OutboundWriter {
           line = entry.line;
         } else {
           const sequence = entry.sequence ?? this.nextSequence();
-          const envelope = createEvent(
-            entry.identity,
-            entry.event,
-            sequence,
-            entry.payload as never,
+          let serialized = jsonLine(
+            createEvent(entry.identity, entry.event, sequence, entry.payload as never),
           );
-          const serialized = jsonLine(envelope);
+          if (serialized.bytes > this.maxFrameBytes && entry.event === "agent.event") {
+            // Shrink rather than drop: the desktop turn view depends on these
+            // boundaries, and a dropped message_start forces a full rehydrate.
+            const shrunk = shrinkAgentEventPayload(entry.payload);
+            const resized = jsonLine(
+              createEvent(entry.identity, entry.event, sequence, shrunk as never),
+            );
+            if (resized.bytes <= this.maxFrameBytes) {
+              logger.warn(
+                "Outbound event exceeded frame limit; downgraded agent event payload",
+                {
+                  event: entry.event,
+                  sequence,
+                  frameBytes: serialized.bytes,
+                  downgradedBytes: resized.bytes,
+                  maxFrameBytes: this.maxFrameBytes,
+                },
+              );
+              serialized = resized;
+            }
+          }
           if (serialized.bytes > this.maxFrameBytes) {
             logger.error("Outbound event exceeded frame limit; event dropped", {
               event: entry.event,

@@ -475,6 +475,46 @@ describe("OutboundWriter", () => {
     expect(Buffer.byteLength(fake.lines[0]!, "utf8")).toBeLessThanOrEqual(1024);
   });
 
+  it("downgrades an oversized agent.event instead of dropping the turn boundary", async () => {
+    const fake = fakeStream();
+    const { out, lastSequence } = writer(fake.stream, { maxFrameBytes: 700 * 1024 });
+
+    out.enqueueEvent(identity, "agent.event", {
+      runId: "run-big",
+      event: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "x".repeat(600 * 1024) },
+            { type: "image", mimeType: "image/png", data: "y".repeat(600 * 1024) },
+          ],
+        },
+      },
+    });
+    out.enqueueEvent(identity, "agent.event", {
+      runId: "run-big",
+      event: { type: "agent_start" },
+    });
+    await out.drain();
+
+    const frames = fake.parsed();
+    expect(frames).toHaveLength(2);
+    // Turn structure survived the transport limit instead of forcing recovery.
+    expect(frames[0]).toMatchObject({ event: "agent.event", sequence: 1 });
+    const payload = frames[0] as unknown as {
+      payload: { event: { message: { content: Array<Record<string, unknown>> } } };
+    };
+    expect(payload.payload.event.message.content[1]).toEqual({
+      type: "text",
+      text: "[image omitted: event payload exceeded transport limit]",
+    });
+    const firstPart = payload.payload.event.message.content[0]!;
+    expect(String(firstPart.text)).toContain("[truncated: event payload exceeded transport limit]");
+    // No sequence was burned by the downgrade path.
+    expect(lastSequence()).toBe(2);
+  });
+
   it("drops an oversized event after consuming its sequence", async () => {
     const fake = fakeStream();
     const { out, lastSequence } = writer(fake.stream, { maxFrameBytes: 1024 });
