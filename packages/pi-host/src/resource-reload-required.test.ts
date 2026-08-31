@@ -5,7 +5,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAgentHandlers } from "./agent-controller.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
-import { createPackageHandlers } from "./package-controller.js";
+import {
+  createPackageHandlers,
+  gitInstallSuffixFromMissingPath,
+  isMissingPathError,
+  missingPathFromError,
+  npmPackageNameFromMissingPath,
+} from "./package-controller.js";
 import { createSessionHandlers } from "./session-controller.js";
 import { logger } from "./logger.js";
 import { GraphOperationRegistry } from "./operation-lifecycle.js";
@@ -593,5 +599,144 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     const agentHandlers = createAgentHandlers(factory);
     const blocked = await agentHandlers["agent.prompt"]!(promptCtx as never);
     expect("error" in blocked && blocked.error.code === "RESOURCE_RELOAD_FAILED").toBe(true);
+  });
+});
+
+function enoentError(path: string): Error {
+  return Object.assign(new Error(`ENOENT: no such file or directory, scandir '${path}'`), {
+    code: "ENOENT",
+  });
+}
+
+describe("uninstalled-package ENOENT tolerance", () => {
+  it("classifies missing paths by install marker and configured sources", () => {
+    expect(isMissingPathError(enoentError("C:\\pi\\gone"))).toBe(true);
+    expect(isMissingPathError(new Error("npm crashed"))).toBe(false);
+    expect(missingPathFromError(enoentError("C:\\pi\\npm\\node_modules\\gone"))).toBe(
+      "C:\\pi\\npm\\node_modules\\gone",
+    );
+    expect(npmPackageNameFromMissingPath("C:\\pi\\npm\\node_modules\\@scope\\pkg\\dist")).toBe(
+      "@scope/pkg",
+    );
+    expect(npmPackageNameFromMissingPath("C:\\pi\\npm\\node_modules\\gone\\x.js")).toBe("gone");
+    expect(gitInstallSuffixFromMissingPath("C:\\pi\\git\\github.com\\owner\\repo")).toBe(
+      "github.com/owner/repo",
+    );
+    // A host segment with no dot is not an SDK git clone (e.g. Portable Git).
+    expect(gitInstallSuffixFromMissingPath("C:\\PortableGit\\git\\cmd")).toBeNull();
+    expect(gitInstallSuffixFromMissingPath("C:\\pi\\git\\localhost\\repo")).toBeNull();
+  });
+
+  it("keeps the mutation committed when reload stats a just-removed npm package", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    g.agentSession!.reload = vi.fn(async () => {
+      throw enoentError("C:\\pi\\agent\\npm\\node_modules\\removed-pkg");
+    });
+
+    const out = await createPackageHandlers(factory)["package.reloadResources"]!(
+      reloadCtx as never,
+    );
+    expect("error" in out).toBe(false);
+    if (!("error" in out)) {
+      const result = out.result as {
+        status: string;
+        packageSnapshot: { resourceReloadRequired?: boolean };
+      };
+      expect(result.status).toBe("committed");
+      expect(result.packageSnapshot.resourceReloadRequired).toBe(false);
+    }
+    expect(g.resourceReloadRequired).toBe(false);
+    // Snapshot rebuild still ran: the reloaded bundle is authoritative.
+    expect(g.extensionUiUpdateIdentity).toHaveBeenCalled();
+  });
+
+  it("keeps the mutation committed when reload stats a just-removed git clone", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    g.agentSession!.reload = vi.fn(async () => {
+      throw enoentError("C:\\pi\\agent\\git\\github.com\\owner\\repo");
+    });
+
+    const out = await createPackageHandlers(factory)["package.reloadResources"]!(
+      reloadCtx as never,
+    );
+    expect("error" in out).toBe(false);
+    if (!("error" in out)) {
+      expect((out.result as { status: string }).status).toBe("committed");
+    }
+    expect(g.resourceReloadRequired).toBe(false);
+  });
+
+  it("keeps a real reload failure when the missing npm package is still configured", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    g.packageManager!.listConfiguredPackages = vi.fn(() => [{ source: "npm:kept-pkg" }]) as never;
+    g.agentSession!.reload = vi.fn(async () => {
+      throw enoentError("C:\\pi\\agent\\npm\\node_modules\\kept-pkg");
+    });
+
+    const out = await createPackageHandlers(factory)["package.reloadResources"]!(
+      reloadCtx as never,
+    );
+    expect("error" in out).toBe(false);
+    if (!("error" in out)) {
+      expect((out.result as { status: string }).status).toBe("partialFailure");
+    }
+    expect(g.resourceReloadRequired).toBe(true);
+  });
+
+  it("persists the settings drop when remove hits a missing package entry", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    g.packageSnapshot = {
+      ...(g.packageSnapshot as object),
+      configured: [{ id: "p1", source: "npm:gone-pkg", kind: "npm", scope: "user" }],
+    } as never;
+    const pm = g.packageManager as unknown as {
+      listConfiguredPackages: ReturnType<typeof vi.fn>;
+      removeAndPersist: ReturnType<typeof vi.fn>;
+      removeSourceFromSettings: ReturnType<typeof vi.fn>;
+    };
+    pm.listConfiguredPackages = vi.fn(() => [{ source: "npm:gone-pkg" }]);
+    pm.removeAndPersist = vi.fn(async () => {
+      throw enoentError("C:\\pi\\agent\\npm\\node_modules\\gone-pkg");
+    });
+    pm.removeSourceFromSettings = vi.fn(() => true);
+
+    const out = await createPackageHandlers(factory)["package.remove"]!({
+      ...reloadCtx,
+      id: "req-remove-enoent",
+      params: { packageId: "p1" },
+    } as never);
+
+    expect("error" in out).toBe(false);
+    expect(pm.removeSourceFromSettings).toHaveBeenCalledWith("npm:gone-pkg", { local: false });
+  });
+
+  it("rethrows remove failures that are not missing-path errors", async () => {
+    const factory = mockFactory({ resourceReloadRequired: false });
+    const g = factory.getGraph()!;
+    g.packageSnapshot = {
+      ...(g.packageSnapshot as object),
+      configured: [{ id: "p1", source: "npm:boom", kind: "npm", scope: "user" }],
+    } as never;
+    const pm = g.packageManager as unknown as {
+      removeAndPersist: ReturnType<typeof vi.fn>;
+      removeSourceFromSettings: ReturnType<typeof vi.fn>;
+    };
+    pm.removeAndPersist = vi.fn(async () => {
+      throw new Error("npm crashed");
+    });
+    pm.removeSourceFromSettings = vi.fn(() => true);
+
+    const out = await createPackageHandlers(factory)["package.remove"]!({
+      ...reloadCtx,
+      id: "req-remove-crash",
+      params: { packageId: "p1" },
+    } as never);
+
+    expect("error" in out && out.error.code).toBe("PACKAGE_REMOVE_FAILED");
+    expect(pm.removeSourceFromSettings).not.toHaveBeenCalled();
   });
 });

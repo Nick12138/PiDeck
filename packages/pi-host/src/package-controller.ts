@@ -29,6 +29,89 @@ import {
 } from "./package-filters.js";
 import { logger } from "./logger.js";
 
+const NPM_INSTALL_MARKER = "/npm/node_modules/";
+const GIT_INSTALL_MARKER = "/git/";
+
+export function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ENOENT") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bENOENT\b/.test(message);
+}
+
+export function missingPathFromError(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const quoted = message.match(/ENOENT:[^'"]*['"]([^'"]+)['"]/u);
+  return quoted?.[1] ?? null;
+}
+
+export function npmPackageNameFromMissingPath(filePath: string): string | null {
+  const normalized = filePath.replaceAll("\\", "/");
+  const index = normalized.toLowerCase().indexOf(NPM_INSTALL_MARKER);
+  if (index < 0) return null;
+  const parts = normalized
+    .slice(index + NPM_INSTALL_MARKER.length)
+    .split("/")
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts[0]!.startsWith("@")) {
+    return parts[1] ? `${parts[0]}/${parts[1]}` : null;
+  }
+  return parts[0] ?? null;
+}
+
+/**
+ * SDK git clones live under `agentDir/git/<host>/<path>/`. Require a hostname-like
+ * first segment and at least host/owner/repo so Portable Git and other `/git/`
+ * paths are not treated as package installs.
+ */
+export function gitInstallSuffixFromMissingPath(filePath: string): string | null {
+  const normalized = filePath.replaceAll("\\", "/");
+  const lower = normalized.toLowerCase();
+  const gitIndex = lower.indexOf(GIT_INSTALL_MARKER);
+  if (gitIndex < 0) return null;
+  const npmIndex = lower.indexOf(NPM_INSTALL_MARKER);
+  if (npmIndex >= 0 && npmIndex < gitIndex) return null;
+  const parts = lower
+    .slice(gitIndex + GIT_INSTALL_MARKER.length)
+    .split("/")
+    .filter(Boolean);
+  if (parts.length < 3) return null;
+  if (!parts[0]!.includes(".")) return null;
+  return parts.join("/");
+}
+
+function posixPathHasPrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+function isUninstalledPackageMissingPathError(
+  error: unknown,
+  configuredSources: readonly string[],
+): boolean {
+  if (!isMissingPathError(error)) return false;
+  const filePath = missingPathFromError(error);
+  if (!filePath) return false;
+
+  const gitSuffix = gitInstallSuffixFromMissingPath(filePath);
+  if (gitSuffix) {
+    const configuredGit = configuredSources
+      .map((source) => normalizePackageIdentity(source))
+      .filter((pkg) => pkg.kind === "git")
+      .map((pkg) => pkg.identity.slice("git:".length).replaceAll("\\", "/").toLowerCase());
+    return !configuredGit.some((identityPath) => posixPathHasPrefix(gitSuffix, identityPath));
+  }
+
+  const npmName = npmPackageNameFromMissingPath(filePath);
+  if (!npmName) return false;
+  const configured = new Set(
+    configuredSources
+      .filter((source) => source.startsWith("npm:"))
+      .map((source) => normalizePackageIdentity(source).identity.slice("npm:".length)),
+  );
+  return !configured.has(npmName);
+}
+
 export const PACKAGE_MUTATION_TIMEOUT_MS = 10 * 60 * 1000;
 const PACKAGE_MUTATION_CANCELLATION_GRACE_MS = 5_000;
 
@@ -653,12 +736,29 @@ async function mutatePackageUnderLock(
 
     // ResourceLoader is the authoritative metadata source. Reload it before
     // constructing the final package snapshot for every clean mutation.
+    const configuredSources = g.packageManager.listConfiguredPackages().map((pkg) => pkg.source);
+    const swallowRemovedPackageReloadError = (err: unknown): boolean => {
+      if (!isUninstalledPackageMissingPathError(err, configuredSources)) return false;
+      // jiti still stats a package that is no longer configured (npm
+      // node_modules or git clone). The reloaded extension bundle is already
+      // applied; keep it instead of reporting a reconcile failure. Other
+      // ENOENT (settings, still-installed files) stays a real reload failure.
+      logger.warn("Resource reload after package mutation hit a removed package file", {
+        kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return true;
+    };
     if (status === "committed") {
       try {
         if (g.agentSession) {
           // The 0.82.1 patch drops preserveExtensionCache; every reconcile now
           // goes through the official full reload.
-          await g.agentSession.reload();
+          try {
+            await g.agentSession.reload();
+          } catch (err) {
+            if (!swallowRemovedPackageReloadError(err)) throw err;
+          }
           const sessionRevision = server.identity.bumpSessionRevision();
           g.extensionUiUpdateIdentity?.(server.getIdentity());
           // agentSession.reload() re-invokes the subagent status bridge
@@ -681,7 +781,11 @@ async function mutatePackageUnderLock(
           g.sessionSnapshot = sessionSnap;
           sessionChanged = true;
         } else if (g.resourceLoader) {
-          await g.resourceLoader.reload();
+          try {
+            await g.resourceLoader.reload();
+          } catch (err) {
+            if (!swallowRemovedPackageReloadError(err)) throw err;
+          }
         } else {
           throw new Error("Resource loader unavailable");
         }
@@ -1094,8 +1198,27 @@ async function runMutation(
         // the SDK matches remove inputs relative to the process cwd. Use the
         // already-resolved local path so both sides identify the same package.
         const source = rec.kind === "local" && rec.installedPath ? rec.installedPath : rec.source;
-        const ok = await pm.removeAndPersist(source, { local: rec.scope === "project" });
-        if (!ok) throw new Error("Package not found in configuration");
+        try {
+          const ok = await pm.removeAndPersist(source, { local: rec.scope === "project" });
+          if (!ok) throw new Error("Package not found in configuration");
+        } catch (err) {
+          // npm/jiti often stats the package entry after deleting it. The files
+          // are already gone; persist the settings drop instead of failing.
+          if (!isMissingPathError(err)) throw err;
+          const stillConfigured = pm
+            .listConfiguredPackages()
+            .some((pkg) => pkg.source === rec.source || pkg.source === source);
+          if (
+            stillConfigured &&
+            !pm.removeSourceFromSettings(source, { local: rec.scope === "project" })
+          ) {
+            throw err instanceof Error ? err : new Error(String(err));
+          }
+          logger.warn("Package remove continued after a missing-path error", {
+            source,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         emitProgress("complete", "remove", rec.source);
         break;
       }
