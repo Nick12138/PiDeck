@@ -25,6 +25,26 @@ type Pending = {
   method: HostMethod | string;
 };
 
+/**
+ * Rejection for in-flight requests the Host aborted because its epoch ended
+ * (bootstrap recovery races, transport swaps, watchdog restarts). The
+ * rejection reason is an internal state-machine string ("bootstrap hello",
+ * "transport replaced", …) that must never surface in the UI: catch sites
+ * should detect it with `isHostEpochError` and stay silent while the
+ * recovery loop restores state on its own.
+ */
+export class HostEpochError extends Error {
+  readonly internal = true;
+  constructor(reason: string) {
+    super(reason);
+    this.name = "HostEpochError";
+  }
+}
+
+export function isHostEpochError(error: unknown): error is HostEpochError {
+  return error instanceof HostEpochError;
+}
+
 const SYNTHETIC_LIFECYCLE_FATAL_HOST_IDS = new Set([
   "00000000-0000-4000-8000-000000000001",
   "00000000-0000-4000-8000-000000000002",
@@ -79,7 +99,7 @@ export class HostClient {
   rejectAllPending(reason = "host epoch ended"): void {
     for (const [, p] of this.pending) {
       if (p.timer) clearTimeout(p.timer);
-      p.reject(new Error(reason));
+      p.reject(new HostEpochError(reason));
     }
     this.pending.clear();
   }

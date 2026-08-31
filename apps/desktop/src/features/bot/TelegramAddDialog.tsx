@@ -5,6 +5,7 @@ import type { TelegramProfileSummary } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
+import { userErrorMessage } from "../../lib/notify-operation-error";
 import { editDraft } from "../../lib/draft-persistence";
 import { draftTargetFor } from "../../lib/draft-target";
 import { useT } from "../../lib/i18n/use-t";
@@ -104,7 +105,7 @@ export function TelegramAddDialog({ onCancel }: { onCancel: () => void }) {
         firstName: result.firstName ?? null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("botAddTelegramValidateFailed"));
+      setError(userErrorMessage(err, t("botAddTelegramValidateFailed")));
     } finally {
       setValidating(false);
     }
@@ -161,7 +162,7 @@ export function TelegramAddDialog({ onCancel }: { onCancel: () => void }) {
       }
       onCancel();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("botAddTelegramSaveFailed"));
+      setError(userErrorMessage(err, t("botAddTelegramSaveFailed")));
     } finally {
       setSaving(false);
     }

@@ -22,6 +22,7 @@ import { hostClient } from "../../lib/bridge/host-client";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { workspaceContext } from "../../lib/bridge/host-context";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
+import { userErrorMessage } from "../../lib/notify-operation-error";
 import { requestComposerInsert } from "../../lib/composer-insert";
 import { requestDockPreview } from "../../lib/dock-preview";
 import { useT } from "../../lib/i18n/use-t";
@@ -119,12 +120,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
         });
       } catch (error) {
         if (!isCurrentWorkspace()) return;
-        setErrors((items) =>
-          new Map(items).set(
-            path,
-            error instanceof Error ? error.message : t("dockFilesListFailed"),
-          ),
-        );
+        setErrors((items) => new Map(items).set(path, userErrorMessage(error, t("dockFilesListFailed"))));
       } finally {
         if (isCurrentWorkspace()) {
           setLoading((items) => {

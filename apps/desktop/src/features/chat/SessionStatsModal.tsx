@@ -11,6 +11,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { requestExport, type ExportFormat } from "../../lib/export-actions";
+import { userErrorMessage } from "../../lib/notify-operation-error";
 import { useT } from "../../lib/i18n/use-t";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -74,7 +75,7 @@ export function SessionStatsModal({ open, onClose }: { open: boolean; onClose: (
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : t("statsLoadFailed"));
+        setError(userErrorMessage(err, t("statsLoadFailed")));
       });
     return () => {
       cancelled = true;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HostClient } from "./host-client.js";
+import { HostClient, HostEpochError, isHostEpochError } from "./host-client.js";
 import type { HostEventMessage } from "@pideck/protocol";
 
 const HOST_ID = "00000000-0000-4000-8000-000000000011";
@@ -132,6 +132,27 @@ describe("HostClient hello configuration", () => {
 });
 
 describe("HostClient response settlement", () => {
+  it("rejects in-flight requests with HostEpochError so internal reasons stay out of the UI", async () => {
+    const client = new HostClient();
+    attachTestTransport(client);
+    const pending = client.request(
+      "system.shutdown",
+      { expectedHostInstanceId: HOST_ID },
+      null,
+      null,
+    );
+
+    client.rejectAllPending("bootstrap hello");
+
+    await expect(pending).rejects.toBeInstanceOf(HostEpochError);
+    await pending.catch((error: unknown) => {
+      expect(isHostEpochError(error)).toBe(true);
+      expect((error as HostEpochError).internal).toBe(true);
+      expect((error as HostEpochError).message).toBe("bootstrap hello");
+    });
+    client.detach("test cleanup");
+  });
+
   it("resets the active epoch before routing to another workspace Host", async () => {
     const client = new HostClient();
     const transport = attachTestTransport(client);

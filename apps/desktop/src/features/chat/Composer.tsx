@@ -27,8 +27,9 @@ import {
 import { busySendMethod } from "../../lib/busy-send";
 import { useAppStore } from "../../lib/stores/app-store";
 import { isExtensionDecisionBlockingSession } from "../../lib/stores/extension-ui-state";
-import { hostClient } from "../../lib/bridge/host-client";
+import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
+import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import {
   MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_IMAGE_BYTES,
@@ -834,6 +835,7 @@ export function Composer({
         })
         .catch(() => undefined);
     } catch (error) {
+      if (isHostEpochError(error)) return;
       pushNotification(
         localizedDocumentError(error instanceof Error ? error.message : String(error), t),
         "error",
@@ -856,10 +858,7 @@ export function Composer({
       updateDocuments((current) => current.filter((item) => item.id !== document.id));
       return true;
     } catch (error) {
-      pushNotification(
-        error instanceof Error ? error.message : t("composerDocumentRemoveFailed"),
-        "error",
-      );
+      notifyOperationFailure(error, t("composerDocumentRemoveFailed"));
       return false;
     }
   }
@@ -885,12 +884,14 @@ export function Composer({
       }
       updateDocuments((current) => current.filter((item) => item.id !== document.id));
       insertRecoveredText(document.recovery);
-      pushNotification(
-        t("composerPastedTextCreateFailed", {
-          error: error || t("composerDocumentParseFailed"),
-        }),
-        "error",
-      );
+      if (error !== undefined) {
+        pushNotification(
+          t("composerPastedTextCreateFailed", {
+            error: error || t("composerDocumentParseFailed"),
+          }),
+          "error",
+        );
+      }
     } finally {
       recoveringPastedTextRef.current.delete(document.id);
     }
@@ -997,7 +998,11 @@ export function Composer({
       }
       await recoverFailedPastedText(
         pending,
-        error instanceof Error ? error.message : String(error),
+        isHostEpochError(error)
+          ? undefined
+          : error instanceof Error
+            ? error.message
+            : String(error),
       );
     }
   }
@@ -1463,7 +1468,7 @@ export function Composer({
       }
     } catch (error) {
       removeOptimisticMessage();
-      pushNotification(error instanceof Error ? error.message : t("composerSendFailed"), "error");
+      notifyOperationFailure(error, t("composerSendFailed"));
       restoreDraft();
     }
   }

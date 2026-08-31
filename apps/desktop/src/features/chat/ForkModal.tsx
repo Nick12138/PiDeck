@@ -10,6 +10,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { requestFork } from "../../lib/fork-actions";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
+import { userErrorMessage } from "../../lib/notify-operation-error";
 import { useT } from "../../lib/i18n/use-t";
 
 type ForkPoint = { entryId: string; text: string };
@@ -64,7 +65,7 @@ export function ForkModal({ open, onClose }: { open: boolean; onClose: () => voi
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : t("forkLoadFailed"));
+        setError(userErrorMessage(err, t("forkLoadFailed")));
       });
     return () => {
       cancelled = true;

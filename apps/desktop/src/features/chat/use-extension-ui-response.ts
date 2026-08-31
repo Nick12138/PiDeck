@@ -1,6 +1,6 @@
 import type { JsonValue } from "@pideck/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { hostClient } from "../../lib/bridge/host-client";
+import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
@@ -92,6 +92,9 @@ export function useExtensionUiResponse(
         clearIfCurrent(requestId, status === "resolved" ? "answered" : "cancelled");
         return true;
       } catch (caught) {
+        // Host-epoch rejections abort the respond call with an internal
+        // reason; the replayed request restores a fresh panel on recovery.
+        if (isHostEpochError(caught)) return false;
         const message = caught instanceof Error ? caught.message : t("extUiRespondFailed");
         if (useAppStore.getState().extensionUiRequest?.requestId === requestId) {
           setError(message);

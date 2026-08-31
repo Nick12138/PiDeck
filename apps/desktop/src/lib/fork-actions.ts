@@ -9,6 +9,7 @@ import {
 import { SESSION_OPEN_TIMEOUT_MS } from "./bridge/session-open-request";
 import { requestWithRetry } from "./bridge/request-retry";
 import { tCurrent } from "./i18n/use-t";
+import { notifyOperationFailure } from "./notify-operation-error";
 import { editDraft } from "./draft-persistence";
 import { draftTargetFor } from "./draft-target";
 
@@ -66,7 +67,7 @@ export async function requestFork(
     pushNotification(tCurrent("notifForked"), "info");
     return true;
   } catch (error) {
-    pushNotification(error instanceof Error ? error.message : tCurrent("notifForkFailed"), "error");
+    notifyOperationFailure(error, tCurrent("notifForkFailed"));
     return false;
   }
 }

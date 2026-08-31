@@ -12,6 +12,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { requestFork } from "../../lib/fork-actions";
 import { requestTranscriptScroll } from "../../lib/transcript-navigation";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
+import { notifyOperationFailure, userErrorMessage } from "../../lib/notify-operation-error";
 import { useT } from "../../lib/i18n/use-t";
 import { flattenSessionTree, type TreeRow } from "./tree-model";
 
@@ -166,7 +167,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : t("dockTreeLoadFailed"));
+        setError(userErrorMessage(err, t("dockTreeLoadFailed")));
       });
     return () => {
       cancelled = true;
@@ -232,7 +233,7 @@ export function TreePanel({ visible }: { visible: boolean }) {
       setSessionTreeNavigated(true);
       setRefreshSeq((seq) => seq + 1);
     } catch (err) {
-      pushNotification(err instanceof Error ? err.message : t("dockTreeSwitchFailed"), "error");
+      notifyOperationFailure(err, t("dockTreeSwitchFailed"));
     } finally {
       setNavigating(null);
     }

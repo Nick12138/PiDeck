@@ -6,6 +6,7 @@ import type { MessageKey } from "../../lib/i18n";
 import { hostClient } from "../../lib/bridge/host-client";
 import { hostContext } from "../../lib/bridge/host-context";
 import { useAppStore } from "../../lib/stores/app-store";
+import { notifyOperationFailure } from "../../lib/notify-operation-error";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -39,7 +40,6 @@ const DEFAULT_SETTINGS: PiSettingsSnapshot = {
 export function PiSettings() {
   const t = useT();
   const host = useAppStore((state) => state.host);
-  const pushNotification = useAppStore((state) => state.pushNotification);
   const [settings, setSettings] = useState<PiSettingsSnapshot>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export function PiSettings() {
       })
       .catch((error) => {
         if (!cancelled) {
-          pushNotification(error instanceof Error ? error.message : String(error), "error");
+          notifyOperationFailure(error, String(error));
         }
       })
       .finally(() => {
@@ -74,7 +74,7 @@ export function PiSettings() {
     return () => {
       cancelled = true;
     };
-  }, [host, pushNotification]);
+  }, [host]);
 
   async function patch(key: string, next: PiSettingsPatch) {
     if (!host || saving) return;
@@ -89,7 +89,7 @@ export function PiSettings() {
         models: Array.isArray(result.models) ? result.models : [],
       });
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : String(error), "error");
+      notifyOperationFailure(error, String(error));
     } finally {
       setSaving(null);
     }

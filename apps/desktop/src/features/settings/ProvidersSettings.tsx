@@ -25,7 +25,7 @@ import type {
   ProviderSnapshot,
 } from "@pideck/protocol";
 import { THINKING_LEVELS } from "@pideck/protocol";
-import { hostClient } from "../../lib/bridge/host-client";
+import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
 import { hostContext } from "../../lib/bridge/host-context";
 import { requestWithRetry } from "../../lib/bridge/request-retry";
@@ -247,11 +247,14 @@ export function ProvidersSettings() {
         }
       })
       .catch((error) => {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : t("notifProviderLoadFailed");
-          setLoadError(message);
-          pushNotification(message, "error");
-        }
+        if (cancelled) return;
+        // Host-epoch rejections abort the load with an internal reason
+        // string; the user can retry via the reload action once recovery
+        // settles, so stay silent instead of leaking it.
+        if (isHostEpochError(error)) return;
+        const message = error instanceof Error ? error.message : t("notifProviderLoadFailed");
+        setLoadError(message);
+        pushNotification(message, "error");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

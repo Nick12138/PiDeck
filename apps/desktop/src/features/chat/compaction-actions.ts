@@ -7,6 +7,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { formatTokenCount } from "../../lib/format-token-count";
 import { tCurrent } from "../../lib/i18n/use-t";
+import { notifyOperationFailure } from "../../lib/notify-operation-error";
 
 /** Manually compact the active session's context. Surfaces the outcome
  * through notifications; returns true when compaction succeeded. */
@@ -55,10 +56,7 @@ export async function requestCompact(instructions?: string): Promise<boolean> {
     );
     return true;
   } catch (error) {
-    pushNotification(
-      error instanceof Error ? error.message : tCurrent("notifCompactFailed"),
-      "error",
-    );
+    notifyOperationFailure(error, tCurrent("notifCompactFailed"));
     return false;
   }
 }

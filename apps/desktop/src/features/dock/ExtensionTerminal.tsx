@@ -1,5 +1,5 @@
 import { useAppStore, type ExtensionTerminalState } from "../../lib/stores/app-store";
-import { hostClient } from "../../lib/bridge/host-client";
+import { hostClient, isHostEpochError } from "../../lib/bridge/host-client";
 import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import {
@@ -36,6 +36,9 @@ export async function cancelExtensionTerminal(
     });
     return res.ok ? null : localizeHostError(res.error, tCurrent);
   } catch (error) {
+    // Host epoch ended mid-close: the panel is gone with the old epoch, so
+    // treat it as closed instead of leaking the internal rejection reason.
+    if (isHostEpochError(error)) return null;
     return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
   }
 }
@@ -55,6 +58,9 @@ export async function forceCloseExtensionTerminal(
     });
     return res.ok ? null : localizeHostError(res.error, tCurrent);
   } catch (error) {
+    // Host epoch ended mid-close: the panel is gone with the old epoch, so
+    // treat it as closed instead of leaking the internal rejection reason.
+    if (isHostEpochError(error)) return null;
     return error instanceof Error ? error.message : tCurrent("dockExtensionCloseFailed");
   }
 }

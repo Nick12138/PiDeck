@@ -29,6 +29,7 @@ import type {
   ResourceType,
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
+import { userErrorMessage } from "../../lib/notify-operation-error";
 import {
   hostErrorLevel,
   localizeHostError,
@@ -505,8 +506,7 @@ export function PackagesPage() {
       setLoadState("ready");
     } catch (error) {
       if (request !== refreshRequest.current) return;
-      const message = error instanceof Error ? error.message : t("notifPackagesLoadFailed");
-      setLoadError(message);
+      setLoadError(userErrorMessage(error, t("notifPackagesLoadFailed")));
       setLoadState("error");
     }
   }

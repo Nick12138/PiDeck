@@ -23,6 +23,8 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { deriveExtensionUiWaitingBySession } from "../../lib/stores/extension-ui-state";
 import { hostClient } from "../../lib/bridge/host-client";
 import { acknowledgeSessionTerminal } from "../../lib/bridge/tauri-transport";
+import { isHostEpochError } from "../../lib/bridge/host-client";
+import { notifyOperationFailure } from "../../lib/notify-operation-error";
 import { persistDesktopSettings } from "../../lib/desktop-settings";
 import {
   prioritizePinnedSessions,
@@ -157,8 +159,7 @@ export function SessionList({
         if (mounted.current) setSessionOpenPending(running);
       },
       (error) => {
-        const message = error instanceof Error ? error.message : tCurrent("notifOpenSessionFailed");
-        useAppStore.getState().pushNotification(message, "error");
+        notifyOperationFailure(error, tCurrent("notifOpenSessionFailed"));
       },
     );
   }
@@ -415,6 +416,9 @@ export function SessionList({
       }
     } catch (error) {
       if (isSuperseded()) return;
+      // Host-epoch rejections mean the open never committed; the recovery
+      // loop rehydrates the session list, so stay silent here.
+      if (isHostEpochError(error)) return;
       const message = error instanceof Error ? error.message : t("notifOpenSessionFailed");
       if (target) setSessionRuntimeState(target.sessionId, "error", message);
       pushNotification(message, "error");
@@ -468,7 +472,7 @@ export function SessionList({
       if (res.result.session) setSession(res.result.session);
       cancelRename();
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : t("notifRenameFailed"), "error");
+      notifyOperationFailure(error, t("notifRenameFailed"));
     } finally {
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
@@ -695,7 +699,7 @@ export function SessionList({
         res.result.failedCount > 0 ? "warning" : "success",
       );
     } catch (error) {
-      pushNotification(error instanceof Error ? error.message : t("notifCleanupFailed"), "error");
+      notifyOperationFailure(error, t("notifCleanupFailed"));
     } finally {
       if (request === mutationRequest.current) setSessionMutationPending(false);
     }
