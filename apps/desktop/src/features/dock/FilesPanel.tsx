@@ -52,7 +52,15 @@ export function flattenVisibleFiles(
   return rows;
 }
 
-export function FilesPanel({ visible }: { visible: boolean }) {
+export function FilesPanel({
+  visible,
+  onOpenFile,
+  previewParent,
+}: {
+  visible: boolean;
+  onOpenFile?: (entry: WorkspaceDirectoryEntry) => void;
+  previewParent?: string;
+}) {
   const t = useT();
   const host = useAppStore((state) => state.host);
   const workspace = useAppStore((state) => state.workspace);
@@ -133,21 +141,32 @@ export function FilesPanel({ visible }: { visible: boolean }) {
   );
 
   useEffect(() => {
-    if (visible && host && workspace && !directories.has("") && !loading.has("")) {
+    if (
+      visible &&
+      host &&
+      workspace &&
+      !directories.has("") &&
+      !loading.has("") &&
+      !errors.has("")
+    ) {
       void loadDirectory("");
     }
-  }, [visible, host, workspace, directories, loading, loadDirectory]);
+  }, [visible, host, workspace, directories, loading, errors, loadDirectory]);
 
   useEffect(() => {
     if (!host || !workspace) return;
     const timer = window.setTimeout(() => {
-      const paths = visible ? ["", ...expanded] : [];
+      const paths = visible
+        ? [
+            ...new Set(["", ...(previewParent === undefined ? [] : [previewParent]), ...expanded]),
+          ].slice(0, 128)
+        : [];
       void hostClient
         .request("workspace.setDirectoryWatches", workspaceContext(host, workspace), { paths })
         .catch(() => undefined);
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [visible, host, workspace, expanded]);
+  }, [visible, host, workspace, expanded, previewParent]);
 
   useEffect(() => {
     const current = useAppStore.getState();
@@ -300,7 +319,7 @@ export function FilesPanel({ visible }: { visible: boolean }) {
       }
     } else if (event.key === "Enter") {
       if (row.entry.kind === "dir") toggleDirectory(row.entry);
-      else insertReference(row.entry);
+      else onOpenFile?.(row.entry);
     } else {
       return;
     }
@@ -425,10 +444,11 @@ export function FilesPanel({ visible }: { visible: boolean }) {
                       transform: `translateY(${virtualRow.start}px)`,
                       paddingLeft: query ? 8 : 6 + row.depth * 16,
                     }}
-                    onClick={() => setSelectedPath(entry.path)}
-                    onDoubleClick={() =>
-                      isDirectory ? toggleDirectory(entry) : insertReference(entry)
-                    }
+                    onClick={() => {
+                      setSelectedPath(entry.path);
+                      if (!isDirectory) onOpenFile?.(entry);
+                    }}
+                    onDoubleClick={() => (isDirectory ? toggleDirectory(entry) : undefined)}
                   >
                     <button
                       type="button"

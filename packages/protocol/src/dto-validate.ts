@@ -2223,6 +2223,12 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
         )
         ? null
         : "invalid workspace.listDirectory result";
+    case "workspace.readFilePreview":
+      return isWorkspaceFilePreview(result) ? null : "invalid workspace.readFilePreview result";
+    case "workspace.writeTextFile":
+      return isWorkspaceFilePreview(result) && result.kind === "text"
+        ? null
+        : "invalid workspace.writeTextFile result";
     case "workspace.setDirectoryWatches":
       return isPlainObject(result) &&
         hasExactKeys(result, ["paths"]) &&
@@ -2903,3 +2909,4 @@ export function validateEventPayloadShape(event: HostEventName, payload: unknown
       return assertNeverShape(event, "event payload");
   }
 }
+import { isWorkspaceFilePreview } from "./file-preview.js";

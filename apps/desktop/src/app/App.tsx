@@ -10,6 +10,8 @@ import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
 import { AppTopBar } from "../components/AppTopBar";
+import { FileEditorDialogs } from "../features/dock/FileEditorDialogs";
+import { fileWorkspaceForRecovery } from "../features/dock/file-session";
 import { resolveWindowControlsPlatform } from "../components/WindowControls";
 import { ChatPage } from "../features/chat/ChatPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -851,8 +853,9 @@ export function App() {
                   if (!status.workspaceId) sessionRestoreEligible = true;
                   useAppStore.getState().beginHostEpoch(status);
                   const configuredSettings = useAppStore.getState().desktopSettings;
-                  const configuredWorkspace =
-                    configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace;
+                  const configuredWorkspace = fileWorkspaceForRecovery(
+                    configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace,
+                  );
                   const sessionPathToRestore = configuredSettings?.restoreLastSession
                     ? configuredSettings.lastSessionPath
                     : undefined;
@@ -1203,6 +1206,7 @@ export function App() {
       data-desynchronized={desynchronized ? "true" : "false"}
     >
       <DraftPersistenceController />
+      <FileEditorDialogs />
       <SettingsTopBarActionsContext.Provider value={actionsEl}>
         <AppTopBar actionsSlotRef={setActionsEl} />
         <div className="flex min-h-0 flex-1" data-app-body>

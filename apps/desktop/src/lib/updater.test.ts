@@ -6,9 +6,10 @@ const mocks = vi.hoisted(() => ({
   isTauri: vi.fn(),
   check: vi.fn(),
   relaunch: vi.fn(),
+  invoke: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: mocks.isTauri }));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: mocks.isTauri, invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 
@@ -16,6 +17,7 @@ beforeEach(() => {
   mocks.isTauri.mockReset().mockReturnValue(true);
   mocks.check.mockReset();
   mocks.relaunch.mockReset();
+  mocks.invoke.mockReset();
 });
 
 describe("checkForAppUpdate", () => {
@@ -56,6 +58,17 @@ describe("checkForAppUpdate", () => {
     const update = await checkForAppUpdate();
     await expect(update!.install()).rejects.toThrow("network gone");
     expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
+
+  it("restores exit protection if relaunch fails", async () => {
+    mocks.check.mockResolvedValue({ version: "0.2.0", downloadAndInstall: vi.fn() });
+    mocks.relaunch.mockRejectedValueOnce(new Error("restart failed"));
+    const update = await checkForAppUpdate();
+    await expect(update!.install()).rejects.toThrow("restart failed");
+    expect(mocks.invoke.mock.calls).toEqual([
+      ["desktop_allow_exit", { approved: true }],
+      ["desktop_allow_exit", { approved: false }],
+    ]);
   });
 
   it("reports accumulated download progress before the install phase", async () => {
