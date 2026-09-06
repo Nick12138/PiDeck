@@ -78,6 +78,19 @@ pub async fn desktop_open_path(path: String) -> Result<(), String> {
     open_in_file_manager(target)
 }
 
+const MAIN_WINDOW_LABEL: &str = "main";
+
+fn require_main_webview_label(label: &str) -> Result<(), String> {
+    if label != MAIN_WINDOW_LABEL {
+        return Err("this command is only available to the main window".to_string());
+    }
+    Ok(())
+}
+
+fn require_main_webview(webview: &tauri::Webview) -> Result<(), String> {
+    require_main_webview_label(webview.window().label())
+}
+
 #[tauri::command]
 pub fn desktop_allow_exit(
     webview: tauri::Webview,
@@ -136,7 +149,8 @@ pub struct DesktopFileInfo {
 #[tauri::command]
 pub fn desktop_file_info(path: String) -> Result<DesktopFileInfo, String> {
     let resolved = validate_local_path(&path)?;
-    let metadata = std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
+    let metadata =
+        std::fs::metadata(&resolved).map_err(|e| format!("file is not accessible: {e}"))?;
     if !metadata.is_file() && !metadata.is_dir() {
         return Err("path is not a regular file or directory".to_string());
     }
@@ -427,7 +441,10 @@ pub async fn pi_host_bootstrap_telegram(
     if hello_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
         return Err(format!(
             "hello failed: {}",
-            hello_json.get("error").map(|e| e.to_string()).unwrap_or_default()
+            hello_json
+                .get("error")
+                .map(|e| e.to_string())
+                .unwrap_or_default()
         ));
     }
     let result = hello_json.get("result").ok_or("hello missing result")?;
@@ -478,7 +495,10 @@ pub async fn pi_host_bootstrap_telegram(
     if prompt_json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
         return Err(format!(
             "/telegram-connect failed: {}",
-            prompt_json.get("error").map(|e| e.to_string()).unwrap_or_default()
+            prompt_json
+                .get("error")
+                .map(|e| e.to_string())
+                .unwrap_or_default()
         ));
     }
 
