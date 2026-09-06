@@ -974,8 +974,7 @@ html[data-theme-family="transparent"] [data-right-dock] {
    stays the resting state; this rule only engages on the overflow flag. The
    prefers-reduced-transparency fallback (0,4,1) still outranks this (0,3,1),
    so reduced-transparency users keep the fully opaque surface sheet. */
-html[data-theme-family="transparent"]
-  [data-right-dock][data-dock-overflow="true"] {
+html[data-theme-family="transparent"] [data-right-dock][data-dock-overflow="true"] {
   background-color: var(--theme-dock-overflow-material);
   /* The sheet floats over the chat column, so its left edge gets the content
      card's radius too (top-right already comes from the base rule; bottom-right
@@ -989,8 +988,7 @@ html[data-theme-family="transparent"]
 }
 
 @supports (backdrop-filter: blur(1px)) {
-  html[data-theme-family="transparent"]
-    [data-right-dock][data-dock-overflow="true"] {
+  html[data-theme-family="transparent"] [data-right-dock][data-dock-overflow="true"] {
     -webkit-backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
     backdrop-filter: saturate(140%) blur(var(--theme-toolbar-blur));
   }
@@ -1826,26 +1824,44 @@ textarea:focus-visible {
   border-radius: 4px;
 }
 
-.scrollbar-auto-hide {
-  scrollbar-color: transparent transparent;
+.scrollbar-subtle {
+  --scrollbar-thumb: color-mix(in srgb, var(--color-muted) 35%, transparent);
+  /* A non-auto value overrides WebKit scrollbar sizing and decoration in Chromium. */
+  scrollbar-color: auto;
 }
 
-.scrollbar-auto-hide::-webkit-scrollbar-track {
+.scrollbar-subtle::-webkit-scrollbar,
+.scrollbar-subtle::-webkit-scrollbar-track,
+.scrollbar-subtle::-webkit-scrollbar-track-piece,
+.scrollbar-subtle::-webkit-scrollbar-corner {
   background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.scrollbar-auto-hide::-webkit-scrollbar-thumb {
-  background: transparent;
+.scrollbar-subtle::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-.scrollbar-auto-hide:hover,
-.scrollbar-auto-hide:focus-within {
-  scrollbar-color: var(--color-border) transparent;
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
 }
 
-.scrollbar-auto-hide:hover::-webkit-scrollbar-thumb,
-.scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+.scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-muted) 65%, transparent);
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--color-muted) 85%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-subtle {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
 }
 
 /* Transcript rows render fully at mount (no content-visibility): estimated
@@ -2474,4 +2490,3 @@ svg[data-pideck-mermaid-theme="neutral"] {
     transform: none;
   }
 }
-

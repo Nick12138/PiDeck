@@ -56,7 +56,7 @@ export function TelegramHistoryView() {
         </button>
       </div>
 
-      <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {detailLoading ? (
           <div className="flex h-full items-center justify-center text-muted">
             <LoaderCircle size={18} className="animate-spin" />

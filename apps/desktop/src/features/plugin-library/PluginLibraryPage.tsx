@@ -206,9 +206,7 @@ function ModelFallbackListControl({
         );
       })}
       {noModels && (
-        <p className="text-[11px] leading-4 text-muted">
-          {t("pluginsModelFallbackNoModels")}
-        </p>
+        <p className="text-[11px] leading-4 text-muted">{t("pluginsModelFallbackNoModels")}</p>
       )}
     </div>
   );
@@ -253,11 +251,7 @@ function PluginConfigDialog({
         }
       }
       await persistDesktopSettings({
-        pluginEnv: buildPluginEnvPatch(
-          desktopSettings?.pluginEnv,
-          entry.id,
-          persistedValues,
-        ),
+        pluginEnv: buildPluginEnvPatch(desktopSettings?.pluginEnv, entry.id, persistedValues),
       });
       // Extensions run inside the Host process, so env vars land live; the
       // desktop-settings copy is what the next Host spawn re-injects.
@@ -276,9 +270,7 @@ function PluginConfigDialog({
           );
           if (!response.ok)
             throw new Error(
-              response.error
-                ? localizeHostError(response.error, t)
-                : "pluginLibrary.setEnv",
+              response.error ? localizeHostError(response.error, t) : "pluginLibrary.setEnv",
             );
         }
       }
@@ -295,9 +287,7 @@ function PluginConfigDialog({
     const id = `plugin-${entry.id}-${item.key}`;
     // Runtime model list narrowed to the config item's kind (vision / all).
     const kindModels = (model: readonly ModelSummary[] | null): readonly ModelSummary[] =>
-      modelOptionsKind(item) === "vision"
-        ? (model ?? []).filter(isVisionCapable)
-        : (model ?? []);
+      modelOptionsKind(item) === "vision" ? (model ?? []).filter(isVisionCapable) : (model ?? []);
     // 1. Dynamic model single-select.
     if (wantsModelOptions(item)) {
       const loading = runtimeModels === null;
@@ -399,17 +389,13 @@ function PluginConfigDialog({
             autoComplete="off"
             placeholder={item.placeholder}
             value={values[item.env] ?? ""}
-            onChange={(event) =>
-              setValues((prev) => ({ ...prev, [item.env]: event.target.value }))
-            }
+            onChange={(event) => setValues((prev) => ({ ...prev, [item.env]: event.target.value }))}
           />
           <button
             type="button"
             className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center text-muted hover:text-foreground"
             title={shown ? t("providersKeyHide") : t("providersKeyShow")}
-            onClick={() =>
-              setShowSecrets((prev) => ({ ...prev, [item.key]: !shown }))
-            }
+            onClick={() => setShowSecrets((prev) => ({ ...prev, [item.key]: !shown }))}
           >
             {shown ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
@@ -424,9 +410,7 @@ function PluginConfigDialog({
         autoComplete="off"
         placeholder={item.placeholder}
         value={values[item.env] ?? ""}
-        onChange={(event) =>
-          setValues((prev) => ({ ...prev, [item.env]: event.target.value }))
-        }
+        onChange={(event) => setValues((prev) => ({ ...prev, [item.env]: event.target.value }))}
       />
     );
   }
@@ -713,9 +697,7 @@ export function PluginLibraryPage() {
         return false;
       if (!response.ok)
         throw new Error(
-          response.error
-            ? localizeHostError(response.error, t)
-            : t("notifPluginActionFailed"),
+          response.error ? localizeHostError(response.error, t) : t("notifPluginActionFailed"),
         );
       listRequest.current += 1;
       applyPackageMutationResult(response.result as PackageMutationResult);
@@ -877,7 +859,7 @@ export function PluginLibraryPage() {
         <p className="p-8 text-center text-sm text-muted">{t("pluginsEmpty")}</p>
       ) : (
         <div
-          className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
+          className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
           data-settings-scroll
         >
           {catalog.plugins.map((entry) => (

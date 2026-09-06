@@ -107,7 +107,7 @@ export function TodoPanel() {
           {activeCount}
         </span>
       </div>
-      <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto p-2">
         <ul className="flex flex-col gap-0.5" aria-label={t("todoActiveTitle")}>
           {todos.map((item) => (
             <TodoRow

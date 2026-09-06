@@ -362,7 +362,7 @@ function MarketCatalogGrid({
 }) {
   return (
     <div
-      className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
+      className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3"
       data-settings-scroll
     >
       {items.map((item) => (
@@ -689,14 +689,11 @@ export function PackagesPage() {
         return;
       if (!response.ok) {
         const err = new Error(
-          response.error
-            ? localizeHostError(response.error, t)
-            : t("notifPackagesOperationFailed"),
+          response.error ? localizeHostError(response.error, t) : t("notifPackagesOperationFailed"),
         );
         // Preserve the raw host error code so the transient "busy" codes can be
         // classified by hostErrorLevel in the catch below (toast-only, not history).
-        if (response.error?.code)
-          (err as Error & { code?: string }).code = response.error.code;
+        if (response.error?.code) (err as Error & { code?: string }).code = response.error.code;
         throw err;
       }
       // The mutation result is authoritative; ignore any older package.list still in flight.
@@ -1071,10 +1068,7 @@ export function PackagesPage() {
         </Dialog>
       )}
 
-      <SettingsTopBarActions
-        title={t("navPackages")}
-        subtitle={t("packagesSubtitle")}
-      >
+      <SettingsTopBarActions title={t("navPackages")} subtitle={t("packagesSubtitle")}>
         <div
           role="group"
           aria-label={t("packagesViewGroup")}
@@ -1250,7 +1244,10 @@ export function PackagesPage() {
               onChange={(next) => setMarketType(next as ResourceTypeFilter)}
               options={[
                 { value: "all", label: t("packagesMarketTypeAll") },
-                ...PACKAGE_RESOURCE_TYPES.map((type) => ({ value: type, label: singularType(t, type) })),
+                ...PACKAGE_RESOURCE_TYPES.map((type) => ({
+                  value: type,
+                  label: singularType(t, type),
+                })),
               ]}
             />
             <Select

@@ -1,9 +1,4 @@
-import {
-  MessageCirclePlus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-} from "lucide-react";
+import { MessageCirclePlus, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAppStore, type NavPage } from "../lib/stores/app-store";
 import { SessionList } from "../features/sessions/SessionList";
@@ -34,13 +29,18 @@ const NATIVE_WINDOW_MIN_HEIGHT = 600;
 
 /** True when running inside the Tauri desktop shell (so the native window
  *  constraint APIs are available). Mirrors the check used in App.tsx. */
-const nativeWindowAvailable =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 /** Sidebar collapse toggle rendered in the app-level AppTopBar. Shows the Pi
  *  mark by default and reveals the PanelLeft close/open arrow on hover/focus,
  *  so the same control drives both brand identity and collapse state. */
-export function SidebarBrandToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function SidebarBrandToggle({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const t = useT();
   const label = collapsed ? t("sidebarExpand") : t("sidebarCollapse");
   const PanelIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
@@ -139,10 +139,7 @@ export function SidebarLayout({
   // bar's title column) can align its start to the content-area's left edge.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty(
-      "--sidebar-width",
-      `${sidebarCollapsed ? 0 : sidebarWidth}px`,
-    );
+    root.style.setProperty("--sidebar-width", `${sidebarCollapsed ? 0 : sidebarWidth}px`);
     return () => {
       root.style.removeProperty("--sidebar-width");
     };
@@ -336,7 +333,7 @@ export function SidebarLayout({
             </div>
 
             {/* Collapsed or not, the header row stays in place below Workspaces. */}
-            <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               {telegramViewActive ? (
                 <TelegramSessionList />
               ) : (
