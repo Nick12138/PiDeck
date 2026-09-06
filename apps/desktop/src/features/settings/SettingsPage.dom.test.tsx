@@ -131,6 +131,20 @@ describe("SettingsPage navigation guard", () => {
     expect(behavior).toHaveTextContent("Send immediately");
   });
 
+  it("persists the system notification toggle from General", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    const toggle = screen.getByRole("switch", { name: "System notifications" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await user.click(toggle);
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.systemNotificationsEnabled).toBe(false),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
   it("keeps startup controls in General and moves interface controls to Appearance", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="general" />);

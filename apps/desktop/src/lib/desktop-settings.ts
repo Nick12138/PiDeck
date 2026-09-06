@@ -44,6 +44,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "defaultWorkspace",
   "restoreLastSession",
   "autoStartOnBoot",
+  "systemNotificationsEnabled",
   "lastWorkspace",
   "lastSessionPath",
   "agentDir",
@@ -168,6 +169,7 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
   for (const key of [
     "restoreLastSession",
     "autoStartOnBoot",
+    "systemNotificationsEnabled",
     "autoRestartHostOnce",
   ] as const) {
     if (values[key] !== undefined && typeof values[key] !== "boolean") {

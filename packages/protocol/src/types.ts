@@ -1347,6 +1347,9 @@ export type DesktopSettings = {
   restoreLastSession: boolean;
   /** Launch PiDeck with Windows at login and keep it hidden in the system tray. */
   autoStartOnBoot?: boolean;
+  /** Deliver OS-level notifications for background completions, failures,
+   *  input requests and Host fatals while the window is not focused. */
+  systemNotificationsEnabled?: boolean;
   lastWorkspace?: string;
   lastSessionPath?: string;
   agentDir?: string;

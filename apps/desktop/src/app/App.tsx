@@ -29,8 +29,18 @@ import {
 import { classifyToolSnapshot } from "../lib/stores/tool-revision";
 import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";
 import { publishValidatedHostEvent } from "../lib/bridge/validated-host-events";
-import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
+import {
+  mergeHostIdentity,
+  nullableSessionContext,
+  workspaceContext,
+} from "../lib/bridge/host-context";
 import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
+import { openSessionAcrossWorkspaces } from "../lib/bridge/session-navigation";
+import {
+  SystemNotificationController,
+  type SystemNotificationTarget,
+} from "../lib/system-notifications";
+import { ActivityNotificationObserver, activityPathKey } from "../lib/activity-notifications";
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
 import { checkForAppUpdate } from "../lib/updater";
@@ -126,6 +136,85 @@ function acknowledgeHostTerminalIfFocused(sessionId: string, state: string): voi
   const cwd = current.workspace?.canonicalCwd;
   if (!cwd) return;
   void acknowledgeSessionTerminal(cwd, sessionId);
+}
+
+/**
+ * Resolves a sessionId to its session path by listing the now-active target
+ * workspace's sessions. Called by the navigation module after the cross-
+ * workspace switch has completed, so the active Host owns this session list.
+ */
+async function resolveNotificationSessionPath(
+  sessionId: string,
+): Promise<{ sessionPath: string; archived?: boolean } | null> {
+  const current = useAppStore.getState();
+  if (!current.host || !current.workspace) return null;
+  const response = await hostClient.request(
+    "session.list",
+    workspaceContext(current.host, current.workspace),
+    null,
+    30_000,
+  );
+  if (!response.ok) return null;
+  const item = response.result.items.find((entry) => entry.sessionId === sessionId);
+  if (!item) return null;
+  return { sessionPath: item.sessionPath, archived: item.archived === true };
+}
+
+/**
+ * OS-notification click router. Navigates to the notification's workspace and
+ * session through the same guarded path as global search, then clears the
+ * sidebar terminal marker the completed run left behind (both the local store
+ * copy and the Rust Host pool's generation marker, matching the in-app
+ * acknowledge flow). host-fatal candidates carry no routing target; focusing
+ * the app is all they can do.
+ */
+async function openSystemNotificationTarget(target: SystemNotificationTarget): Promise<void> {
+  // A click must surface the app even when the window is hidden to the tray
+  // or minimized (fork-specific tray behavior; the notification plugin never
+  // shows the window for us). Runs before any guard so host-fatal clicks,
+  // which carry no routing target, still bring PiDeck up.
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    win.show();
+    win.unminimize();
+    win.setFocus();
+  } catch {
+    // Non-Tauri environment: nothing to surface.
+  }
+  useAppStore.getState().setPage("chat");
+  if (!target.workspacePath) return;
+
+  const outcome = await openSessionAcrossWorkspaces(
+    {
+      cwd: target.workspacePath,
+      sessionPath: target.sessionPath,
+      sessionId: target.sessionId,
+      archived: target.archived,
+    },
+    { resolveSessionPath: resolveNotificationSessionPath },
+  );
+  if (outcome.status === "archived") {
+    useAppStore.getState().pushNotification(tCurrent("globalSearchArchivedRestoreHint"), "info");
+    return;
+  }
+  if (outcome.status !== "opened" && outcome.status !== "already-active") return;
+
+  const current = useAppStore.getState();
+  // The completed run left an unacknowledged sidebar marker; opening the
+  // session from the notification counts as having seen it. A missing local
+  // marker (cross-workspace notifications carry no workspaceId and never
+  // create one) is fine: the unconditional Host-pool acknowledge below stops
+  // a later activity snapshot from re-opening it across generations.
+  const { workspaceId, sessionId } = target;
+  const marker =
+    workspaceId && sessionId ? current.sessionTerminalStates[workspaceId]?.[sessionId] : undefined;
+  if (marker && !marker.acknowledged && workspaceId && sessionId) {
+    current.acknowledgeSessionTerminalState(workspaceId, sessionId, marker.state);
+  }
+  if (target.sessionId) {
+    void acknowledgeSessionTerminal(target.workspacePath, target.sessionId);
+  }
 }
 
 export function handleHostEvent(
@@ -526,6 +615,83 @@ export function App() {
     let unsubTransportError = () => {};
     let cancelPendingAgentEvents = () => {};
     let cancelled = false;
+    let unsubscribeMainFocus = () => {};
+    let mainFocusKnown = false;
+    let mainFocused = false;
+    let visibility: DocumentVisibilityState = document.visibilityState;
+    const attention = () => {
+      if (visibility === "hidden") return "background" as const;
+      // Until the first authoritative window state arrives, stay silent
+      // instead of risking noise. The async baseline below also covers the
+      // login-launch path where the window starts hidden and no focus event
+      // ever fires.
+      if (!mainFocusKnown) return "unknown" as const;
+      return mainFocused ? ("foreground" as const) : ("background" as const);
+    };
+    const systemNotifications = new SystemNotificationController({
+      enabled: () => useAppStore.getState().desktopSettings?.systemNotificationsEnabled ?? true,
+      attention,
+      targetForSession: (sessionId, event) => {
+        const current = useAppStore.getState();
+        const catalog = current.sessionCatalog.entries[sessionId];
+        const active = current.session?.sessionId === sessionId ? current.session : null;
+        const sessionCwd = active?.cwd ?? catalog?.cwd;
+        const sessionPath = active?.sessionPath ?? catalog?.sessionPath;
+        const sessionName = active?.name ?? catalog?.name;
+        return {
+          workspaceId: event.workspaceId,
+          workspaceRevision: event.workspaceRevision,
+          ...(sessionCwd ? { workspacePath: sessionCwd } : {}),
+          sessionId,
+          ...(sessionPath ? { sessionPath } : {}),
+          ...(event.sessionRevision !== undefined
+            ? { sessionRevision: event.sessionRevision }
+            : {}),
+          ...(sessionName ? { sessionName } : {}),
+          ...(catalog?.archived ? { archived: true } : {}),
+        };
+      },
+      openTarget: openSystemNotificationTarget,
+    });
+    void systemNotifications.start();
+    const onVisibilityChange = () => {
+      visibility = document.visibilityState;
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        if (cancelled) return;
+        const win = getCurrentWindow();
+        const unlisten = await win.onFocusChanged(({ payload: focused }) => {
+          mainFocusKnown = true;
+          mainFocused = focused;
+        });
+        if (cancelled) {
+          unlisten();
+          return;
+        }
+        unsubscribeMainFocus = unlisten;
+        // Baseline for windows that never gained focus (login-launch hidden
+        // in the tray): hidden or visible-but-unfocused both mean background.
+        // A real focus event supersedes this snapshot.
+        const [visible, focused] = await Promise.all([win.isVisible(), win.isFocused()]);
+        if (cancelled || mainFocusKnown) return;
+        mainFocusKnown = true;
+        mainFocused = Boolean(visible && focused);
+      })
+      .catch(() => undefined);
+    // Cross-workspace completions never reach the event stream (background
+    // Host stdout is not routed to the renderer); the pool activity snapshot
+    // is the only seam. Priming is silent — see ActivityNotificationObserver.
+    const activityObserver = new ActivityNotificationObserver({
+      isActiveWorkspace: (cwd) =>
+        activityPathKey(useAppStore.getState().workspace?.canonicalCwd ?? "") ===
+        activityPathKey(cwd),
+      attention,
+      enabled: () => useAppStore.getState().desktopSettings?.systemNotificationsEnabled ?? true,
+      notify: (candidate) => systemNotifications.deliver(candidate),
+    });
+    void activityObserver.refresh();
 
     (async () => {
       const store = useAppStore.getState();
@@ -536,6 +702,7 @@ export function App() {
           themeFamily: "pideck" as const,
           restoreLastSession: false,
           autoStartOnBoot: false,
+          systemNotificationsEnabled: true,
           autoRestartHostOnce: false,
           extensionDecisionPresentation: "auto" as const,
           terminalProfile: "auto" as const,
@@ -884,6 +1051,7 @@ export function App() {
           if (event.event === "host.ready") {
             cancelAgentEvents();
             recoveryEvents.cancel();
+            systemNotifications.reset();
             scheduleRecovery(event.hostInstanceId, "host ready");
             return;
           }
@@ -893,6 +1061,7 @@ export function App() {
           if (recoveryEvents.capture(event)) return;
           if (handleHostEvent(event, requestRecovery, agentEventBuffer)) {
             publishValidatedHostEvent(event);
+            systemNotifications.observe(event);
           }
         });
         unsubTransportError = hostClient.onTransportError(repairTransport);
@@ -919,6 +1088,10 @@ export function App() {
       cancelPendingAgentEvents();
       unsub();
       unsubTransportError();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      unsubscribeMainFocus();
+      systemNotifications.dispose();
+      activityObserver.dispose();
       hostClient.detach("application unmounted");
     };
   }, [nativeWindowAvailable]);

@@ -186,6 +186,9 @@ export const en = {
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
+  generalSystemNotifications: "System notifications",
+  generalSystemNotificationsDesc:
+    "Show OS notifications for background completions, failures, input requests and host crashes, with click-to-session.",
   generalIdleSessionCacheLimit: "Idle session queue capacity",
   generalIdleSessionCacheLimitDesc:
     "Keeps the most recently used idle sessions ready in memory. Applies when Pi Host next starts.",
@@ -986,6 +989,11 @@ export const en = {
     "{count} archived Sessions will be removed from disk. This cannot be undone.",
   sessionsDeletePermanently: "Delete permanently",
   notifOpenSessionFailed: "Open session failed",
+  systemNotificationTitle: "PiDeck",
+  systemNotificationReady: "A response is ready",
+  systemNotificationFailed: "A session failed",
+  systemNotificationInput: "Input is needed",
+  systemNotificationHostUnavailable: "PiDeck needs attention",
   notifRenameFailed: "Rename session failed",
   notifSessionNameEmpty: "Session name cannot be empty",
   notifSessionFileOpFailed: "Session file operation failed",

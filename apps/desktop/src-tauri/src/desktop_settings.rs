@@ -103,6 +103,7 @@ pub struct DesktopSettings {
     pub default_workspace: Option<String>,
     pub restore_last_session: bool,
     pub auto_start_on_boot: bool,
+    pub system_notifications_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,6 +143,7 @@ impl Default for DesktopSettings {
             default_workspace: None,
             restore_last_session: true,
             auto_start_on_boot: false,
+            system_notifications_enabled: true,
             last_workspace: None,
             last_session_path: None,
             agent_dir: None,
@@ -476,6 +478,7 @@ impl DesktopSettingsStore {
                     | "defaultWorkspace"
                     | "restoreLastSession"
                     | "autoStartOnBoot"
+                    | "systemNotificationsEnabled"
                     | "lastWorkspace"
                     | "lastSessionPath"
                     | "agentDir"
@@ -595,6 +598,25 @@ mod tests {
             .patch(serde_json::json!({ "language": null }))
             .unwrap();
         assert_eq!(cleared.settings.language, None);
+    }
+
+    #[test]
+    fn persists_system_notifications_enabled_across_reloads() {
+        let dir = test_dir("system-notifications");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert!(store.settings.system_notifications_enabled);
+
+        store
+            .patch(serde_json::json!({ "systemNotificationsEnabled": false }))
+            .unwrap();
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert!(!reloaded.settings.system_notifications_enabled);
+
+        let mut invalid = reloaded;
+        assert!(invalid
+            .patch(serde_json::json!({ "systemNotificationsEnabled": "yes" }))
+            .is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
