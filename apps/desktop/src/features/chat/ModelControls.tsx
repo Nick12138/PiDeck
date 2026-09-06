@@ -474,6 +474,9 @@ export function ModelControls() {
   }, []);
   const activeModelLabel = currentModelLabel(session?.model, models, "");
   const activeModelDisplayName = currentModelDisplayName(session?.model, models, "");
+  const selectedModelKey = session?.model
+    ? `${session.model.provider}/${session.model.modelId}`
+    : "";
   const modelMenuLabels =
     modelOptions.length > 0
       ? [
@@ -545,6 +548,24 @@ export function ModelControls() {
       resizeObserver?.disconnect();
     };
   }, [menuOpen, modelMenuMeasureKey]);
+
+  // Center the selected model in the dropdown viewport when the menu opens so
+  // long catalogs don't require scrolling around to find the current model.
+  // Re-runs when the catalog arrives after the menu is already open. Only the
+  // panel's own scrollTop is touched — ancestors must not scroll.
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const panel = modelMenuPanelRef.current;
+    const selected = panel?.querySelector<HTMLElement>(
+      '[role="menuitemradio"][aria-checked="true"]',
+    );
+    if (!panel || !selected) return;
+    const panelRect = panel.getBoundingClientRect();
+    const selectedRect = selected.getBoundingClientRect();
+    const offsetInView = selectedRect.top - panelRect.top + panel.scrollTop;
+    const target = offsetInView - panel.clientHeight / 2 + selectedRect.height / 2;
+    panel.scrollTop = Math.max(0, target);
+  }, [menuOpen, selectedModelKey, modelOptions.length]);
 
   useEffect(() => {
     if (!menuOpen) return;

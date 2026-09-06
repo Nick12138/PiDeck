@@ -136,35 +136,57 @@ describe("ThinkingControls", () => {
   });
 });
 
-describe("ModelControls model menu width", () => {
-  const initialInnerWidth = window.innerWidth;
+const initialInnerWidth = window.innerWidth;
 
+function setupModelMenuStore() {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_000 });
+  useAppStore.getState().setDesktopSettings({
+    theme: "system",
+    language: "en",
+    restoreLastSession: true,
+    autoRestartHostOnce: true,
+    extensionDecisionPresentation: "legacy-modal",
+    terminalProfile: "auto",
+  });
+  useAppStore.getState().setHost(host());
+  useAppStore.getState().setWorkspace(workspace());
+  useAppStore.getState().applySessionSnapshot(session());
+}
+
+function teardownModelMenuStore() {
+  vi.restoreAllMocks();
+  cleanup();
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: initialInnerWidth,
+  });
+  useAppStore.getState().setDesktopSettings(null);
+  useAppStore.getState().setHost(null);
+  useAppStore.getState().setWorkspace(null);
+  useAppStore.getState().applySessionSnapshot(null);
+}
+
+function domRect(top: number, height: number): DOMRect {
+  return {
+    top,
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 0,
+    width: 0,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+describe("ModelControls model menu width", () => {
   beforeEach(() => {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_000 });
-    useAppStore.getState().setDesktopSettings({
-      theme: "system",
-      language: "en",
-      restoreLastSession: true,
-      autoRestartHostOnce: true,
-      extensionDecisionPresentation: "legacy-modal",
-      terminalProfile: "auto",
-    });
-    useAppStore.getState().setHost(host());
-    useAppStore.getState().setWorkspace(workspace());
-    useAppStore.getState().applySessionSnapshot(session());
+    setupModelMenuStore();
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
-    cleanup();
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: initialInnerWidth,
-    });
-    useAppStore.getState().setDesktopSettings(null);
-    useAppStore.getState().setHost(null);
-    useAppStore.getState().setWorkspace(null);
-    useAppStore.getState().applySessionSnapshot(null);
+    teardownModelMenuStore();
   });
 
   it("opens the model menu with no manual drag handle", async () => {
@@ -305,5 +327,53 @@ describe("ModelControls model menu width", () => {
 
     // Short names never drop below the minimum width.
     await waitFor(() => expect(menuShell).toHaveStyle({ width: "120px" }));
+  });
+});
+
+describe("ModelControls selected-model centering", () => {
+  beforeEach(() => {
+    setupModelMenuStore();
+  });
+
+  afterEach(() => {
+    teardownModelMenuStore();
+  });
+
+  it("centers the selected model in the menu viewport when it opens", async () => {
+    const models: ModelSummary[] = Array.from({ length: 30 }, (_, index) => ({
+      provider: "muapi",
+      modelId: `model-${index}`,
+      name: `Model ${index}`,
+      thinkingLevels: [],
+    }));
+    const current = models[24];
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.list") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, {
+        models,
+        current,
+        thinkingLevels: [],
+        enabledProviders: ["muapi"],
+      }) as never;
+    });
+    // The model catalog is only fetched once the Host connection settles.
+    useAppStore.getState().setConnecting(false);
+
+    // jsdom has no layout, so pin the menu viewport to 320px tall and place
+    // the selected row 960px below the panel's top edge.
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.getAttribute("role") === "menu") return domRect(100, 320);
+      if (this.getAttribute("aria-checked") === "true") return domRect(1060, 32);
+      return domRect(0, 0);
+    });
+
+    render(<ModelControls />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Model 24" }));
+    const menu = await screen.findByRole("menu", { name: "Models" });
+
+    // (1060 - 100) - 320 / 2 + 32 / 2 = 816 → the selection lands mid-viewport.
+    await waitFor(() => expect(menu.scrollTop).toBe(816));
   });
 });
