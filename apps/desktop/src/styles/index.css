@@ -1495,6 +1495,18 @@ html[data-theme-family="apple"] :where([data-chat-header], [data-dock-header]) {
 
 html[data-theme-family="apple"] [data-dock-header] {
   border-bottom: 1px solid var(--color-border-subtle);
+  /* Unlike the top bar segments, the dock header sits inside the solid content
+     card — there is nothing behind it to frost, so its backdrop-filter is a
+     visual no-op at best. At worst it is an artifact: when WebView2
+     re-composites (window focus change, clicking into the dock, dock tab
+     switches that change the panel layer tree), the backdrop snapshot can miss
+     the card's own fill and sample the transparent window instead, letting the
+     wallpaper bleed through the tab strip as a tinted band that flips with
+     focus/active tab. Paint the card surface and drop the filter — same
+     treatment as the prefers-reduced-transparency fallback below. */
+  background-color: var(--color-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html[data-theme-family="apple"] [data-chat-header-fade] {
