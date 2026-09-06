@@ -1906,4 +1906,45 @@ describe("extension-ui-bridge", () => {
     binding.cleanup();
     expect(disposed).toBe(true);
   });
+
+  it("returns the original option value, not the ANSI-stripped label", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const rawValue = "\u001b[31mred-option\u001b[0m";
+    const pending = ui.select("Pick", [rawValue]);
+    const req = events.find((x) => x.e === "extensionUi.request")!.p as {
+      requestId: string;
+    };
+    respondExtensionUi(req.requestId, "resolved", "red-option", id);
+    await expect(pending).resolves.toBe(rawValue);
+  });
+
+  it("skips empty and duplicate select options", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pending = ui.select("Pick", ["", "   ", "dup", "dup", "ok"]);
+    const req = events.find((x) => x.e === "extensionUi.request")!.p as {
+      requestId: string;
+      options: Array<{ id: string; label: string }>;
+    };
+    expect(req.options.map((option) => option.label)).toEqual(["dup", "ok"]);
+    respondExtensionUi(req.requestId, "resolved", "ok", id);
+    await expect(pending).resolves.toBe("ok");
+  });
+
+  it("resolves undefined without publishing a dialog when every option is empty", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    await expect(ui.select("Pick", ["", "   "])).resolves.toBeUndefined();
+    expect(events.some((x) => x.e === "extensionUi.request")).toBe(false);
+  });
 });

@@ -230,9 +230,13 @@ function prepareSelectOptions(values: string[]): {
   responseValues: Map<string, string>;
 } {
   const usedIds = new Set<string>();
+  const usedValues = new Set<string>();
   const responseValues = new Map<string, string>();
-  const options = values.slice(0, MAX_EXTENSION_UI_OPTIONS).map((value, index) => {
+  const options: PreparedSelectOption[] = [];
+  for (const [index, value] of values.entries()) {
     const sanitizedValue = stripAnsi(String(value));
+    if (!sanitizedValue.trim() || usedValues.has(sanitizedValue)) continue;
+    usedValues.add(sanitizedValue);
     const baseId = sanitizedValue.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH);
     let id = baseId;
     let attempt = 0;
@@ -242,9 +246,12 @@ function prepareSelectOptions(values: string[]): {
       id = `${baseId.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH - suffix.length)}${suffix}`;
     }
     usedIds.add(id);
-    responseValues.set(id, sanitizedValue);
-    return { id, label: sanitizedValue, metadataId: sanitizedValue };
-  });
+    // The extension must receive the original value it offered, not the
+    // display-sanitized one, so identity comparisons on its side still hold.
+    responseValues.set(id, String(value));
+    options.push({ id, label: sanitizedValue, metadataId: sanitizedValue });
+    if (options.length === MAX_EXTENSION_UI_OPTIONS) break;
+  }
   return { options, responseValues };
 }
 
@@ -630,6 +637,9 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
   const ui: ExtensionUIContext = {
     select: async (title, options, dialogOpts) => {
       const prepared = prepareSelectOptions(options);
+      // Nothing selectable survived sanitization; publishing an empty picker
+      // would force the user into a dialog they cannot answer.
+      if (prepared.options.length === 0) return undefined;
       const value = await requestBlocking(
         "select",
         {
