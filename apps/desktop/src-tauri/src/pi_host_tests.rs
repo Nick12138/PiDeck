@@ -258,10 +258,7 @@ rl.on('line', (line) => {
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
         // User PATH entries come first, so Agent Bash sees mise/system git.
-        assert_eq!(
-            entries[0],
-            "C:\\Users\\me\\AppData\\Local\\mise\\shims"
-        );
+        assert_eq!(entries[0], "C:\\Users\\me\\AppData\\Local\\mise\\shims");
         assert_eq!(entries[1], "C:\\Program Files\\Git\\cmd");
         // Bundled Node/Git are appended as a fallback.
         assert_eq!(entries[2], "C:\\PiDeck\\resources\\node");
@@ -291,17 +288,14 @@ rl.on('line', (line) => {
         {
             use crate::pi_host::PiHostManager;
             // Fake layout: <root>/cmd/git.exe -> <root>/bin/bash.exe
-            let temp = std::env::temp_dir().join(format!(
-                "pideck-bash-test-{}",
-                uuid::Uuid::new_v4()
-            ));
+            let temp =
+                std::env::temp_dir().join(format!("pideck-bash-test-{}", uuid::Uuid::new_v4()));
             let git_cmd = temp.join("cmd");
             std::fs::create_dir_all(&git_cmd).expect("create git cmd dir");
             let git_exe = git_cmd.join("git.exe");
             std::fs::write(&git_exe, b"fixture").expect("write git.exe");
             let bash = temp.join("bin").join("bash.exe");
-            std::fs::create_dir_all(bash.parent().expect("bin dir"))
-                .expect("create bin dir");
+            std::fs::create_dir_all(bash.parent().expect("bin dir")).expect("create bin dir");
             std::fs::write(&bash, b"fixture").expect("write bash.exe");
 
             let resolved = PiHostManager::bundled_bash_from_git(&git_exe);

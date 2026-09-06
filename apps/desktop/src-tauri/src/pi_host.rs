@@ -1744,7 +1744,6 @@ impl PiHostManager {
         }
     }
 
-
     fn resolve_host_entry(app: &AppHandle) -> Result<PathBuf, String> {
         // Dev first: monorepo built host (most reliable during tauri:dev)
         #[cfg(debug_assertions)]
@@ -2380,7 +2379,8 @@ impl PiHostManager {
     /// matching `id`. Bypasses the renderer's active-route routing so a
     /// background workspace host can be driven directly.
     pub async fn request(&mut self, request: String, timeout: Duration) -> Result<String, String> {
-        let id = extract_request_id(&request).ok_or_else(|| "request line has no id".to_string())?;
+        let id =
+            extract_request_id(&request).ok_or_else(|| "request line has no id".to_string())?;
         let (tx, rx) = oneshot::channel::<String>();
         self.pending_requests.lock().await.insert(id.clone(), tx);
         if let Err(error) = self.send_line(request).await {

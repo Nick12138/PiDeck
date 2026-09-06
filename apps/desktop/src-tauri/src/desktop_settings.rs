@@ -302,7 +302,11 @@ impl DesktopSettingsStore {
         let Some(settings) = settings.and_then(serde_json::Value::as_object_mut) else {
             return false;
         };
-        if settings.get("themeFamily").and_then(serde_json::Value::as_str) != Some("acrylic") {
+        if settings
+            .get("themeFamily")
+            .and_then(serde_json::Value::as_str)
+            != Some("acrylic")
+        {
             return false;
         }
         settings.insert(
@@ -324,9 +328,10 @@ impl DesktopSettingsStore {
             ));
         }
         if settings.conversation_max_width < settings.conversation_min_width {
-            return Err(format!(
+            return Err(
                 "conversationMaxWidth must be greater than or equal to conversationMinWidth"
-            ));
+                    .to_string(),
+            );
         }
         if !(MIN_CONVERSATION_FONT_SIZE..=MAX_CONVERSATION_FONT_SIZE)
             .contains(&settings.conversation_font_size)
@@ -362,7 +367,9 @@ impl DesktopSettingsStore {
                     return Err(format!("pluginEnv contains invalid env var name: {name}"));
                 }
                 if value.chars().count() > 8192 {
-                    return Err(format!("pluginEnv value for {name} exceeds 8192 characters"));
+                    return Err(format!(
+                        "pluginEnv value for {name} exceeds 8192 characters"
+                    ));
                 }
             }
         }
