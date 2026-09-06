@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
-  Eye,
   FolderTree,
   GitBranch,
   GitCompareArrows,
@@ -30,7 +29,6 @@ import {
   type ShellTerminalStatus,
 } from "../features/dock/ShellTerminal";
 import { FilesPanel } from "../features/dock/FilesPanel";
-import { PreviewPanel } from "../features/dock/PreviewPanel";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
@@ -38,7 +36,6 @@ import { TodoPanel } from "../features/dock/TodoPanel";
 import { SubagentsPanel } from "../features/dock/SubagentsPanel";
 import { extractLatestTodos } from "../features/dock/todo-model";
 import { subscribeDockBrowser } from "../lib/dock-browser";
-import { subscribeDockPreview } from "../lib/dock-preview";
 import { subscribeChangesPanel } from "../lib/dock-changes";
 import { subscribeTreePanel } from "../lib/dock-tree";
 import { useT } from "../lib/i18n/use-t";
@@ -50,7 +47,6 @@ export type DockTabId =
   | "changes"
   | "todo"
   | "subagents"
-  | "preview"
   | `browser:${number}`
   | `shell:${number}`
   | `extension:${string}`;
@@ -177,7 +173,6 @@ export function RightDock() {
   );
   const [shellTabs, setShellTabs] = useState<ShellDockTab[]>([]);
   const [browserTabs, setBrowserTabs] = useState<BrowserDockTab[]>([]);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [extensionClosing, setExtensionClosing] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState(initialDockWidth);
   const [resizing, setResizing] = useState(false);
@@ -502,25 +497,6 @@ export function RightDock() {
     [],
   );
 
-  useEffect(
-    () =>
-      subscribeDockPreview(({ path }) => {
-        setPreviewPath(path);
-        setTabOrder((current) =>
-          current.includes("preview") ? current : [...current, "preview"],
-        );
-        setActiveTab("preview");
-        if (!useAppStore.getState().dockOpen) {
-          setDockOpen(true);
-          setSidebarPref("pideck.dock.open", true);
-        }
-        return true;
-      }),
-    // The singleton handler has no render-owned mutable state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
   const createShell = () => {
     if (!workspaceCwd) return;
     const id = nextShellId.current++;
@@ -592,11 +568,6 @@ export function RightDock() {
       closeOrderTab(tabId);
       return;
     }
-    if (tabId === "preview") {
-      setPreviewPath(null);
-      closeOrderTab(tabId);
-      return;
-    }
     if (tabId.startsWith("browser:")) {
       closeBrowser(Number(tabId.slice("browser:".length)));
       return;
@@ -614,10 +585,6 @@ export function RightDock() {
     if (tabId === "changes") return { label: t("gitChanges"), Icon: GitCompareArrows };
     if (tabId === "todo") return { label: t("dockTodo"), Icon: ListTodo };
     if (tabId === "subagents") return { label: t("dockSubagents"), Icon: Users };
-    if (tabId === "preview") {
-      const name = previewPath ? previewPath.slice(previewPath.lastIndexOf("/") + 1) : "";
-      return { label: name || t("dockPreview"), Icon: Eye };
-    }
     if (tabId.startsWith("browser:")) {
       const id = Number(tabId.slice("browser:".length));
       return {
@@ -1033,16 +1000,6 @@ export function RightDock() {
             className={`min-h-0 min-w-0 flex-1 ${activeTab === "subagents" ? "flex" : "hidden"}`}
           >
             <SubagentsPanel />
-          </div>
-        )}
-        {tabOrder.includes("preview") && (
-          <div
-            role="tabpanel"
-            id="dock-panel-preview"
-            aria-labelledby="dock-tab-preview"
-            className={`min-h-0 min-w-0 flex-1 ${activeTab === "preview" ? "flex" : "hidden"}`}
-          >
-            <PreviewPanel path={previewPath} visible={activeTab === "preview" && dockOpen} />
           </div>
         )}
         {browserTabs.map((tab) => (

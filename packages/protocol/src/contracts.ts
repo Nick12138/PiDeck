@@ -19,7 +19,6 @@ import type {
   HostStatusSnapshot,
   WorkspaceSnapshot,
   WorkspaceDirectoryEntry,
-  WorkspaceFilePreview,
   SessionSnapshot,
   SessionSummary,
   SessionStatsSnapshot,
@@ -97,7 +96,6 @@ export type HostContextMap = {
   "workspace.getCurrent": WorkspaceContext;
   "workspace.searchFiles": WorkspaceContext;
   "workspace.listDirectory": WorkspaceContext;
-  "workspace.readFile": WorkspaceContext;
   "workspace.setDirectoryWatches": WorkspaceContext;
   "git.getStatus": WorkspaceContext;
   "git.setWatching": WorkspaceContext;
@@ -226,7 +224,6 @@ export type HostRequestParams = {
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };
-  "workspace.readFile": { path: string; maxBytes?: number };
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": null;
   "git.setWatching": { enabled: boolean };
@@ -409,7 +406,6 @@ export type HostResultMap = {
     path: string;
     entries: WorkspaceDirectoryEntry[];
   };
-  "workspace.readFile": WorkspaceFilePreview;
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": GitStatusSnapshot;
   "git.setWatching": { watching: boolean; snapshot: GitStatusSnapshot | null };

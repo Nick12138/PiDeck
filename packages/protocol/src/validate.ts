@@ -8,7 +8,6 @@ import {
   MAX_GIT_BRANCH_NAME_BYTES,
   MAX_GIT_HISTORY_PAGE_SIZE,
   MAX_GIT_PATH_BYTES,
-  MAX_PREVIEW_REQUEST_BYTES,
 } from "./limits.js";
 import {
   hasExactKeys,
@@ -441,17 +440,6 @@ export function validateRequestParams<M extends HostMethod>(
       return exactObject(params, ["path"]) && isString(params.path)
         ? ok(params)
         : fail("invalid workspace.listDirectory params", { method });
-    case "workspace.readFile":
-      return exactObject(params, ["path"], ["maxBytes"]) &&
-        isString(params.path) &&
-        params.path.length > 0 &&
-        (params.maxBytes === undefined ||
-          (typeof params.maxBytes === "number" &&
-            Number.isInteger(params.maxBytes) &&
-            params.maxBytes >= 1 &&
-            params.maxBytes <= MAX_PREVIEW_REQUEST_BYTES))
-        ? ok(params)
-        : fail("invalid workspace.readFile params", { method });
     case "workspace.setDirectoryWatches":
       return exactObject(params, ["paths"]) &&
         Array.isArray(params.paths) &&

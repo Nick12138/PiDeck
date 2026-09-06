@@ -92,28 +92,6 @@ export function createWorkspaceHandlers(
       }
     },
 
-    "workspace.readFile": async (ctx) => {
-      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
-      if (stale) return { error: stale };
-      const g = factory.getGraph();
-      if (!g) {
-        return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
-      }
-      const params = ctx.params as { path: string; maxBytes?: number };
-      try {
-        return {
-          result: await fileService.readFile(g.canonicalCwd, params.path, params.maxBytes),
-        };
-      } catch (error) {
-        return {
-          error: createHostError(
-            "INVALID_REQUEST",
-            error instanceof Error ? error.message : "Unable to read file",
-          ),
-        };
-      }
-    },
-
     "workspace.setDirectoryWatches": async (ctx) => {
       const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
       if (stale) return { error: stale };
