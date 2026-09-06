@@ -2,27 +2,13 @@ import { Archive, Folder, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SessionSearchReport, SessionSearchResultItem } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
-import {
-  activateWorkspaceHost,
-  prepareWorkspaceHost,
-  rebindActiveWorkspaceHost,
-  replayActiveHostReady,
-} from "../../lib/bridge/tauri-transport";
-import { hostContext, mergeHostIdentity, workspaceContext } from "../../lib/bridge/host-context";
-import {
-  requestSessionOpenWithRetry,
-  SESSION_OPEN_TIMEOUT_MS,
-} from "../../lib/bridge/session-open-request";
-import { hostErrorLevel, localizeHostError } from "../../lib/bridge/localize-host-error";
+import { openSessionAcrossWorkspaces } from "../../lib/bridge/session-navigation";
+import { hostContext } from "../../lib/bridge/host-context";
+import { localizeHostError } from "../../lib/bridge/localize-host-error";
 import { subscribeGlobalSearchOpen } from "../../lib/commands/events";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { workspaceDisplayName } from "../workspaces/WorkspacePicker";
-import {
-  isWorkspaceSwitchBusyError,
-  waitForWorkspaceActivation,
-  workspaceHasActiveAgent,
-} from "../workspaces/workspace-switch-policy";
 import {
   groupResultsByWorkspace,
   highlightSegments,
@@ -125,9 +111,8 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
 
   async function openResult(item: SessionSearchResultItem) {
     const state = useAppStore.getState();
-    const host = state.host;
     if (
-      !host ||
+      !state.host ||
       opening ||
       state.connecting ||
       state.rehydrating ||
@@ -138,123 +123,20 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
     }
     setOpening(true);
     try {
-      if (state.workspace?.canonicalCwd !== item.cwd) {
-        const connectDedicatedHost = async (force: boolean): Promise<boolean> => {
-          const activated = force
-            ? await activateWorkspaceHost(item.cwd)
-            : await prepareWorkspaceHost(item.cwd, workspaceHasActiveAgent(useAppStore.getState()));
-          if (!activated) return false;
-          hostClient.prepareForHostSwitch();
-          useAppStore.getState().setConnecting(true);
-          await replayActiveHostReady();
-          await waitForWorkspaceActivation(host.hostInstanceId);
-          return true;
-        };
-        if (!(await connectDedicatedHost(false))) {
-          useAppStore.getState().setWorkspaceSwitchTarget(item.cwd);
-          let switched;
-          try {
-            switched = await hostClient.request(
-              "workspace.setCurrent",
-              workspaceContext(host, state.workspace),
-              { cwd: item.cwd },
-              60_000,
-            );
-          } finally {
-            useAppStore.getState().setWorkspaceSwitchTarget(null);
-          }
-          if (!switched.ok) {
-            if (isWorkspaceSwitchBusyError(switched.error) && (await connectDedicatedHost(true))) {
-              // The Host became busy after the initial decision; isolation completed.
-            } else {
-              state.pushNotification(
-                localizeHostError(switched.error, t),
-                hostErrorLevel(switched.error),
-              );
-              return;
-            }
-          } else {
-            const result = switched.result;
-            await rebindActiveWorkspaceHost(result.workspace.canonicalCwd);
-            // workspace.changed / session.snapshot events usually land before this
-            // response resolves; apply only what the event stream has not.
-            const appliedWorkspace = useAppStore.getState().workspace;
-            if (
-              appliedWorkspace === null ||
-              appliedWorkspace.id !== result.workspace.id ||
-              appliedWorkspace.revision !== result.workspace.revision
-            ) {
-              useAppStore.getState().setWorkspace(result.workspace);
-            }
-            if (result.session) {
-              const appliedSession = useAppStore.getState().session;
-              if (
-                appliedSession === null ||
-                appliedSession.sessionId !== result.session.sessionId ||
-                appliedSession.revision !== result.session.revision
-              ) {
-                useAppStore.getState().setSession(result.session);
-              }
-            }
-            useAppStore.getState().setHost({
-              ...host,
-              workspaceId: switched.workspaceId,
-              workspaceRevision: switched.workspaceRevision,
-              sessionId: switched.sessionId,
-              sessionRevision: switched.sessionRevision,
-              packageRevision: switched.packageRevision,
-            });
-          }
-        }
-      }
-
-      if (item.archived) {
+      const outcome = await openSessionAcrossWorkspaces({
+        cwd: item.cwd,
+        sessionPath: item.sessionPath,
+        archived: item.archived,
+      });
+      if (outcome.status === "opened" || outcome.status === "already-active") {
+        onClose();
+      } else if (outcome.status === "archived") {
         useAppStore.getState().pushNotification(t("globalSearchArchivedRestoreHint"), "info");
         onClose();
-        return;
       }
-      if (useAppStore.getState().session?.sessionPath === item.sessionPath) {
-        onClose();
-        return;
-      }
-
-      const res = await requestSessionOpenWithRetry(() => {
-        const latest = useAppStore.getState();
-        if (!latest.host || !latest.workspace) {
-          throw new Error(t("notifOpenSessionFailed"));
-        }
-        return hostClient.request(
-          "session.open",
-          {
-            expectedHostInstanceId: latest.host.hostInstanceId,
-            expectedWorkspaceId: latest.workspace.id,
-            expectedWorkspaceRevision: latest.workspace.revision,
-            expectedSessionId: latest.host.sessionId,
-            expectedSessionRevision: latest.host.sessionRevision,
-          },
-          { sessionPath: item.sessionPath },
-          SESSION_OPEN_TIMEOUT_MS,
-        );
-      });
-      if (!res) return;
-      if (!res.ok) {
-        useAppStore
-          .getState()
-          .pushNotification(localizeHostError(res.error, t), hostErrorLevel(res.error));
-        return;
-      }
-      const appliedSession = useAppStore.getState().session;
-      const alreadyApplied =
-        appliedSession !== null &&
-        appliedSession.sessionId === res.result.sessionId &&
-        appliedSession.revision === res.result.revision;
-      if (!alreadyApplied) useAppStore.getState().applySessionSnapshot(res.result);
-      const latestHost = useAppStore.getState().host;
-      if (latestHost) {
-        const nextHost = mergeHostIdentity(latestHost, res);
-        if (nextHost) useAppStore.getState().setHost(nextHost);
-      }
-      onClose();
+      // "blocked" and "failed" already surface exactly like the previous
+      // inline flow: silently for blocked guards, via pushNotification for
+      // switch/open errors.
     } catch (err) {
       useAppStore
         .getState()
