@@ -436,6 +436,9 @@ export const en = {
   providersUnsaved: "Unsaved changes",
   providersSaveAndTest: "Save & test",
   providersTesting: "Testing",
+  providersCopy: "Duplicate",
+  providersCopyTitle:
+    "Duplicate this provider's settings into a new unsaved draft named \"<name> copy\" (the API key must be re-entered)",
   providersSaveAndTestTitle:
     "Saves the Provider, then sends a minimal request through the configured model API",
   providersConnectionOk: "Generation check passed",

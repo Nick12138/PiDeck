@@ -4,6 +4,7 @@ import {
   Brain,
   Check,
   CircleCheck,
+  Copy,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -302,6 +303,43 @@ export function ProvidersSettings() {
     baselineRef.current = draftFingerprint(nextDraft);
     draftEpochRef.current += 1;
     setCatalog([]);
+    setApiKey("");
+    setClearApiKey(false);
+    setEditingModelId(null);
+    setManualOpen(false);
+    setFieldErrors({});
+    setConnectionResult(null);
+  }
+
+  /** Duplicates the current provider (including unsaved edits) into a new
+   *  unsaved draft named "<name> copy". The stored API key cannot be copied,
+   *  so the copy needs its own key before it can connect. */
+  function copyProvider() {
+    if (!draft || saving || fetching || testing) return;
+    const copiedModels = draft.models.map((model) => ({
+      ...model,
+      ...(model.thinkingLevelMap
+        ? { thinkingLevelMap: { ...model.thinkingLevelMap } }
+        : {}),
+      input: [...model.input],
+    }));
+    // Repeated copies keep a single " copy" suffix instead of stacking.
+    const baseName = draft.name.trim().replace(/\s+copy$/i, "");
+    const nextDraft: DraftState = {
+      ...draft,
+      id: nextProviderId(providers.map((p) => p.id)),
+      originalId: undefined,
+      name: `${baseName} copy`,
+      headers: { ...draft.headers },
+      ...(draft.compat ? { compat: { ...draft.compat } } : {}),
+      models: copiedModels,
+    };
+    setOauthOpen(false);
+    setSelectedId(null);
+    setDraft(nextDraft);
+    baselineRef.current = draftFingerprint(nextDraft);
+    draftEpochRef.current += 1;
+    setCatalog(enabledCatalog(nextDraft.models));
     setApiKey("");
     setClearApiKey(false);
     setEditingModelId(null);
@@ -799,34 +837,53 @@ export function ProvidersSettings() {
                       <AlertTriangle size={12} /> {t("providersUnsaved")}
                     </span>
                   )}
+                  {draft.originalId && (
+                    <button
+                      type="button"
+                      className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
+                      disabled={saving || fetching || testing}
+                      title={t("providersCopyTitle")}
+                      aria-label={t("providersCopy")}
+                      onClick={copyProvider}
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-surface-overlay disabled:opacity-50"
                     disabled={saving || fetching || testing || draft.models.length === 0}
                     title={t("providersSaveAndTestTitle")}
+                    aria-label={testing ? t("providersTesting") : t("providersSaveAndTest")}
                     onClick={() => void testConnection()}
                   >
-                    <Activity className={testing ? "animate-pulse" : ""} size={14} />
-                    {testing ? t("providersTesting") : t("providersSaveAndTest")}
+                    {testing ? (
+                      <RefreshCw className="animate-spin" size={14} />
+                    ) : (
+                      <Activity size={14} />
+                    )}
                   </button>
                   {draft.originalId && (
                     <button
                       type="button"
                       className="flex h-8 items-center gap-1.5 rounded-md border border-danger/40 px-2.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
                       disabled={saving || fetching || testing}
+                      title={t("commonDelete")}
+                      aria-label={t("commonDelete")}
                       onClick={() => setConfirmDelete(true)}
                     >
-                      <Trash2 size={14} /> {t("commonDelete")}
+                      <Trash2 size={14} />
                     </button>
                   )}
                   <button
                     type="button"
                     className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
                     disabled={saving || fetching || testing}
+                    title={t("commonSave")}
+                    aria-label={t("commonSave")}
                     onClick={() => void persistDraft()}
                   >
                     {saving ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
-                    {t("commonSave")}
                   </button>
                 </div>
               </header>

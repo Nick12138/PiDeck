@@ -414,6 +414,8 @@ export const zh: Record<MessageKey, string> = {
   providersUnsaved: "有未保存的修改",
   providersSaveAndTest: "保存并测试",
   providersTesting: "测试中",
+  providersCopy: "复制",
+  providersCopyTitle: "复制该供应商信息为新的未保存草稿（名称后加 “copy”，API Key 需重新填写）",
   providersSaveAndTestTitle: "先保存该服务，再通过所配置的模型 API 发送一条最小请求",
   providersConnectionOk: "生成检查通过",
   providersUseSystemRole: "改用 system 角色",
